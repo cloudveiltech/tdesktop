@@ -1,12 +1,6 @@
-# [Telegram Desktop][telegram_desktop] – Official Messenger
+# [CloudVeil Messenger Desktop][cloudveil_messenger_desktop] - Unofficial Client
 
-This is the complete source code and the build instructions for the alpha version of the official desktop client for the [Telegram][telegram] messenger, based on the [Telegram API][telegram_api] and the [MTProto][telegram_proto] secure protocol.
-
-[![Version](https://badge.fury.io/gh/telegramdesktop%2Ftdesktop.svg)](https://github.com/telegramdesktop/tdesktop/releases)
-[![Build Status](https://travis-ci.org/telegramdesktop/tdesktop.svg?branch=dev)](https://travis-ci.org/telegramdesktop/tdesktop)
-[![Build status](https://ci.appveyor.com/api/projects/status/uiw2y768iy4i5bu8/branch/dev?svg=true)](https://ci.appveyor.com/project/telegramdesktop/tdesktop)
-
-[![Preview of Telegram Desktop][preview_image]][preview_image_url]
+This is the complete source code and the build instructions for the alpha version of CloudVeil Messenger which is based on he [Telegram][telegram] messenger, based on the [Telegram API][telegram_api] and the [MTProto][telegram_proto] secure protocol.
 
 The source code is published under GPLv3 with OpenSSL exception, the license is available [here][license].
 

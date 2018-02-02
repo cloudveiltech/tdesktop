@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_search_controller.h"
 
@@ -36,13 +23,15 @@ MTPmessages_Search PrepareSearchRequest(
 		const QString &query,
 		MsgId messageId,
 		SparseIdsLoadDirection direction) {
-	auto filter = [&] {
+	const auto filter = [&] {
 		using Type = Storage::SharedMediaType;
 		switch (type) {
 		case Type::Photo:
 			return MTP_inputMessagesFilterPhotos();
 		case Type::Video:
 			return MTP_inputMessagesFilterVideo();
+		case Type::PhotoVideo:
+			return MTP_inputMessagesFilterPhotoVideo();
 		case Type::MusicFile:
 			return MTP_inputMessagesFilterMusic();
 		case Type::File:
@@ -63,10 +52,10 @@ MTPmessages_Search PrepareSearchRequest(
 		return MTP_inputMessagesFilterEmpty();
 	}();
 
-	auto minId = 0;
-	auto maxId = 0;
-	auto limit = messageId ? kSharedMediaLimit : 0;
-	auto offsetId = [&] {
+	const auto minId = 0;
+	const auto maxId = 0;
+	const auto limit = messageId ? kSharedMediaLimit : 0;
+	const auto offsetId = [&] {
 		switch (direction) {
 		case SparseIdsLoadDirection::Before:
 		case SparseIdsLoadDirection::Around: return messageId;
@@ -74,7 +63,7 @@ MTPmessages_Search PrepareSearchRequest(
 		}
 		Unexpected("Direction in PrepareSearchRequest");
 	}();
-	auto addOffset = [&] {
+	const auto addOffset = [&] {
 		switch (direction) {
 		case SparseIdsLoadDirection::Before: return 0;
 		case SparseIdsLoadDirection::Around: return -limit / 2;
@@ -130,7 +119,8 @@ SearchResult ParseSearchResult(
 			if (auto channel = peer->asChannel()) {
 				channel->ptsReceived(d.vpts.v);
 			} else {
-				LOG(("API Error: received messages.channelMessages when no channel was passed! (ParseSearchResult)"));
+				LOG(("API Error: received messages.channelMessages when "
+					"no channel was passed! (ParseSearchResult)"));
 			}
 			App::feedUsers(d.vusers);
 			App::feedChats(d.vchats);
@@ -139,7 +129,8 @@ SearchResult ParseSearchResult(
 		} break;
 
 		case mtpc_messages_messagesNotModified: {
-			LOG(("API Error: received messages.messagesNotModified! (ParseSearchResult)"));
+			LOG(("API Error: received messages.messagesNotModified! "
+				"(ParseSearchResult)"));
 			return (const QVector<MTPMessage>*)nullptr;
 		} break;
 		}
@@ -260,50 +251,46 @@ rpl::producer<SparseIdsSlice> SearchController::simpleIdsSlice(
 			aroundId,
 			limitBefore,
 			limitAfter);
-		builder->insufficientAround()
-			| rpl::start_with_next([=](
-					const SparseIdsSliceBuilder::AroundData &data) {
-				requestMore(data, query, listData);
-			}, lifetime);
+		builder->insufficientAround(
+		) | rpl::start_with_next([=](
+				const SparseIdsSliceBuilder::AroundData &data) {
+			requestMore(data, query, listData);
+		}, lifetime);
 
 		auto pushNextSnapshot = [=] {
 			consumer.put_next(builder->snapshot());
 		};
 
-		listData->list.sliceUpdated()
-			| rpl::filter([=](const SliceUpdate &update) {
-				return builder->applyUpdate(update);
-			})
-			| rpl::start_with_next(pushNextSnapshot, lifetime);
+		listData->list.sliceUpdated(
+		) | rpl::filter([=](const SliceUpdate &update) {
+			return builder->applyUpdate(update);
+		}) | rpl::start_with_next(pushNextSnapshot, lifetime);
 
-		Auth().data().itemRemoved()
-			| rpl::filter([=](not_null<const HistoryItem*> item) {
-				return (item->history()->peer->id == peerId);
-			})
-			| rpl::filter([=](not_null<const HistoryItem*> item) {
-				return builder->removeOne(item->id);
-			})
-			| rpl::start_with_next(pushNextSnapshot, lifetime);
+		Auth().data().itemRemoved(
+		) | rpl::filter([=](not_null<const HistoryItem*> item) {
+			return (item->history()->peer->id == peerId);
+		}) | rpl::filter([=](not_null<const HistoryItem*> item) {
+			return builder->removeOne(item->id);
+		}) | rpl::start_with_next(pushNextSnapshot, lifetime);
 
-		Auth().data().historyCleared()
-			| rpl::filter([=](not_null<const History*> history) {
-				return (history->peer->id == peerId);
-			})
-			| rpl::filter([=] { return builder->removeAll(); })
-			| rpl::start_with_next(pushNextSnapshot, lifetime);
+		Auth().data().historyCleared(
+		) | rpl::filter([=](not_null<const History*> history) {
+			return (history->peer->id == peerId);
+		}) | rpl::filter([=] {
+			return builder->removeAll();
+		}) | rpl::start_with_next(pushNextSnapshot, lifetime);
 
 		using Result = Storage::SparseIdsListResult;
 		listData->list.query(Storage::SparseIdsListQuery(
 			aroundId,
 			limitBefore,
-			limitAfter))
-			| rpl::filter([=](const Result &result) {
-				return builder->applyInitial(result);
-			})
-			| rpl::start_with_next_done(
-				pushNextSnapshot,
-				[=] { builder->checkInsufficient(); },
-				lifetime);
+			limitAfter
+		)) | rpl::filter([=](const Result &result) {
+			return builder->applyInitial(result);
+		}) | rpl::start_with_next_done(
+			pushNextSnapshot,
+			[=] { builder->checkInsufficient(); },
+			lifetime);
 
 		return lifetime;
 	};

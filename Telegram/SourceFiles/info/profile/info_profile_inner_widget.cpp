@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/profile/info_profile_inner_widget.h"
 
@@ -66,13 +53,13 @@ InnerWidget::InnerWidget(
 , _peer(_controller->peer())
 , _migrated(_controller->migrated())
 , _content(setupContent(this)) {
-	_content->heightValue()
-		| rpl::start_with_next([this](int height) {
-			if (!_inResize) {
-				resizeToWidth(width());
-				updateDesiredHeight();
-			}
-		}, lifetime());
+	_content->heightValue(
+	) | rpl::start_with_next([this](int height) {
+		if (!_inResize) {
+			resizeToWidth(width());
+			updateDesiredHeight();
+		}
+	}, lifetime());
 }
 
 bool InnerWidget::canHideDetailsEver() const {
@@ -122,18 +109,18 @@ object_ptr<Ui::RpWidget> InnerWidget::setupContent(
 			_controller,
 			_peer)
 		);
-		_members->scrollToRequests()
-			| rpl::start_with_next([this](Ui::ScrollToRequest request) {
-				auto min = (request.ymin < 0)
-					? request.ymin
-					: mapFromGlobal(_members->mapToGlobal({ 0, request.ymin })).y();
-				auto max = (request.ymin < 0)
-					? mapFromGlobal(_members->mapToGlobal({ 0, 0 })).y()
-					: (request.ymax < 0)
-						? request.ymax
-						: mapFromGlobal(_members->mapToGlobal({ 0, request.ymax })).y();
-				_scrollToRequests.fire({ min, max });
-			}, _members->lifetime());
+		_members->scrollToRequests(
+		) | rpl::start_with_next([this](Ui::ScrollToRequest request) {
+			auto min = (request.ymin < 0)
+				? request.ymin
+				: mapFromGlobal(_members->mapToGlobal({ 0, request.ymin })).y();
+			auto max = (request.ymin < 0)
+				? mapFromGlobal(_members->mapToGlobal({ 0, 0 })).y()
+				: (request.ymax < 0)
+				? request.ymax
+				: mapFromGlobal(_members->mapToGlobal({ 0, request.ymax })).y();
+			_scrollToRequests.fire({ min, max });
+		}, _members->lifetime());
 		_cover->setOnlineCount(_members->onlineCountValue());
 	}
 	return std::move(result);
@@ -198,24 +185,25 @@ object_ptr<Ui::RpWidget> InnerWidget::setupSharedMedia(
 	//rpl::combine(
 	//	tracker.atLeastOneShownValue(),
 	//	_controller->wrapValue(),
-	//	_isStackBottom.value())
-	//	| rpl::combine_previous(ToggledData())
-	//	| rpl::start_with_next([wrap = result.data()](
-	//			const ToggledData &was,
-	//			const ToggledData &now) {
-	//		bool wasOneShown, wasStackBottom, nowOneShown, nowStackBottom;
-	//		Wrap wasWrap, nowWrap;
-	//		std::tie(wasOneShown, wasWrap, wasStackBottom) = was;
-	//		std::tie(nowOneShown, nowWrap, nowStackBottom) = now;
-	//		// MSVC Internal Compiler Error
-	//		//auto [wasOneShown, wasWrap, wasStackBottom] = was;
-	//		//auto [nowOneShown, nowWrap, nowStackBottom] = now;
-	//		wrap->toggle(
-	//			nowOneShown && (nowWrap != Wrap::Side || !nowStackBottom),
-	//			(wasStackBottom == nowStackBottom && wasWrap == nowWrap)
-	//				? anim::type::normal
-	//				: anim::type::instant);
-	//	}, result->lifetime());
+	//	_isStackBottom.value()
+	//) | rpl::combine_previous(
+	//	ToggledData()
+	//) | rpl::start_with_next([wrap = result.data()](
+	//		const ToggledData &was,
+	//		const ToggledData &now) {
+	//	bool wasOneShown, wasStackBottom, nowOneShown, nowStackBottom;
+	//	Wrap wasWrap, nowWrap;
+	//	std::tie(wasOneShown, wasWrap, wasStackBottom) = was;
+	//	std::tie(nowOneShown, nowWrap, nowStackBottom) = now;
+	//	// MSVC Internal Compiler Error
+	//	//auto [wasOneShown, wasWrap, wasStackBottom] = was;
+	//	//auto [nowOneShown, nowWrap, nowStackBottom] = now;
+	//	wrap->toggle(
+	//		nowOneShown && (nowWrap != Wrap::Side || !nowStackBottom),
+	//		(wasStackBottom == nowStackBottom && wasWrap == nowWrap)
+	//			? anim::type::normal
+	//			: anim::type::instant);
+	//}, result->lifetime());
 	//
 	// Using that instead
 	result->setDuration(

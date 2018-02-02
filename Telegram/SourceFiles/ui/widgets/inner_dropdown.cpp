@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/widgets/inner_dropdown.h"
 
@@ -247,7 +234,7 @@ void InnerDropdown::prepareCache() {
 	auto showAnimation = base::take(_a_show);
 	auto showAnimationData = base::take(_showAnimation);
 	showChildren();
-	_cache = myGrab(this);
+	_cache = GrabWidget(this);
 	_showAnimation = base::take(showAnimationData);
 	_a_show = base::take(showAnimation);
 	if (_a_show.animating()) {
@@ -305,7 +292,7 @@ void InnerDropdown::startShowAnimation() {
 }
 
 QImage InnerDropdown::grabForPanelAnimation() {
-	myEnsureResized(this);
+	SendPendingMoveResizeEvents(this);
 	auto result = QImage(size() * cIntRetinaFactor(), QImage::Format_ARGB32_Premultiplied);
 	result.setDevicePixelRatio(cRetinaFactor());
 	result.fill(Qt::transparent);

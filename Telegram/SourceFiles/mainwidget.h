@@ -1,26 +1,12 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "storage/localimageloader.h"
 #include "core/single_timer.h"
 #include "base/weak_ptr.h"
 #include "ui/rp_widget.h"
@@ -32,6 +18,7 @@ class DialogsWidget;
 class HistoryWidget;
 class HistoryHider;
 class StackItem;
+struct FileLoadResult;
 
 namespace Notify {
 struct PeerUpdate;
@@ -79,13 +66,6 @@ namespace Layout {
 class ItemBase;
 } // namespace Layout
 } // namespace InlineBots
-
-enum class DragState {
-	None = 0x00,
-	Files = 0x01,
-	PhotoFiles = 0x02,
-	Image = 0x03,
-};
 
 class MainWidget : public Ui::RpWidget, public RPCSender, private base::Subscriber {
 	Q_OBJECT
@@ -166,7 +146,7 @@ public:
 	QPixmap grabForShowAnimation(const Window::SectionSlideParams &params);
 	void checkMainSectionToLayer();
 
-	void onSendFileConfirm(const FileLoadResultPtr &file);
+	void onSendFileConfirm(const std::shared_ptr<FileLoadResult> &file);
 	bool onSendSticker(DocumentData *sticker);
 
 	void destroyData();
@@ -198,6 +178,7 @@ public:
 		not_null<PeerData*> peer,
 		const QString &url,
 		const QString &text);
+	void replyToItem(not_null<HistoryItem*> item);
 	bool onInlineSwitchChosen(const PeerId &peer, const QString &botAndQuery);
 	bool onSendPaths(const PeerId &peer);
 	void onFilesOrForwardDrop(const PeerId &peer, const QMimeData *data);
@@ -207,8 +188,6 @@ public:
 	void dialogsActivate();
 
 	void deletePhotoLayer(PhotoData *photo);
-
-	DragState getDragState(const QMimeData *mime);
 
 	bool leaveChatFailed(PeerData *peer, const RPCError &e);
 	void deleteHistoryAfterLeave(PeerData *peer, const MTPUpdates &updates);
@@ -232,9 +211,6 @@ public:
 	bool addParticipantsFail(
 		not_null<ChannelData*> channel,
 		const RPCError &e); // for multi invite in channels
-
-	void kickParticipant(ChatData *chat, UserData *user);
-	bool kickParticipantFail(ChatData *chat, const RPCError &e);
 
 	void checkPeerHistory(PeerData *peer);
 	void checkedHistory(PeerData *peer, const MTPmessages_Messages &result);

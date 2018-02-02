@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_admin_log_section.h"
 
@@ -294,7 +281,7 @@ not_null<ChannelData*> Widget::channel() const {
 
 QPixmap Widget::grabForShowAnimation(const Window::SectionSlideParams &params) {
 	if (params.withTopBarShadow) _fixedBarShadow->hide();
-	auto result = myGrab(this);
+	auto result = Ui::GrabWidget(this);
 	if (params.withTopBarShadow) _fixedBarShadow->show();
 	return result;
 }
@@ -319,7 +306,7 @@ bool Widget::showInternal(
 
 void Widget::setInternalState(const QRect &geometry, not_null<SectionMemento*> memento) {
 	setGeometry(geometry);
-	myEnsureResized(this);
+	Ui::SendPendingMoveResizeEvents(this);
 	restoreState(memento);
 }
 

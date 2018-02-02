@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_media_grouped.h"
 
@@ -26,27 +13,8 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "storage/storage_shared_media.h"
 #include "lang/lang_keys.h"
 #include "ui/grouped_layout.h"
+#include "ui/text_options.h"
 #include "styles/style_history.h"
-
-namespace {
-
-RectParts GetCornersFromSides(RectParts sides) {
-	const auto convert = [&](
-			RectPart side1,
-			RectPart side2,
-			RectPart corner) {
-		return ((sides & side1) && (sides & side2))
-			? corner
-			: RectPart::None;
-	};
-	return RectPart::None
-		| convert(RectPart::Top, RectPart::Left, RectPart::TopLeft)
-		| convert(RectPart::Top, RectPart::Right, RectPart::TopRight)
-		| convert(RectPart::Bottom, RectPart::Left, RectPart::BottomLeft)
-		| convert(RectPart::Bottom, RectPart::Right, RectPart::BottomRight);
-}
-
-} // namespace
 
 HistoryGroupedMedia::Element::Element(not_null<HistoryItem*> item)
 : item(item) {
@@ -60,6 +28,12 @@ HistoryGroupedMedia::HistoryGroupedMedia(
 	const auto result = applyGroup(others);
 
 	Ensures(result);
+}
+
+std::unique_ptr<HistoryMedia> HistoryGroupedMedia::clone(
+		not_null<HistoryItem*> newParent,
+		not_null<HistoryItem*> realParent) const {
+	return main()->clone(newParent, realParent);
 }
 
 void HistoryGroupedMedia::initDimensions() {
@@ -77,7 +51,7 @@ void HistoryGroupedMedia::initDimensions() {
 		sizes.push_back(media->sizeForGrouping());
 	}
 
-	const auto layout = Data::LayoutMediaGroup(
+	const auto layout = Ui::LayoutMediaGroup(
 		sizes,
 		st::historyGroupWidthMax,
 		st::historyGroupWidthMin,
@@ -171,7 +145,7 @@ void HistoryGroupedMedia::draw(
 			: IsGroupItemSelection(selection, i)
 			? FullSelection
 			: TextSelection();
-		auto corners = GetCornersFromSides(element.sides);
+		auto corners = Ui::GetCornersFromSides(element.sides);
 		if (!isBubbleTop()) {
 			corners &= ~(RectPart::TopLeft | RectPart::TopRight);
 		}
@@ -409,6 +383,23 @@ Storage::SharedMediaTypesMask HistoryGroupedMedia::sharedMediaTypes() const {
 	return main()->sharedMediaTypes();
 }
 
+void HistoryGroupedMedia::updateSentMedia(const MTPMessageMedia &media) {
+	return main()->updateSentMedia(media);
+}
+
+bool HistoryGroupedMedia::needReSetInlineResultMedia(
+		const MTPMessageMedia &media) {
+	return main()->needReSetInlineResultMedia(media);
+}
+
+PhotoData *HistoryGroupedMedia::getPhoto() const {
+	return main()->getPhoto();
+}
+
+DocumentData *HistoryGroupedMedia::getDocument() const {
+	return main()->getDocument();
+}
+
 HistoryMessageEdited *HistoryGroupedMedia::displayedEditBadge() const {
 	if (!_caption.isEmpty()) {
 		return _elements.front().item->Get<HistoryMessageEdited>();
@@ -438,12 +429,16 @@ void HistoryGroupedMedia::updateNeedBubbleState() {
 	_caption.setText(
 		st::messageTextStyle,
 		captionText.text + _parent->skipBlock(),
-		itemTextNoMonoOptions(_parent));
+		Ui::ItemTextNoMonoOptions(_parent));
 	_needBubble = computeNeedBubble();
 }
 
 bool HistoryGroupedMedia::needsBubble() const {
 	return _needBubble;
+}
+
+bool HistoryGroupedMedia::canEditCaption() const {
+	return main()->canEditCaption();
 }
 
 bool HistoryGroupedMedia::computeNeedBubble() const {

@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/window_peer_menu.h"
 
@@ -161,11 +148,11 @@ void Filler::addPinToggle() {
 
 	auto lifetime = Notify::PeerUpdateViewer(
 		peer,
-		Notify::PeerUpdate::Flag::PinnedChanged)
-		| rpl::start_with_next([peer, pinAction, pinText] {
-			auto isPinned = App::history(peer)->isPinnedDialog();
-			pinAction->setText(pinText(isPinned));
-		});
+		Notify::PeerUpdate::Flag::PinnedChanged
+	) | rpl::start_with_next([peer, pinAction, pinText] {
+		auto isPinned = App::history(peer)->isPinnedDialog();
+		pinAction->setText(pinText(isPinned));
+	});
 
 	Ui::AttachAsChild(pinAction, std::move(lifetime));
 }
@@ -202,12 +189,13 @@ void Filler::addNotifications() {
 
 	auto lifetime = Notify::PeerUpdateViewer(
 		_peer,
-		Notify::PeerUpdate::Flag::NotificationsEnabled)
-		| rpl::map([=] { return peer->isMuted(); })
-		| rpl::distinct_until_changed()
-		| rpl::start_with_next([=](bool muted) {
-			muteAction->setText(muteText(muted));
-		});
+		Notify::PeerUpdate::Flag::NotificationsEnabled
+	) | rpl::map([=] {
+		return peer->isMuted();
+	}) | rpl::distinct_until_changed(
+	) | rpl::start_with_next([=](bool muted) {
+		muteAction->setText(muteText(muted));
+	});
 
 	Ui::AttachAsChild(muteAction, std::move(lifetime));
 }
@@ -248,10 +236,10 @@ void Filler::addBlockUser(not_null<UserData*> user) {
 
 	auto lifetime = Notify::PeerUpdateViewer(
 		_peer,
-		Notify::PeerUpdate::Flag::UserIsBlocked)
-		| rpl::start_with_next([=] {
-			blockAction->setText(blockText(user));
-		});
+		Notify::PeerUpdate::Flag::UserIsBlocked
+	) | rpl::start_with_next([=] {
+		blockAction->setText(blockText(user));
+	});
 
 	Ui::AttachAsChild(blockAction, std::move(lifetime));
 

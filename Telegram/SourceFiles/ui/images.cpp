@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/images.h"
 
@@ -58,6 +45,13 @@ const QPixmap &circleMask(int width, int height) {
 }
 
 } // namespace
+
+QPixmap PixmapFast(QImage &&image) {
+	Expects(image.format() == QImage::Format_ARGB32_Premultiplied
+		|| image.format() == QImage::Format_RGB32);
+
+	return QPixmap::fromImage(std::move(image), Qt::NoFormatConversion);
+}
 
 QImage prepareBlur(QImage img) {
 	auto ratio = img.devicePixelRatio();
@@ -191,24 +185,16 @@ void prepareCircle(QImage &img) {
 	p.drawPixmap(0, 0, mask);
 }
 
-void prepareRound(QImage &image, ImageRoundRadius radius, RectParts corners) {
-	if (!static_cast<int>(corners)) {
-		return;
-	} else if (radius == ImageRoundRadius::Ellipse) {
-		Assert((corners & RectPart::AllCorners) == RectPart::AllCorners);
-		prepareCircle(image);
+void prepareRound(
+		QImage &image,
+		QImage *cornerMasks,
+		RectParts corners,
+		QRect target) {
+	if (target.isNull()) {
+		target = QRect(QPoint(), image.size());
+	} else {
+		Assert(QRect(QPoint(), image.size()).contains(target));
 	}
-	Assert(!image.isNull());
-
-	image.setDevicePixelRatio(cRetinaFactor());
-	image = std::move(image).convertToFormat(QImage::Format_ARGB32_Premultiplied);
-	Assert(!image.isNull());
-
-	auto masks = App::cornersMask(radius);
-	prepareRound(image, masks, corners);
-}
-
-void prepareRound(QImage &image, QImage *cornerMasks, RectParts corners) {
 	auto cornerWidth = cornerMasks[0].width();
 	auto cornerHeight = cornerMasks[0].height();
 	auto imageWidth = image.width();
@@ -222,10 +208,10 @@ void prepareRound(QImage &image, QImage *cornerMasks, RectParts corners) {
 	Assert(image.bytesPerLine() == (imageIntsPerLine << 2));
 
 	auto ints = reinterpret_cast<uint32*>(image.bits());
-	auto intsTopLeft = ints;
-	auto intsTopRight = ints + imageWidth - cornerWidth;
-	auto intsBottomLeft = ints + (imageHeight - cornerHeight) * imageWidth;
-	auto intsBottomRight = ints + (imageHeight - cornerHeight + 1) * imageWidth - cornerWidth;
+	auto intsTopLeft = ints + target.x() + target.y() * imageWidth;
+	auto intsTopRight = ints + target.x() + target.width() - cornerWidth + target.y() * imageWidth;
+	auto intsBottomLeft = ints + target.x() + (target.y() + target.height() - cornerHeight) * imageWidth;
+	auto intsBottomRight = ints + target.x() + target.width() - cornerWidth + (target.y() + target.height() - cornerHeight) * imageWidth;
 	auto maskCorner = [imageWidth, imageHeight, imageIntsPerPixel, imageIntsPerLine](uint32 *imageInts, const QImage &mask) {
 		auto maskWidth = mask.width();
 		auto maskHeight = mask.height();
@@ -252,6 +238,28 @@ void prepareRound(QImage &image, QImage *cornerMasks, RectParts corners) {
 	if (corners & RectPart::TopRight) maskCorner(intsTopRight, cornerMasks[1]);
 	if (corners & RectPart::BottomLeft) maskCorner(intsBottomLeft, cornerMasks[2]);
 	if (corners & RectPart::BottomRight) maskCorner(intsBottomRight, cornerMasks[3]);
+}
+
+void prepareRound(
+		QImage &image,
+		ImageRoundRadius radius,
+		RectParts corners,
+		QRect target) {
+	if (!static_cast<int>(corners)) {
+		return;
+	} else if (radius == ImageRoundRadius::Ellipse) {
+		Assert((corners & RectPart::AllCorners) == RectPart::AllCorners);
+		Assert(target.isNull());
+		prepareCircle(image);
+	}
+	Assert(!image.isNull());
+
+	image.setDevicePixelRatio(cRetinaFactor());
+	image = std::move(image).convertToFormat(QImage::Format_ARGB32_Premultiplied);
+	Assert(!image.isNull());
+
+	auto masks = App::cornersMask(radius);
+	prepareRound(image, masks, corners, target);
 }
 
 QImage prepareColored(style::color add, QImage image) {

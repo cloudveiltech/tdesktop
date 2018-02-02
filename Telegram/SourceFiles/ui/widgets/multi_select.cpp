@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/widgets/multi_select.h"
 
@@ -25,6 +12,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "ui/widgets/input_fields.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/effects/cross_animation.h"
+#include "ui/text_options.h"
 #include "lang/lang_keys.h"
 
 namespace Ui {
@@ -43,7 +31,7 @@ MultiSelect::Item::Item(const style::MultiSelectItem &st, uint64 id, const QStri
 }
 
 void MultiSelect::Item::setText(const QString &text) {
-	_text.setText(_st.style, text, _textNameOptions);
+	_text.setText(_st.style, text, NameTextOptions());
 	_width = _st.height + _st.padding.left() + _text.maxWidth() + _st.padding.right();
 	accumulate_min(_width, _st.maxWidth);
 }

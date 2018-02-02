@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/layer_widget.h"
 
@@ -405,7 +392,7 @@ void LayerStackWidget::setCacheImages() {
 	auto bodyCache = QPixmap(), mainMenuCache = QPixmap();
 	auto specialLayerCache = QPixmap();
 	if (_specialLayer) {
-		myEnsureResized(_specialLayer);
+		Ui::SendPendingMoveResizeEvents(_specialLayer);
 		auto sides = RectPart::Left | RectPart::Right;
 		if (_specialLayer->y() > 0) {
 			sides |= RectPart::Top;
@@ -425,7 +412,7 @@ void LayerStackWidget::setCacheImages() {
 	if (_mainMenu) {
 		setAttribute(Qt::WA_OpaquePaintEvent, false);
 		hideChildren();
-		bodyCache = myGrab(App::wnd()->bodyWidget());
+		bodyCache = Ui::GrabWidget(App::wnd()->bodyWidget());
 		showChildren();
 		mainMenuCache = Ui::Shadow::grab(_mainMenu, st::boxRoundShadow, RectPart::Right);
 	}
@@ -733,7 +720,7 @@ void LayerStackWidget::initChildLayer(LayerWidget *layer) {
 	layer->setClosedCallback([this, layer] { onLayerClosed(layer); });
 	layer->setResizedCallback([this] { onLayerResized(); });
 	connect(layer, SIGNAL(destroyed(QObject*)), this, SLOT(onLayerDestroyed(QObject*)));
-	myEnsureResized(layer);
+	Ui::SendPendingMoveResizeEvents(layer);
 	layer->parentResized();
 }
 

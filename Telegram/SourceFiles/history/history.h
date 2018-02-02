@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
@@ -29,8 +16,6 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "base/variant.h"
 #include "base/flat_set.h"
 #include "base/flags.h"
-
-void HistoryInit();
 
 class HistoryItem;
 using HistoryItemsList = std::vector<not_null<HistoryItem*>>;
@@ -173,10 +158,9 @@ struct Draft;
 class HistoryMedia;
 class HistoryMessage;
 
-enum class AddToUnreadMentionsMethod {
+enum class UnreadMentionType {
 	New, // when new message is added to history
-	Front, // when old messages slice was received
-	Back, // when new messages slice was received and it is the last one, we index all media
+	Existing, // when some messages slice was received
 };
 
 namespace Dialogs {
@@ -234,7 +218,7 @@ public:
 	void addOlderSlice(const QVector<MTPMessage> &slice);
 	void addNewerSlice(const QVector<MTPMessage> &slice);
 
-	void newItemAdded(HistoryItem *item);
+	void newItemAdded(not_null<HistoryItem*> item);
 
 	int countUnread(MsgId upTo);
 	void updateShowFrom();
@@ -369,7 +353,7 @@ public:
 		return (getUnreadMentionsCount() > 0);
 	}
 	void setUnreadMentionsCount(int count);
-	bool addToUnreadMentions(MsgId msgId, AddToUnreadMentionsMethod method);
+	bool addToUnreadMentions(MsgId msgId, UnreadMentionType type);
 	void eraseFromUnreadMentions(MsgId msgId);
 	void addUnreadMentionsSlice(const MTPmessages_Messages &result);
 
@@ -609,11 +593,8 @@ public:
 
 private:
 	friend class History;
-	HistoryItem* addNewChannelMessage(const MTPMessage &msg, NewMessageType type);
-	HistoryItem *addNewToBlocks(const MTPMessage &msg, NewMessageType type);
 
 	void checkMaxReadMessageDate();
-
 	void cleared(bool leaveItems);
 
 	QDateTime _maxReadMessageDate;

@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history.h"
 
@@ -39,6 +26,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "storage/storage_facade.h"
 #include "storage/storage_shared_media.h"
 #include "data/data_channel_admins.h"
+#include "ui/text_options.h"
 #include "core/crash_reports.h"
 
 namespace {
@@ -62,18 +50,13 @@ auto GlobalPinnedIndex = 0;
 
 HistoryItem *createUnsupportedMessage(History *history, MsgId msgId, MTPDmessage::Flags flags, MsgId replyTo, int32 viaBotId, QDateTime date, int32 from) {
 	auto text = TextWithEntities { lng_message_unsupported(lt_link, qsl("https://desktop.telegram.org")) };
-	TextUtilities::ParseEntities(text, _historyTextNoMonoOptions.flags);
+	TextUtilities::ParseEntities(text, Ui::ItemTextNoMonoOptions().flags);
 	text.entities.push_front(EntityInText(EntityInTextItalic, 0, text.text.size()));
 	flags &= ~MTPDmessage::Flag::f_post_author;
 	return HistoryMessage::create(history, msgId, flags, replyTo, viaBotId, date, from, QString(), text);
 }
 
 } // namespace
-
-void HistoryInit() {
-	HistoryInitMessages();
-	HistoryInitMedia();
-}
 
 History::History(const PeerId &peerId)
 : peer(App::peer(peerId))
@@ -364,7 +347,10 @@ bool History::updateSendActionNeedsAnimating(TimeMs ms, bool force) {
 		}
 		if (_sendActionString != newTypingString) {
 			_sendActionString = newTypingString;
-			_sendActionText.setText(st::dialogsTextStyle, _sendActionString, _textNameOptions);
+			_sendActionText.setText(
+				st::dialogsTextStyle,
+				_sendActionString,
+				Ui::NameTextOptions());
 		}
 	}
 	auto result = (!_typing.isEmpty() || !_sendActions.isEmpty());
@@ -542,27 +528,6 @@ void ChannelHistory::checkMaxReadMessageDate() {
 
 const QDateTime &ChannelHistory::maxReadMessageDate() {
 	return _maxReadMessageDate;
-}
-
-HistoryItem *ChannelHistory::addNewChannelMessage(const MTPMessage &msg, NewMessageType type) {
-	if (type == NewMessageExisting) return addToHistory(msg);
-
-	return addNewToBlocks(msg, type);
-}
-
-HistoryItem *ChannelHistory::addNewToBlocks(const MTPMessage &msg, NewMessageType type) {
-	if (!loadedAtBottom()) {
-		HistoryItem *item = addToHistory(msg);
-		if (item) {
-			setLastMessage(item);
-			if (type == NewMessageUnread) {
-				newItemAdded(item);
-			}
-		}
-		return item;
-	}
-
-	return addNewToLastBlock(msg, type);
 }
 
 void ChannelHistory::cleared(bool leaveItems) {
@@ -1115,28 +1080,26 @@ not_null<HistoryItem*> History::addNewService(MsgId msgId, QDateTime date, const
 }
 
 HistoryItem *History::addNewMessage(const MTPMessage &msg, NewMessageType type) {
-	if (isChannel()) {
-		return asChannelHistory()->addNewChannelMessage(msg, type);
-	}
-
 	if (type == NewMessageExisting) {
 		return addToHistory(msg);
 	}
 	if (!loadedAtBottom() || peer->migrateTo()) {
-		const auto item = addToHistory(msg);
-		if (item) {
+		if (const auto item = addToHistory(msg)) {
 			setLastMessage(item);
 			if (type == NewMessageUnread) {
 				newItemAdded(item);
 			}
+			return item;
 		}
-		return item;
+		return nullptr;
 	}
 
 	return addNewToLastBlock(msg, type);
 }
 
 HistoryItem *History::addNewToLastBlock(const MTPMessage &msg, NewMessageType type) {
+	Expects(type != NewMessageExisting);
+
 	const auto applyServiceAction = (type == NewMessageUnread);
 	const auto detachExistingItem = (type != NewMessageLast);
 	const auto item = createItem(msg, applyServiceAction, detachExistingItem);
@@ -1187,15 +1150,17 @@ void History::setUnreadMentionsCount(int count) {
 
 bool History::addToUnreadMentions(
 		MsgId msgId,
-		AddToUnreadMentionsMethod method) {
-	auto allLoaded = _unreadMentionsCount ? (_unreadMentions.size() >= *_unreadMentionsCount) : false;
+		UnreadMentionType type) {
+	auto allLoaded = _unreadMentionsCount
+		? (_unreadMentions.size() >= *_unreadMentionsCount)
+		: false;
 	if (allLoaded) {
-		if (method == AddToUnreadMentionsMethod::New) {
+		if (type == UnreadMentionType::New) {
 			++*_unreadMentionsCount;
 			_unreadMentions.insert(msgId);
 			return true;
 		}
-	} else if (!_unreadMentions.empty() && method != AddToUnreadMentionsMethod::New) {
+	} else if (!_unreadMentions.empty() && type != UnreadMentionType::New) {
 		_unreadMentions.insert(msgId);
 		return true;
 	}
@@ -1274,24 +1239,15 @@ not_null<HistoryItem*> History::addNewItem(not_null<HistoryItem*> adding, bool n
 	if (groupFrom != groupTill || groupFrom->groupId()) {
 		recountGrouping(groupFrom, groupTill);
 	}
-
-	if (IsServerMsgId(adding->id)) {
-		adding->addToUnreadMentions(AddToUnreadMentionsMethod::New);
-		if (auto sharedMediaTypes = adding->sharedMediaTypes()) {
-			if (newMsg) {
-				Auth().storage().add(Storage::SharedMediaAddNew(
-					peer->id,
-					sharedMediaTypes,
-					adding->id));
-			} else {
-				auto from = loadedAtTop() ? 0 : minMsgId();
-				auto till = loadedAtBottom() ? ServerMaxMsgId : maxMsgId();
-				Auth().storage().add(Storage::SharedMediaAddExisting(
-					peer->id,
-					sharedMediaTypes,
-					adding->id,
-					{ from, till }));
-			}
+	if (!newMsg && IsServerMsgId(adding->id)) {
+		if (const auto sharedMediaTypes = adding->sharedMediaTypes()) {
+			auto from = loadedAtTop() ? 0 : minMsgId();
+			auto till = loadedAtBottom() ? ServerMaxMsgId : maxMsgId();
+			Auth().storage().add(Storage::SharedMediaAddExisting(
+				peer->id,
+				sharedMediaTypes,
+				adding->id,
+				{ from, till }));
 		}
 	}
 	if (adding->from()->id) {
@@ -1399,8 +1355,9 @@ void History::clearSendAction(not_null<UserData*> from) {
 	}
 }
 
-void History::newItemAdded(HistoryItem *item) {
+void History::newItemAdded(not_null<HistoryItem*> item) {
 	App::checkImageCacheSize();
+	item->indexAsNewItem();
 	if (const auto from = item->from() ? item->from()->asUser() : nullptr) {
 		if (from == item->author()) {
 			clearSendAction(from);
@@ -1409,7 +1366,9 @@ void History::newItemAdded(HistoryItem *item) {
 		from->madeAction(itemServerTime.v);
 	}
 	if (item->out()) {
-		if (unreadBar) unreadBar->destroyUnreadBar();
+		if (unreadBar) {
+			unreadBar->destroyUnreadBar();
+		}
 		if (!item->unread()) {
 			outboxRead(item);
 		}
@@ -1599,7 +1558,7 @@ void History::addOlderSlice(const QVector<MTPMessage> &slice) {
 		}
 		for (auto i = block->items.size(); i > 0; --i) {
 			auto item = block->items[i - 1];
-			item->addToUnreadMentions(AddToUnreadMentionsMethod::Front);
+			item->addToUnreadMentions(UnreadMentionType::Existing);
 			if (item->from()->id) {
 				if (lastAuthors) { // chats
 					if (auto user = item->from()->asUser()) {
@@ -1768,9 +1727,9 @@ void History::checkAddAllToUnreadMentions() {
 		return;
 	}
 
-	for_const (auto block, blocks) {
-		for_const (auto item, block->items) {
-			item->addToUnreadMentions(AddToUnreadMentionsMethod::Back);
+	for (const auto block : blocks) {
+		for (const auto item : block->items) {
+			item->addToUnreadMentions(UnreadMentionType::Existing);
 		}
 	}
 }
@@ -2417,11 +2376,11 @@ int History::resizeGetHeight(int newWidth) {
 }
 
 ChannelHistory *History::asChannelHistory() {
-	return isChannel() ? static_cast<ChannelHistory*>(this) : 0;
+	return isChannel() ? static_cast<ChannelHistory*>(this) : nullptr;
 }
 
 const ChannelHistory *History::asChannelHistory() const {
-	return isChannel() ? static_cast<const ChannelHistory*>(this) : 0;
+	return isChannel() ? static_cast<const ChannelHistory*>(this) : nullptr;
 }
 
 not_null<History*> History::migrateToOrMe() const {

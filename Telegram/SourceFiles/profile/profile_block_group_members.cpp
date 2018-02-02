@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "profile/profile_block_group_members.h"
 
@@ -116,6 +103,7 @@ void GroupMembersWidget::restrictUser(not_null<UserData*> user) {
 void GroupMembersWidget::removePeer(PeerData *selectedPeer) {
 	auto user = selectedPeer->asUser();
 	Assert(user != nullptr);
+
 	auto text = lng_profile_sure_kick(lt_user, user->firstName);
 	auto currentRestrictedRights = [&]() -> MTPChannelBannedRights {
 		if (auto channel = peer()->asMegagroup()) {
@@ -128,10 +116,14 @@ void GroupMembersWidget::removePeer(PeerData *selectedPeer) {
 	}();
 	Ui::show(Box<ConfirmBox>(text, lang(lng_box_remove), [user, currentRestrictedRights, peer = peer()] {
 		Ui::hideLayer();
-		if (auto chat = peer->asChat()) {
-			if (App::main()) App::main()->kickParticipant(chat, user);
-		} else if (auto channel = peer->asChannel()) {
-			Auth().api().kickParticipant(channel, user, currentRestrictedRights);
+		if (const auto chat = peer->asChat()) {
+			Auth().api().kickParticipant(chat, user);
+			Ui::showPeerHistory(chat->id, ShowAtTheEndMsgId);
+		} else if (const auto channel = peer->asChannel()) {
+			Auth().api().kickParticipant(
+				channel,
+				user,
+				currentRestrictedRights);
 		}
 	}));
 }

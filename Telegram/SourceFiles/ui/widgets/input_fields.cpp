@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/widgets/input_fields.h"
 
@@ -244,7 +231,7 @@ bool FlatTextarea::heightAutoupdated() {
 	if (_minHeight < 0 || _maxHeight < 0 || _inHeightCheck) return false;
 	_inHeightCheck = true;
 
-	myEnsureResized(this);
+	SendPendingMoveResizeEvents(this);
 
 	int newh = ceil(document()->size().height()) + 2 * fakeMargin();
 	if (newh > _maxHeight) {
@@ -1824,7 +1811,7 @@ bool InputArea::heightAutoupdated() {
 	if (_st.heightMin < 0 || _st.heightMax < 0 || _inHeightCheck) return false;
 	_inHeightCheck = true;
 
-	myEnsureResized(this);
+	SendPendingMoveResizeEvents(this);
 
 	int newh = qCeil(_inner->document()->size().height()) + _st.textMargins.top() + _st.textMargins.bottom();
 	if (newh > _st.heightMax) {
@@ -2465,6 +2452,24 @@ void InputArea::Inner::contextMenuEvent(QContextMenuEvent *e) {
 	if (auto menu = createStandardContextMenu()) {
 		(new Ui::PopupMenu(nullptr, menu))->popup(e->globalPos());
 	}
+}
+
+bool InputArea::Inner::canInsertFromMimeData(const QMimeData *source) const {
+	if (source
+		&& f()->_mimeDataHook
+		&& f()->_mimeDataHook(source, MimeAction::Check)) {
+		return true;
+	}
+	return QTextEdit::canInsertFromMimeData(source);
+}
+
+void InputArea::Inner::insertFromMimeData(const QMimeData *source) {
+	if (source
+		&& f()->_mimeDataHook
+		&& f()->_mimeDataHook(source, MimeAction::Insert)) {
+		return;
+	}
+	return QTextEdit::insertFromMimeData(source);
 }
 
 void InputArea::resizeEvent(QResizeEvent *e) {

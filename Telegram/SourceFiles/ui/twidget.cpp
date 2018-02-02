@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "twidget.h"
 
@@ -118,6 +105,7 @@ QString GetOverride(const QString &familyName) {
 
 } // Fonts
 
+namespace Ui {
 namespace {
 
 class WidgetCreator : public QWidget {
@@ -182,47 +170,60 @@ void SendPendingEventsRecursive(QWidget *target, bool parentHiddenFlag) {
 
 } // namespace
 
-void myEnsureResized(QWidget *target) {
-	if (!target) {
-		return;
-	}
+void SendPendingMoveResizeEvents(not_null<QWidget*> target) {
 	CreateWidgetStateRecursive(target);
 	SendPendingEventsRecursive(target, !target->isVisible());
 }
 
-QPixmap myGrab(TWidget *target, QRect rect, QColor bg) {
-	myEnsureResized(target);
-	if (rect.isNull()) rect = target->rect();
-
-    auto result = QPixmap(rect.size() * cIntRetinaFactor());
-    result.setDevicePixelRatio(cRetinaFactor());
-	if (!target->testAttribute(Qt::WA_OpaquePaintEvent)) {
-		result.fill(bg);
+QPixmap GrabWidget(not_null<TWidget*> target, QRect rect, QColor bg) {
+	SendPendingMoveResizeEvents(target);
+	if (rect.isNull()) {
+		rect = target->rect();
 	}
 
-	target->grabStart();
-	target->render(&result, QPoint(0, 0), rect, QWidget::DrawChildren | QWidget::IgnoreMask);
-	target->grabFinish();
-
-	return result;
-}
-
-QImage myGrabImage(TWidget *target, QRect rect, QColor bg) {
-	myEnsureResized(target);
-	if (rect.isNull()) rect = target->rect();
-
-	auto result = QImage(rect.size() * cIntRetinaFactor(), QImage::Format_ARGB32_Premultiplied);
+	auto result = QPixmap(rect.size() * cIntRetinaFactor());
 	result.setDevicePixelRatio(cRetinaFactor());
 	if (!target->testAttribute(Qt::WA_OpaquePaintEvent)) {
 		result.fill(bg);
 	}
 
 	target->grabStart();
-	target->render(&result, QPoint(0, 0), rect, QWidget::DrawChildren | QWidget::IgnoreMask);
+	target->render(
+		&result,
+		QPoint(0, 0),
+		rect,
+		QWidget::DrawChildren | QWidget::IgnoreMask);
 	target->grabFinish();
 
 	return result;
 }
+
+QImage GrabWidgetToImage(not_null<TWidget*> target, QRect rect, QColor bg) {
+	Ui::SendPendingMoveResizeEvents(target);
+	if (rect.isNull()) {
+		rect = target->rect();
+	}
+
+	auto result = QImage(
+		rect.size() * cIntRetinaFactor(),
+		QImage::Format_ARGB32_Premultiplied);
+	result.setDevicePixelRatio(cRetinaFactor());
+	if (!target->testAttribute(Qt::WA_OpaquePaintEvent)) {
+		result.fill(bg);
+	}
+
+	target->grabStart();
+	target->render(
+		&result,
+		QPoint(0, 0),
+		rect,
+		QWidget::DrawChildren | QWidget::IgnoreMask);
+	target->grabFinish();
+
+	return result;
+}
+
+} // namespace Ui
 
 void sendSynteticMouseEvent(QWidget *widget, QEvent::Type type, Qt::MouseButton button, const QPoint &globalPoint) {
 	if (auto windowHandle = widget->window()->windowHandle()) {

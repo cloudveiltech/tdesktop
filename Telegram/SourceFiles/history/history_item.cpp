@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_item.h"
 
@@ -31,14 +18,17 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "styles/style_dialogs.h"
 #include "styles/style_history.h"
 #include "ui/effects/ripple_animation.h"
+#include "ui/text_options.h"
 #include "storage/file_upload.h"
 #include "storage/storage_facade.h"
 #include "storage/storage_shared_media.h"
 #include "auth_session.h"
+#include "apiwrap.h"
 #include "media/media_audio.h"
 #include "messenger.h"
 #include "mainwindow.h"
 #include "window/window_controller.h"
+#include "core/crash_reports.h"
 
 namespace {
 
@@ -294,18 +284,20 @@ void HistoryItem::destroy() {
 		// All this must be done for all items manually in History::clear(false)!
 		eraseFromUnreadMentions();
 		if (IsServerMsgId(id)) {
-			if (auto types = sharedMediaTypes()) {
+			if (const auto types = sharedMediaTypes()) {
 				Auth().storage().remove(Storage::SharedMediaRemoveOne(
 					history()->peer->id,
 					types,
 					id));
 			}
+		} else {
+			Auth().api().cancelLocalItem(this);
 		}
 
 		auto wasAtBottom = history()->loadedAtBottom();
 		_history->removeNotification(this);
 		detach();
-		if (auto channel = history()->peer->asChannel()) {
+		if (const auto channel = history()->peer->asChannel()) {
 			if (channel->pinnedMessageId() == id) {
 				channel->clearPinnedMessage();
 			}
@@ -348,6 +340,20 @@ void HistoryItem::detachFast() {
 
 Storage::SharedMediaTypesMask HistoryItem::sharedMediaTypes() const {
 	return {};
+}
+
+void HistoryItem::indexAsNewItem() {
+	if (IsServerMsgId(id)) {
+		CrashReports::SetAnnotation("addToUnreadMentions", QString::number(id));
+		addToUnreadMentions(UnreadMentionType::New);
+		CrashReports::ClearAnnotation("addToUnreadMentions");
+		if (const auto types = sharedMediaTypes()) {
+			Auth().storage().add(Storage::SharedMediaAddNew(
+				history()->peer->id,
+				types,
+				id));
+		}
+	}
 }
 
 void HistoryItem::previousItemChanged() {
@@ -1017,7 +1023,7 @@ void HistoryItem::drawInDialog(
 		Text &cache) const {
 	if (cacheFor != this) {
 		cacheFor = this;
-		cache.setText(st::dialogsTextStyle, inDialogsText(way), _textDlgOptions);
+		cache.setText(st::dialogsTextStyle, inDialogsText(way), Ui::DialogTextOptions());
 	}
 	if (r.width()) {
 		p.setTextPalette(active ? st::dialogsTextPaletteActive : (selected ? st::dialogsTextPaletteOver : st::dialogsTextPalette));

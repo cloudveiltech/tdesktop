@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
@@ -31,23 +18,25 @@ template <typename ChangeType, typename Error, typename Generator>
 inline auto FlagsValueWithMask(
 		rpl::producer<ChangeType, Error, Generator> &&value,
 		typename ChangeType::Type mask) {
-	return std::move(value)
-		| rpl::filter([mask](const ChangeType &change) {
-			return change.diff & mask;
-		})
-		| rpl::map([mask](const ChangeType &change) {
-			return change.value & mask;
-		});
+	return std::move(
+		value
+	) | rpl::filter([mask](const ChangeType &change) {
+		return change.diff & mask;
+	}) | rpl::map([mask](const ChangeType &change) {
+		return change.value & mask;
+	});
 }
 
 template <typename ChangeType, typename Error, typename Generator>
 inline auto SingleFlagValue(
 		rpl::producer<ChangeType, Error, Generator> &&value,
 		typename ChangeType::Enum flag) {
-	return FlagsValueWithMask(std::move(value), flag)
-		| rpl::map([flag](typename ChangeType::Type value) {
-			return !!value;
-		});
+	return FlagsValueWithMask(
+		std::move(value),
+		flag
+	) | rpl::map([flag](typename ChangeType::Type value) {
+		return !!value;
+	});
 }
 
 template <

@@ -1,27 +1,15 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "auth_session.h"
 
 #include "apiwrap.h"
 #include "messenger.h"
+#include "core/changelogs.h"
 #include "storage/file_download.h"
 #include "storage/file_upload.h"
 #include "storage/localstorage.h"
@@ -29,10 +17,12 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "storage/serialize_common.h"
 #include "history/history_item_components.h"
 #include "window/notifications_manager.h"
+#include "window/themes/window_theme.h"
 #include "platform/platform_specific.h"
 #include "calls/calls_instance.h"
 #include "window/section_widget.h"
 #include "chat_helpers/tabbed_selector.h"
+#include "boxes/send_files_box.h"
 
 namespace {
 
@@ -41,7 +31,8 @@ constexpr auto kAutoLockTimeoutLateMs = TimeMs(3000);
 } // namespace
 
 AuthSessionData::Variables::Variables()
-: selectorTab(ChatHelpers::SelectorTab::Emoji)
+: sendFilesWay(SendFilesWay::Album)
+, selectorTab(ChatHelpers::SelectorTab::Emoji)
 , floatPlayerColumn(Window::Column::Second)
 , floatPlayerCorner(RectPart::TopRight) {
 }
@@ -80,6 +71,7 @@ QByteArray AuthSessionData::serialize() const {
 			1000000));
 		stream << qint32(_variables.thirdColumnWidth.current());
 		stream << qint32(_variables.thirdSectionExtendedBy);
+		stream << qint32(_variables.sendFilesWay);
 	}
 	return result;
 }
@@ -104,6 +96,7 @@ void AuthSessionData::constructFromSerialized(const QByteArray &serialized) {
 	float64 dialogsWidthRatio = _variables.dialogsWidthRatio.current();
 	int thirdColumnWidth = _variables.thirdColumnWidth.current();
 	int thirdSectionExtendedBy = _variables.thirdSectionExtendedBy;
+	qint32 sendFilesWay = static_cast<qint32>(_variables.sendFilesWay);
 	stream >> selectorTab;
 	stream >> lastSeenWarningSeen;
 	if (!stream.atEnd()) {
@@ -189,6 +182,12 @@ void AuthSessionData::constructFromSerialized(const QByteArray &serialized) {
 	if (_variables.thirdSectionInfoEnabled) {
 		_variables.tabbedSelectorSectionEnabled = false;
 	}
+	auto uncheckedSendFilesWay = static_cast<SendFilesWay>(sendFilesWay);
+	switch (uncheckedSendFilesWay) {
+	case SendFilesWay::Album:
+	case SendFilesWay::Photos:
+	case SendFilesWay::Files: _variables.sendFilesWay = uncheckedSendFilesWay;
+	}
 }
 
 void AuthSessionData::markItemLayoutChanged(not_null<const HistoryItem*> item) {
@@ -243,13 +242,12 @@ auto AuthSessionData::megagroupParticipantRemoved() const -> rpl::producer<Megag
 
 rpl::producer<not_null<UserData*>> AuthSessionData::megagroupParticipantRemoved(
 		not_null<ChannelData*> channel) const {
-	return megagroupParticipantRemoved()
-		| rpl::filter([channel](auto updateChannel, auto user) {
-			return (updateChannel == channel);
-		})
-		| rpl::map([](auto updateChannel, auto user) {
-			return user;
-		});
+	return megagroupParticipantRemoved(
+	) | rpl::filter([channel](auto updateChannel, auto user) {
+		return (updateChannel == channel);
+	}) | rpl::map([](auto updateChannel, auto user) {
+		return user;
+	});
 }
 
 void AuthSessionData::addNewMegagroupParticipant(
@@ -264,13 +262,12 @@ auto AuthSessionData::megagroupParticipantAdded() const -> rpl::producer<Megagro
 
 rpl::producer<not_null<UserData*>> AuthSessionData::megagroupParticipantAdded(
 		not_null<ChannelData*> channel) const {
-	return megagroupParticipantAdded()
-		| rpl::filter([channel](auto updateChannel, auto user) {
-			return (updateChannel == channel);
-		})
-		| rpl::map([](auto updateChannel, auto user) {
-			return user;
-		});
+	return megagroupParticipantAdded(
+	) | rpl::filter([channel](auto updateChannel, auto user) {
+		return (updateChannel == channel);
+	}) | rpl::map([](auto updateChannel, auto user) {
+		return user;
+	});
 }
 
 void AuthSessionData::setTabbedSelectorSectionEnabled(bool enabled) {
@@ -400,8 +397,10 @@ AuthSession::AuthSession(UserId userId)
 , _downloader(std::make_unique<Storage::Downloader>())
 , _uploader(std::make_unique<Storage::Uploader>())
 , _storage(std::make_unique<Storage::Facade>())
-, _notifications(std::make_unique<Window::Notifications::System>(this)) {
+, _notifications(std::make_unique<Window::Notifications::System>(this))
+, _changelogs(Core::Changelogs::Create(this)) {
 	Expects(_userId != 0);
+
 	_saveDataTimer.setCallback([this] {
 		Local::writeUserSettings();
 	});
@@ -409,7 +408,7 @@ AuthSession::AuthSession(UserId userId)
 		_shouldLockAt = 0;
 		notifications().updateAll();
 	});
-	_api->start();
+	Window::Theme::Background()->start();
 }
 
 bool AuthSession::Exists() {

@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/special_buttons.h"
 
@@ -74,10 +61,10 @@ void SuggestPhoto(
 	auto box = Ui::show(
 		Box<PhotoCropBox>(image, peerForCrop),
 		LayerOption::KeepOther);
-	box->ready()
-		| rpl::start_with_next(
-			std::forward<Callback>(callback),
-			box->lifetime());
+	box->ready(
+	) | rpl::start_with_next(
+		std::forward<Callback>(callback),
+		box->lifetime());
 }
 
 template <typename Callback>
@@ -367,7 +354,10 @@ QPixmap SendButton::grabContent() {
 	result.fill(Qt::transparent);
 	{
 		Painter p(&result);
-		p.drawPixmap((kWideScale - 1) / 2 * width(), (kWideScale - 1) / 2 * height(), myGrab(this));
+		p.drawPixmap(
+			(kWideScale - 1) / 2 * width(),
+			(kWideScale - 1) / 2 * height(),
+			GrabWidget(this));
 	}
 	return App::pixmapFromImageInPlace(std::move(result));
 }
@@ -498,18 +488,19 @@ void UserpicButton::openPeerPhoto() {
 void UserpicButton::setupPeerViewers() {
 	Notify::PeerUpdateViewer(
 		_peer,
-		Notify::PeerUpdate::Flag::PhotoChanged)
-		| rpl::start_with_next([this] {
-			processNewPeerPhoto();
-			update();
-		}, lifetime());
-	base::ObservableViewer(Auth().downloaderTaskFinished())
-		| rpl::start_with_next([this] {
-			if (_waiting && _peer->userpicLoaded()) {
-				_waiting = false;
-				startNewPhotoShowing();
-			}
-		}, lifetime());
+		Notify::PeerUpdate::Flag::PhotoChanged
+	) | rpl::start_with_next([this] {
+		processNewPeerPhoto();
+		update();
+	}, lifetime());
+	base::ObservableViewer(
+		Auth().downloaderTaskFinished()
+	) | rpl::start_with_next([this] {
+		if (_waiting && _peer->userpicLoaded()) {
+			_waiting = false;
+			startNewPhotoShowing();
+		}
+	}, lifetime());
 }
 
 void UserpicButton::paintEvent(QPaintEvent *e) {
@@ -714,7 +705,7 @@ void UserpicButton::grabOldUserpic() {
 		countPhotoPosition(),
 		QSize(_st.photoSize, _st.photoSize)
 	);
-	_oldUserpic = myGrab(this, photoRect);
+	_oldUserpic = GrabWidget(this, photoRect);
 }
 
 void UserpicButton::startNewPhotoShowing() {

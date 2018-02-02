@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "inline_bots/inline_bot_send_data.h"
 
@@ -36,9 +23,17 @@ QString SendData::getLayoutDescription(const Result *owner) const {
 	return owner->_description;
 }
 
-void SendDataCommon::addToHistory(const Result *owner, History *history,
-MTPDmessage::Flags flags, MsgId msgId, UserId fromId, MTPint mtpDate,
-UserId viaBotId, MsgId replyToId, const QString &postAuthor, const MTPReplyMarkup &markup) const {
+void SendDataCommon::addToHistory(
+		const Result *owner,
+		not_null<History*> history,
+		MTPDmessage::Flags flags,
+		MsgId msgId,
+		UserId fromId,
+		MTPint mtpDate,
+		UserId viaBotId,
+		MsgId replyToId,
+		const QString &postAuthor,
+		const MTPReplyMarkup &markup) const {
 	auto fields = getSentMessageFields();
 	if (!fields.entities.v.isEmpty()) {
 		flags |= MTPDmessage::Flag::f_entities;
@@ -64,8 +59,10 @@ UserId viaBotId, MsgId replyToId, const QString &postAuthor, const MTPReplyMarku
 		NewMessageUnread);
 }
 
-QString SendDataCommon::getErrorOnSend(const Result *owner, History *history) const {
-	if (auto megagroup = history->peer->asMegagroup()) {
+QString SendDataCommon::getErrorOnSend(
+		const Result *owner,
+		not_null<History*> history) const {
+	if (const auto megagroup = history->peer->asMegagroup()) {
 		if (megagroup->restricted(ChannelRestriction::f_send_messages)) {
 			return lang(lng_restricted_send_message);
 		}
@@ -101,7 +98,11 @@ SendDataCommon::SentMTPMessageFields SendVenue::getSentMessageFields() const {
 
 SendDataCommon::SentMTPMessageFields SendContact::getSentMessageFields() const {
 	SentMTPMessageFields result;
-	result.media = MTP_messageMediaContact(MTP_string(_phoneNumber), MTP_string(_firstName), MTP_string(_lastName), MTP_int(0));
+	result.media = MTP_messageMediaContact(
+		MTP_string(_phoneNumber),
+		MTP_string(_firstName),
+		MTP_string(_lastName),
+		MTP_int(0));
 	return result;
 }
 
@@ -113,14 +114,34 @@ QString SendContact::getLayoutDescription(const Result *owner) const {
 	return result;
 }
 
-void SendPhoto::addToHistory(const Result *owner, History *history,
-MTPDmessage::Flags flags, MsgId msgId, UserId fromId, MTPint mtpDate,
-UserId viaBotId, MsgId replyToId, const QString &postAuthor, const MTPReplyMarkup &markup) const {
-	history->addNewPhoto(msgId, flags, viaBotId, replyToId, date(mtpDate), fromId, postAuthor, _photo, _caption, markup);
+void SendPhoto::addToHistory(
+		const Result *owner,
+		not_null<History*> history,
+		MTPDmessage::Flags flags,
+		MsgId msgId,
+		UserId fromId,
+		MTPint mtpDate,
+		UserId viaBotId,
+		MsgId replyToId,
+		const QString &postAuthor,
+		const MTPReplyMarkup &markup) const {
+	history->addNewPhoto(
+		msgId,
+		flags,
+		viaBotId,
+		replyToId,
+		date(mtpDate),
+		fromId,
+		postAuthor,
+		_photo,
+		_caption,
+		markup);
 }
 
-QString SendPhoto::getErrorOnSend(const Result *owner, History *history) const {
-	if (auto megagroup = history->peer->asMegagroup()) {
+QString SendPhoto::getErrorOnSend(
+		const Result *owner,
+		not_null<History*> history) const {
+	if (const auto megagroup = history->peer->asMegagroup()) {
 		if (megagroup->restricted(ChannelRestriction::f_send_media)) {
 			return lang(lng_restricted_send_media);
 		}
@@ -128,14 +149,34 @@ QString SendPhoto::getErrorOnSend(const Result *owner, History *history) const {
 	return QString();
 }
 
-void SendFile::addToHistory(const Result *owner, History *history,
-MTPDmessage::Flags flags, MsgId msgId, UserId fromId, MTPint mtpDate,
-UserId viaBotId, MsgId replyToId, const QString &postAuthor, const MTPReplyMarkup &markup) const {
-	history->addNewDocument(msgId, flags, viaBotId, replyToId, date(mtpDate), fromId, postAuthor, _document, _caption, markup);
+void SendFile::addToHistory(
+		const Result *owner,
+		not_null<History*> history,
+		MTPDmessage::Flags flags,
+		MsgId msgId,
+		UserId fromId,
+		MTPint mtpDate,
+		UserId viaBotId,
+		MsgId replyToId,
+		const QString &postAuthor,
+		const MTPReplyMarkup &markup) const {
+	history->addNewDocument(
+		msgId,
+		flags,
+		viaBotId,
+		replyToId,
+		date(mtpDate),
+		fromId,
+		postAuthor,
+		_document,
+		_caption,
+		markup);
 }
 
-QString SendFile::getErrorOnSend(const Result *owner, History *history) const {
-	if (auto megagroup = history->peer->asMegagroup()) {
+QString SendFile::getErrorOnSend(
+		const Result *owner,
+		not_null<History*> history) const {
+	if (const auto megagroup = history->peer->asMegagroup()) {
 		if (megagroup->restricted(ChannelRestriction::f_send_media)) {
 			return lang(lng_restricted_send_media);
 		} else if (megagroup->restricted(ChannelRestriction::f_send_stickers)
@@ -150,13 +191,32 @@ QString SendFile::getErrorOnSend(const Result *owner, History *history) const {
 	return QString();
 }
 
-void SendGame::addToHistory(const Result *owner, History *history,
-	MTPDmessage::Flags flags, MsgId msgId, UserId fromId, MTPint mtpDate,
-	UserId viaBotId, MsgId replyToId, const QString &postAuthor, const MTPReplyMarkup &markup) const {
-	history->addNewGame(msgId, flags, viaBotId, replyToId, date(mtpDate), fromId, postAuthor, _game, markup);
+void SendGame::addToHistory(
+		const Result *owner,
+		not_null<History*> history,
+		MTPDmessage::Flags flags,
+		MsgId msgId,
+		UserId fromId,
+		MTPint mtpDate,
+		UserId viaBotId,
+		MsgId replyToId,
+		const QString &postAuthor,
+		const MTPReplyMarkup &markup) const {
+	history->addNewGame(
+		msgId,
+		flags,
+		viaBotId,
+		replyToId,
+		date(mtpDate),
+		fromId,
+		postAuthor,
+		_game,
+		markup);
 }
 
-QString SendGame::getErrorOnSend(const Result *owner, History *history) const {
+QString SendGame::getErrorOnSend(
+		const Result *owner,
+		not_null<History*> history) const {
 	if (auto megagroup = history->peer->asMegagroup()) {
 		if (megagroup->restricted(ChannelRestriction::f_send_games)) {
 			return lang(lng_restricted_send_inline);

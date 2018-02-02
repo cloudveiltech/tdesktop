@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "inline_bots/inline_bot_layout_internal.h"
 
@@ -204,7 +191,7 @@ void Gif::paint(Painter &p, const QRect &clip, const PaintContext *context) cons
 		if (radial) {
 			p.setOpacity(1);
 			QRect rinner(inner.marginsRemoved(QMargins(st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine)));
-			_animation->radial.draw(p, rinner, st::msgFileRadialLine, st::msgInBg);
+			_animation->radial.draw(p, rinner, st::msgFileRadialLine, st::historyFileThumbRadialFg);
 		}
 	}
 
@@ -745,7 +732,7 @@ void File::paint(Painter &p, const QRect &clip, const PaintContext *context) con
 
 	if (radial) {
 		auto radialCircle = inner.marginsRemoved(QMargins(st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine));
-		_animation->radial.draw(p, radialCircle, st::msgFileRadialLine, st::msgInBg);
+		_animation->radial.draw(p, radialCircle, st::msgFileRadialLine, st::historyFileInRadialFg);
 	}
 
 	auto icon = ([showPause, radial, document] {
@@ -850,8 +837,8 @@ bool File::updateStatusText() const {
 	DocumentData *document = getShownDocument();
 	if (document->status == FileDownloadFailed || document->status == FileUploadFailed) {
 		statusSize = FileStatusSizeFailed;
-	} else if (document->status == FileUploading) {
-		statusSize = document->uploadOffset;
+	} else if (document->uploading()) {
+		statusSize = document->uploadingData->offset;
 	} else if (document->loading()) {
 		statusSize = document->loadOffset();
 	} else if (document->loaded()) {
@@ -1253,7 +1240,7 @@ void Game::paint(Painter &p, const QRect &clip, const PaintContext *context) con
 		if (radial) {
 			p.setOpacity(1);
 			QRect rinner(inner.marginsRemoved(QMargins(st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine)));
-			_radial->draw(p, rinner, st::msgFileRadialLine, st::msgInBg);
+			_radial->draw(p, rinner, st::msgFileRadialLine, st::historyFileThumbRadialFg);
 		}
 	}
 

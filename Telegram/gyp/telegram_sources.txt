@@ -22,8 +22,6 @@
 <(src_loc)/base/qthelp_url.h
 <(src_loc)/base/runtime_composer.cpp
 <(src_loc)/base/runtime_composer.h
-<(src_loc)/base/task_queue.cpp
-<(src_loc)/base/task_queue.h
 <(src_loc)/base/timer.cpp
 <(src_loc)/base/timer.h
 <(src_loc)/base/type_traits.h
@@ -61,6 +59,8 @@
 <(src_loc)/boxes/connection_box.h
 <(src_loc)/boxes/download_path_box.cpp
 <(src_loc)/boxes/download_path_box.h
+<(src_loc)/boxes/edit_caption_box.cpp
+<(src_loc)/boxes/edit_caption_box.h
 <(src_loc)/boxes/edit_color_box.cpp
 <(src_loc)/boxes/edit_color_box.h
 <(src_loc)/boxes/edit_participant_box.cpp
@@ -137,6 +137,8 @@
 <(src_loc)/chat_helpers/tabbed_selector.cpp
 <(src_loc)/chat_helpers/tabbed_selector.h
 <(src_loc)/core/basic_types.h
+<(src_loc)/core/changelogs.cpp
+<(src_loc)/core/changelogs.h
 <(src_loc)/core/click_handler.cpp
 <(src_loc)/core/click_handler.h
 <(src_loc)/core/click_handler_types.cpp
@@ -185,6 +187,7 @@
 <(src_loc)/data/data_types.h
 <(src_loc)/data/data_user_photos.cpp
 <(src_loc)/data/data_user_photos.h
+<(src_loc)/data/data_web_page.cpp
 <(src_loc)/data/data_web_page.h
 <(src_loc)/dialogs/dialogs_common.h
 <(src_loc)/dialogs/dialogs_indexed_list.cpp
@@ -341,6 +344,8 @@
 <(src_loc)/media/view/media_clip_playback.h
 <(src_loc)/media/view/media_clip_volume_controller.cpp
 <(src_loc)/media/view/media_clip_volume_controller.h
+<(src_loc)/media/view/media_view_group_thumbs.cpp
+<(src_loc)/media/view/media_view_group_thumbs.h
 <(src_loc)/media/media_audio.cpp
 <(src_loc)/media/media_audio.h
 <(src_loc)/media/media_audio_capture.cpp
@@ -519,6 +524,8 @@
 <(src_loc)/storage/serialize_document.h
 <(src_loc)/storage/storage_facade.cpp
 <(src_loc)/storage/storage_facade.h
+<(src_loc)/storage/storage_media_prepare.cpp
+<(src_loc)/storage/storage_media_prepare.h
 <(src_loc)/storage/storage_shared_media.cpp
 <(src_loc)/storage/storage_shared_media.h
 <(src_loc)/storage/storage_sparse_ids_list.cpp
@@ -624,6 +631,8 @@
 <(src_loc)/ui/search_field_controller.h
 <(src_loc)/ui/special_buttons.cpp
 <(src_loc)/ui/special_buttons.h
+<(src_loc)/ui/text_options.cpp
+<(src_loc)/ui/text_options.h
 <(src_loc)/ui/twidget.cpp
 <(src_loc)/ui/twidget.h
 <(src_loc)/ui/unread_badge.cpp

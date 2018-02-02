@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
@@ -303,9 +290,6 @@ public:
 	bool isPost() const {
 		return _flags & MTPDmessage::Flag::f_post;
 	}
-	bool indexInUnreadMentions() const {
-		return (id > 0);
-	}
 	bool isSilent() const {
 		return _flags & MTPDmessage::Flag::f_silent;
 	}
@@ -349,11 +333,12 @@ public:
 	virtual void updateReplyMarkup(const MTPReplyMarkup *markup) {
 	}
 
-	virtual void addToUnreadMentions(AddToUnreadMentionsMethod method) {
+	virtual void addToUnreadMentions(UnreadMentionType type) {
 	}
 	virtual void eraseFromUnreadMentions() {
 	}
 	virtual Storage::SharedMediaTypesMask sharedMediaTypes() const;
+	void indexAsNewItem();
 
 	virtual bool hasBubble() const {
 		return false;
@@ -579,6 +564,31 @@ public:
 		setAttachToNext(attachToNext);
 	}
 
+	HistoryItem *previousItem() const {
+		if (_block && _indexInBlock >= 0) {
+			if (_indexInBlock > 0) {
+				return _block->items.at(_indexInBlock - 1);
+			}
+			if (auto previous = _block->previousBlock()) {
+				Assert(!previous->items.empty());
+				return previous->items.back();
+			}
+		}
+		return nullptr;
+	}
+	HistoryItem *nextItem() const {
+		if (_block && _indexInBlock >= 0) {
+			if (_indexInBlock + 1 < _block->items.size()) {
+				return _block->items.at(_indexInBlock + 1);
+			}
+			if (auto next = _block->nextBlock()) {
+				Assert(!next->items.empty());
+				return next->items.front();
+			}
+		}
+		return nullptr;
+	}
+
 	~HistoryItem();
 
 protected:
@@ -609,31 +619,6 @@ protected:
 	HistoryBlock *_block = nullptr;
 	int _indexInBlock = -1;
 	MTPDmessage::Flags _flags = 0;
-
-	HistoryItem *previousItem() const {
-		if (_block && _indexInBlock >= 0) {
-			if (_indexInBlock > 0) {
-				return _block->items.at(_indexInBlock - 1);
-			}
-			if (auto previous = _block->previousBlock()) {
-				Assert(!previous->items.empty());
-				return previous->items.back();
-			}
-		}
-		return nullptr;
-	}
-	HistoryItem *nextItem() const {
-		if (_block && _indexInBlock >= 0) {
-			if (_indexInBlock + 1 < _block->items.size()) {
-				return _block->items.at(_indexInBlock + 1);
-			}
-			if (auto next = _block->nextBlock()) {
-				Assert(!next->items.empty());
-				return next->items.front();
-			}
-		}
-		return nullptr;
-	}
 
 	// This should be called only from previousItemChanged()
 	// to add required bits to the Composer mask

@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "catch.hpp"
 
@@ -258,7 +245,7 @@ TEST_CASE("basic operators tests", "[rpl::operators]") {
 		{
 			rpl::lifetime lifetime;
 			{
-				rpl::event_stream<int> stream;
+				event_stream<int> stream;
 				single(single(1) | then(single(2)))
 					| then(single(single(3) | then(single(4))))
 					| then(single(single(5) | then(stream.events())))
@@ -291,11 +278,11 @@ TEST_CASE("basic operators tests", "[rpl::operators]") {
 		auto sum = std::make_shared<std::string>("");
 		{
 			rpl::lifetime lifetime;
-			rpl::event_stream<bool> a;
-			rpl::event_stream<bool> b;
-			rpl::event_stream<bool> c;
+			event_stream<bool> a;
+			event_stream<bool> b;
+			event_stream<bool> c;
 
-			std::vector<rpl::producer<bool>> v;
+			std::vector<producer<bool>> v;
 			v.push_back(a.events());
 			v.push_back(b.events());
 			v.push_back(c.events());
@@ -322,9 +309,9 @@ TEST_CASE("basic operators tests", "[rpl::operators]") {
 		auto sum = std::make_shared<std::string>("");
 		{
 			rpl::lifetime lifetime;
-			rpl::event_stream<int> a;
-			rpl::event_stream<short> b;
-			rpl::event_stream<char> c;
+			event_stream<int> a;
+			event_stream<short> b;
+			event_stream<char> c;
 
 			combine(
 				a.events(),
@@ -374,9 +361,9 @@ TEST_CASE("basic operators tests", "[rpl::operators]") {
 		auto sum = std::make_shared<std::string>("");
 		{
 			rpl::lifetime lifetime;
-			rpl::event_stream<int> a;
-			rpl::event_stream<short> b;
-			rpl::event_stream<char> c;
+			event_stream<int> a;
+			event_stream<short> b;
+			event_stream<char> c;
 
 			using namespace mappers;
 
@@ -403,7 +390,7 @@ TEST_CASE("basic operators tests", "[rpl::operators]") {
 		auto sum = std::make_shared<std::string>("");
 		{
 			rpl::lifetime lifetime;
-			rpl::ints(3)
+			ints(3)
 				| after_next([=](int value) {
 					*sum += std::to_string(-value-1);
 				})
@@ -418,7 +405,7 @@ TEST_CASE("basic operators tests", "[rpl::operators]") {
 		auto sum = std::make_shared<std::string>("");
 		{
 			rpl::lifetime lifetime;
-			rpl::ints(10) | take(3)
+			ints(10) | take(3)
 				| start_with_next_done([=](int value) {
 					*sum += std::to_string(value);
 				}, [=] {
@@ -427,7 +414,7 @@ TEST_CASE("basic operators tests", "[rpl::operators]") {
 		}
 		{
 			rpl::lifetime lifetime;
-			rpl::ints(3) | take(3)
+			ints(3) | take(3)
 				| start_with_next_done([=](int value) {
 					*sum += std::to_string(value);
 				}, [=] {
@@ -436,7 +423,7 @@ TEST_CASE("basic operators tests", "[rpl::operators]") {
 		}
 		{
 			rpl::lifetime lifetime;
-			rpl::ints(3) | take(10)
+			ints(3) | take(10)
 				| start_with_next_done([=](int value) {
 					*sum += std::to_string(value);
 				}, [=] {

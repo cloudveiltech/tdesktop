@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_media_types.h"
 
@@ -40,43 +27,13 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "styles/style_history.h"
 #include "calls/calls_instance.h"
 #include "ui/empty_userpic.h"
+#include "ui/grouped_layout.h"
+#include "ui/text_options.h"
 
 namespace {
 
 constexpr auto kMaxGifForwardedBarLines = 4;
 constexpr auto kMaxOriginalEntryLines = 8192;
-
-TextParseOptions _webpageTitleOptions = {
-	TextParseMultiline | TextParseRichText, // flags
-	0, // maxw
-	0, // maxh
-	Qt::LayoutDirectionAuto, // dir
-};
-TextParseOptions _webpageDescriptionOptions = {
-	TextParseLinks | TextParseMentions | TextParseHashtags | TextParseMultiline | TextParseRichText | TextParseMarkdown, // flags
-	0, // maxw
-	0, // maxh
-	Qt::LayoutDirectionAuto, // dir
-};
-TextParseOptions _twitterDescriptionOptions = {
-	TextParseLinks | TextParseMentions | TextTwitterMentions | TextParseHashtags | TextTwitterHashtags | TextParseMultiline | TextParseRichText, // flags
-	0, // maxw
-	0, // maxh
-	Qt::LayoutDirectionAuto, // dir
-};
-TextParseOptions _instagramDescriptionOptions = {
-	TextParseLinks | TextParseMentions | TextInstagramMentions | TextParseHashtags | TextInstagramHashtags | TextParseMultiline | TextParseRichText, // flags
-	0, // maxw
-	0, // maxh
-	Qt::LayoutDirectionAuto, // dir
-};
-
-inline void initTextOptions() {
-	_webpageTitleOptions.maxw = st::msgMaxWidth - st::msgPadding.left() - st::msgPadding.right() - st::webPageLeft;
-	_webpageTitleOptions.maxh = st::webPageTitleFont->height * 2;
-	_webpageDescriptionOptions.maxw = st::msgMaxWidth - st::msgPadding.left() - st::msgPadding.right() - st::webPageLeft;
-	_webpageDescriptionOptions.maxh = st::webPageDescriptionFont->height * 3;
-}
 
 bool needReSetInlineResultDocument(const MTPMessageMedia &media, DocumentData *existing) {
 	if (media.type() == mtpc_messageMediaDocument) {
@@ -118,38 +75,7 @@ int32 gifMaxStatusWidth(DocumentData *document) {
 	return result;
 }
 
-QSize CountPixSizeForSize(QSize original, QSize geometry) {
-	const auto width = geometry.width();
-	const auto height = geometry.height();
-	auto tw = original.width();
-	auto th = original.height();
-	if (tw * height > th * width) {
-		if (th > height || tw * height < 2 * th * width) {
-			tw = (height * tw) / th;
-			th = height;
-		} else if (tw < width) {
-			th = (width * th) / tw;
-			tw = width;
-		}
-	} else {
-		if (tw > width || th * width < 2 * tw * height) {
-			th = (width * th) / tw;
-			tw = width;
-		} else if (tw > 0 && th < height) {
-			tw = (height * tw) / th;
-			th = height;
-		}
-	}
-	if (tw < 1) tw = 1;
-	if (th < 1) th = 1;
-	return { tw, th };
-}
-
 } // namespace
-
-void HistoryInitMedia() {
-	initTextOptions();
-}
 
 TextWithEntities WithCaptionSelectedText(
 		const QString &attachType,
@@ -201,7 +127,7 @@ void HistoryFileMedia::clickHandlerActiveChanged(const ClickHandlerPtr &p, bool 
 		if (active && !dataLoaded()) {
 			ensureAnimation();
 			_animation->a_thumbOver.start([this] { thumbAnimationCallback(); }, 0., 1., st::msgFileOverDuration);
-		} else if (!active && _animation) {
+		} else if (!active && _animation && !dataLoaded()) {
 			_animation->a_thumbOver.start([this] { thumbAnimationCallback(); }, 1., 0., st::msgFileOverDuration);
 		}
 	}
@@ -289,7 +215,7 @@ HistoryPhoto::HistoryPhoto(
 		_caption.setText(
 			st::messageTextStyle,
 			caption + _parent->skipBlock(),
-			itemTextNoMonoOptions(_parent));
+			Ui::ItemTextNoMonoOptions(_parent));
 	}
 	init();
 }
@@ -468,7 +394,9 @@ void HistoryPhoto::draw(Painter &p, const QRect &r, TextSelection selection, Tim
 		p.drawPixmap(rthumb.topLeft(), pix);
 	}
 	if (radial || (!loaded && !_data->loading())) {
-		float64 radialOpacity = (radial && loaded && !_data->uploading()) ? _animation->radial.opacity() : 1;
+		const auto radialOpacity = (radial && loaded && !_data->uploading())
+			? _animation->radial.opacity() :
+			1.;
 		QRect inner(rthumb.x() + (rthumb.width() - st::msgFileSize) / 2, rthumb.y() + (rthumb.height() - st::msgFileSize) / 2, st::msgFileSize, st::msgFileSize);
 		p.setPen(Qt::NoPen);
 		if (selected) {
@@ -626,7 +554,10 @@ void HistoryPhoto::drawGrouped(
 		App::complexOverlayRect(p, geometry, roundRadius, corners);
 	}
 
-	if (radial || (!loaded && !_data->loading())) {
+	const auto displayState = radial
+		|| (!loaded && !_data->loading())
+		|| _data->waitingForAlbum();
+	if (displayState) {
 		const auto radialOpacity = (radial && loaded && !_data->uploading())
 			? _animation->radial.opacity()
 			: 1.;
@@ -655,8 +586,10 @@ void HistoryPhoto::drawGrouped(
 		}
 
 		p.setOpacity(radialOpacity);
-		auto icon = ([radial, this, selected]() -> const style::icon*{
-			if (radial || _data->loading()) {
+		auto icon = [&]() -> const style::icon* {
+			if (_data->waitingForAlbum()) {
+				return &(selected ? st::historyFileThumbWaitingSelected : st::historyFileThumbWaiting);
+			} else if (radial || _data->loading()) {
 				auto delayed = _data->full->toDelayedStorageImage();
 				if (!delayed || !delayed->location().isNull()) {
 					return &(selected ? st::historyFileThumbCancelSelected : st::historyFileThumbCancel);
@@ -664,7 +597,7 @@ void HistoryPhoto::drawGrouped(
 				return nullptr;
 			}
 			return &(selected ? st::historyFileThumbDownloadSelected : st::historyFileThumbDownload);
-		})();
+		}();
 		if (icon) {
 			icon->paintInCenter(p, inner);
 		}
@@ -699,6 +632,19 @@ HistoryTextState HistoryPhoto::getStateGrouped(
 		: _savel);
 }
 
+float64 HistoryPhoto::dataProgress() const {
+	return _data->progress();
+}
+
+bool HistoryPhoto::dataFinished() const {
+	return !_data->loading()
+		&& (!_data->uploading() || _data->waitingForAlbum());
+}
+
+bool HistoryPhoto::dataLoaded() const {
+	return _data->loaded();
+}
+
 void HistoryPhoto::validateGroupedCache(
 		const QRect &geometry,
 		RectParts corners,
@@ -726,7 +672,7 @@ void HistoryPhoto::validateGroupedCache(
 
 	const auto originalWidth = convertScale(_data->full->width());
 	const auto originalHeight = convertScale(_data->full->height());
-	const auto pixSize = CountPixSizeForSize(
+	const auto pixSize = Ui::GetImageScaleSizeForGeometry(
 		{ originalWidth, originalHeight },
 		{ width, height });
 	const auto pixWidth = pixSize.width() * cIntRetinaFactor();
@@ -845,10 +791,13 @@ bool HistoryPhoto::needsBubble() const {
 }
 
 Storage::SharedMediaTypesMask HistoryPhoto::sharedMediaTypes() const {
+	using Type = Storage::SharedMediaType;
 	if (_parent->toHistoryMessage()) {
-		return Storage::SharedMediaType::Photo;
+		return Storage::SharedMediaTypesMask{}
+			.added(Type::Photo)
+			.added(Type::PhotoVideo);
 	}
-	return Storage::SharedMediaType::ChatPhoto;
+	return Type::ChatPhoto;
 }
 
 ImagePtr HistoryPhoto::replyPreview() {
@@ -867,7 +816,7 @@ HistoryVideo::HistoryVideo(
 		_caption.setText(
 			st::messageTextStyle,
 			caption + _parent->skipBlock(),
-			itemTextNoMonoOptions(_parent));
+			Ui::ItemTextNoMonoOptions(_parent));
 	}
 
 	setDocumentLinks(_data, parent);
@@ -1184,8 +1133,10 @@ void HistoryVideo::drawGrouped(
 	}
 
 	p.setOpacity(radialOpacity);
-	auto icon = ([this, radial, selected, loaded]() -> const style::icon * {
-		if (loaded && !radial) {
+	auto icon = [&]() -> const style::icon * {
+		if (_data->waitingForAlbum()) {
+			return &(selected ? st::historyFileThumbWaitingSelected : st::historyFileThumbWaiting);
+		} else if (loaded && !radial) {
 			return &(selected ? st::historyFileThumbPlaySelected : st::historyFileThumbPlay);
 		} else if (radial || _data->loading()) {
 			if (_parent->id > 0 || _data->uploading()) {
@@ -1194,7 +1145,7 @@ void HistoryVideo::drawGrouped(
 			return nullptr;
 		}
 		return &(selected ? st::historyFileThumbDownloadSelected : st::historyFileThumbDownload);
-	})();
+	}();
 	if (icon) {
 		icon->paintInCenter(p, inner);
 	}
@@ -1225,6 +1176,19 @@ HistoryTextState HistoryVideo::getStateGrouped(
 		: _savel);
 }
 
+float64 HistoryVideo::dataProgress() const {
+	return _data->progress();
+}
+
+bool HistoryVideo::dataFinished() const {
+	return !_data->loading()
+		&& (!_data->uploading() || _data->waitingForAlbum());
+}
+
+bool HistoryVideo::dataLoaded() const {
+	return _data->loaded();
+}
+
 void HistoryVideo::validateGroupedCache(
 		const QRect &geometry,
 		RectParts corners,
@@ -1252,11 +1216,11 @@ void HistoryVideo::validateGroupedCache(
 
 	const auto originalWidth = convertScale(_data->thumb->width());
 	const auto originalHeight = convertScale(_data->thumb->height());
-	const auto pixSize = CountPixSizeForSize(
+	const auto pixSize = Ui::GetImageScaleSizeForGeometry(
 		{ originalWidth, originalHeight },
 		{ width, height });
-	const auto pixWidth = pixSize.width();
-	const auto pixHeight = pixSize.height();
+	const auto pixWidth = pixSize.width() * cIntRetinaFactor();
+	const auto pixHeight = pixSize.height() * cIntRetinaFactor();
 	const auto &image = _data->thumb;
 
 	*cacheKey = key;
@@ -1296,7 +1260,10 @@ bool HistoryVideo::needsBubble() const {
 }
 
 Storage::SharedMediaTypesMask HistoryVideo::sharedMediaTypes() const {
-	return Storage::SharedMediaType::Video;
+	using Type = Storage::SharedMediaType;
+	return Storage::SharedMediaTypesMask{}
+		.added(Type::Video)
+		.added(Type::PhotoVideo);
 }
 
 void HistoryVideo::updateStatusText() const {
@@ -1304,8 +1271,8 @@ void HistoryVideo::updateStatusText() const {
 	int32 statusSize = 0, realDuration = 0;
 	if (_data->status == FileDownloadFailed || _data->status == FileUploadFailed) {
 		statusSize = FileStatusSizeFailed;
-	} else if (_data->status == FileUploading) {
-		statusSize = _data->uploadOffset;
+	} else if (_data->uploading()) {
+		statusSize = _data->uploadingData->offset;
 	} else if (_data->loading()) {
 		statusSize = _data->loadOffset();
 	} else if (_data->loaded()) {
@@ -1371,7 +1338,10 @@ HistoryDocument::HistoryDocument(
 	setStatusSize(FileStatusSizeReady);
 
 	if (auto captioned = Get<HistoryDocumentCaptioned>()) {
-		captioned->_caption.setText(st::messageTextStyle, caption + _parent->skipBlock(), itemTextNoMonoOptions(_parent));
+		captioned->_caption.setText(
+			st::messageTextStyle,
+			caption + _parent->skipBlock(),
+			Ui::ItemTextNoMonoOptions(_parent));
 	}
 }
 
@@ -1398,6 +1368,18 @@ HistoryDocument::HistoryDocument(
 	if (captioned) {
 		Get<HistoryDocumentCaptioned>()->_caption = captioned->_caption;
 	}
+}
+
+float64 HistoryDocument::dataProgress() const {
+	return _data->progress();
+}
+
+bool HistoryDocument::dataFinished() const {
+	return !_data->loading() && !_data->uploading();
+}
+
+bool HistoryDocument::dataLoaded() const {
+	return _data->loaded();
 }
 
 void HistoryDocument::createComponents(bool caption) {
@@ -1599,7 +1581,9 @@ void HistoryDocument::draw(Painter &p, const QRect &r, TextSelection selection, 
 		}
 
 		if (_data->status != FileUploadFailed) {
-			const ClickHandlerPtr &lnk((_data->loading() || _data->status == FileUploading) ? thumbed->_linkcancell : thumbed->_linksavel);
+			const auto &lnk = (_data->loading() || _data->uploading())
+				? thumbed->_linkcancell
+				: thumbed->_linksavel;
 			bool over = ClickHandler::showAsActive(lnk);
 			p.setFont(over ? st::semiboldFont->underline() : st::semiboldFont);
 			p.setPen(outbg ? (selected ? st::msgFileThumbLinkOutFgSelected : st::msgFileThumbLinkOutFg) : (selected ? st::msgFileThumbLinkInFgSelected : st::msgFileThumbLinkInFg));
@@ -1792,7 +1776,9 @@ HistoryTextState HistoryDocument::getState(QPoint point, HistoryStateRequest req
 
 		if (_data->status != FileUploadFailed) {
 			if (rtlrect(nameleft, linktop, thumbed->_linkw, st::semiboldFont->height, _width).contains(point)) {
-				result.link = (_data->loading() || _data->uploading()) ? thumbed->_linkcancell : thumbed->_linksavel;
+				result.link = (_data->loading() || _data->uploading())
+					? thumbed->_linkcancell
+					: thumbed->_linksavel;
 				return result;
 			}
 		}
@@ -1978,8 +1964,8 @@ bool HistoryDocument::updateStatusText() const {
 	int32 statusSize = 0, realDuration = 0;
 	if (_data->status == FileDownloadFailed || _data->status == FileUploadFailed) {
 		statusSize = FileStatusSizeFailed;
-	} else if (_data->status == FileUploading) {
-		statusSize = _data->uploadOffset;
+	} else if (_data->uploading()) {
+		statusSize = _data->uploadingData->offset;
 	} else if (_data->loading()) {
 		statusSize = _data->loadOffset();
 	} else if (_data->loaded()) {
@@ -2143,7 +2129,10 @@ HistoryGif::HistoryGif(
 	setStatusSize(FileStatusSizeReady);
 
 	if (!caption.isEmpty() && !_data->isVideoMessage()) {
-		_caption.setText(st::messageTextStyle, caption + _parent->skipBlock(), itemTextNoMonoOptions(_parent));
+		_caption.setText(
+			st::messageTextStyle,
+			caption + _parent->skipBlock(),
+			Ui::ItemTextNoMonoOptions(_parent));
 	}
 
 	_data->thumb->load();
@@ -2795,8 +2784,8 @@ void HistoryGif::updateStatusText() const {
 	int32 statusSize = 0, realDuration = 0;
 	if (_data->status == FileDownloadFailed || _data->status == FileUploadFailed) {
 		statusSize = FileStatusSizeFailed;
-	} else if (_data->status == FileUploading) {
-		statusSize = _data->uploadOffset;
+	} else if (_data->uploading()) {
+		statusSize = _data->uploadingData->offset;
 	} else if (_data->loading()) {
 		statusSize = _data->loadOffset();
 	} else if (_data->loaded()) {
@@ -2950,15 +2939,19 @@ HistoryGif::~HistoryGif() {
 }
 
 float64 HistoryGif::dataProgress() const {
-	return (_data->uploading() || !_parent || _parent->id > 0) ? _data->progress() : 0;
+	return (_data->uploading() || _parent->id > 0)
+		? _data->progress()
+		: 0;
 }
 
 bool HistoryGif::dataFinished() const {
-	return (!_parent || _parent->id > 0) ? (!_data->loading() && !_data->uploading()) : false;
+	return (_parent->id > 0)
+		? (!_data->loading() && !_data->uploading())
+		: false;
 }
 
 bool HistoryGif::dataLoaded() const {
-	return (!_parent || _parent->id > 0) ? _data->loaded() : false;
+	return (_parent->id > 0) ? _data->loaded() : false;
 }
 
 HistorySticker::HistorySticker(
@@ -3275,7 +3268,10 @@ HistoryContact::HistoryContact(not_null<HistoryItem*> parent, int32 userId, cons
 , _fname(first)
 , _lname(last)
 , _phone(App::formatPhone(phone)) {
-	_name.setText(st::semiboldTextStyle, lng_full_name(lt_first_name, first, lt_last_name, last).trimmed(), _textNameOptions);
+	_name.setText(
+		st::semiboldTextStyle,
+		lng_full_name(lt_first_name, first, lt_last_name, last).trimmed(),
+		Ui::NameTextOptions());
 	_phonew = st::normalFont->width(_phone);
 }
 
@@ -3558,21 +3554,6 @@ TextWithEntities HistoryCall::selectedText(TextSelection selection) const {
 
 namespace {
 
-QString siteNameFromUrl(const QString &url) {
-	QUrl u(url);
-	QString pretty = u.isValid() ? u.toDisplayString() : url;
-	QRegularExpressionMatch m = QRegularExpression(qsl("^[a-zA-Z0-9]+://")).match(pretty);
-	if (m.hasMatch()) pretty = pretty.mid(m.capturedLength());
-	int32 slash = pretty.indexOf('/');
-	if (slash > 0) pretty = pretty.mid(0, slash);
-	QStringList components = pretty.split('.', QString::SkipEmptyParts);
-	if (components.size() >= 2) {
-		components = components.mid(components.size() - 2);
-		return components.at(0).at(0).toUpper() + components.at(0).mid(1) + '.' + components.at(1);
-	}
-	return QString();
-}
-
 int32 articleThumbWidth(PhotoData *thumb, int32 height) {
 	int32 w = thumb->medium->width(), h = thumb->medium->height();
 	return qMax(qMin(height * w / h, height), 1);
@@ -3614,6 +3595,18 @@ void HistoryWebPage::initDimensions() {
 		_maxw = _minh = _height = 0;
 		return;
 	}
+	const auto versionChanged = (_dataVersion != _data->version);
+	if (versionChanged) {
+		_dataVersion = _data->version;
+		_openl = nullptr;
+		if (_attach) {
+			_attach->detachFromParent();
+			_attach = nullptr;
+		}
+		_title = Text(st::msgMinWidth - st::webPageLeft);
+		_description = Text(st::msgMinWidth - st::webPageLeft);
+		_siteNameWidth = 0;
+	}
 	auto lineHeight = unitedLineHeight();
 
 	if (!_openl && !_data->url.isEmpty()) {
@@ -3622,9 +3615,6 @@ void HistoryWebPage::initDimensions() {
 
 	// init layout
 	auto title = TextUtilities::SingleLine(_data->title.isEmpty() ? _data->author : _data->title);
-	if (!_data->description.text.isEmpty() && title.isEmpty() && _data->siteName.isEmpty() && !_data->url.isEmpty()) {
-		_data->siteName = siteNameFromUrl(_data->url);
-	}
 	if (!_data->document && _data->photo && _data->type != WebPagePhoto && _data->type != WebPageVideo) {
 		if (_data->type == WebPageProfile) {
 			_asArticle = true;
@@ -3641,7 +3631,7 @@ void HistoryWebPage::initDimensions() {
 	}
 
 	// init attach
-	if (!_asArticle && !_attach) {
+	if (!_attach && !_asArticle) {
 		if (_data->document) {
 			if (_data->document->sticker()) {
 				_attach = std::make_unique<HistorySticker>(_parent, _data->document);
@@ -3655,6 +3645,9 @@ void HistoryWebPage::initDimensions() {
 		} else if (_data->photo) {
 			_attach = std::make_unique<HistoryPhoto>(_parent, _data->photo, QString());
 		}
+		if (_attach) {
+			_attach->attachToParent();
+		}
 	}
 
 	auto textFloatsAroundInfo = !_asArticle && !_attach && isBubbleBottom();
@@ -3666,12 +3659,6 @@ void HistoryWebPage::initDimensions() {
 		if (textFloatsAroundInfo) {
 			text.text += _parent->skipBlock();
 		}
-		auto opts = &_webpageDescriptionOptions;
-		if (_data->siteName == qstr("Twitter")) {
-			opts = &_twitterDescriptionOptions;
-		} else if (_data->siteName == qstr("Instagram")) {
-			opts = &_instagramDescriptionOptions;
-		}
 		if (isLogEntryOriginal()) {
 			// Fix layout for small bubbles (narrow media caption edit log entries).
 			_description = Text(st::minPhotoSize
@@ -3679,13 +3666,19 @@ void HistoryWebPage::initDimensions() {
 				- st::msgPadding.right()
 				- st::webPageLeft);
 		}
-		_description.setMarkedText(st::webPageDescriptionStyle, text, *opts);
+		_description.setMarkedText(
+			st::webPageDescriptionStyle,
+			text,
+			Ui::WebpageTextDescriptionOptions(_data->siteName));
 	}
 	if (_title.isEmpty() && !title.isEmpty()) {
 		if (textFloatsAroundInfo && _description.isEmpty()) {
 			title += _parent->skipBlock();
 		}
-		_title.setText(st::webPageTitleStyle, title, _webpageTitleOptions);
+		_title.setText(
+			st::webPageTitleStyle,
+			title,
+			Ui::WebpageTextTitleOptions());
 	}
 	if (!_siteNameWidth && !_data->siteName.isEmpty()) {
 		_siteNameWidth = st::webPageTitleFont->width(_data->siteName);
@@ -4228,11 +4221,17 @@ void HistoryGame::initDimensions() {
 			auto marked = TextWithEntities { text };
 			auto parseFlags = TextParseLinks | TextParseMultiline | TextParseRichText;
 			TextUtilities::ParseEntities(marked, parseFlags);
-			_description.setMarkedText(st::webPageDescriptionStyle, marked, _webpageDescriptionOptions);
+			_description.setMarkedText(
+				st::webPageDescriptionStyle,
+				marked,
+				Ui::WebpageTextDescriptionOptions());
 		}
 	}
 	if (_title.isEmpty() && !title.isEmpty()) {
-		_title.setText(st::webPageTitleStyle, title, _webpageTitleOptions);
+		_title.setText(
+			st::webPageTitleStyle,
+			title,
+			Ui::WebpageTextTitleOptions());
 	}
 
 	// init dimensions
@@ -4494,7 +4493,10 @@ TextSelection HistoryGame::adjustSelection(TextSelection selection, TextSelectTy
 }
 
 bool HistoryGame::consumeMessageText(const TextWithEntities &textWithEntities) {
-	_description.setMarkedText(st::webPageDescriptionStyle, textWithEntities, itemTextOptions(_parent));
+	_description.setMarkedText(
+		st::webPageDescriptionStyle,
+		textWithEntities,
+		Ui::ItemTextOptions(_parent));
 	return true;
 }
 
@@ -4667,7 +4669,10 @@ void HistoryInvoice::fillFromData(const MTPDmessageMediaInvoice &data) {
 	};
 	statusText.entities.push_back(EntityInText(EntityInTextBold, 0, statusText.text.size()));
 	statusText.text += ' ' + labelText().toUpper();
-	_status.setMarkedText(st::defaultTextStyle, statusText, itemTextOptions(_parent));
+	_status.setMarkedText(
+		st::defaultTextStyle,
+		statusText,
+		Ui::ItemTextOptions(_parent));
 
 	_receiptMsgId = data.has_receipt_msg_id() ? data.vreceipt_msg_id.v : 0;
 
@@ -4677,11 +4682,17 @@ void HistoryInvoice::fillFromData(const MTPDmessageMediaInvoice &data) {
 		auto marked = TextWithEntities { description };
 		auto parseFlags = TextParseLinks | TextParseMultiline | TextParseRichText;
 		TextUtilities::ParseEntities(marked, parseFlags);
-		_description.setMarkedText(st::webPageDescriptionStyle, marked, _webpageDescriptionOptions);
+		_description.setMarkedText(
+			st::webPageDescriptionStyle,
+			marked,
+			Ui::WebpageTextDescriptionOptions());
 	}
 	auto title = TextUtilities::SingleLine(qs(data.vtitle));
 	if (!title.isEmpty()) {
-		_title.setText(st::webPageTitleStyle, title, _webpageTitleOptions);
+		_title.setText(
+			st::webPageTitleStyle,
+			title,
+			Ui::WebpageTextTitleOptions());
 	}
 }
 
@@ -4996,13 +5007,19 @@ HistoryLocation::HistoryLocation(not_null<HistoryItem*> parent, const LocationCo
 , _description(st::msgMinWidth)
 , _link(std::make_shared<LocationClickHandler>(coords)) {
 	if (!title.isEmpty()) {
-		_title.setText(st::webPageTitleStyle, TextUtilities::Clean(title), _webpageTitleOptions);
+		_title.setText(
+			st::webPageTitleStyle,
+			TextUtilities::Clean(title),
+			Ui::WebpageTextTitleOptions());
 	}
 	if (!description.isEmpty()) {
 		auto marked = TextWithEntities { TextUtilities::Clean(description) };
 		auto parseFlags = TextParseLinks | TextParseMultiline | TextParseRichText;
 		TextUtilities::ParseEntities(marked, parseFlags);
-		_description.setMarkedText(st::webPageDescriptionStyle, marked, _webpageDescriptionOptions);
+		_description.setMarkedText(
+			st::webPageDescriptionStyle,
+			marked,
+			Ui::WebpageTextDescriptionOptions());
 	}
 }
 

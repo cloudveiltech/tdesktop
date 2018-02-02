@@ -1,19 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
@@ -42,14 +32,26 @@ private:
 
 class Shadow : public TWidget {
 public:
-	Shadow(QWidget *parent, const style::Shadow &st, RectParts sides = RectPart::Left | RectPart::Top | RectPart::Right | RectPart::Bottom) : TWidget(parent)
+	Shadow(
+		QWidget *parent,
+		const style::Shadow &st,
+		RectParts sides = RectPart::AllSides)
+	: TWidget(parent)
 	, _st(st)
 	, _sides(sides) {
 	}
 
-	static void paint(Painter &p, const QRect &box, int outerWidth, const style::Shadow &st, RectParts sides = RectPart::Left | RectPart::Top | RectPart::Right | RectPart::Bottom);
+	static void paint(
+		Painter &p,
+		const QRect &box,
+		int outerWidth,
+		const style::Shadow &st,
+		RectParts sides = RectPart::AllSides);
 
-	static QPixmap grab(TWidget *target, const style::Shadow &shadow, RectParts sides = RectPart::Left | RectPart::Top | RectPart::Right | RectPart::Bottom);
+	static QPixmap grab(
+		not_null<TWidget*> target,
+		const style::Shadow &shadow,
+		RectParts sides = RectPart::AllSides);
 
 protected:
 	void paintEvent(QPaintEvent *e) override;

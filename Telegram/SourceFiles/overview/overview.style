@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 using "basic.style";
 using "history/history.style";
@@ -79,14 +66,14 @@ overviewFileExtTop: 24px;
 overviewFileExtFg: windowFgActive;
 overviewFileExtFont: font(18px semibold);
 
-overviewSongPause: icon {{ "playlist_pause", msgInBg }};
-overviewSongPauseSelected: icon {{ "playlist_pause", msgInBgSelected }};
-overviewSongPlay: icon {{ "playlist_play", msgInBg }};
-overviewSongPlaySelected: icon {{ "playlist_play", msgInBgSelected }};
-overviewSongCancel: icon {{ "playlist_cancel", msgInBg }};
-overviewSongCancelSelected: icon {{ "playlist_cancel", msgInBgSelected }};
-overviewSongDownload: icon {{ "playlist_download", msgInBg }};
-overviewSongDownloadSelected: icon {{ "playlist_download", msgInBgSelected }};
+overviewSongPause: icon {{ "playlist_pause", historyFileInIconFg }};
+overviewSongPauseSelected: icon {{ "playlist_pause", historyFileInIconFgSelected }};
+overviewSongPlay: icon {{ "playlist_play", historyFileInIconFg }};
+overviewSongPlaySelected: icon {{ "playlist_play", historyFileInIconFgSelected }};
+overviewSongCancel: icon {{ "playlist_cancel", historyFileInIconFg }};
+overviewSongCancelSelected: icon {{ "playlist_cancel", historyFileInIconFgSelected }};
+overviewSongDownload: icon {{ "playlist_download", historyFileInIconFg }};
+overviewSongDownloadSelected: icon {{ "playlist_download", historyFileInIconFgSelected }};
 overviewFileLayout: OverviewFileLayout {
 	maxWidth: 520px;
 	songPadding: margins(17px, 7px, 10px, 6px);

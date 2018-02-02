@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_service.h"
 
@@ -30,19 +17,13 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "auth_session.h"
 #include "window/notifications_manager.h"
 #include "storage/storage_shared_media.h"
+#include "ui/text_options.h"
 
 namespace {
 
 constexpr auto kPinnedMessageTextLimit = 16;
 
 } // namespace
-
-TextParseOptions _historySrvOptions = {
-	TextParseLinks | TextParseMentions | TextParseHashtags/* | TextParseMultiline*/ | TextParseRichText, // flags
-	0, // maxw
-	0, // maxh
-	Qt::LayoutDirectionAuto, // lang-dependent
-};
 
 void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 	auto prepareChatAddUserText = [this](const MTPDmessageActionChatAddUser &action) {
@@ -495,7 +476,10 @@ QString HistoryService::inReplyText() const {
 }
 
 void HistoryService::setServiceText(const PreparedText &prepared) {
-	_text.setText(st::serviceTextStyle, prepared.text, _historySrvOptions);
+	_text.setText(
+		st::serviceTextStyle,
+		prepared.text,
+		Ui::ItemTextServiceOptions());
 	auto linkIndex = 0;
 	for_const (auto &link, prepared.links) {
 		// Link indices start with 1.

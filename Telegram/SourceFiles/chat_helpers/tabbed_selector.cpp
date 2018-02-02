@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "chat_helpers/tabbed_selector.h"
 
@@ -339,13 +326,13 @@ TabbedSelector::TabbedSelector(QWidget *parent, not_null<Window::Controller*> co
 		}
 	}));
 
-	Auth().api().stickerSetInstalled()
-		| rpl::start_with_next([this](uint64 setId) {
-			_tabsSlider->setActiveSection(
-				static_cast<int>(SelectorTab::Stickers));
-			stickers()->showStickerSet(setId);
-			_showRequests.fire({});
-		}, lifetime());
+	Auth().api().stickerSetInstalled(
+	) | rpl::start_with_next([this](uint64 setId) {
+		_tabsSlider->setActiveSection(
+			static_cast<int>(SelectorTab::Stickers));
+		stickers()->showStickerSet(setId);
+		_showRequests.fire({});
+	}, lifetime());
 
 	//	setAttribute(Qt::WA_AcceptTouchEvents);
 	setAttribute(Qt::WA_OpaquePaintEvent, false);
@@ -489,7 +476,7 @@ QImage TabbedSelector::grabForAnimation() {
 	showAll();
 	_topShadow->hide();
 	_tabsSlider->hide();
-	myEnsureResized(this);
+	Ui::SendPendingMoveResizeEvents(this);
 
 	auto result = QImage(size() * cIntRetinaFactor(), QImage::Format_ARGB32_Premultiplied);
 	result.setDevicePixelRatio(cRetinaFactor());
@@ -638,10 +625,10 @@ void TabbedSelector::createTabsSlider() {
 	_tabsSlider->setSections(sections);
 
 	_tabsSlider->setActiveSectionFast(static_cast<int>(_currentTabType));
-	_tabsSlider->sectionActivated()
-		| rpl::start_with_next(
-			[this] { switchTab(); },
-			lifetime());
+	_tabsSlider->sectionActivated(
+	) | rpl::start_with_next(
+		[this] { switchTab(); },
+		lifetime());
 }
 
 bool TabbedSelector::hasSectionIcons() const {

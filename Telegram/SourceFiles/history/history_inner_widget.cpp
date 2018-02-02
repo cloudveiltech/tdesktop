@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_inner_widget.h"
 
@@ -27,6 +14,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "history/history_service_layout.h"
 #include "history/history_media_types.h"
 #include "history/history_item_components.h"
+#include "ui/text_options.h"
 #include "ui/widgets/popup_menu.h"
 #include "window/window_controller.h"
 #include "window/window_peer_menu.h"
@@ -159,19 +147,18 @@ HistoryInner::HistoryInner(
 	subscribe(_controller->window()->dragFinished(), [this] {
 		mouseActionUpdate(QCursor::pos());
 	});
-	Auth().data().itemRemoved()
-		| rpl::start_with_next(
-			[this](auto item) { itemRemoved(item); },
-			lifetime());
+	Auth().data().itemRemoved(
+	) | rpl::start_with_next(
+		[this](auto item) { itemRemoved(item); },
+		lifetime());
 	rpl::merge(
 		Auth().data().historyUnloaded(),
-		Auth().data().historyCleared())
-		| rpl::filter([this](not_null<const History*> history) {
-			return (_history == history);
-		})
-		| rpl::start_with_next([this] {
-			mouseActionCancel();
-		}, lifetime());
+		Auth().data().historyCleared()
+	) | rpl::filter([this](not_null<const History*> history) {
+		return (_history == history);
+	}) | rpl::start_with_next([this] {
+		mouseActionCancel();
+	}, lifetime());
 }
 
 void HistoryInner::messagesReceived(PeerData *peer, const QVector<MTPMessage> &messages) {
@@ -1837,7 +1824,10 @@ void HistoryInner::updateBotInfo(bool recount) {
 	int newh = 0;
 	if (_botAbout && !_botAbout->info->description.isEmpty()) {
 		if (_botAbout->info->text.isEmpty()) {
-			_botAbout->info->text.setText(st::messageTextStyle, _botAbout->info->description, _historyBotNoMonoOptions);
+			_botAbout->info->text.setText(
+				st::messageTextStyle,
+				_botAbout->info->description,
+				Ui::ItemTextBotNoMonoOptions());
 			if (recount) {
 				int32 tw = _scroll->width() - st::msgMargin.left() - st::msgMargin.right();
 				if (tw > st::msgMaxWidth) tw = st::msgMaxWidth;

@@ -1,25 +1,13 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "storage/file_upload.h"
 
+#include "storage/localimageloader.h"
 #include "data/data_document.h"
 #include "data/data_photo.h"
 
@@ -29,6 +17,95 @@ namespace {
 constexpr auto kMaxUploadFileParallelSize = MTP::kUploadSessionsCount * 512 * 1024; // max 512kb uploaded at the same time in each session
 
 } // namespace
+
+struct Uploader::File {
+	File(const SendMediaReady &media);
+	File(const std::shared_ptr<FileLoadResult> &file);
+
+	void setDocSize(int32 size);
+	bool setPartSize(uint32 partSize);
+
+	std::shared_ptr<FileLoadResult> file;
+	SendMediaReady media;
+	int32 partsCount;
+	mutable int32 fileSentSize;
+
+	uint64 id() const;
+	SendMediaType type() const;
+	uint64 thumbId() const;
+	const QString &filename() const;
+
+	HashMd5 md5Hash;
+
+	std::unique_ptr<QFile> docFile;
+	int32 docSentParts = 0;
+	int32 docSize = 0;
+	int32 docPartSize = 0;
+	int32 docPartsCount = 0;
+
+};
+
+Uploader::File::File(const SendMediaReady &media) : media(media) {
+	partsCount = media.parts.size();
+	if (type() == SendMediaType::File || type() == SendMediaType::Audio) {
+		setDocSize(media.file.isEmpty()
+			? media.data.size()
+			: media.filesize);
+	} else {
+		docSize = docPartSize = docPartsCount = 0;
+	}
+}
+Uploader::File::File(const std::shared_ptr<FileLoadResult> &file)
+: file(file) {
+	partsCount = (type() == SendMediaType::Photo)
+		? file->fileparts.size()
+		: file->thumbparts.size();
+	if (type() == SendMediaType::File || type() == SendMediaType::Audio) {
+		setDocSize(file->filesize);
+	} else {
+		docSize = docPartSize = docPartsCount = 0;
+	}
+}
+
+void Uploader::File::setDocSize(int32 size) {
+	docSize = size;
+	constexpr auto limit0 = 1024 * 1024;
+	constexpr auto limit1 = 32 * limit0;
+	if (docSize >= limit0 || !setPartSize(DocumentUploadPartSize0)) {
+		if (docSize > limit1 || !setPartSize(DocumentUploadPartSize1)) {
+			if (!setPartSize(DocumentUploadPartSize2)) {
+				if (!setPartSize(DocumentUploadPartSize3)) {
+					if (!setPartSize(DocumentUploadPartSize4)) {
+						LOG(("Upload Error: bad doc size: %1").arg(docSize));
+					}
+				}
+			}
+		}
+	}
+}
+
+bool Uploader::File::setPartSize(uint32 partSize) {
+	docPartSize = partSize;
+	docPartsCount = (docSize / docPartSize)
+		+ ((docSize % docPartSize) ? 1 : 0);
+	return (docPartsCount <= DocumentMaxPartsCount);
+}
+
+uint64 Uploader::File::id() const {
+	return file ? file->id : media.id;
+}
+
+SendMediaType Uploader::File::type() const {
+	return file ? file->type : media.type;
+}
+
+uint64 Uploader::File::thumbId() const {
+	return file ? file->thumbId : media.thumbId;
+}
+
+const QString &Uploader::File::filename() const {
+	return file ? file->filename : media.filename;
+}
 
 Uploader::Uploader() {
 	nextTimer.setSingleShot(true);
@@ -47,7 +124,6 @@ void Uploader::uploadMedia(const FullMsgId &msgId, const SendMediaReady &media) 
 		} else {
 			document = App::feedDocument(media.document, media.photoThumbs.begin().value());
 		}
-		document->status = FileUploading;
 		if (!media.data.isEmpty()) {
 			document->setData(media.data);
 		}
@@ -59,13 +135,15 @@ void Uploader::uploadMedia(const FullMsgId &msgId, const SendMediaReady &media) 
 	sendNext();
 }
 
-void Uploader::upload(const FullMsgId &msgId, const FileLoadResultPtr &file) {
+void Uploader::upload(
+		const FullMsgId &msgId,
+		const std::shared_ptr<FileLoadResult> &file) {
 	if (file->type == SendMediaType::Photo) {
 		auto photo = App::feedPhoto(file->photo, file->photoThumbs);
-		photo->uploadingData = std::make_unique<PhotoData::UploadingData>(file->partssize);
+		photo->uploadingData = std::make_unique<Data::UploadState>(file->partssize);
 	} else if (file->type == SendMediaType::File || file->type == SendMediaType::Audio) {
 		auto document = file->thumb.isNull() ? App::feedDocument(file->document) : App::feedDocument(file->document, file->thumb);
-		document->status = FileUploading;
+		document->uploadingData = std::make_unique<Data::UploadState>(document->size);
 		if (!file->content.isEmpty()) {
 			document->setData(file->content);
 		}
@@ -84,7 +162,7 @@ void Uploader::currentFailed() {
 			emit photoFailed(j->first);
 		} else if (j->second.type() == SendMediaType::File) {
 			const auto document = App::document(j->second.id());
-			if (document->status == FileUploading) {
+			if (document->uploading()) {
 				document->status = FileUploadFailed;
 			}
 			emit documentFailed(j->first);
@@ -385,10 +463,9 @@ void Uploader::partLoaded(const MTPBool &result, mtpRequestId requestId) {
 				if (document->uploading()) {
 					const auto doneParts = file.docSentParts
 						- int(docRequestsSent.size());
-					document->uploadOffset = doneParts * file.docPartSize;
-					if (document->uploadOffset > document->size) {
-						document->uploadOffset = document->size;
-					}
+					document->uploadingData->offset = std::min(
+						document->uploadingData->size,
+						doneParts * file.docPartSize);
 				}
 				emit documentProgress(fullId);
 			}

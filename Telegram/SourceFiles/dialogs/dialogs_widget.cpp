@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/dialogs_widget.h"
 
@@ -38,6 +25,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "window/window_controller.h"
 #include "window/window_slide_animation.h"
 #include "profile/profile_channel_controllers.h"
+#include "storage/storage_media_prepare.h"
 
 namespace {
 
@@ -228,7 +216,7 @@ void DialogsWidget::startWidthAnimation() {
 		st::columnMinimalWidthLeft,
 		scrollGeometry.height());
 	_scroll->setGeometry(grabGeometry);
-	myEnsureResized(_scroll);
+	Ui::SendPendingMoveResizeEvents(_scroll);
 	auto image = QImage(
 		grabGeometry.size() * cIntRetinaFactor(),
 		QImage::Format_ARGB32_Premultiplied);
@@ -745,18 +733,22 @@ bool DialogsWidget::peopleFailed(const RPCError &error, mtpRequestId req) {
 }
 
 void DialogsWidget::dragEnterEvent(QDragEnterEvent *e) {
+	using namespace Storage;
+
 	if (App::main()->selectingPeer()) return;
 
+	const auto data = e->mimeData();
 	_dragInScroll = false;
-	_dragForward = e->mimeData()->hasFormat(qsl("application/x-td-forward-selected"));
-	if (!_dragForward) _dragForward = e->mimeData()->hasFormat(qsl("application/x-td-forward-pressed-link"));
-	if (!_dragForward) _dragForward = e->mimeData()->hasFormat(qsl("application/x-td-forward-pressed"));
-	if (_dragForward && Adaptive::OneColumn()) _dragForward = false;
+	_dragForward = Adaptive::OneColumn()
+		? false
+		: (data->hasFormat(qsl("application/x-td-forward-selected"))
+			|| data->hasFormat(qsl("application/x-td-forward-pressed-link"))
+			|| data->hasFormat(qsl("application/x-td-forward-pressed")));
 	if (_dragForward) {
 		e->setDropAction(Qt::CopyAction);
 		e->accept();
 		updateDragInScroll(_scroll->geometry().contains(e->pos()));
-	} else if (App::main() && App::main()->getDragState(e->mimeData()) != DragState::None) {
+	} else if (ComputeMimeDataState(data) != MimeDataState::None) {
 		e->setDropAction(Qt::CopyAction);
 		e->accept();
 	}

@@ -1,27 +1,15 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_item_components.h"
 
 #include "lang/lang_keys.h"
 #include "ui/effects/ripple_animation.h"
+#include "ui/text_options.h"
 #include "history/history_service_layout.h"
 #include "history/history_message.h"
 #include "history/history_media.h"
@@ -63,7 +51,10 @@ void HistoryMessageSigned::refresh(const QString &date) {
 	if (timew + namew > st::maxSignatureSize) {
 		name = st::msgDateFont->elided(author, st::maxSignatureSize - timew);
 	}
-	signature.setText(st::msgDateTextStyle, name + time, _textNameOptions);
+	signature.setText(
+		st::msgDateTextStyle,
+		name + time,
+		Ui::NameTextOptions());
 }
 
 int HistoryMessageSigned::maxWidth() const {
@@ -72,7 +63,7 @@ int HistoryMessageSigned::maxWidth() const {
 
 void HistoryMessageEdited::refresh(const QString &date, bool displayed) {
 	const auto prefix = displayed ? (lang(lng_edited) + ' ') : QString();
-	text.setText(st::msgDateTextStyle, prefix + date, _textNameOptions);
+	text.setText(st::msgDateTextStyle, prefix + date, Ui::NameTextOptions());
 }
 
 int HistoryMessageEdited::maxWidth() const {
@@ -151,7 +142,10 @@ bool HistoryMessageReply::updateData(HistoryMessage *holder, bool force) {
 	}
 
 	if (replyToMsg) {
-		replyToText.setText(st::messageTextStyle, TextUtilities::Clean(replyToMsg->inReplyText()), _textDlgOptions);
+		replyToText.setText(
+			st::messageTextStyle,
+			TextUtilities::Clean(replyToMsg->inReplyText()),
+			Ui::DialogTextOptions());
 
 		updateName();
 
@@ -193,7 +187,7 @@ void HistoryMessageReply::updateName() const {
 		QString name = (replyToVia && replyToMsg->author()->isUser())
 			? replyToMsg->author()->asUser()->firstName
 			: App::peerName(replyToMsg->author());
-		replyToName.setText(st::fwdTextStyle, name, _textNameOptions);
+		replyToName.setText(st::fwdTextStyle, name, Ui::NameTextOptions());
 		replyToVersion = replyToMsg->author()->nameVersion;
 		bool hasPreview = replyToMsg->getMedia() ? replyToMsg->getMedia()->hasReplyPreview() : false;
 		int32 previewSkip = hasPreview ? (st::msgReplyBarSize.height() + st::msgReplyBarSkip - st::msgReplyBarSize.width() - st::msgReplyBarPos.x()) : 0;

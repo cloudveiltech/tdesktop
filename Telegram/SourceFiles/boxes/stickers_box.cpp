@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "stickers_box.h"
 
@@ -90,11 +77,11 @@ StickersBox::CounterWidget::CounterWidget(QWidget *parent)
 	_st.padding = st::stickersFeaturedBadgePadding;
 	_st.font = st::stickersFeaturedBadgeFont;
 
-	Auth().data().featuredStickerSetsUnreadCountValue()
-		| rpl::start_with_next([this](int count) {
-			setCounter(count);
-			update();
-		}, lifetime());
+	Auth().data().featuredStickerSetsUnreadCountValue(
+	) | rpl::start_with_next([this](int count) {
+		setCounter(count);
+		update();
+	}, lifetime());
 }
 
 void StickersBox::CounterWidget::setCounter(int counter) {
@@ -242,10 +229,10 @@ void StickersBox::prepare() {
 			preloadArchivedSets();
 		}
 		setNoContentMargin(true);
-		_tabs->sectionActivated()
-			| rpl::start_with_next(
-				[this] { switchTab(); },
-				lifetime());
+		_tabs->sectionActivated(
+		) | rpl::start_with_next(
+			[this] { switchTab(); },
+			lifetime());
 		refreshTabs();
 	}
 	if (_installed.widget() && _section != Section::Installed) _installed.widget()->hide();
@@ -277,10 +264,10 @@ void StickersBox::prepare() {
 	setInnerWidget(_tab->takeWidget(), getTopSkip());
 	setDimensions(st::boxWideWidth, st::boxMaxListHeight);
 
-	Auth().data().stickersUpdated()
-		| rpl::start_with_next(
-			[this] { handleStickersUpdated(); },
-			lifetime());
+	Auth().data().stickersUpdated(
+	) | rpl::start_with_next(
+		[this] { handleStickersUpdated(); },
+		lifetime());
 	Auth().api().updateStickers();
 
 	if (_installed.widget()) {

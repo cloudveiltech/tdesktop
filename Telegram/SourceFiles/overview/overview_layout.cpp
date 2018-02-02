@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "overview/overview_layout.h"
 
@@ -37,6 +24,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "history/history_media_types.h"
 #include "history/history_item_components.h"
 #include "ui/effects/round_checkbox.h"
+#include "ui/text_options.h"
 
 namespace Overview {
 namespace Layout {
@@ -524,8 +512,8 @@ void Video::updateStatusText() {
 	int statusSize = 0;
 	if (_data->status == FileDownloadFailed || _data->status == FileUploadFailed) {
 		statusSize = FileStatusSizeFailed;
-	} else if (_data->status == FileUploading) {
-		statusSize = _data->uploadOffset;
+	} else if (_data->uploading()) {
+		statusSize = _data->uploadingData->offset;
 	} else if (_data->loading()) {
 		statusSize = _data->loadOffset();
 	} else if (_data->loaded()) {
@@ -619,7 +607,7 @@ void Voice::paint(Painter &p, const QRect &clip, TextSelection selection, const 
 
 		if (radial) {
 			QRect rinner(inner.marginsRemoved(QMargins(st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine)));
-			auto &bg = selected ? st::msgInBgSelected : st::msgInBg;
+			auto &bg = selected ? st::historyFileInRadialFgSelected : st::historyFileInRadialFg;
 			_radial->draw(p, rinner, st::msgFileRadialLine, bg);
 		}
 
@@ -695,7 +683,7 @@ HistoryTextState Voice::getState(
 	if (inner.contains(point)) {
 		const auto link = loaded
 			? _openl
-			: (_data->loading() || _data->status == FileUploading)
+			: (_data->loading() || _data->uploading())
 			? _cancell
 			: _openl;
 		return { parent(), link };
@@ -754,12 +742,12 @@ void Voice::updateName() {
 	auto version = 0;
 	if (const auto forwarded = parent()->Get<HistoryMessageForwarded>()) {
 		if (parent()->fromOriginal()->isChannel()) {
-			_name.setText(st::semiboldTextStyle, lng_forwarded_channel(lt_channel, App::peerName(parent()->fromOriginal())), _textNameOptions);
+			_name.setText(st::semiboldTextStyle, lng_forwarded_channel(lt_channel, App::peerName(parent()->fromOriginal())), Ui::NameTextOptions());
 		} else {
-			_name.setText(st::semiboldTextStyle, lng_forwarded(lt_user, App::peerName(parent()->fromOriginal())), _textNameOptions);
+			_name.setText(st::semiboldTextStyle, lng_forwarded(lt_user, App::peerName(parent()->fromOriginal())), Ui::NameTextOptions());
 		}
 	} else {
-		_name.setText(st::semiboldTextStyle, App::peerName(parent()->from()), _textNameOptions);
+		_name.setText(st::semiboldTextStyle, App::peerName(parent()->from()), Ui::NameTextOptions());
 	}
 	version = parent()->fromOriginal()->nameVersion;
 	_nameVersion = version;
@@ -878,7 +866,7 @@ void Document::paint(Painter &p, const QRect &clip, TextSelection selection, con
 
 			if (radial) {
 				auto rinner = inner.marginsRemoved(QMargins(st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine, st::msgFileRadialLine));
-				auto &bg = selected ? st::msgInBgSelected : st::msgInBg;
+				auto &bg = selected ? st::historyFileInRadialFgSelected : st::historyFileInRadialFg;
 				_radial->draw(p, rinner, st::msgFileRadialLine, bg);
 			}
 
@@ -1023,7 +1011,7 @@ HistoryTextState Document::getState(
 		if (inner.contains(point)) {
 			const auto link = loaded
 				? _openl
-				: (_data->loading() || _data->status == FileUploading)
+				: (_data->loading() || _data->uploading())
 				? _cancell
 				: _openl;
 			return { parent(), link };
@@ -1057,7 +1045,7 @@ HistoryTextState Document::getState(
 		if (rthumb.contains(point)) {
 			const auto link = loaded
 				? _openl
-				: (_data->loading() || _data->status == FileUploading)
+				: (_data->loading() || _data->uploading())
 				? _cancell
 				: _savel;
 			return { parent(), link };
@@ -1133,8 +1121,8 @@ bool Document::updateStatusText() {
 	int32 statusSize = 0, realDuration = 0;
 	if (_data->status == FileDownloadFailed || _data->status == FileUploadFailed) {
 		statusSize = FileStatusSizeFailed;
-	} else if (_data->status == FileUploading) {
-		statusSize = _data->uploadOffset;
+	} else if (_data->uploading()) {
+		statusSize = _data->uploadingData->offset;
 	} else if (_data->loading()) {
 		statusSize = _data->loadOffset();
 	} else if (_data->loaded()) {

@@ -1,26 +1,13 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/grouped_layout.h"
 
-namespace Data {
+namespace Ui {
 namespace {
 
 int Round(float64 value) {
@@ -113,7 +100,7 @@ Layouter::Layouter(
 , _maxHeight(maxWidth)
 , _minWidth(minWidth)
 , _spacing(spacing)
-, _averageRatio(ranges::accumulate(_ratios, 0.) / _count)
+, _averageRatio(ranges::accumulate(_ratios, 1.) / _count)
 , _maxSizeRatio(_maxWidth / float64(_maxHeight)) {
 }
 
@@ -454,9 +441,11 @@ std::vector<float64> ComplexLayouter::CropRatios(
 	return ranges::view::all(
 		ratios
 	) | ranges::view::transform([&](float64 ratio) {
+		constexpr auto kMaxRatio = 2.75;
+		constexpr auto kMinRatio = 0.6667;
 		return (averageRatio > 1.1)
-			? snap(ratio, 1., 1.7)
-			: snap(ratio, 0.66667, 1.);
+			? snap(ratio, 1., kMaxRatio)
+			: snap(ratio, kMinRatio, 1.);
 	}) | ranges::to_vector;
 }
 
@@ -586,4 +575,47 @@ std::vector<GroupMediaLayout> LayoutMediaGroup(
 	return Layouter(sizes, maxWidth, minWidth, spacing).layout();
 }
 
-} // namespace Data
+RectParts GetCornersFromSides(RectParts sides) {
+	const auto convert = [&](
+			RectPart side1,
+			RectPart side2,
+			RectPart corner) {
+		return ((sides & side1) && (sides & side2))
+			? corner
+			: RectPart::None;
+	};
+	return RectPart::None
+		| convert(RectPart::Top, RectPart::Left, RectPart::TopLeft)
+		| convert(RectPart::Top, RectPart::Right, RectPart::TopRight)
+		| convert(RectPart::Bottom, RectPart::Left, RectPart::BottomLeft)
+		| convert(RectPart::Bottom, RectPart::Right, RectPart::BottomRight);
+}
+
+QSize GetImageScaleSizeForGeometry(QSize original, QSize geometry) {
+	const auto width = geometry.width();
+	const auto height = geometry.height();
+	auto tw = original.width();
+	auto th = original.height();
+	if (tw * height > th * width) {
+		if (th > height || tw * height < 2 * th * width) {
+			tw = (height * tw) / th;
+			th = height;
+		} else if (tw < width) {
+			th = (width * th) / tw;
+			tw = width;
+		}
+	} else {
+		if (tw > width || th * width < 2 * tw * height) {
+			th = (width * th) / tw;
+			tw = width;
+		} else if (tw > 0 && th < height) {
+			tw = (height * tw) / th;
+			th = height;
+		}
+	}
+	if (tw < 1) tw = 1;
+	if (th < 1) th = 1;
+	return { tw, th };
+}
+
+} // namespace Ui

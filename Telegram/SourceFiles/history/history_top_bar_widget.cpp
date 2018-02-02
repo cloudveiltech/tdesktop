@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_top_bar_widget.h"
 
@@ -77,26 +64,26 @@ HistoryTopBarWidget::HistoryTopBarWidget(
 
 	rpl::combine(
 		_controller->historyPeer.value(),
-		_controller->searchInPeer.value())
-		| rpl::combine_previous(std::make_tuple(nullptr, nullptr))
-		| rpl::map([](
-				const std::tuple<PeerData*, PeerData*> &previous,
-				const std::tuple<PeerData*, PeerData*> &current) {
-			auto peer = std::get<0>(current);
-			auto searchPeer = std::get<1>(current);
-			auto peerChanged = (peer != std::get<0>(previous));
-			auto searchInPeer
-				= (peer != nullptr) && (peer == searchPeer);
-			return std::make_tuple(searchInPeer, peerChanged);
-		})
-		| rpl::start_with_next([this](
-				bool searchInHistoryPeer,
-				bool peerChanged) {
-			auto animated = peerChanged
-				? anim::type::instant
-				: anim::type::normal;
-			_search->setForceRippled(searchInHistoryPeer, animated);
-		}, lifetime());
+		_controller->searchInPeer.value()
+	) | rpl::combine_previous(
+		std::make_tuple(nullptr, nullptr)
+	) | rpl::map([](
+			const std::tuple<PeerData*, PeerData*> &previous,
+			const std::tuple<PeerData*, PeerData*> &current) {
+		auto peer = std::get<0>(current);
+		auto searchPeer = std::get<1>(current);
+		auto peerChanged = (peer != std::get<0>(previous));
+		auto searchInPeer
+			= (peer != nullptr) && (peer == searchPeer);
+		return std::make_tuple(searchInPeer, peerChanged);
+	}) | rpl::start_with_next([this](
+			bool searchInHistoryPeer,
+			bool peerChanged) {
+		auto animated = peerChanged
+			? anim::type::instant
+			: anim::type::normal;
+		_search->setForceRippled(searchInHistoryPeer, animated);
+	}, lifetime());
 
 	subscribe(Adaptive::Changed(), [this] { updateAdaptiveLayout(); });
 	if (Adaptive::OneColumn()) {
@@ -126,10 +113,10 @@ HistoryTopBarWidget::HistoryTopBarWidget(
 
 	rpl::combine(
 		Auth().data().thirdSectionInfoEnabledValue(),
-		Auth().data().tabbedReplacedWithInfoValue())
-		| rpl::start_with_next(
-			[this] { updateInfoToggleActive(); },
-			lifetime());
+		Auth().data().tabbedReplacedWithInfoValue()
+	) | rpl::start_with_next(
+		[this] { updateInfoToggleActive(); },
+		lifetime());
 
 	setCursor(style::cur_pointer);
 	updateControlsVisibility();

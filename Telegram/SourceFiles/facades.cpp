@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "facades.h"
 
@@ -35,7 +22,6 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "window/layer_widget.h"
 #include "lang/lang_keys.h"
 #include "base/observer.h"
-#include "base/task_queue.h"
 #include "history/history_media.h"
 #include "styles/style_history.h"
 
@@ -508,20 +494,7 @@ void WorkingDirReady() {
 	}
 }
 
-object_ptr<SingleQueuedInvokation> MainThreadTaskHandler = { nullptr };
-
-void MainThreadTaskAdded() {
-	if (!started()) {
-		return;
-	}
-
-	MainThreadTaskHandler->call();
-}
-
 void start() {
-	MainThreadTaskHandler.create([] {
-		base::TaskQueue::ProcessMainTasks();
-	});
 	SandboxData = std::make_unique<internal::Data>();
 }
 
@@ -531,7 +504,6 @@ bool started() {
 
 void finish() {
 	SandboxData.reset();
-	MainThreadTaskHandler.destroy();
 }
 
 uint64 UserTag() {

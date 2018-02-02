@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/profile/info_profile_members_controllers.h"
 
@@ -152,10 +139,12 @@ std::unique_ptr<PeerListState> ChatMembersController::saveState() const {
 	auto result = PeerListController::saveState();
 	auto my = std::make_unique<SavedState>();
 	using Flag = Notify::PeerUpdate::Flag;
-	Notify::PeerUpdateViewer(_chat, Flag::MembersChanged)
-		| rpl::start_with_next([state = result.get()](auto update) {
-			state->controllerState = nullptr;
-		}, my->lifetime);
+	Notify::PeerUpdateViewer(
+		_chat,
+		Flag::MembersChanged
+	) | rpl::start_with_next([state = result.get()](auto update) {
+		state->controllerState = nullptr;
+	}, my->lifetime);
 	result->controllerState = std::move(my);
 	return result;
 }
@@ -307,7 +296,8 @@ void ChatMembersController::removeMember(not_null<UserData*> user) {
 	auto text = lng_profile_sure_kick(lt_user, user->firstName);
 	Ui::show(Box<ConfirmBox>(text, lang(lng_box_remove), [user, chat = _chat] {
 		Ui::hideLayer();
-		if (App::main()) App::main()->kickParticipant(chat, user);
+		Auth().api().kickParticipant(chat, user);
+		Ui::showPeerHistory(chat->id, ShowAtTheEndMsgId);
 	}));
 }
 

@@ -1,26 +1,69 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
 #include "base/flags.h"
+
+enum class ImageRoundRadius {
+	None,
+	Large,
+	Small,
+	Ellipse,
+};
+
+namespace Images {
+
+QPixmap PixmapFast(QImage &&image);
+
+QImage prepareBlur(QImage image);
+void prepareRound(
+	QImage &image,
+	ImageRoundRadius radius,
+	RectParts corners = RectPart::AllCorners,
+	QRect target = QRect());
+void prepareRound(
+	QImage &image,
+	QImage *cornerMasks,
+	RectParts corners = RectPart::AllCorners,
+	QRect target = QRect());
+void prepareCircle(QImage &image);
+QImage prepareColored(style::color add, QImage image);
+QImage prepareOpaque(QImage image);
+
+enum class Option {
+	None                  = 0,
+	Smooth                = (1 << 0),
+	Blurred               = (1 << 1),
+	Circled               = (1 << 2),
+	RoundedLarge          = (1 << 3),
+	RoundedSmall          = (1 << 4),
+	RoundedTopLeft        = (1 << 5),
+	RoundedTopRight       = (1 << 6),
+	RoundedBottomLeft     = (1 << 7),
+	RoundedBottomRight    = (1 << 8),
+	RoundedAll            = (None
+		| RoundedTopLeft
+		| RoundedTopRight
+		| RoundedBottomLeft
+		| RoundedBottomRight),
+	Colored               = (1 << 9),
+	TransparentBackground = (1 << 10),
+};
+using Options = base::flags<Option>;
+inline constexpr auto is_flag_type(Option) { return true; };
+
+QImage prepare(QImage img, int w, int h, Options options, int outerw, int outerh, const style::color *colored = nullptr);
+
+inline QPixmap pixmap(QImage img, int w, int h, Options options, int outerw, int outerh, const style::color *colored = nullptr) {
+	return QPixmap::fromImage(prepare(img, w, h, options, outerw, outerh, colored), Qt::ColorOnly);
+}
+
+} // namespace Images
 
 class FileLoader;
 class mtpFileLoader;
@@ -33,13 +76,6 @@ enum LoadFromCloudSetting {
 enum LoadToCacheSetting {
 	LoadToFileOnly,
 	LoadToCacheAsWell,
-};
-
-enum class ImageRoundRadius {
-	None,
-	Large,
-	Small,
-	Ellipse,
 };
 
 inline uint32 packInt(int32 a) {
@@ -191,40 +227,6 @@ private:
 inline bool operator!=(const WebFileImageLocation &a, const WebFileImageLocation &b) {
 	return !(a == b);
 }
-
-namespace Images {
-
-QImage prepareBlur(QImage image);
-void prepareRound(QImage &image, ImageRoundRadius radius, RectParts corners = RectPart::AllCorners);
-void prepareRound(QImage &image, QImage *cornerMasks, RectParts corners = RectPart::AllCorners);
-void prepareCircle(QImage &image);
-QImage prepareColored(style::color add, QImage image);
-QImage prepareOpaque(QImage image);
-
-enum class Option {
-	None                  = 0,
-	Smooth                = (1 << 0),
-	Blurred               = (1 << 1),
-	Circled               = (1 << 2),
-	RoundedLarge          = (1 << 3),
-	RoundedSmall          = (1 << 4),
-	RoundedTopLeft        = (1 << 5),
-	RoundedTopRight       = (1 << 6),
-	RoundedBottomLeft     = (1 << 7),
-	RoundedBottomRight    = (1 << 8),
-	Colored               = (1 << 9),
-	TransparentBackground = (1 << 10),
-};
-using Options = base::flags<Option>;
-inline constexpr auto is_flag_type(Option) { return true; };
-
-QImage prepare(QImage img, int w, int h, Options options, int outerw, int outerh, const style::color *colored = nullptr);
-
-inline QPixmap pixmap(QImage img, int w, int h, Options options, int outerw, int outerh, const style::color *colored = nullptr) {
-	return QPixmap::fromImage(prepare(img, w, h, options, outerw, outerh, colored), Qt::ColorOnly);
-}
-
-} // namespace Images
 
 class DelayedStorageImage;
 

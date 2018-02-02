@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_message.h"
 
@@ -33,6 +20,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "boxes/share_box.h"
 #include "boxes/confirm_box.h"
 #include "ui/toast/toast.h"
+#include "ui/text_options.h"
 #include "messenger.h"
 #include "styles/style_dialogs.h"
 #include "styles/style_widgets.h"
@@ -138,13 +126,12 @@ int KeyboardStyle::minButtonWidth(
 	return result;
 }
 
-inline void initTextOptions() {
-	_historySrvOptions.dir = _textNameOptions.dir = _textDlgOptions.dir = cLangDir();
-	_textDlgOptions.maxw = st::columnMaximalWidthLeft * 2;
-}
-
 QString AdminBadgeText() {
 	return lang(lng_admin_badge);
+}
+
+QString FastReplyText() {
+	return lang(lng_fast_reply);
 }
 
 style::color FromNameFg(not_null<PeerData*> peer, bool selected) {
@@ -407,10 +394,6 @@ void FastShareMessage(not_null<HistoryItem*> item) {
 		std::move(copyLinkCallback),
 		std::move(submitCallback),
 		std::move(filterCallback)));
-}
-
-void HistoryInitMessages() {
-	initTextOptions();
 }
 
 base::lambda<void(ChannelData*, MsgId)> HistoryDependentItemCallback(
@@ -1159,10 +1142,16 @@ void HistoryMessage::initDimensions() {
 				if (via && !forwarded) {
 					namew += st::msgServiceFont->spacew + via->maxWidth;
 				}
+				const auto replyWidth = hasFastReply()
+					? st::msgFont->width(FastReplyText())
+					: 0;
 				if (_flags & MTPDmessage_ClientFlag::f_has_admin_badge) {
-					auto badgeWidth = st::msgServiceFont->width(
+					const auto badgeWidth = st::msgFont->width(
 						AdminBadgeText());
-					namew += st::msgPadding.right() + badgeWidth;
+					namew += st::msgPadding.right()
+						+ std::max(badgeWidth, replyWidth);
+				} else if (replyWidth) {
+					namew += st::msgPadding.right() + replyWidth;
 				}
 				accumulate_max(_maxw, namew);
 			} else if (via && !forwarded) {
@@ -1224,6 +1213,15 @@ bool HistoryMessage::hasFromName() const {
 		&& (!history()->peer->isUser() || history()->peer->isSelf());
 }
 
+bool HistoryMessage::hasFastReply() const {
+	return !hasOutLayout()
+		&& (history()->peer->isChat() || history()->peer->isMegagroup());
+}
+
+bool HistoryMessage::displayFastReply() const {
+	return hasFastReply() && history()->peer->canWrite();
+}
+
 QRect HistoryMessage::countGeometry() const {
 	auto maxwidth = qMin(st::msgMaxWidth, _maxw);
 	if (_media && _media->currentWidth() < maxwidth) {
@@ -1260,10 +1258,14 @@ QRect HistoryMessage::countGeometry() const {
 }
 
 void HistoryMessage::fromNameUpdated(int32 width) const {
+	const auto replyWidth = hasFastReply()
+		? st::msgFont->width(FastReplyText())
+		: 0;
 	if (_flags & MTPDmessage_ClientFlag::f_has_admin_badge) {
-		auto badgeWidth = st::msgServiceFont->width(
-			AdminBadgeText());
-		width -= st::msgPadding.right() + badgeWidth;
+		const auto badgeWidth = st::msgFont->width(AdminBadgeText());
+		width -= st::msgPadding.right() + std::max(badgeWidth, replyWidth);
+	} else if (replyWidth) {
+		width -= st::msgPadding.right() + replyWidth;
 	}
 	_fromNameVersion = displayFrom()->nameVersion;
 	if (!Has<HistoryMessageForwarded>()) {
@@ -1375,9 +1377,9 @@ void HistoryMessage::updateMedia(const MTPMessageMedia *media) {
 	setPendingInitDimensions();
 }
 
-void HistoryMessage::addToUnreadMentions(AddToUnreadMentionsMethod method) {
-	if (indexInUnreadMentions() && mentionsMe() && isMediaUnread()) {
-		if (history()->addToUnreadMentions(id, method)) {
+void HistoryMessage::addToUnreadMentions(UnreadMentionType type) {
+	if (IsServerMsgId(id) && mentionsMe() && isMediaUnread()) {
+		if (history()->addToUnreadMentions(id, type)) {
 			Notify::peerUpdatedDelayed(
 				history()->peer,
 				Notify::PeerUpdate::Flag::UnreadMentionsChanged);
@@ -1501,9 +1503,18 @@ void HistoryMessage::setText(const TextWithEntities &textWithEntities) {
 	} else {
 		auto mediaOnBottom = (_media && _media->isDisplayed() && _media->isBubbleBottom()) || Has<HistoryMessageLogEntryOriginal>();
 		if (mediaOnBottom) {
-			_text.setMarkedText(st::messageTextStyle, textWithEntities, itemTextOptions(this));
+			_text.setMarkedText(
+				st::messageTextStyle,
+				textWithEntities,
+				Ui::ItemTextOptions(this));
 		} else {
-			_text.setMarkedText(st::messageTextStyle, { textWithEntities.text + skipBlock(), textWithEntities.entities }, itemTextOptions(this));
+			_text.setMarkedText(
+				st::messageTextStyle,
+				{
+					textWithEntities.text + skipBlock(),
+					textWithEntities.entities
+				},
+				Ui::ItemTextOptions(this));
 		}
 		_textWidth = -1;
 		_textHeight = 0;
@@ -1511,7 +1522,10 @@ void HistoryMessage::setText(const TextWithEntities &textWithEntities) {
 }
 
 void HistoryMessage::setEmptyText() {
-	_text.setMarkedText(st::messageTextStyle, { QString(), EntitiesInText() }, itemTextOptions(this));
+	_text.setMarkedText(
+		st::messageTextStyle,
+		{ QString(), EntitiesInText() },
+		Ui::ItemTextOptions(this));
 
 	_textWidth = -1;
 	_textHeight = 0;
@@ -1875,18 +1889,28 @@ void HistoryMessage::drawRightAction(Painter &p, int left, int top, int outerWid
 	}
 }
 
-void HistoryMessage::paintFromName(Painter &p, QRect &trect, bool selected) const {
+void HistoryMessage::paintFromName(
+		Painter &p,
+		QRect &trect,
+		bool selected) const {
 	if (displayFromName()) {
-		auto badgeWidth = [&] {
+		const auto badgeWidth = [&] {
 			if (_flags & MTPDmessage_ClientFlag::f_has_admin_badge) {
-				return st::msgServiceFont->width(AdminBadgeText());
+				return st::msgFont->width(AdminBadgeText());
 			}
 			return 0;
 		}();
+		const auto replyWidth = [&] {
+			if (App::hoveredItem() == this && displayFastReply()) {
+				return st::msgFont->width(FastReplyText());
+			}
+			return 0;
+		}();
+		const auto rightWidth = replyWidth ? replyWidth : badgeWidth;
 		auto availableLeft = trect.left();
 		auto availableWidth = trect.width();
-		if (badgeWidth) {
-			availableWidth -= st::msgPadding.right() + badgeWidth;
+		if (rightWidth) {
+			availableWidth -= st::msgPadding.right() + rightWidth;
 		}
 
 		p.setFont(st::msgNameFont);
@@ -1910,13 +1934,15 @@ void HistoryMessage::paintFromName(Painter &p, QRect &trect, bool selected) cons
 			availableLeft += skipWidth;
 			availableWidth -= skipWidth;
 		}
-		if (badgeWidth) {
+		if (rightWidth) {
 			p.setPen(selected ? st::msgInDateFgSelected : st::msgInDateFg);
-			p.setFont(st::msgFont);
+			p.setFont(ClickHandler::showAsActive(_fastReplyLink)
+				? st::msgFont->underline()
+				: st::msgFont);
 			p.drawText(
-				trect.left() + trect.width() - badgeWidth,
+				trect.left() + trect.width() - rightWidth,
 				trect.top() + st::msgFont->ascent,
-				AdminBadgeText());
+				replyWidth ? FastReplyText() : AdminBadgeText());
 		}
 		trect.setY(trect.y() + st::msgNameFont->height);
 	}
@@ -2264,6 +2290,20 @@ ClickHandlerPtr HistoryMessage::rightActionLink() const {
 	return _rightActionLink;
 }
 
+ClickHandlerPtr HistoryMessage::fastReplyLink() const {
+	if (!_fastReplyLink) {
+		const auto itemId = fullId();
+		_fastReplyLink = std::make_shared<LambdaClickHandler>([=] {
+			if (const auto item = App::histItemById(itemId)) {
+				if (const auto main = App::main()) {
+					main->replyToItem(item);
+				}
+			}
+		});
+	}
+	return _fastReplyLink;
+}
+
 // Forward to _media.
 void HistoryMessage::updatePressed(QPoint point) {
 	if (!_media) return;
@@ -2320,15 +2360,40 @@ bool HistoryMessage::getStateFromName(
 		QRect &trect,
 		not_null<HistoryTextState*> outResult) const {
 	if (displayFromName()) {
+		const auto replyWidth = [&] {
+			if (App::hoveredItem() == this && displayFastReply()) {
+				return st::msgFont->width(FastReplyText());
+			}
+			return 0;
+		}();
+		if (replyWidth
+			&& point.x() >= trect.left() + trect.width() - replyWidth
+			&& point.x() < trect.left() + trect.width() + st::msgPadding.right()
+			&& point.y() >= trect.top() - st::msgPadding.top()
+			&& point.y() < trect.top() + st::msgServiceFont->height) {
+			outResult->link = fastReplyLink();
+			return true;
+		}
 		if (point.y() >= trect.top() && point.y() < trect.top() + st::msgNameFont->height) {
+			auto availableLeft = trect.left();
+			auto availableWidth = trect.width();
+			if (replyWidth) {
+				availableWidth -= st::msgPadding.right() + replyWidth;
+			}
 			auto user = displayFrom();
-			if (point.x() >= trect.left() && point.x() < trect.left() + trect.width() && point.x() < trect.left() + user->nameText.maxWidth()) {
+			if (point.x() >= availableLeft
+				&& point.x() < availableLeft + availableWidth
+				&& point.x() < availableLeft + user->nameText.maxWidth()) {
 				outResult->link = user->openLink();
 				return true;
 			}
 			auto forwarded = Get<HistoryMessageForwarded>();
 			auto via = Get<HistoryMessageVia>();
-			if (via && !forwarded && point.x() >= trect.left() + author()->nameText.maxWidth() + st::msgServiceFont->spacew && point.x() < trect.left() + user->nameText.maxWidth() + st::msgServiceFont->spacew + via->width) {
+			if (via
+				&& !forwarded
+				&& point.x() >= availableLeft + author()->nameText.maxWidth() + st::msgServiceFont->spacew
+				&& point.x() < availableLeft + availableWidth
+				&& point.x() < availableLeft + user->nameText.maxWidth() + st::msgServiceFont->spacew + via->width) {
 				outResult->link = via->link;
 				return true;
 			}

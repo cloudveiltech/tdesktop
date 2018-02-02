@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
@@ -28,13 +15,17 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "base/flat_set.h"
 #include "chat_helpers/stickers.h"
 
+class TaskQueue;
 class AuthSession;
+enum class SparseIdsLoadDirection;
+struct MessageGroupId;
+struct SendingAlbum;
+enum class SendMediaType;
 
 namespace Storage {
 enum class SharedMediaType : char;
+struct PreparedList;
 } // namespace Storage
-
-enum class SparseIdsLoadDirection;
 
 namespace Api {
 
@@ -52,7 +43,6 @@ class ApiWrap : private MTP::Sender, private base::Subscriber {
 public:
 	ApiWrap(not_null<AuthSession*> session);
 
-	void start();
 	void applyUpdates(const MTPUpdates &updates, uint64 sentMessageRandomId = 0);
 
 	using RequestMessageDataCallback = base::lambda<void(ChannelData*, MsgId)>;
@@ -66,6 +56,10 @@ public:
 	void requestAdmins(not_null<ChannelData*> channel);
 	void requestParticipantsCountDelayed(not_null<ChannelData*> channel);
 
+	void requestChangelog(
+		const QString &sinceVersion,
+		base::lambda<void(const MTPUpdates &result)> callback);
+
 	void requestChannelMembersForAdd(
 		not_null<ChannelData*> channel,
 		base::lambda<void(const MTPchannels_ChannelParticipants&)> callback);
@@ -73,8 +67,14 @@ public:
 	void processFullPeer(UserData *user, const MTPUserFull &result);
 
 	void requestSelfParticipant(ChannelData *channel);
-	void kickParticipant(PeerData *peer, UserData *user, const MTPChannelBannedRights &currentRights);
-	void unblockParticipant(PeerData *peer, UserData *user);
+	void kickParticipant(not_null<ChatData*> chat, not_null<UserData*> user);
+	void kickParticipant(
+		not_null<ChannelData*> channel,
+		not_null<UserData*> user,
+		const MTPChannelBannedRights &currentRights);
+	void unblockParticipant(
+		not_null<ChannelData*> channel,
+		not_null<UserData*> user);
 
 	void requestWebPageDelayed(WebPageData *page);
 	void clearWebPageRequest(WebPageData *page);
@@ -186,6 +186,33 @@ public:
 	void readServerHistory(not_null<History*> history);
 	void readServerHistoryForce(not_null<History*> history);
 
+	void sendVoiceMessage(
+		QByteArray result,
+		VoiceWaveform waveform,
+		int duration,
+		const SendOptions &options);
+	void sendFiles(
+		Storage::PreparedList &&list,
+		SendMediaType type,
+		QString caption,
+		std::shared_ptr<SendingAlbum> album,
+		const SendOptions &options);
+	void sendFile(
+		const QByteArray &fileContent,
+		SendMediaType type,
+		const SendOptions &options);
+
+	void sendUploadedPhoto(
+		FullMsgId localId,
+		const MTPInputFile &file,
+		bool silent);
+	void sendUploadedDocument(
+		FullMsgId localId,
+		const MTPInputFile &file,
+		const base::optional<MTPInputFile> &thumb,
+		bool silent);
+	void cancelLocalItem(not_null<HistoryItem*> item);
+
 	~ApiWrap();
 
 private:
@@ -197,8 +224,6 @@ private:
 	using MessageDataRequests = QMap<MsgId, MessageDataRequest>;
 	using SharedMediaType = Storage::SharedMediaType;
 
-	void requestAppChangelogs();
-	void addLocalChangelogs(int oldAppVersion);
 	void updatesReceived(const MTPUpdates &updates);
 	void checkQuitPreventFinished();
 
@@ -283,9 +308,30 @@ private:
 	void applyAffectedMessages(
 		not_null<PeerData*> peer,
 		const MTPmessages_AffectedMessages &result);
+	void sendMessageFail(const RPCError &error);
+	void uploadAlbumMedia(
+		not_null<HistoryItem*> item,
+		const MessageGroupId &groupId,
+		const MTPInputMedia &media);
+	void sendAlbumWithUploaded(
+		not_null<HistoryItem*> item,
+		const MessageGroupId &groupId,
+		const MTPInputMedia &media);
+	void sendAlbumWithCancelled(
+		not_null<HistoryItem*> item,
+		const MessageGroupId &groupId);
+	void sendAlbumIfReady(not_null<SendingAlbum*> album);
+	void sendMedia(
+		not_null<HistoryItem*> item,
+		const MTPInputMedia &media,
+		bool silent);
+	void sendMediaWithRandomId(
+		not_null<HistoryItem*> item,
+		const MTPInputMedia &media,
+		bool silent,
+		uint64 randomId);
 
 	not_null<AuthSession*> _session;
-	mtpRequestId _changelogSubscription = 0;
 
 	MessageDataRequests _messageDataRequests;
 	QMap<ChannelData*, MessageDataRequests> _channelMessageDataRequests;
@@ -304,9 +350,10 @@ private:
 	mtpRequestId _channelMembersForAddRequestId = 0;
 	base::lambda<void(const MTPchannels_ChannelParticipants&)> _channelMembersForAddCallback;
 
-	typedef QPair<PeerData*, UserData*> KickRequest;
-	typedef QMap<KickRequest, mtpRequestId> KickRequests;
-	KickRequests _kickRequests;
+	using KickRequest = std::pair<
+		not_null<ChannelData*>,
+		not_null<UserData*>>;
+	base::flat_map<KickRequest, mtpRequestId> _kickRequests;
 
 	QMap<ChannelData*, mtpRequestId> _selfParticipantRequests;
 
@@ -375,6 +422,8 @@ private:
 	};
 	base::flat_map<not_null<PeerData*>, ReadRequest> _readRequests;
 	base::flat_map<not_null<PeerData*>, MsgId> _readRequestsPending;
+	std::unique_ptr<TaskQueue> _fileLoader;
+	base::flat_map<uint64, std::shared_ptr<SendingAlbum>> _sendingAlbums;
 
 	base::Observable<PeerData*> _fullPeerUpdated;
 

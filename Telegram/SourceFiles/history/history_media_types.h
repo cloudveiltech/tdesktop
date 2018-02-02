@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
@@ -43,7 +30,6 @@ namespace Ui {
 class EmptyUserpic;
 } // namespace Ui
 
-void HistoryInitMedia();
 TextWithEntities WithCaptionSelectedText(
 	const QString &attachType,
 	const Text &caption,
@@ -263,15 +249,9 @@ public:
 	}
 
 protected:
-	float64 dataProgress() const override {
-		return _data->progress();
-	}
-	bool dataFinished() const override {
-		return !_data->loading() && !_data->uploading();
-	}
-	bool dataLoaded() const override {
-		return _data->loaded();
-	}
+	float64 dataProgress() const override;
+	bool dataFinished() const override;
+	bool dataLoaded() const override;
 
 private:
 	void validateGroupedCache(
@@ -383,15 +363,9 @@ public:
 	}
 
 protected:
-	float64 dataProgress() const override {
-		return _data->progress();
-	}
-	bool dataFinished() const override {
-		return !_data->loading() && !_data->uploading();
-	}
-	bool dataLoaded() const override {
-		return _data->loaded();
-	}
+	float64 dataProgress() const override;
+	bool dataFinished() const override;
+	bool dataLoaded() const override;
 
 private:
 	void validateGroupedCache(
@@ -493,15 +467,9 @@ public:
 	void clickHandlerPressedChanged(const ClickHandlerPtr &p, bool pressed) override;
 
 protected:
-	float64 dataProgress() const override {
-		return _data->progress();
-	}
-	bool dataFinished() const override {
-		return !_data->loading() && !_data->uploading();
-	}
-	bool dataLoaded() const override {
-		return _data->loaded();
-	}
+	float64 dataProgress() const override;
+	bool dataFinished() const override;
+	bool dataLoaded() const override;
 
 private:
 	void createComponents(bool caption);
@@ -961,13 +929,15 @@ private:
 	std::unique_ptr<HistoryMedia> _attach;
 
 	bool _asArticle = false;
-	int32 _titleLines, _descriptionLines;
+	int _dataVersion = -1;
+	int _titleLines = 0;
+	int _descriptionLines = 0;
 
 	Text _title, _description;
-	int32 _siteNameWidth = 0;
+	int _siteNameWidth = 0;
 
 	QString _duration;
-	int32 _durationWidth = 0;
+	int _durationWidth = 0;
 
 	int16 _pixw = 0;
 	int16 _pixh = 0;

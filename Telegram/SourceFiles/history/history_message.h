@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
@@ -24,7 +11,6 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 
 struct HistoryMessageEdited;
 
-void HistoryInitMessages();
 base::lambda<void(ChannelData*, MsgId)> HistoryDependentItemCallback(
 	const FullMsgId &msgId);
 MTPDmessage::Flags NewMessageFlags(not_null<PeerData*> peer);
@@ -170,6 +156,8 @@ public:
 		if (isAttachedToPrevious()) return false;
 		return true;
 	}
+	bool hasFastReply() const;
+	bool displayFastReply() const;
 	bool displayForwardedFrom() const;
 	bool uploading() const;
 	bool displayRightAction() const override;
@@ -207,7 +195,7 @@ public:
 		setReplyMarkup(markup);
 	}
 
-	void addToUnreadMentions(AddToUnreadMentionsMethod method) override;
+	void addToUnreadMentions(UnreadMentionType type) override;
 	void eraseFromUnreadMentions() override;
 	Storage::SharedMediaTypesMask sharedMediaTypes() const override;
 
@@ -361,17 +349,19 @@ private:
 	bool displayFastShare() const;
 	bool displayGoToOriginal() const;
 
-	QString _timeText;
-	int _timeWidth = 0;
-
-	mutable ClickHandlerPtr _rightActionLink;
-	mutable int32 _fromNameVersion = 0;
-
 	struct CreateConfig;
 	void createComponentsHelper(MTPDmessage::Flags flags, MsgId replyTo, UserId viaBotId, const QString &postAuthor, const MTPReplyMarkup &markup);
 	void createComponents(const CreateConfig &config);
 
 	void updateMediaInBubbleState();
 	void updateAdminBadgeState();
+	ClickHandlerPtr fastReplyLink() const;
+
+	QString _timeText;
+	int _timeWidth = 0;
+
+	mutable ClickHandlerPtr _rightActionLink;
+	mutable ClickHandlerPtr _fastReplyLink;
+	mutable int32 _fromNameVersion = 0;
 
 };

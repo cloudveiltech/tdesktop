@@ -1,32 +1,31 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
 #include "base/observer.h"
 
 // legacy
-bool filedialogGetSaveFile(QString &file, const QString &caption, const QString &filter, const QString &initialPath);
+bool filedialogGetSaveFile(
+	QString &file,
+	const QString &caption,
+	const QString &filter,
+	const QString &initialPath);
 
-QString filedialogDefaultName(const QString &prefix, const QString &extension, const QString &path = QString(), bool skipExistance = false, int fileTime = 0);
-QString filedialogNextFilename(const QString &name, const QString &cur, const QString &path = QString());
+QString filedialogDefaultName(
+	const QString &prefix,
+	const QString &extension,
+	const QString &path = QString(),
+	bool skipExistance = false,
+	int fileTime = 0);
+QString filedialogNextFilename(
+	const QString &name,
+	const QString &cur,
+	const QString &path = QString());
 
 namespace File {
 
@@ -54,10 +53,27 @@ struct OpenResult {
 	QStringList paths;
 	QByteArray remoteContent;
 };
-void GetOpenPath(const QString &caption, const QString &filter, base::lambda<void(const OpenResult &result)> callback, base::lambda<void()> failed = base::lambda<void()>());
-void GetOpenPaths(const QString &caption, const QString &filter, base::lambda<void(const OpenResult &result)> callback, base::lambda<void()> failed = base::lambda<void()>());
-void GetWritePath(const QString &caption, const QString &filter, const QString &initialPath, base::lambda<void(const QString &result)> callback, base::lambda<void()> failed = base::lambda<void()>());
-void GetFolder(const QString &caption, const QString &initialPath, base::lambda<void(const QString &result)> callback, base::lambda<void()> failed = base::lambda<void()>());
+void GetOpenPath(
+	const QString &caption,
+	const QString &filter,
+	base::lambda<void(OpenResult &&result)> callback,
+	base::lambda<void()> failed = base::lambda<void()>());
+void GetOpenPaths(
+	const QString &caption,
+	const QString &filter,
+	base::lambda<void(OpenResult &&result)> callback,
+	base::lambda<void()> failed = base::lambda<void()>());
+void GetWritePath(
+	const QString &caption,
+	const QString &filter,
+	const QString &initialPath,
+	base::lambda<void(QString &&result)> callback,
+	base::lambda<void()> failed = base::lambda<void()>());
+void GetFolder(
+	const QString &caption,
+	const QString &initialPath,
+	base::lambda<void(QString &&result)> callback,
+	base::lambda<void()> failed = base::lambda<void()>());
 
 QString AllFilesFilter();
 
@@ -72,7 +88,13 @@ enum class Type {
 
 void InitLastPathDefault();
 
-bool GetDefault(QStringList &files, QByteArray &remoteContent, const QString &caption, const QString &filter, ::FileDialog::internal::Type type, QString startFile);
+bool GetDefault(
+	QStringList &files,
+	QByteArray &remoteContent,
+	const QString &caption,
+	const QString &filter,
+	::FileDialog::internal::Type type,
+	QString startFile);
 
 } // namespace internal
 } // namespace FileDialog

@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/confirm_box.h"
 
@@ -327,7 +314,7 @@ void ConvertToSupergroupBox::convertDone(const MTPUpdates &updates) {
 	auto handleChats = [](auto &mtpChats) {
 		for_const (auto &mtpChat, mtpChats.v) {
 			if (mtpChat.type() == mtpc_channel) {
-				auto channel = App::channel(mtpChat.c_channel().vid.v);
+				const auto channel = App::channel(mtpChat.c_channel().vid.v);
 				Ui::showPeerHistory(channel, ShowAtUnreadMsgId);
 				Auth().api().requestParticipantsCountDelayed(channel);
 			}
@@ -565,13 +552,22 @@ void DeleteMessagesBox::deleteAndClear() {
 
 	if (_moderateFrom) {
 		if (_banUser && _banUser->checked()) {
-			Auth().api().kickParticipant(_moderateInChannel, _moderateFrom, MTP_channelBannedRights(MTP_flags(0), MTP_int(0)));
+			Auth().api().kickParticipant(
+				_moderateInChannel,
+				_moderateFrom,
+				MTP_channelBannedRights(MTP_flags(0), MTP_int(0)));
 		}
 		if (_reportSpam->checked()) {
-			MTP::send(MTPchannels_ReportSpam(_moderateInChannel->inputChannel, _moderateFrom->inputUser, MTP_vector<MTPint>(1, MTP_int(_ids[0].msg))));
+			MTP::send(
+				MTPchannels_ReportSpam(
+					_moderateInChannel->inputChannel,
+					_moderateFrom->inputUser,
+					MTP_vector<MTPint>(1, MTP_int(_ids[0].msg))));
 		}
 		if (_deleteAll && _deleteAll->checked()) {
-			App::main()->deleteAllFromUser(_moderateInChannel, _moderateFrom);
+			App::main()->deleteAllFromUser(
+				_moderateInChannel,
+				_moderateFrom);
 		}
 	}
 

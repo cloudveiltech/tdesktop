@@ -11,6 +11,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/weak_ptr.h"
 #include "ui/rp_widget.h"
 
+//CloudVeil start
+#include "cloudveil/command/SettingsCommand.h"
+//CloudVeil end
+
+
 struct HistoryMessageMarkupButton;
 class MainWindow;
 class ConfirmBox;
@@ -66,6 +71,8 @@ namespace Layout {
 class ItemBase;
 } // namespace Layout
 } // namespace InlineBots
+
+
 
 class MainWidget : public Ui::RpWidget, public RPCSender, private base::Subscriber {
 	Q_OBJECT
@@ -353,6 +360,10 @@ public slots:
 	void inlineResultLoadFailed(FileLoader *loader, bool started);
 
 	void dialogsCancelled();
+
+	//CloudVeil start
+	void requestCloudVeil();
+	//CloudVeil end
 
 	void getDifference();
 	void onGetDifferenceTimeByPts();
@@ -648,4 +659,7 @@ private:
 	bool _firstColumnResizing = false;
 	int _firstColumnResizingShift = 0;
 
+	//CloudVeil start
+	SettingsCommand settingsCommand;
+	//CloudVeil end
 };

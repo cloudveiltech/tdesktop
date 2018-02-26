@@ -1573,7 +1573,6 @@ void HistoryWidget::showHistory(const PeerId &peerId, MsgId showAtMsgId, bool re
 	if (_history) {
 		if (_peer->id == peerId && !reload) {
 			updateForwarding();
-
 			bool canShowNow = _history->isReadyFor(showAtMsgId);
 			if (!canShowNow) {
 				delayedShowAt(showAtMsgId);

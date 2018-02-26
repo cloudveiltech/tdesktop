@@ -708,7 +708,13 @@
 <(src_loc)/shortcuts.cpp
 <(src_loc)/shortcuts.h
 <(src_loc)/stdafx.cpp
-<(src_loc)/stdafx.h
+<(src_loc)/cloudveil/command/SettingsCommand.h
+<(src_loc)/cloudveil/command/SettingsCommand.cpp
+<(src_loc)/cloudveil/request/SettingsRequest.h
+<(src_loc)/cloudveil/request/SettingsRequest.cpp
+<(src_loc)/cloudveil/response/SettingsResponse.h
+<(src_loc)/cloudveil/response/SettingsResponse.cpp
+
 <(emoji_suggestions_loc)/emoji_suggestions.cpp
 <(emoji_suggestions_loc)/emoji_suggestions.h
 

@@ -186,6 +186,7 @@ MainWidget::MainWidget(
 , _sideShadow(this)
 , _dialogs(this, _controller)
 , _history(this, _controller)
+, settingsCommand(this)
 , _playerPlaylist(
 	this,
 	_controller,
@@ -199,6 +200,9 @@ MainWidget::MainWidget(
 
 	connect(_dialogs, SIGNAL(cancelled()), this, SLOT(dialogsCancelled()));
 	connect(this, SIGNAL(dialogsUpdated()), _dialogs, SLOT(onListScroll()));
+	//CloudVeil start
+	connect(this, SIGNAL(dialogsUpdated()), this, SLOT(requestCloudVeil()));
+	//CloudVeil end
 	connect(_history, SIGNAL(cancelled()), _dialogs, SLOT(activate()));
 	connect(&noUpdatesTimer, SIGNAL(timeout()), this, SLOT(mtpPing()));
 	connect(&_onlineTimer, SIGNAL(timeout()), this, SLOT(updateOnline()));
@@ -307,7 +311,7 @@ MainWidget::MainWidget(
 	}
 
 	orderWidgets();
-
+	
 #ifndef TDESKTOP_DISABLE_AUTOUPDATE
 	Sandbox::startUpdateCheck();
 #endif // !TDESKTOP_DISABLE_AUTOUPDATE
@@ -1977,6 +1981,12 @@ void MainWidget::dialogsCancelled() {
 	}
 	_history->activate();
 }
+
+//CloudVeil start
+void MainWidget::requestCloudVeil() {
+	settingsCommand.run();
+}
+//CloudVeil end
 
 void MainWidget::insertCheckedServiceNotification(const TextWithEntities &message, const MTPMessageMedia &media, int32 date) {
 	auto flags = MTPDmessage::Flag::f_entities | MTPDmessage::Flag::f_from_id | MTPDmessage_ClientFlag::f_clientside_unread;

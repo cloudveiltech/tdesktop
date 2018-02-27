@@ -2,9 +2,9 @@
 class SettingsResponse
 {
 public:
-	QVector<long> channels;
-	QVector<long> bots;
-	QVector<long> groups;
+	QVector<int32> channels;
+	QVector<int32> bots;
+	QVector<int32> groups;
 
 	bool secretChat;
 	int secretChatMinimumLength;
@@ -16,9 +16,16 @@ public:
 
 	void readFromJson(QJsonObject &jsonObject);
 
+public:
+	void saveToCache();
+	static SettingsResponse loadFromCache();
+
 	SettingsResponse();
 	~SettingsResponse();
 private:
-	void readArrayFromJson(QJsonArray &jsonArray, QVector<long> &objects);
+	void readArrayFromJson(QJsonArray &jsonArray, QVector<int32> &objects);
+
+	void writeToJson(QJsonObject &json);
+	void writeArrayToJson(QJsonArray &jsonArray, QVector<int32> &objects);
 };
 

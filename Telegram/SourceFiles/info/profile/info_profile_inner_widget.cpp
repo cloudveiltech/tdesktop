@@ -102,7 +102,7 @@ object_ptr<Ui::RpWidget> InnerWidget::setupContent(
 	if (auto actions = SetupActions(_controller, result.data(), _peer)) {
 		result->add(std::move(actions));
 	}
-
+	
 	if (_peer->isChat() || _peer->isMegagroup()) {
 		_members = result->add(object_ptr<Members>(
 			result,

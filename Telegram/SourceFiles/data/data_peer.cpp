@@ -24,6 +24,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_controller.h"
 #include "ui/empty_userpic.h"
 #include "ui/text_options.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace {
 
@@ -180,15 +181,19 @@ void PeerData::setUserpicPhoto(const MTPPhoto &data) {
 }
 
 ImagePtr PeerData::currentUserpic() const {
-	if (_userpic) {
-		_userpic->load();
-		if (_userpic->loaded()) {
-			if (!useEmptyUserpic()) {
-				_userpicEmpty = nullptr;
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getSettings().disableProfilePhoto) {
+		if (_userpic) {
+			_userpic->load();
+			if (_userpic->loaded()) {
+				if (!useEmptyUserpic()) {
+					_userpicEmpty = nullptr;
+				}
+				return _userpic;
 			}
-			return _userpic;
 		}
 	}
+	//CloudVeil end
 	return ImagePtr();
 }
 

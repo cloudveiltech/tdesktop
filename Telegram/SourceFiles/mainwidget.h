@@ -12,7 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/rp_widget.h"
 
 //CloudVeil start
-#include "cloudveil/command/SettingsCommand.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 //CloudVeil end
 
 
@@ -660,6 +660,6 @@ private:
 	int _firstColumnResizingShift = 0;
 
 	//CloudVeil start
-	SettingsCommand settingsCommand;
+	GlobalSecuritySettings settingsCommand;
 	//CloudVeil end
 };

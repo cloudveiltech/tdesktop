@@ -1984,7 +1984,7 @@ void MainWidget::dialogsCancelled() {
 
 //CloudVeil start
 void MainWidget::requestCloudVeil() {
-	settingsCommand.run();
+	settingsCommand.updateFromServer();
 }
 //CloudVeil end
 

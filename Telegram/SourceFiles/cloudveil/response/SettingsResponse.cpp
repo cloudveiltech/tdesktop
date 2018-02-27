@@ -9,7 +9,7 @@ void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 	}
 	if (jsonObject.contains("secret_chat_minimum_length") && jsonObject["secret_chat_minimum_length"].isDouble())
 	{
-		secretChat = jsonObject["secret_chat_minimum_length"].toInt();
+		secretChatMinimumLength = jsonObject["secret_chat_minimum_length"].toInt();
 	}
 
 	if (jsonObject.contains("disable_bio") && jsonObject["disable_bio"].isBool())
@@ -47,13 +47,81 @@ void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 	}
 }
 
-void SettingsResponse::readArrayFromJson(QJsonArray &jsonArray, QVector<long> &objects) 
+void SettingsResponse::readArrayFromJson(QJsonArray &jsonArray, QVector<int32> &objects)
 {
 	objects.clear();
 	for (int i = 0; i < jsonArray.size(); i++)
 	{
 		objects.append(jsonArray[i].toInt());
 	}
+}
+
+void SettingsResponse::writeToJson(QJsonObject &json)
+{
+	json["secret_chat"] = secretChat;
+	json["secret_chat_minimum_length"] = secretChatMinimumLength;
+	json["disable_bio"] = disableBio;
+	json["disable_bio_change"] = disableBioChange;
+	json["disable_profile_photo"] = disableProfilePhoto;
+	json["disable_profile_photo_change"] = disableProfilePhotoChange;
+	json["disable_bio"] = disableBio;
+	json["disable_bio"] = disableBio;
+
+	QJsonArray groupsArray;
+	writeArrayToJson(groupsArray, groups);
+	json["groups"] = groupsArray;
+
+	QJsonArray channelsArray;
+	writeArrayToJson(channelsArray, channels);
+	json["channels"] = channelsArray;
+
+	QJsonArray botsArray;
+	writeArrayToJson(botsArray, bots);
+	json["bots"] = botsArray;
+}
+
+void SettingsResponse::writeArrayToJson(QJsonArray &jsonArray, QVector<int32> &objects)
+{
+	for (int i = 0; i < objects.size(); i++)
+	{
+		int32 row = objects[i];
+		jsonArray.append(row);
+	}
+}
+
+void SettingsResponse::saveToCache()
+{
+	QFile saveFile(QStringLiteral("save.dat"));
+
+	if (!saveFile.open(QIODevice::WriteOnly)) {
+		qWarning("Couldn't open save file.");
+		return;
+	}
+
+	QJsonObject json;
+	writeToJson(json);
+
+	QJsonDocument saveDoc(json);
+	saveFile.write(saveDoc.toBinaryData());
+}
+
+SettingsResponse SettingsResponse::loadFromCache()
+{
+	QFile loadFile(QStringLiteral("save.dat"));
+
+	if (!loadFile.open(QIODevice::ReadOnly)) {
+		qWarning("Couldn't open save file.");
+		return SettingsResponse();
+	}
+
+	QByteArray saveData = loadFile.readAll();
+
+	QJsonDocument loadDoc(QJsonDocument::fromBinaryData(saveData));
+
+	SettingsResponse result;
+	QJsonObject json = loadDoc.object();
+	result.readFromJson(json);
+	return result;
 }
 
 

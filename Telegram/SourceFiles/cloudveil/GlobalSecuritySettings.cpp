@@ -1,25 +1,36 @@
 #define REQUEST_URL "https://manage.cloudveil.org/api/v1/messenger/settings"
 
 #include "stdafx.h"
-#include "SettingsCommand.h"
-#include "../../mainwidget.h"
-#include "../../auth_session.h"
-#include "../../dialogs/dialogs_indexed_list.h"
-#include "../request/SettingsRequest.h"
-#include "../response/SettingsResponse.h"
+#include "GlobalSecuritySettings.h"
+#include "../mainwidget.h"
+#include "../auth_session.h"
+#include "../dialogs/dialogs_indexed_list.h"
+#include "./request/SettingsRequest.h"
+#include "./response/SettingsResponse.h"
 
-SettingsCommand::SettingsCommand(QObject *parent): QObject(parent) {
+SettingsResponse GlobalSecuritySettings::lastResponse;
+bool GlobalSecuritySettings::loaded = false;
 
+GlobalSecuritySettings::GlobalSecuritySettings(QObject *parent): QObject(parent) {
+	lastResponse = SettingsResponse::loadFromCache();
+	loaded = true;
 }
 
-void SettingsCommand::run()
+void GlobalSecuritySettings::updateFromServer()
 {
 	SettingsRequest request;	
 	buildRequest(request);
 	sendRequest(request);	
 }
 
-void SettingsCommand::buildRequest(SettingsRequest &request) {
+SettingsResponse& GlobalSecuritySettings::getSettings() {
+	if (!loaded) {
+		lastResponse = SettingsResponse::loadFromCache();
+	}
+	return lastResponse;
+}
+
+void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 	Dialogs::IndexedList* dialogs = App::main()->dialogsList();
 	for (auto i = dialogs->begin(); i != dialogs->end(); ++i) {
 		PeerData* peer = (*i)->history()->peer;
@@ -52,7 +63,7 @@ void SettingsCommand::buildRequest(SettingsRequest &request) {
 	request.userPhone = Auth().user()->phone();
 }
 
-void SettingsCommand::sendRequest(SettingsRequest &settingsRequestBody) {
+void GlobalSecuritySettings::sendRequest(SettingsRequest &settingsRequestBody) {
 	QUrl url(REQUEST_URL);
 	QNetworkRequest request(url);
 
@@ -65,30 +76,30 @@ void SettingsCommand::sendRequest(SettingsRequest &settingsRequestBody) {
 
 	QJsonDocument doc(json);
 
-	// FIXME for debug
 	qDebug() << "Sync" << doc.toJson(QJsonDocument::Compact);
 
 	manager.post(request, doc.toJson(QJsonDocument::Compact));
 }
 
-void SettingsCommand::requestFinished(QNetworkReply *networkReply)
+void GlobalSecuritySettings::requestFinished(QNetworkReply *networkReply)
 {
-	// free later
 	networkReply->deleteLater();
 
 	// no error in request
 	if (networkReply->error() == QNetworkReply::NoError)
 	{
-		// get HTTP status code
 		qint32 httpStatusCode = networkReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
 
-		// 200
 		if (httpStatusCode >= 200 && httpStatusCode < 300) // OK
 		{
 			QJsonDocument json = QJsonDocument::fromJson(networkReply->readAll());
 			SettingsResponse settingsResponse;
 			QJsonObject jsonObj = json.object();
 			settingsResponse.readFromJson(jsonObj);
+			settingsResponse.saveToCache();
+			lastResponse = settingsResponse;
+
+			emit this->settingsReady();
 			//this->sendSignal(networkReply->readAll());
 		}
 		else if (httpStatusCode >= 400 && httpStatusCode < 500) // 400 Error

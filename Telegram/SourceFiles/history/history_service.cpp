@@ -18,6 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/notifications_manager.h"
 #include "storage/storage_shared_media.h"
 #include "ui/text_options.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace {
 
@@ -197,10 +198,14 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 	} break;
 
 	case mtpc_messageActionChatEditPhoto: {
-		auto &photo = action.c_messageActionChatEditPhoto().vphoto;
-		if (photo.type() == mtpc_photo) {
-			_media = std::make_unique<HistoryPhoto>(this, history()->peer, photo.c_photo(), st::msgServicePhotoWidth);
+		//CloudVeil start
+		if(!GlobalSecuritySettings::getSettings().disableProfilePhoto) {
+			auto &photo = action.c_messageActionChatEditPhoto().vphoto;
+			if (photo.type() == mtpc_photo) {
+				_media = std::make_unique<HistoryPhoto>(this, history()->peer, photo.c_photo(), st::msgServicePhotoWidth);
+			}
 		}
+	  //CloudVeil end
 	} break;
 
 	case mtpc_messageActionChatMigrateTo:
@@ -434,9 +439,10 @@ HistoryService::HistoryService(not_null<History*> history, const MTPDmessageServ
 HistoryService::HistoryService(not_null<History*> history, MsgId msgId, QDateTime date, const PreparedText &message, MTPDmessage::Flags flags, int32 from, PhotoData *photo) :
 	HistoryItem(history, msgId, flags, date, from) {
 	setServiceText(message);
+		
 	if (photo) {
 		_media = std::make_unique<HistoryPhoto>(this, history->peer, photo, st::msgServicePhotoWidth);
-	}
+	}	
 }
 
 void HistoryService::initDimensions() {

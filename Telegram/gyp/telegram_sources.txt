@@ -708,8 +708,8 @@
 <(src_loc)/shortcuts.cpp
 <(src_loc)/shortcuts.h
 <(src_loc)/stdafx.cpp
-<(src_loc)/cloudveil/command/SettingsCommand.h
-<(src_loc)/cloudveil/command/SettingsCommand.cpp
+<(src_loc)/cloudveil/GlobalSecuritySettings.h
+<(src_loc)/cloudveil/GlobalSecuritySettings.cpp
 <(src_loc)/cloudveil/request/SettingsRequest.h
 <(src_loc)/cloudveil/request/SettingsRequest.cpp
 <(src_loc)/cloudveil/response/SettingsResponse.h

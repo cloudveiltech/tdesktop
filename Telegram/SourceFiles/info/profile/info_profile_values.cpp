@@ -16,6 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/wrap/slide_wrap.h"
 #include "data/data_peer_values.h"
 #include "data/data_shared_media.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace Info {
 namespace Profile {
@@ -35,7 +36,18 @@ auto PlainBioValue(
 	return Notify::PeerUpdateValue(
 			user,
 			Notify::PeerUpdate::Flag::AboutChanged
-	) | rpl::map([user] { return user->about(); });
+	) | rpl::map([user] { 
+			//CloudVeil start
+			if (GlobalSecuritySettings::getSettings().disableBio)
+			{
+				return QString();
+			}
+			else
+			{
+				return user->about();
+			}
+		//CloudVeil end
+	});
 }
 
 rpl::producer<TextWithEntities> BioValue(

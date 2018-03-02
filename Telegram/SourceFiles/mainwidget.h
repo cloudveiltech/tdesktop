@@ -660,6 +660,6 @@ private:
 	int _firstColumnResizingShift = 0;
 
 	//CloudVeil start
-	GlobalSecuritySettings settingsCommand;
+	object_ptr<GlobalSecuritySettings> settingsCommand;
 	//CloudVeil end
 };

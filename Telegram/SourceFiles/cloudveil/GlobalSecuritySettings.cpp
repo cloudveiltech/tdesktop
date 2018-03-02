@@ -11,16 +11,24 @@
 SettingsResponse GlobalSecuritySettings::lastResponse;
 bool GlobalSecuritySettings::loaded = false;
 
-GlobalSecuritySettings::GlobalSecuritySettings(QObject *parent): QObject(parent) {
+GlobalSecuritySettings::GlobalSecuritySettings(QObject *parent): QObject(parent), manager(this), timer(this) {
 	lastResponse = SettingsResponse::loadFromCache();
+
+	connect(&timer, SIGNAL(timeout()), SLOT(doServerRequest()));
 	loaded = true;
 }
 
 void GlobalSecuritySettings::updateFromServer()
 {
-	SettingsRequest request;	
+	timer.stop();
+	timer.setSingleShot(true);
+	timer.start(200);
+}
+
+void GlobalSecuritySettings::doServerRequest() {
+	SettingsRequest request;
 	buildRequest(request);
-	sendRequest(request);	
+	sendRequest(request);
 }
 
 SettingsResponse& GlobalSecuritySettings::getSettings() {
@@ -39,20 +47,20 @@ void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 		SettingsRequest::Row row;
 		row.id = dialogId;
 
+		row.userName = peer->userName();
+
 		if (peer->isChannel()) {
-			row.title = peer->asChannel()->name;
-			row.userName = peer->asChannel()->userName();
+			row.title = peer->asChannel()->name;		
 			request.channels.append(row);
 		}
 		else if (peer->isChat()) {
-			row.title = peer->asChat()->name;
-			row.userName = peer->asChat()->userName();
+			row.title = peer->asChat()->name;			
+			row.userName = row.title;
 			request.groups.append(row);
 		}
 		else if (peer->isUser()) {
 			if (peer->asUser()->botInfo.get() != nullptr) {
 				row.title = peer->asUser()->name;
-				row.userName = peer->asUser()->username;
 				request.bots.append(row);
 			}
 		}
@@ -83,8 +91,6 @@ void GlobalSecuritySettings::sendRequest(SettingsRequest &settingsRequestBody) {
 
 void GlobalSecuritySettings::requestFinished(QNetworkReply *networkReply)
 {
-	networkReply->deleteLater();
-
 	// no error in request
 	if (networkReply->error() == QNetworkReply::NoError)
 	{
@@ -119,4 +125,6 @@ void GlobalSecuritySettings::requestFinished(QNetworkReply *networkReply)
 	{
 		qDebug() << "errorString: " << networkReply->errorString();
 	}
+
+	networkReply->deleteLater();
 }

@@ -19,13 +19,17 @@ public:
 	explicit GlobalSecuritySettings(QObject *parent);
 
 	static SettingsResponse& getSettings();
-
 private:
 	QNetworkAccessManager manager;
+	QTimer timer;
 
-private:
 	static bool loaded;
 	static SettingsResponse lastResponse;
+
+private slots:
+	void doServerRequest();
+
+private:
 	void buildRequest(SettingsRequest &request);
 	void sendRequest(SettingsRequest &request);
 };

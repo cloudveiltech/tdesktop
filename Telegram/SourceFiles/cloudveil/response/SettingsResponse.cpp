@@ -30,7 +30,7 @@ void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 	}
 
 
-	if (jsonObject.contains("channels") && jsonObject["channels"].isArray()) 
+	if (jsonObject.contains("channels") && jsonObject["channels"].isArray())
 	{
 		QJsonArray channelsJson = jsonObject["channels"].toArray();
 		readArrayFromJson(channelsJson, channels);
@@ -124,6 +124,24 @@ SettingsResponse SettingsResponse::loadFromCache()
 	return result;
 }
 
+bool SettingsResponse::isGroupAllowed(const MTPChat &group) {
+	switch (group.type()) {
+		case mtpc_chat: {
+			auto &d = group.c_chat();
+			return groups.indexOf(d.vid.v) >= 0;
+		} break;
+		case mtpc_channel: {
+			const auto &d = group.c_channel();
+			return channels.indexOf(d.vid.v) >= 0;
+		} break;
+	}
+	return false;
+}
+
+bool SettingsResponse::isUserAllowed(const MTPUser &user) {
+	const auto &d = user.c_user();
+	return !d.is_bot() || bots.indexOf(d.vid.v) >= 0;
+}
 
 SettingsResponse::SettingsResponse()
 {

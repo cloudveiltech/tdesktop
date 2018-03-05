@@ -317,7 +317,6 @@ void DialogsWidget::unreadCountsReceived(const QVector<MTPDialog> &dialogs) {
 
 void DialogsWidget::dialogsReceived(const MTPmessages_Dialogs &dialogs, mtpRequestId requestId) {
 	if (_dialogsRequestId != requestId) return;
-
 	const QVector<MTPDialog> *dialogsList = 0;
 	const QVector<MTPMessage> *messagesList = 0;
 	switch (dialogs.type()) {
@@ -1142,6 +1141,11 @@ Dialogs::IndexedList *DialogsWidget::contactsList() {
 
 Dialogs::IndexedList *DialogsWidget::dialogsList() {
 	return _inner->dialogsList();
+}
+
+
+QVector<PeerData*>& DialogsWidget::blockedList() {
+	return _inner->blockedDialogsList();
 }
 
 Dialogs::IndexedList *DialogsWidget::contactsNoDialogsList() {

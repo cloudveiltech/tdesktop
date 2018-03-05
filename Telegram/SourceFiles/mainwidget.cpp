@@ -1433,6 +1433,12 @@ Dialogs::IndexedList *MainWidget::dialogsList() {
 	return _dialogs->dialogsList();
 }
 
+//CloudVeil start
+QVector<PeerData*>& MainWidget::blockedDialogsList() {
+	return _dialogs->blockedList();
+}
+//CloudVeil end
+
 Dialogs::IndexedList *MainWidget::contactsNoDialogsList() {
 	return _dialogs->contactsNoDialogsList();
 }
@@ -2226,6 +2232,9 @@ bool MainWidget::viewsIncrementFail(const RPCError &error, mtpRequestId req) {
 }
 
 void MainWidget::createDialog(History *history) {
+	if (history->peer->isChannel()) {
+		return;
+	}
 	_dialogs->createDialog(history);
 }
 

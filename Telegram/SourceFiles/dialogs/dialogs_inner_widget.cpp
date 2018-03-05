@@ -1496,14 +1496,15 @@ void DialogsInner::dialogsReceived(const QVector<MTPDialog> &added) {
 		if (dialog.type() != mtpc_dialog) {
 			continue;
 		}
-
+		
 		auto &d = dialog.c_dialog();
 		auto peerId = peerFromMTP(d.vpeer);
 		if (!peerId) {
 			continue;
 		}
-
+			
 		auto history = App::historyFromDialog(peerId, d.vunread_count.v, d.vread_inbox_max_id.v, d.vread_outbox_max_id.v);
+
 		history->setUnreadMentionsCount(d.vunread_mentions_count.v);
 		auto peer = history->peer;
 		if (auto channel = peer->asChannel()) {
@@ -2132,6 +2133,7 @@ void DialogsInner::destroyData() {
 	_contacts = nullptr;
 	_contactsNoDialogs = nullptr;
 	_dialogs = nullptr;
+	
 	if (_dialogsImportant) {
 		_dialogsImportant = nullptr;
 	}
@@ -2281,6 +2283,12 @@ Dialogs::IndexedList *DialogsInner::contactsList() {
 Dialogs::IndexedList *DialogsInner::dialogsList() {
 	return _dialogs.get();
 }
+
+//CloudVeil start
+QVector<PeerData*>& DialogsInner::blockedDialogsList() {
+	return _filteredDialogs;
+}
+//CloudVeil end
 
 Dialogs::IndexedList *DialogsInner::contactsNoDialogsList() {
 	return _contactsNoDialogs.get();

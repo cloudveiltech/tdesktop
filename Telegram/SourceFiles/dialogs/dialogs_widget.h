@@ -79,6 +79,10 @@ public:
 
 	Dialogs::IndexedList *contactsList();
 	Dialogs::IndexedList *dialogsList();
+
+	//CloudVeil start
+	QVector<PeerData*>& blockedList();
+	//CloudVeil end
 	Dialogs::IndexedList *contactsNoDialogsList();
 
 	void searchMessages(const QString &query, PeerData *inPeer = 0);

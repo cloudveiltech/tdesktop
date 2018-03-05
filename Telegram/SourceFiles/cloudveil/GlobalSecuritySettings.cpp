@@ -42,34 +42,45 @@ void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 	Dialogs::IndexedList* dialogs = App::main()->dialogsList();
 	for (auto i = dialogs->begin(); i != dialogs->end(); ++i) {
 		PeerData* peer = (*i)->history()->peer;
-
-		int32 dialogId = peer->bareId();
-		SettingsRequest::Row row;
-		row.id = dialogId;
-
-		row.userName = peer->userName();
-
-		if (peer->isChannel()) {
-			row.title = peer->asChannel()->name;		
-			request.channels.append(row);
-		}
-		else if (peer->isChat()) {
-			row.title = peer->asChat()->name;			
-			row.userName = row.title;
-			request.groups.append(row);
-		}
-		else if (peer->isUser()) {
-			if (peer->asUser()->botInfo.get() != nullptr) {
-				row.title = peer->asUser()->name;
-				request.bots.append(row);
-			}
-		}
+		addDialogToRequest(request, peer);
 	}
 
+	QVector<PeerData *>& blockedDialogs = App::main()->blockedDialogsList();
+	for (auto i = blockedDialogs.begin(); i != blockedDialogs.end(); ++i) {
+		PeerData* peer = *i;
+		addDialogToRequest(request, peer);
+
+	}
 	request.userId = Auth().user()->bareId();
 	request.userName = Auth().user()->username;
 	request.userPhone = Auth().user()->phone();
 }
+
+void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerData *peer) {
+
+	int32 dialogId = peer->bareId();
+	SettingsRequest::Row row;
+	row.id = dialogId;
+
+	row.userName = peer->userName();
+
+	if (peer->isChannel()) {
+		row.title = peer->asChannel()->name;
+		request.channels.append(row);
+	}
+	else if (peer->isChat()) {
+		row.title = peer->asChat()->name;
+		row.userName = row.title;
+		request.groups.append(row);
+	}
+	else if (peer->isUser()) {
+		if (peer->asUser()->botInfo.get() != nullptr) {
+			row.title = peer->asUser()->name;
+			request.bots.append(row);
+		}
+	}
+}
+
 
 void GlobalSecuritySettings::sendRequest(SettingsRequest &settingsRequestBody) {
 	QUrl url(REQUEST_URL);

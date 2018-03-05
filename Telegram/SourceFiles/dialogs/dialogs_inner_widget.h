@@ -66,7 +66,12 @@ public:
 	void scrollToPeer(const PeerId &peer, MsgId msgId);
 
 	Dialogs::IndexedList *contactsList();
+
 	Dialogs::IndexedList *dialogsList();
+
+	//CloudVeil start
+	QVector<PeerData*>& blockedDialogsList();
+	//CloudVeil end
 	Dialogs::IndexedList *contactsNoDialogsList();
 	int32 lastSearchDate() const;
 	PeerData *lastSearchPeer() const;
@@ -211,6 +216,9 @@ private:
 	not_null<Window::Controller*> _controller;
 
 	DialogsList _dialogs;
+	//CloudVeil start
+	QVector<PeerData*> _filteredDialogs;
+	//CloudVeil end
 	DialogsList _dialogsImportant;
 
 	DialogsList _contactsNoDialogs;

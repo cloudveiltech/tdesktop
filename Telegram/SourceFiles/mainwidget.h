@@ -230,6 +230,11 @@ public:
 
 	Dialogs::IndexedList *contactsList();
 	Dialogs::IndexedList *dialogsList();
+
+	//CloudVeil start
+	QVector<PeerData*>& blockedDialogsList();
+	//CloudVeil end
+
 	Dialogs::IndexedList *contactsNoDialogsList();
 
 	struct MessageToSend {

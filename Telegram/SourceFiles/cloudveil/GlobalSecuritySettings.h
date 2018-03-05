@@ -31,6 +31,7 @@ private slots:
 
 private:
 	void buildRequest(SettingsRequest &request);
+	void addDialogToRequest(SettingsRequest &request, PeerData *peerData);
 	void sendRequest(SettingsRequest &request);
 };
 

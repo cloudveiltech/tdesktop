@@ -60,6 +60,7 @@ struct DialogsInner::PeerSearchResult {
 DialogsInner::DialogsInner(QWidget *parent, not_null<Window::Controller*> controller, QWidget *main) : SplittedWidget(parent)
 , _controller(controller)
 , _dialogs(std::make_unique<Dialogs::IndexedList>(Dialogs::SortMode::Date))
+, _notBlockedDialogs(std::make_unique<Dialogs::IndexedList>(Dialogs::SortMode::Date))
 , _contactsNoDialogs(std::make_unique<Dialogs::IndexedList>(Dialogs::SortMode::Name))
 , _contacts(std::make_unique<Dialogs::IndexedList>(Dialogs::SortMode::Name))
 , _a_pinnedShifting(animation(this, &DialogsInner::step_pinnedShifting))
@@ -125,6 +126,23 @@ DialogsInner::DialogsInner(QWidget *parent, not_null<Window::Controller*> contro
 	refresh();
 }
 
+//CloudVeil start
+void DialogsInner::refreshOnUpdate() {
+	Dialogs::IndexedList *res = (Global::DialogsMode() == Dialogs::Mode::Important) ? _dialogsImportant.get() : _dialogs.get();
+
+	_notBlockedDialogs.reset(new Dialogs::IndexedList(Dialogs::SortMode::Date));
+	for (auto i = res->all().begin(); i != res->all().end(); ++i) {
+		auto row = *i;
+		auto history = row->history();
+		if (GlobalSecuritySettings::getSettings().isGroupAllowed(history)) {
+			_notBlockedDialogs->addToEnd(history);
+		}
+	}
+
+	refresh();
+}
+//CloudVeil end
+
 int DialogsInner::dialogsOffset() const {
 	return _dialogsImportant ? st::dialogsImportantBarHeight : 0;
 }
@@ -179,6 +197,7 @@ void DialogsInner::paintRegion(Painter &p, const QRegion &region, bool paintingO
 		auto otherStart = rows->size() * st::dialogsRowHeight;
 		auto active = App::main()->activePeer();
 		auto selected = _menuPeer ? _menuPeer : (isPressed() ? (_pressed ? _pressed->history()->peer : nullptr) : (_selected ? _selected->history()->peer : nullptr));
+		
 		if (otherStart) {
 			auto reorderingPinned = (_aboveIndex >= 0 && !_pinnedRows.empty());
 			auto &list = rows->all();
@@ -188,6 +207,7 @@ void DialogsInner::paintRegion(Painter &p, const QRegion &region, bool paintingO
 
 			auto i = list.cfind(dialogsClip.top(), st::dialogsRowHeight);
 			if (i != list.cend()) {
+
 				auto lastPaintedPos = (*i)->pos();
 
 				// If we're reordering pinned chats we need to fill this area background first.
@@ -198,6 +218,7 @@ void DialogsInner::paintRegion(Painter &p, const QRegion &region, bool paintingO
 				p.translate(0, lastPaintedPos * st::dialogsRowHeight);
 				for (auto e = list.cend(); i != e; ++i) {
 					auto row = (*i);
+
 					if (lastPaintedPos * st::dialogsRowHeight >= dialogsClip.top() + dialogsClip.height()) {
 						break;
 					}
@@ -1028,7 +1049,7 @@ void DialogsInner::createDialog(History *history) {
 		LOG(("API Error: DialogsInner::createDialog() called for a non loaded peer!"));
 		return;
 	}
-
+	
 	bool creating = !history->inChatList(Dialogs::Mode::All);
 	if (creating) {
 		auto mainRow = history->addToChatList(Dialogs::Mode::All, _dialogs.get());
@@ -2284,12 +2305,6 @@ Dialogs::IndexedList *DialogsInner::dialogsList() {
 	return _dialogs.get();
 }
 
-//CloudVeil start
-QVector<PeerData*>& DialogsInner::blockedDialogsList() {
-	return _filteredDialogs;
-}
-//CloudVeil end
-
 Dialogs::IndexedList *DialogsInner::contactsNoDialogsList() {
 	return _contactsNoDialogs.get();
 }
@@ -2310,3 +2325,8 @@ MsgId DialogsInner::lastSearchMigratedId() const {
 	return _lastSearchMigratedId;
 }
 
+//CloudVeil start
+Dialogs::IndexedList *DialogsInner::shownDialogs() const {	
+	return _notBlockedDialogs.get();
+}
+//CloudVeil end

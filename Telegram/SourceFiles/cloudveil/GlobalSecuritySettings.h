@@ -17,14 +17,18 @@ public:
 	void updateFromServer();
 
 	explicit GlobalSecuritySettings(QObject *parent);
+	~GlobalSecuritySettings();
 
 	static SettingsResponse& getSettings();
+
+	static GlobalSecuritySettings* getInstance();
 private:
 	QNetworkAccessManager manager;
 	QTimer timer;
 
 	static bool loaded;
 	static SettingsResponse lastResponse;
+	static GlobalSecuritySettings *instance;
 
 private slots:
 	void doServerRequest();

@@ -231,10 +231,6 @@ public:
 	Dialogs::IndexedList *contactsList();
 	Dialogs::IndexedList *dialogsList();
 
-	//CloudVeil start
-	QVector<PeerData*>& blockedDialogsList();
-	//CloudVeil end
-
 	Dialogs::IndexedList *contactsNoDialogsList();
 
 	struct MessageToSend {
@@ -665,6 +661,6 @@ private:
 	int _firstColumnResizingShift = 0;
 
 	//CloudVeil start
-	object_ptr<GlobalSecuritySettings> settingsCommand;
+	object_ptr<GlobalSecuritySettings> globalSettings;
 	//CloudVeil end
 };

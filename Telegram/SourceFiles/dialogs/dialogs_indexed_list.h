@@ -38,6 +38,14 @@ public:
 	const List &all() const {
 		return _list;
 	}
+
+	//CloudVeil start
+	void clearAll() {
+		clear();
+		_list.resetAll();
+	}
+	//CloudVeil end
+
 	const List *filtered(QChar ch) const {
 		if (auto it = _index.find(ch); it != _index.cend()) {
 			return it->second.get();
@@ -53,6 +61,7 @@ public:
 	bool contains(PeerId peerId) const { return all().contains(peerId); }
 	Row *getRow(PeerId peerId) const { return all().getRow(peerId); }
 	Row *rowAtY(int32 y, int32 h) const { return all().rowAtY(y, h); }
+	void remove(History *history) { _list.remove(history); }
 
 	using iterator = List::iterator;
 	using const_iterator = List::const_iterator;

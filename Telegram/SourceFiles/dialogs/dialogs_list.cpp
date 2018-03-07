@@ -202,12 +202,37 @@ void List::remove(Row *row) {
 	}
 }
 
+void List::remove(History *history) {
+	Row * r = _begin;
+	while (r != _end) {
+		if (r->history() == history) {
+			remove(r);
+			_count--;
+			_rowByPeer.remove(history->peer->id);
+			return;
+		}
+		r = r->_next;
+	}
+}
+
 void List::clear() {
 	while (_begin != _end) {
 		_current = _begin;
 		_begin = _begin->_next;
 		delete _current;
 	}
+	_current = _begin;
+	_rowByPeer.clear();
+	_count = 0;
+}
+
+void List::resetAll() {
+	while (_begin != _end) {
+		_current = _begin;
+		_begin = _begin->_next;
+	}
+
+	_begin = _last.get();
 	_current = _begin;
 	_rowByPeer.clear();
 	_count = 0;

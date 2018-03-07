@@ -20,8 +20,7 @@ public:
 	void saveToCache();
 	static SettingsResponse loadFromCache();
 
-	bool isGroupAllowed(const MTPChat &group);
-	bool isUserAllowed(const MTPUser &user);
+	bool isGroupAllowed(History *history);
 
 	SettingsResponse();
 	~SettingsResponse();

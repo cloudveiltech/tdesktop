@@ -9,14 +9,22 @@
 #include "./response/SettingsResponse.h"
 
 SettingsResponse GlobalSecuritySettings::lastResponse;
+GlobalSecuritySettings* GlobalSecuritySettings::instance;
+
 bool GlobalSecuritySettings::loaded = false;
+
 
 GlobalSecuritySettings::GlobalSecuritySettings(QObject *parent): QObject(parent), manager(this), timer(this) {
 	lastResponse = SettingsResponse::loadFromCache();
-
+	instance = this;
 	connect(&timer, SIGNAL(timeout()), SLOT(doServerRequest()));
 	loaded = true;
 }
+
+GlobalSecuritySettings::~GlobalSecuritySettings() {
+	instance = nullptr;
+}
+
 
 void GlobalSecuritySettings::updateFromServer()
 {
@@ -38,6 +46,11 @@ SettingsResponse& GlobalSecuritySettings::getSettings() {
 	return lastResponse;
 }
 
+
+GlobalSecuritySettings* GlobalSecuritySettings::getInstance() {
+	return instance;
+}
+
 void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 	Dialogs::IndexedList* dialogs = App::main()->dialogsList();
 	for (auto i = dialogs->begin(); i != dialogs->end(); ++i) {
@@ -45,12 +58,6 @@ void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 		addDialogToRequest(request, peer);
 	}
 
-	QVector<PeerData *>& blockedDialogs = App::main()->blockedDialogsList();
-	for (auto i = blockedDialogs.begin(); i != blockedDialogs.end(); ++i) {
-		PeerData* peer = *i;
-		addDialogToRequest(request, peer);
-
-	}
 	request.userId = Auth().user()->bareId();
 	request.userName = Auth().user()->username;
 	request.userPhone = Auth().user()->phone();
@@ -110,14 +117,15 @@ void GlobalSecuritySettings::requestFinished(QNetworkReply *networkReply)
 		if (httpStatusCode >= 200 && httpStatusCode < 300) // OK
 		{
 			QJsonDocument json = QJsonDocument::fromJson(networkReply->readAll());
-			SettingsResponse settingsResponse;
-			QJsonObject jsonObj = json.object();
-			settingsResponse.readFromJson(jsonObj);
-			settingsResponse.saveToCache();
-			lastResponse = settingsResponse;
+			if (!json.isEmpty()) {
+				SettingsResponse settingsResponse;
+				QJsonObject jsonObj = json.object();
+				settingsResponse.readFromJson(jsonObj);
+				settingsResponse.saveToCache();
+				lastResponse = settingsResponse;
 
-			emit this->settingsReady();
-			//this->sendSignal(networkReply->readAll());
+				emit this->settingsReady();
+			}
 		}
 		else if (httpStatusCode >= 400 && httpStatusCode < 500) // 400 Error
 		{

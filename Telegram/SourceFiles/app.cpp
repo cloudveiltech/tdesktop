@@ -420,10 +420,6 @@ namespace {
 	}
 
 	PeerData *feedChat(const MTPChat &chat) {		
-		//CloudVeil start
-		bool blocked = !GlobalSecuritySettings::getSettings().isGroupAllowed(chat);
-		//CloudVeil end
-
 		PeerData *data = nullptr;
 		bool minimal = false;
 
@@ -473,20 +469,14 @@ namespace {
 							}
 						}
 					}
-					//CloudVeil start
-					if(!blocked) {
-						Notify::migrateUpdated(channel);
-					}				
-					//CloudVeil end
+
+					Notify::migrateUpdated(channel);
 
 					update.flags |= UpdateFlag::MigrationChanged;
 				}
 				if (updatedTo) {
-					//CloudVeil start
-					if (!blocked) {
-						Notify::migrateUpdated(cdata);
-					}
-					//CloudVeil end
+					Notify::migrateUpdated(cdata);
+					
 					update.flags |= UpdateFlag::MigrationChanged;
 				}
 			}
@@ -640,31 +630,11 @@ namespace {
 		} else if (data->loadedStatus != PeerData::FullLoaded) {
 			data->loadedStatus = PeerData::FullLoaded;
 		}
-		if (update.flags && !blocked) {
+		if (update.flags) {
 			update.peer = data;
 			Notify::peerUpdatedDelayed(update);
 		}
 
-				//CloudVeil start
-		if (blocked) {
-			if (main()) {
-				if (data) {
-					main()->blockedDialogsList().append(data);
-				}
-			}
-			return nullptr;
-		}
-		else {		
-			if (main()) {
-				QVector<PeerData*>& blocked = main()->blockedDialogsList();
-				for (int i = blocked.size() - 1; i >= 0; i--) {
-					if (blocked.at(i)->bareId() == data->bareId()) {
-						blocked.removeAt(i);
-					}
-				}
-			}
-		}
-		//CloudVeil end
 		return data;
 	}
 

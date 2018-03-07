@@ -65,13 +65,12 @@ public:
 	void peerAfter(const PeerData *inPeer, MsgId inMsg, PeerData *&outPeer, MsgId &outMsg) const;
 	void scrollToPeer(const PeerId &peer, MsgId msgId);
 
+
+
 	Dialogs::IndexedList *contactsList();
 
 	Dialogs::IndexedList *dialogsList();
 
-	//CloudVeil start
-	QVector<PeerData*>& blockedDialogsList();
-	//CloudVeil end
 	Dialogs::IndexedList *contactsNoDialogsList();
 	int32 lastSearchDate() const;
 	PeerData *lastSearchPeer() const;
@@ -104,13 +103,16 @@ public:
 
 	void notify_userIsContactChanged(UserData *user, bool fromThisApp);
 	void notify_historyMuteUpdated(History *history);
+	//CloudVeil start
+	void refreshOnUpdate();
+	//CloudVeil end
 
 	~DialogsInner();
 
 public slots:
 	void onParentGeometryChanged();
 	void onDialogRowReplaced(Dialogs::Row *oldRow, Dialogs::Row *newRow);
-
+	
 signals:
 	void draggingScrollDelta(int delta);
 	void mustScrollTo(int scrollToTop, int scrollToBottom);
@@ -198,10 +200,9 @@ private:
 	void clearSelection();
 	void clearSearchResults(bool clearPeerSearchResults = true);
 	void updateSelectedRow(PeerData *peer = 0);
-
-	Dialogs::IndexedList *shownDialogs() const {
-		return (Global::DialogsMode() == Dialogs::Mode::Important) ? _dialogsImportant.get() : _dialogs.get();
-	}
+	//CloudVeil start
+	Dialogs::IndexedList *shownDialogs() const;
+	//CloudVeil end
 
 	void checkReorderPinnedStart(QPoint localPosition);
 	int shownPinnedCount() const;
@@ -217,7 +218,7 @@ private:
 
 	DialogsList _dialogs;
 	//CloudVeil start
-	QVector<PeerData*> _filteredDialogs;
+	DialogsList _notBlockedDialogs;
 	//CloudVeil end
 	DialogsList _dialogsImportant;
 

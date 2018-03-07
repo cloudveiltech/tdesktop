@@ -465,6 +465,10 @@ void DialogsWidget::onDraggingScrollTimer() {
 	_scroll->scrollToY(_scroll->scrollTop() + delta);
 }
 
+void DialogsWidget::refreshOnUpdate() {
+	_inner->refreshOnUpdate();
+}
+
 bool DialogsWidget::onSearchMessages(bool searchCache) {
 	auto q = _filter->getLastText().trimmed();
 	if (q.isEmpty() && !_searchFromUser) {
@@ -1141,11 +1145,6 @@ Dialogs::IndexedList *DialogsWidget::contactsList() {
 
 Dialogs::IndexedList *DialogsWidget::dialogsList() {
 	return _inner->dialogsList();
-}
-
-
-QVector<PeerData*>& DialogsWidget::blockedList() {
-	return _inner->blockedDialogsList();
 }
 
 Dialogs::IndexedList *DialogsWidget::contactsNoDialogsList() {

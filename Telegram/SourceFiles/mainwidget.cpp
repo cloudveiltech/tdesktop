@@ -184,9 +184,9 @@ MainWidget::MainWidget(
 , _dialogsWidth(st::columnMinimalWidthLeft)
 , _thirdColumnWidth(st::columnMinimalWidthThird)
 , _sideShadow(this)
+, globalSettings(this)
 , _dialogs(this, _controller)
 , _history(this, _controller)
-, settingsCommand(this)
 , _playerPlaylist(
 	this,
 	_controller,
@@ -202,7 +202,9 @@ MainWidget::MainWidget(
 	connect(this, SIGNAL(dialogsUpdated()), _dialogs, SLOT(onListScroll()));
 	//CloudVeil start
 	connect(this, SIGNAL(dialogsUpdated()), this, SLOT(requestCloudVeil()));
+	connect(globalSettings, SIGNAL(settingsReady()), _dialogs, SLOT(refreshOnUpdate()));
 	//CloudVeil end
+
 	connect(_history, SIGNAL(cancelled()), _dialogs, SLOT(activate()));
 	connect(&noUpdatesTimer, SIGNAL(timeout()), this, SLOT(mtpPing()));
 	connect(&_onlineTimer, SIGNAL(timeout()), this, SLOT(updateOnline()));
@@ -1433,12 +1435,6 @@ Dialogs::IndexedList *MainWidget::dialogsList() {
 	return _dialogs->dialogsList();
 }
 
-//CloudVeil start
-QVector<PeerData*>& MainWidget::blockedDialogsList() {
-	return _dialogs->blockedList();
-}
-//CloudVeil end
-
 Dialogs::IndexedList *MainWidget::contactsNoDialogsList() {
 	return _dialogs->contactsNoDialogsList();
 }
@@ -1990,7 +1986,7 @@ void MainWidget::dialogsCancelled() {
 
 //CloudVeil start
 void MainWidget::requestCloudVeil() {
-	settingsCommand->updateFromServer();
+	globalSettings->updateFromServer();
 }
 //CloudVeil end
 
@@ -2232,9 +2228,6 @@ bool MainWidget::viewsIncrementFail(const RPCError &error, mtpRequestId req) {
 }
 
 void MainWidget::createDialog(History *history) {
-	if (history->peer->isChannel()) {
-		return;
-	}
 	_dialogs->createDialog(history);
 }
 

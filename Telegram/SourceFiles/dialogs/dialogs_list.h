@@ -47,6 +47,11 @@ public:
 	void remove(Row *row);
 	void clear();
 
+	//CloudVeil start
+	void resetAll();
+	void remove(History *history);
+	//CloudVeil end
+
 	class const_iterator {
 	public:
 		using value_type = Row*;

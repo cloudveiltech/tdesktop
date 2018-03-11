@@ -1832,6 +1832,14 @@ HistoryItem *History::lastAvailableMessage() const {
 }
 
 void History::setUnreadCount(int newUnreadCount) {
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getSettings().isDialogAllowed(this)) {
+		App::histories().unreadIncrement(-_unreadCount, mute());
+		Notify::unreadCounterUpdated();
+		return;
+	}
+	//CloudVeil end
+
 	if (_unreadCount != newUnreadCount) {
 		if (newUnreadCount == 1) {
 			if (loadedAtBottom()) showFrom = lastAvailableMessage();

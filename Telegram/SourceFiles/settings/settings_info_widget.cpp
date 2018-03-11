@@ -16,6 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/change_phone_box.h"
 #include "observer_peer.h"
 #include "messenger.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace Settings {
 
@@ -116,12 +117,17 @@ void InfoWidget::refreshBio() {
 		bioText,
 		TextWithEntities(),
 		QString());
-	if (auto text = _bio->entity()->textLabel()) {
-		text->setClickHandlerHook([](const ClickHandlerPtr &handler, Qt::MouseButton button) {
-			Ui::show(Box<EditBioBox>(App::self()));
-			return false;
-		});
-	}
+
+		if (auto text = _bio->entity()->textLabel()) {
+			text->setClickHandlerHook([](const ClickHandlerPtr &handler, Qt::MouseButton button) {
+				//CloudVeil start
+				if (!GlobalSecuritySettings::getSettings().disableBioChange) {
+					Ui::show(Box<EditBioBox>(App::self()));
+				}
+				//CloudVeil end
+				return false;
+			});
+		}
 }
 
 void InfoWidget::setLabeledText(

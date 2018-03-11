@@ -223,6 +223,11 @@ void System::showNext() {
 			if (peerAlert || fromAlert) {
 				alert = true;
 			}
+			//CloudVeil start
+			if (!GlobalSecuritySettings::getSettings().isDialogAllowed(peer)) {
+				alert = false;
+			}
+			//CloudVeil end
 			while (!i.value().isEmpty()
 				&& i.value().begin().key() <= ms + kMinimalAlertDelay) {
 				i.value().erase(i.value().begin());
@@ -260,6 +265,14 @@ void System::showNext() {
 		History *notifyHistory = nullptr;
 		for (auto i = _waiters.begin(); i != _waiters.end();) {
 			History *history = i.key();
+			//CloudVeil start
+			if (!GlobalSecuritySettings::getSettings().isDialogAllowed(history)) {
+				history->clearNotifications();
+				i = _waiters.erase(i);
+				continue;
+			}
+			//CloudVeil end
+
 			if (history->currentNotification() && history->currentNotification()->id != i.value().msg) {
 				auto j = _whenMaps.find(history);
 				if (j == _whenMaps.end()) {
@@ -425,7 +438,7 @@ void Manager::notificationReplied(
 void NativeManager::doShowNotification(HistoryItem *item, int forwardedCount) {
 	auto options = getNotificationOptions(item);
 
-	QString title = options.hideNameAndPhoto ? qsl("Telegram Desktop") : item->history()->peer->name;
+	QString title = options.hideNameAndPhoto ? qsl("CloudVeil Messenger Desktop") : item->history()->peer->name;
 	QString subtitle = options.hideNameAndPhoto ? QString() : item->notificationHeader();
 	QString text = options.hideMessageText ? lang(lng_notification_preview) : (forwardedCount < 2 ? item->notificationText() : lng_forward_messages(lt_count, forwardedCount));
 

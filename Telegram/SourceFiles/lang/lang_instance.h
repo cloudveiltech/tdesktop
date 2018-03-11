@@ -77,8 +77,14 @@ public:
 	QString getValue(LangKey key) const {
 		Expects(key >= 0 && key < kLangKeysCount);
 		Expects(_values.size() == kLangKeysCount);
-		return _values[key];
+
+		//CloudVeil start
+		QString v = _values[key];
+		v.replace(QString("Telegram"), QString("CloudVeil Messenger"));
+		return v;
+		//CloudVeil end
 	}
+
 	bool isNonDefaultPlural(LangKey key) const {
 		Expects(key >= 0 && key < kLangKeysCount);
 		Expects(_nonDefaultSet.size() == kLangKeysCount);

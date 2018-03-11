@@ -24,6 +24,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_settings.h"
 #include "styles/style_profile.h" // for divider
 #include "platform/platform_file_utilities.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace Settings {
 
@@ -52,6 +53,7 @@ CoverWidget::CoverWidget(QWidget *parent, UserData *self)
 		st::settingsPrimaryButton.ripple.hideDuration,
 		this,
 		[this] { chooseNewPhoto(); }));
+
 	_editName->addClickHandler([this] { editName(); });
 	_editNameInline->addClickHandler([this] { editName(); });
 
@@ -340,6 +342,13 @@ void CoverWidget::refreshStatusText() {
 }
 
 void CoverWidget::chooseNewPhoto() {
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableProfilePhotoChange) {
+		Ui::show(Box<InformBox>(lang(lng_feature_forbidden)));
+		return;
+	}
+	//CloudVeil end
+
 	auto imageExtensions = cImgExtensions();
 	auto filter = qsl("Image files (*") + imageExtensions.join(qsl(" *")) + qsl(");;") + FileDialog::AllFilesFilter();
 	FileDialog::GetOpenPath(lang(lng_choose_image), filter, base::lambda_guarded(this, [this](const FileDialog::OpenResult &result) {

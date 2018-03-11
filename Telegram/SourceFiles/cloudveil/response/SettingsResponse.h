@@ -20,7 +20,8 @@ public:
 	void saveToCache();
 	static SettingsResponse loadFromCache();
 
-	bool isGroupAllowed(History *history);
+	bool isDialogAllowed(History *history); 
+	bool isDialogAllowed(PeerData *peer);
 
 	SettingsResponse();
 	~SettingsResponse();

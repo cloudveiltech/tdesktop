@@ -19,10 +19,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_disable_notifications_from_tray" = "Meldingen uitschakelen";
 "lng_enable_notifications_from_tray" = "Meldingen inschakelen";
-"lng_open_from_tray" = "Telegram openen";
+"lng_open_from_tray" = "CloudVeil Messenger openen";
 "lng_minimize_to_tray" = "Minimaliseer naar systeemvak";
-"lng_quit_from_tray" = "Telegram afsluiten";
-"lng_tray_icon_text" = "Telegram is nog steeds actief, \nje kunt dit wijzigen via instellingen.\nAls dit icoon verdwijnt van het systeemvak,\nkun je deze terugslepen vanaf de verborgen iconen.";
+"lng_quit_from_tray" = "CloudVeil Messenger afsluiten";
+"lng_tray_icon_text" = "CloudVeil Messenger is nog steeds actief, \nje kunt dit wijzigen via instellingen.\nAls dit icoon verdwijnt van het systeemvak,\nkun je deze terugslepen vanaf de verborgen iconen.";
 
 "lng_month1" = "januari";
 "lng_month2" = "februari";
@@ -156,7 +156,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_pinned_unpin" = "Losmaken";
 "lng_pinned_notify" = "Leden informeren";
 
-"lng_intro_about" = "Welkom bij de officiële Telegram desktop-app.\nSnel en veilig.";
+"lng_intro_about" = "Welkom bij de officiële CloudVeil Messenger desktop-app.\nSnel en veilig.";
 "lng_start_msgs" = "BEGIN MET CHATTEN";
 
 "lng_intro_next" = "VOLGENDE";
@@ -169,7 +169,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_phone_ph" = "Je telefoonnummer";
 "lng_phone_title" = "Je telefoon";
 "lng_phone_desc" = "Bevestig je landnummer en \nvoer je telefoonnummer in.";
-"lng_phone_notreg" = "Als je nog geen Telegram-account hebt,\nkun je je [b]aanmelden [/b] met {link_start}Android / iPhone{link_end} of {signup_start}hier{signup_end}";
+"lng_phone_notreg" = "Als je nog geen CloudVeil Messenger-account hebt,\nkun je je [b]aanmelden [/b] met {link_start}Android / iPhone{link_end} of {signup_start}hier{signup_end}";
 "lng_country_code" = "Landnummer";
 "lng_bad_country_code" = "Ongeldig landnummer";
 "lng_country_ph" = "Zoeken";
@@ -179,11 +179,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_code_ph" = "Je code";
 "lng_code_desc" = "We hebben een bericht met activatiecode\nverstuurd naar je nummer, geef deze hieronder in.";
-"lng_code_telegram" = "Voer de code in die je zojuist ontvangen\nhebt in je vorige [b]Telegram[/b]-app.";
+"lng_code_telegram" = "Voer de code in die je zojuist ontvangen\nhebt in je vorige [b]CloudVeil Messenger[/b]-app.";
 "lng_code_no_telegram" = "Verstuur code via SMS";
-"lng_code_call" = "Telegram belt je over {minutes}:{seconds}";
-"lng_code_calling" = "Oproepverzoek naar Telegram...";
-"lng_code_called" = "Telegram heeft je nummer gebeld";
+"lng_code_call" = "CloudVeil Messenger belt je over {minutes}:{seconds}";
+"lng_code_calling" = "Oproepverzoek naar CloudVeil Messenger...";
+"lng_code_called" = "CloudVeil Messenger heeft je nummer gebeld";
 
 "lng_bad_phone" = "Ongeldig telefoonnummer. ";
 "lng_bad_phone_noreg" = "Telefoonnummer is niet geregistreerd.";
@@ -234,7 +234,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_contacts_loading" = "Laden...";
 "lng_contacts_not_found" = "Geen contacten gevonden";
 "lng_dlg_search_for_messages" = "Zoek berichten";
-"lng_update_telegram" = "Telegram bijwerken";
+"lng_update_telegram" = "CloudVeil Messenger bijwerken";
 "lng_dlg_search_in" = "Zoek berichten";
 "lng_dlg_search_from" = "Van: {user}";
 
@@ -336,7 +336,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_download_path_default" = "standaardmap";
 "lng_download_path_clear" = "Alles wissen";
 "lng_download_path_header" = "Downloadmap kiezen";
-"lng_download_path_default_radio" = "Telegram-map  \"Downloads\"";
+"lng_download_path_default_radio" = "CloudVeil Messenger-map  \"Downloads\"";
 "lng_download_path_temp_radio" = "Temp map, gewist bij uitloggen/deïnstallatie";
 "lng_download_path_dir_radio" = "Aangepaste map, handmatig schonen";
 "lng_download_path_choose" = "Downloadmap kiezen";
@@ -409,7 +409,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_cloud_password_email" = "Herstel-e-mailadres invoeren";
 "lng_cloud_password_bad_email" = "Ongeldig e-mailadres, probeer een andere.";
 "lng_cloud_password_about" = "Dit wachtwoord is nodig als je inlogt vanaf een nieuw apparaat, naast de SMS-code.";
-"lng_cloud_password_about_recover" = "Let op: Echt geen herstel-emailadres\nopgeven voor je wachtwoord?\n\nBij verlies van je wachtwoord ben je\nook de toegang tot Telegram kwijt.";
+"lng_cloud_password_about_recover" = "Let op: Echt geen herstel-emailadres\nopgeven voor je wachtwoord?\n\nBij verlies van je wachtwoord ben je\nook de toegang tot CloudVeil Messenger kwijt.";
 "lng_cloud_password_skip_email" = "E-mail overslaan";
 "lng_cloud_password_almost" = "Een bevestigingslink is naar het e-mailadres verstuurd. \ntwee-staps-verificatie is actief na het klikken van de e-mail-link.";
 "lng_cloud_password_was_set" = "Twee-staps-verificatie ingeschakeld.";
@@ -450,7 +450,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_reset_done" = "Alle andere sessies zijn beëindigd";
 "lng_settings_manage_local_storage" = "Lokale opslag beheren";
 "lng_settings_ask_question" = "Een vraag stellen";
-"lng_settings_ask_sure" = "De ondersteuning voor Telegram wordt gedaan door vrijwilligers.  We proberen zo snel mogelijk te reageren maar het kan even duren. \n\nBekijk ook de veelgestelde vragen,  deze bevat belangrijke tips en antwoorden op de meest gestelde vragen. ";
+"lng_settings_ask_sure" = "De ondersteuning voor CloudVeil Messenger wordt gedaan door vrijwilligers.  We proberen zo snel mogelijk te reageren maar het kan even duren. \n\nBekijk ook de veelgestelde vragen,  deze bevat belangrijke tips en antwoorden op de meest gestelde vragen. ";
 "lng_settings_faq_button" = "Veelgestelde vragen";
 "lng_settings_ask_ok" = "Vraag";
 "lng_settings_faq" = "Veelgestelde vragen";
@@ -464,7 +464,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_sessions_header" = "Huidige sessie";
 "lng_sessions_other_header" = "Actieve sessies";
 "lng_sessions_no_other" = "Geen andere sessies";
-"lng_sessions_other_desc" = "Je kunt in Telegram inloggen vanaf andere apparaten (mobiel,tablet,desktop) met hetzelfde telefoonnummer. Al je data zal direct worden gesynchroniseerd.";
+"lng_sessions_other_desc" = "Je kunt in CloudVeil Messenger inloggen vanaf andere apparaten (mobiel,tablet,desktop) met hetzelfde telefoonnummer. Al je data zal direct worden gesynchroniseerd.";
 "lng_sessions_terminate_all" = "Beëindig alle andere sessies";
 
 "lng_blocked_list_title" = "Geblokkeerde gebruikers";
@@ -526,9 +526,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_self_destruct_years#other" = "{count} jaar";
 
 "lng_change_phone_title" = "Telefoonnummer wijzigen";
-"lng_change_phone_description" = "Je kan je telefoonnummer hier wijzigen.\nAl je clouddata — berichten, bestanden, \ngroepen, contacten, etc. zullen worden \ngekopieërd naar je nieuwe nummer.\n\n[b]Let op[/b]: al je Telegram-contacten krijgen \nje [b]nieuwe nummer[/b] in hun adresboek, ervan \nuitgaande dat ze je oude nummer hadden en \nje hen niet had geblokkeerd in Telegram.";
-"lng_change_phone_warning" = "Al je Telegram-contacten krijgen je nieuwe nummer in hun adresboek, ervan uitgaande dat ze je oude nummer hadden en je hen niet had geblokkeerd in Telegram.";
-"lng_change_phone_occupied" = "Aan telefoonnummer {phone} is al een Telegram-account gekoppeld. Verwijder het account om te kunnen migreren naar het nieuwe nummer.";
+"lng_change_phone_description" = "Je kan je telefoonnummer hier wijzigen.\nAl je clouddata — berichten, bestanden, \ngroepen, contacten, etc. zullen worden \ngekopieërd naar je nieuwe nummer.\n\n[b]Let op[/b]: al je CloudVeil Messenger-contacten krijgen \nje [b]nieuwe nummer[/b] in hun adresboek, ervan \nuitgaande dat ze je oude nummer hadden en \nje hen niet had geblokkeerd in CloudVeil Messenger.";
+"lng_change_phone_warning" = "Al je CloudVeil Messenger-contacten krijgen je nieuwe nummer in hun adresboek, ervan uitgaande dat ze je oude nummer hadden en je hen niet had geblokkeerd in CloudVeil Messenger.";
+"lng_change_phone_occupied" = "Aan telefoonnummer {phone} is al een CloudVeil Messenger-account gekoppeld. Verwijder het account om te kunnen migreren naar het nieuwe nummer.";
 "lng_change_phone_button" = "Nummer wijzigen";
 "lng_change_phone_new_title" = "Voer je nieuwe nummer in";
 "lng_change_phone_new_description" = "We sturen een sms-bericht met verificatiecode naar je nieuwe nummer.";
@@ -700,7 +700,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_sure_delete_group" = "Groep echt verwijderen? Berichten worden gewist en alle leden verwijderd.";
 
 "lng_message_empty" = "Leeg bericht";
-"lng_message_unsupported" = "Dit bericht wordt niet ondersteund door jouw versie van Telegram Desktop. Werk bij naar de laatste versie via de instellingen of installeer vanuit {link}";
+"lng_message_unsupported" = "Dit bericht wordt niet ondersteund door jouw versie van CloudVeil Messenger Desktop. Werk bij naar de laatste versie via de instellingen of installeer vanuit {link}";
 
 "lng_duration_seconds#one" = "{count} seconde";
 "lng_duration_seconds#other" = "{count} seconden";
@@ -722,7 +722,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_action_user_left" = "{from} heeft de groep verlaten";
 "lng_action_user_joined" = "{from} is nu lid van de groep";
 "lng_action_user_joined_by_link" = "{from} is nu lid van de groep via uitnodigingslink";
-"lng_action_user_registered" = "{from} heeft nu Telegram";
+"lng_action_user_registered" = "{from} heeft nu CloudVeil Messenger";
 "lng_action_removed_photo" = "{from} heeft de groepsafbeelding verwijderd";
 "lng_action_removed_photo_channel" = "Kanaalfoto verwijderd";
 "lng_action_changed_photo" = "{from} heeft de groepsafbeelding gewijzigd";
@@ -829,8 +829,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_cancel_edit_post_yes" = "Ja";
 "lng_cancel_edit_post_no" = "Nee";
 
-"lng_bot_share_location_unavailable" = "Sorry, locatie delen is nog niet beschikbaar via Telegram Desktop.";
-"lng_bot_inline_geo_unavailable" = "Deze bot heeft je locatie nodig, dit is\nnog niet beschikbaar via Telegram Desktop.";
+"lng_bot_share_location_unavailable" = "Sorry, locatie delen is nog niet beschikbaar via CloudVeil Messenger Desktop.";
+"lng_bot_inline_geo_unavailable" = "Deze bot heeft je locatie nodig, dit is\nnog niet beschikbaar via CloudVeil Messenger Desktop.";
 "lng_bot_share_phone" = "Telefoonnummer delen?";
 "lng_bot_share_phone_confirm" = "Delen";
 
@@ -938,10 +938,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_cant_invite_banned" = "Alleen beheerders kunnen deze gebruiker toevoegen.";
 "lng_cant_invite_privacy" = "Je kunt deze gebruiker niet toevoegen aan groepen door zijn/haar privacyinstellingen.";
 "lng_cant_invite_privacy_channel" = "Je kunt deze gebruiker niet toevoegen aan kanalen door zijn/haar privacyinstellingen.";
-"lng_cant_delete_group#one" = "Het is momenteel niet mogelijk om via de app groepen te verwijderen met meer dan {count} lid. Neem contact op met de ondersteuning van Telegram om deze groep te verwijderen.";
-"lng_cant_delete_group#other" = "Het is momenteel niet mogelijk om via de app groepen te verwijderen met meer dan {count} leden. Neem contact op met de ondersteuning van Telegram om deze groep te verwijderen.";
-"lng_cant_delete_channel#one" = "Het is momenteel niet mogelijk om via de app kanalen te verwijderen met meer dan {count} lid. Neem contact op met de ondersteuning van Telegram om dit kanaal te verwijderen.";
-"lng_cant_delete_channel#other" = "Het is momenteel niet mogelijk om via de app kanalen te verwijderen met meer dan {count} leden. Neem contact op met de ondersteuning van Telegram om dit kanaal te verwijderen.";
+"lng_cant_delete_group#one" = "Het is momenteel niet mogelijk om via de app groepen te verwijderen met meer dan {count} lid. Neem contact op met de ondersteuning van CloudVeil Messenger om deze groep te verwijderen.";
+"lng_cant_delete_group#other" = "Het is momenteel niet mogelijk om via de app groepen te verwijderen met meer dan {count} leden. Neem contact op met de ondersteuning van CloudVeil Messenger om deze groep te verwijderen.";
+"lng_cant_delete_channel#one" = "Het is momenteel niet mogelijk om via de app kanalen te verwijderen met meer dan {count} lid. Neem contact op met de ondersteuning van CloudVeil Messenger om dit kanaal te verwijderen.";
+"lng_cant_delete_channel#other" = "Het is momenteel niet mogelijk om via de app kanalen te verwijderen met meer dan {count} leden. Neem contact op met de ondersteuning van CloudVeil Messenger om dit kanaal te verwijderen.";
 "lng_cant_do_this" = "Deze actie is niet beschikbaar.";
 
 "lng_send_button" = "Stuur";
@@ -1142,7 +1142,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_add_contact" = "Opslaan";
 "lng_add_contact_button" = "Nieuw contact";
 "lng_contacts_header" = "Contacten";
-"lng_contact_not_joined" = "{name} heeft zich nog niet aangemeld bij Telegram, je kunt je vriend een uitnodiging sturen.\n\nWe infomeren je wanneer een contact van jou lid is geworden van Telegram.";
+"lng_contact_not_joined" = "{name} heeft zich nog niet aangemeld bij CloudVeil Messenger, je kunt je vriend een uitnodiging sturen.\n\nWe infomeren je wanneer een contact van jou lid is geworden van CloudVeil Messenger.";
 "lng_try_other_contact" = "Probeer een andere";
 "lng_create_group_link" = "Link";
 "lng_create_group_invite_link" = "Uitnodigingslink";
@@ -1216,9 +1216,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_theme_preview_invalid" = "Thema bevat ongeldige data.";
 "lng_theme_preview_apply" = "Thema toepassen";
 
-"lng_new_authorization" = "{name},\nEr is op je account ingelogd vanaf een nieuw apparaat op {day}, {date} om {time}\n\nApparaat: {device}\nLocatie: {location}\n\nAls jij dit niet was, kun je alle sessies beëindigen via Instellingen – Alle sessies weergeven en de sessie beëindigen.\n\nAls je dat denkt dat iemand anders zonder jouw toestemming is ingelogd kun je twee-staps-verificatie activeren via instellingen.\n\nBedankt,\nHet Telegram-Team";
+"lng_new_authorization" = "{name},\nEr is op je account ingelogd vanaf een nieuw apparaat op {day}, {date} om {time}\n\nApparaat: {device}\nLocatie: {location}\n\nAls jij dit niet was, kun je alle sessies beëindigen via Instellingen – Alle sessies weergeven en de sessie beëindigen.\n\nAls je dat denkt dat iemand anders zonder jouw toestemming is ingelogd kun je twee-staps-verificatie activeren via instellingen.\n\nBedankt,\nHet CloudVeil Messenger-Team";
 
-"lng_new_version_wrap" = "Telegram is bijgewerkt naar versie {version}\n\n{changes} \n\nVolledige versiegeschiedenis is hier te vinden:\n{link}";
+"lng_new_version_wrap" = "CloudVeil Messenger is bijgewerkt naar versie {version}\n\n{changes} \n\nVolledige versiegeschiedenis is hier te vinden:\n{link}";
 "lng_new_version_minor" = "— Probleemoplossing en andere kleine verbeteringen";
 "lng_new_version_text" = "— Verbeteringen in videoberichten: Voortgangsindicator in frame, Picture-In-Picture-modus, weergave van afspeelduur.\n— Spraak- en videoberichten spelen nu automatisch achter elkaar af.";
 
@@ -1228,7 +1228,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_confirm_phone_link_invalid" = "Deze link is defect of verlopen.";
 "lng_confirm_phone_title" = "Account reset annuleren";
-"lng_confirm_phone_about" = "Iemand met toegang tot nummer {phone} heeft geprobeerd om je Telegram account te verwijderen en je twee-staps-verificatie wachtwoord te resetten.\n\nAls jij dit niet was, geef dan de code in die we zojuist per SMS hebben gestuurd.";
+"lng_confirm_phone_about" = "Iemand met toegang tot nummer {phone} heeft geprobeerd om je CloudVeil Messenger account te verwijderen en je twee-staps-verificatie wachtwoord te resetten.\n\nAls jij dit niet was, geef dan de code in die we zojuist per SMS hebben gestuurd.";
 "lng_confirm_phone_success" = "De verwijdering van account: {phone} is geannuleerd.\nJe kunt dit venster nu sluiten.";
 "lng_confirm_phone_send" = "Stuur";
 "lng_confirm_phone_enter_code" = "Geef de code in.";
@@ -1249,7 +1249,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_theme_editor_title" = "Kleurenpalet bewerken";
 "lng_theme_editor_export_button" = "Thema exporteren";
 
-"lng_payments_not_supported" = "Telegram Desktop heeft nog geen ondersteuning voor betalingen. Gebruik één van onze mobiele apps hiervoor.";
+"lng_payments_not_supported" = "CloudVeil Messenger Desktop heeft nog geen ondersteuning voor betalingen. Gebruik één van onze mobiele apps hiervoor.";
 "lng_payments_receipt_label" = "Betalingsbewijs";
 "lng_payments_receipt_label_test" = "Test betalingsbewijs";
 "lng_payments_invoice_label" = "Factuur";
@@ -1477,6 +1477,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_mac_menu_add_contact" = "Contact toevoegen";
 "lng_mac_menu_new_group" = "Nieuwe groep";
 "lng_mac_menu_new_channel" = "Nieuw kanaal";
-"lng_mac_menu_show" = "Telegram weergeven";
+"lng_mac_menu_show" = "CloudVeil Messenger weergeven";
 
 // Keys finished

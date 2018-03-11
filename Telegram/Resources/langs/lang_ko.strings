@@ -179,7 +179,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_code_ph" = "코드번호";
 "lng_code_desc" = "인증코드 메세지를 휴대폰으로 전송하였습니다.\n인증코드를 아래에 입력하여 주세요.";
-"lng_code_telegram" = "기존 [b]Telegram[/b] 앱에서\n수신받으신 코드를 입력해주세요";
+"lng_code_telegram" = "기존 [b]CloudVeil Messenger[/b] 앱에서\n수신받으신 코드를 입력해주세요";
 "lng_code_no_telegram" = "코드를 SMS로 전송";
 "lng_code_call" = "텔레그램이  {minutes}:{seconds}후에는 전화를 겁니다.";
 "lng_code_calling" = "텔레그램으로부터 전화 요청을 하고 있습니다...";

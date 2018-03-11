@@ -2,9 +2,9 @@
 
 #include "stdafx.h"
 #include "GlobalSecuritySettings.h"
-#include "../mainwidget.h"
-#include "../auth_session.h"
-#include "../dialogs/dialogs_indexed_list.h"
+#include "mainwidget.h"
+#include "auth_session.h"
+#include "dialogs/dialogs_indexed_list.h"
 #include "./request/SettingsRequest.h"
 #include "./response/SettingsResponse.h"
 
@@ -64,7 +64,6 @@ void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 }
 
 void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerData *peer) {
-
 	int32 dialogId = peer->bareId();
 	SettingsRequest::Row row;
 	row.id = dialogId;

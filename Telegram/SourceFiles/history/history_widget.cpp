@@ -1561,6 +1561,14 @@ void HistoryWidget::applyCloudDraft(History *history) {
 }
 
 void HistoryWidget::showHistory(const PeerId &peerId, MsgId showAtMsgId, bool reload) {
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getSettings().isDialogAllowed(App::peer(peerId))) {
+		Ui::show(Box<InformBox>(lang(lng_dialog_forbidden)));
+		this->hide();
+		return;
+	}
+	//CloudVeil end
+
 	MsgId wasMsgId = _showAtMsgId;
 	History *wasHistory = _history;
 

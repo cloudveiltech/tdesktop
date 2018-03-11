@@ -222,10 +222,10 @@ QString Instance::systemLangCode() const {
 }
 
 QString Instance::cloudLangCode() const {
-	if (isCustom() || id().isEmpty()) {
+	//if (isCustom() || id().isEmpty()) {
 		return DefaultLanguageId();
-	}
-	return id();
+	//}
+	//return id();
 }
 
 QByteArray Instance::serialize() const {

@@ -682,7 +682,7 @@ void Notification::updateNotifyDisplay() {
 			_history->peer->dialogName().drawElided(p, rectForName.left(), rectForName.top(), rectForName.width());
 		} else {
 			p.setFont(st::msgNameFont);
-			static QString notifyTitle = st::msgNameFont->elided(qsl("Telegram Desktop"), rectForName.width());
+			static QString notifyTitle = st::msgNameFont->elided(qsl("CloudVeil Messenger Desktop"), rectForName.width());
 			p.drawText(rectForName.left(), rectForName.top() + st::msgNameFont->ascent, notifyTitle);
 		}
 	}

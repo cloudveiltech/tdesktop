@@ -27,7 +27,7 @@ AboutBox::AboutBox(QWidget *parent)
 }
 
 void AboutBox::prepare() {
-	setTitle([] { return qsl("Telegram Desktop"); });
+	setTitle([] { return qsl("CloudVeil Messenger Desktop"); });
 
 	addButton(langFactory(lng_close), [this] { closeBox(); });
 

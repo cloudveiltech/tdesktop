@@ -186,9 +186,9 @@ ImagePtr PeerData::currentUserpic() const {
 		if (_userpic) {
 			_userpic->load();
 			if (_userpic->loaded()) {
-				if (!useEmptyUserpic()) {
-					_userpicEmpty = nullptr;
-				}
+				//if (!useEmptyUserpic()) {
+				//	_userpicEmpty = nullptr;
+				//}
 				return _userpic;
 			}
 		}

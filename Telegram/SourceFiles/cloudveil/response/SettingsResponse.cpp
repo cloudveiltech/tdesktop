@@ -1,5 +1,7 @@
 #include "stdafx.h"
 #include "SettingsResponse.h"
+#include "mainwidget.h"
+#include "dialogs/dialogs_indexed_list.h"
 
 void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 {
@@ -124,15 +126,29 @@ SettingsResponse SettingsResponse::loadFromCache()
 	return result;
 }
 
-bool SettingsResponse::isGroupAllowed(History *history) {
-	if (history->peer->isChannel()) {
-		return channels.indexOf(history->peer->bareId()) >= 0;
+bool SettingsResponse::isDialogAllowed(History *history) {
+	if (history == nullptr) {
+		return true;
 	}
-	else if (history->peer->isChat()) {
-		return groups.indexOf(history->peer->bareId()) >= 0;
+	return isDialogAllowed(history->peer);
+}
+
+bool SettingsResponse::isDialogAllowed(PeerData *peer) {
+	if (peer == nullptr) {
+		return true;
 	}
-	else if (history->peer->isUser()) {
-		return history->peer->asUser()->botInfo == NULL || bots.indexOf(history->peer->bareId()) >= 0;
+	Dialogs::IndexedList* dialogs = App::main()->dialogsList();
+	if (!dialogs->contains(peer->id)) {
+		return true;
+	}
+	if (peer->isChannel()) {
+		return channels.indexOf(peer->bareId()) >= 0;
+	}
+	else if (peer->isChat()) {
+		return groups.indexOf(peer->bareId()) >= 0;
+	}
+	else if (peer->isUser()) {
+		return peer->asUser()->botInfo == NULL || bots.indexOf(peer->bareId()) >= 0;
 	}
 	return false;
 }

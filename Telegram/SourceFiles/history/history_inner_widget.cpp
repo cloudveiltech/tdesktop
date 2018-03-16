@@ -162,6 +162,8 @@ HistoryInner::HistoryInner(
 }
 
 void HistoryInner::messagesReceived(PeerData *peer, const QVector<MTPMessage> &messages) {
+	//return;
+
 	if (_history && _history->peer == peer) {
 		_history->addOlderSlice(messages);
 	} else if (_migrated && _migrated->peer == peer) {
@@ -174,6 +176,8 @@ void HistoryInner::messagesReceived(PeerData *peer, const QVector<MTPMessage> &m
 }
 
 void HistoryInner::messagesReceivedDown(PeerData *peer, const QVector<MTPMessage> &messages) {
+	//return;
+
 	if (_history && _history->peer == peer) {
 		bool oldLoaded = (_migrated && _history->isEmpty() && !_migrated->isEmpty());
 		_history->addNewerSlice(messages);

@@ -7,6 +7,7 @@
 #include "dialogs/dialogs_indexed_list.h"
 #include "./request/SettingsRequest.h"
 #include "./response/SettingsResponse.h"
+#include "storage/localstorage.h"
 
 SettingsResponse GlobalSecuritySettings::lastResponse;
 GlobalSecuritySettings* GlobalSecuritySettings::instance;
@@ -19,6 +20,7 @@ GlobalSecuritySettings::GlobalSecuritySettings(QObject *parent): QObject(parent)
 	instance = this;
 	connect(&timer, SIGNAL(timeout()), SLOT(doServerRequest()));
 	loaded = true;
+	additionalItem = nullptr;
 }
 
 GlobalSecuritySettings::~GlobalSecuritySettings() {
@@ -56,6 +58,19 @@ void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 	for (auto i = dialogs->begin(); i != dialogs->end(); ++i) {
 		PeerData* peer = (*i)->history()->peer;
 		addDialogToRequest(request, peer);
+	}
+
+	if (cRecentInlineBots().isEmpty()) {
+		Local::readRecentHashtagsAndBots();
+	}
+
+	for_const(UserData* user, cRecentInlineBots()) {
+		addDialogToRequest(request, user);
+	}
+
+	if (additionalItem) {
+		addDialogToRequest(request, additionalItem);
+		additionalItem = nullptr;
 	}
 
 	request.userId = Auth().user()->bareId();

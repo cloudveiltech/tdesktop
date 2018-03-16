@@ -950,6 +950,13 @@ void HistoryWidget::updateInlineBotQuery() {
 		bot = _inlineBot;
 	}
 
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getSettings().isDialogAllowed(bot)) {
+		GlobalSecuritySettings::getInstance()->addAdditionalDataToRequest(bot);
+		GlobalSecuritySettings::getInstance()->updateFromServer();
+		return;
+	}
+	//CloudVeil end
 	applyInlineBotQuery(bot, query);
 }
 

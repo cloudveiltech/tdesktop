@@ -18,6 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_chat_helpers.h"
 #include "auth_session.h"
 #include "chat_helpers/stickers.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 FieldAutocomplete::FieldAutocomplete(QWidget *parent) : TWidget(parent)
 , _scroll(this, st::mentionScroll) {
@@ -173,6 +174,11 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 		if (_addInlineBots) {
 			for_const (auto user, cRecentInlineBots()) {
 				if (user->isInaccessible()) continue;
+				//CloudVeil start
+				if (!GlobalSecuritySettings::getSettings().isDialogAllowed(user)) {
+					continue;
+				}
+				//CloudVeil end
 				if (!listAllSuggestions && filterNotPassedByUsername(user)) continue;
 				mrows.push_back(user);
 				++recentInlineBots;

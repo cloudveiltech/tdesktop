@@ -137,8 +137,11 @@ bool SettingsResponse::isDialogAllowed(PeerData *peer) {
 	if (peer == nullptr) {
 		return true;
 	}
+
+	bool isInlineBot = peer->isUser() && peer->asUser()->botInfo != NULL && peer->asUser()->botInfo->inlinePlaceholder != NULL && peer->asUser()->botInfo->inlinePlaceholder.length() > 0;
+	
 	Dialogs::IndexedList* dialogs = App::main()->dialogsList();
-	if (!dialogs->contains(peer->id)) {
+	if (!isInlineBot && !dialogs->contains(peer->id)) {
 		return true;
 	}
 	if (peer->isChannel()) {

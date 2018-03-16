@@ -14,6 +14,10 @@ signals:
 	void settingsReady();
 
 public:
+	void addAdditionalDataToRequest(PeerData *peer) {
+		additionalItem = peer;
+	}
+
 	void updateFromServer();
 
 	explicit GlobalSecuritySettings(QObject *parent);
@@ -25,6 +29,7 @@ public:
 private:
 	QNetworkAccessManager manager;
 	QTimer timer;
+	PeerData *additionalItem;
 
 	static bool loaded;
 	static SettingsResponse lastResponse;

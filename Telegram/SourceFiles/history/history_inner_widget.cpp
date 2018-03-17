@@ -162,8 +162,6 @@ HistoryInner::HistoryInner(
 }
 
 void HistoryInner::messagesReceived(PeerData *peer, const QVector<MTPMessage> &messages) {
-	//return;
-
 	if (_history && _history->peer == peer) {
 		_history->addOlderSlice(messages);
 	} else if (_migrated && _migrated->peer == peer) {
@@ -176,8 +174,6 @@ void HistoryInner::messagesReceived(PeerData *peer, const QVector<MTPMessage> &m
 }
 
 void HistoryInner::messagesReceivedDown(PeerData *peer, const QVector<MTPMessage> &messages) {
-	//return;
-
 	if (_history && _history->peer == peer) {
 		bool oldLoaded = (_migrated && _history->isEmpty() && !_migrated->isEmpty());
 		_history->addNewerSlice(messages);
@@ -191,6 +187,7 @@ void HistoryInner::messagesReceivedDown(PeerData *peer, const QVector<MTPMessage
 
 void HistoryInner::repaintItem(const HistoryItem *item) {
 	if (!item || item->detached() || !_history) return;
+
 	int32 msgy = itemTop(item);
 	if (msgy >= 0) {
 		update(0, msgy, width(), item->height());
@@ -203,10 +200,12 @@ void HistoryInner::enumerateItemsInHistory(History *history, int historytop, Met
 	if (historytop < 0 || history->isEmpty()) {
 		return;
 	}
+	
 	if (_visibleAreaBottom <= historytop || historytop + history->height <= _visibleAreaTop) {
 		return;
 	}
 
+	
 	auto searchEdge = TopToBottom ? _visibleAreaTop : _visibleAreaBottom;
 
 	// Binary search for blockIndex of the first block that is not completely below the visible area.
@@ -456,13 +455,14 @@ void HistoryInner::paintEvent(QPaintEvent *e) {
 	if (hasPendingResizedItems()) {
 		return;
 	}
-
+	
 	Painter p(this);
 	auto clip = e->rect();
 	auto ms = getms();
 
 	bool historyDisplayedEmpty = (_history->isDisplayedEmpty() && (!_migrated || _migrated->isDisplayedEmpty()));
 	bool noHistoryDisplayed = _firstLoading || historyDisplayedEmpty;
+	
 	if (!_firstLoading && _botAbout && !_botAbout->info->text.isEmpty() && _botAbout->height > 0) {
 		if (clip.y() < _botAbout->rect.y() + _botAbout->rect.height() && clip.y() + clip.height() > _botAbout->rect.y()) {
 			p.setTextPalette(st::inTextPalette);
@@ -544,11 +544,12 @@ void HistoryInner::paintEvent(QPaintEvent *e) {
 			auto block = _history->blocks[iBlock];
 			auto iItem = (_curHistory == _history ? _curItem : 0);
 			auto item = block->items[iItem];
-
+						
 			auto hclip = clip.intersected(QRect(0, hdrawtop, width(), clip.top() + clip.height()));
-			auto y = htop + block->y() + item->y();
+			auto y = htop + block->y() + item->y();			
 			p.save();
 			p.translate(0, y);
+
 			while (y < drawToY) {
 				auto h = item->height();
 				if (hclip.y() < y + h && hdrawtop < y + h) {
@@ -568,7 +569,7 @@ void HistoryInner::paintEvent(QPaintEvent *e) {
 				}
 				p.translate(0, h);
 				y += h;
-
+				
 				++iItem;
 				if (iItem == block->items.size()) {
 					iItem = 0;

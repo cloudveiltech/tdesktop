@@ -1077,6 +1077,14 @@ int32 HistoryMessage::plainMaxWidth() const {
 void HistoryMessage::initDimensions() {
 	updateMediaInBubbleState();
 	refreshEditedBadge();
+
+	//CloudVeil start
+	auto via = Get<HistoryMessageVia>();
+	if (via && via->bot && !GlobalSecuritySettings::getSettings().isDialogAllowed(via->bot)) {
+		_media = nullptr;
+	}
+	//CloudVeil end
+
 	if (drawBubble()) {
 		auto forwarded = Get<HistoryMessageForwarded>();
 		auto reply = Get<HistoryMessageReply>();
@@ -1823,7 +1831,7 @@ void HistoryMessage::draw(Painter &p, QRect clip, TextSelection selection, TimeM
 			auto mediaTop = mediaAboveText ? trect.y() : (trect.y() + trect.height() - mediaHeight);
 			if (!mediaAboveText) {
 				paintText(p, trect, selection);
-			}
+			}			
 			p.translate(mediaLeft, mediaTop);
 			_media->draw(p, clip.translated(-mediaLeft, -mediaTop), skipTextSelection(selection), ms);
 			p.translate(-mediaLeft, -mediaTop);

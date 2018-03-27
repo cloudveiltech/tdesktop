@@ -60,7 +60,6 @@ struct DialogsInner::PeerSearchResult {
 DialogsInner::DialogsInner(QWidget *parent, not_null<Window::Controller*> controller, QWidget *main) : SplittedWidget(parent)
 , _controller(controller)
 , _dialogs(std::make_unique<Dialogs::IndexedList>(Dialogs::SortMode::Date))
-, _notBlockedDialogs(std::make_unique<Dialogs::IndexedList>(Dialogs::SortMode::Date))
 , _contactsNoDialogs(std::make_unique<Dialogs::IndexedList>(Dialogs::SortMode::Name))
 , _contacts(std::make_unique<Dialogs::IndexedList>(Dialogs::SortMode::Name))
 , _a_pinnedShifting(animation(this, &DialogsInner::step_pinnedShifting))
@@ -129,22 +128,6 @@ DialogsInner::DialogsInner(QWidget *parent, not_null<Window::Controller*> contro
 //CloudVeil start
 void DialogsInner::refreshOnUpdate() {
 	InvokeQueued(this, [this] {	
-		Dialogs::IndexedList *res = (Global::DialogsMode() == Dialogs::Mode::Important) ? _dialogsImportant.get() : _dialogs.get();
-
-		_notBlockedDialogs.reset(new Dialogs::IndexedList(Dialogs::SortMode::Date));
-		for (auto i = res->all().begin(); i != res->all().end(); ++i) {
-			auto row = *i;
-			auto history = row->history();
-			if (GlobalSecuritySettings::getSettings().isDialogAllowed(history)) {
-				_notBlockedDialogs->addToEnd(history);
-			}
-			else {
-				history->setUnreadCount(0);
-			}
-		}
-
-		_selected = nullptr;
-
 		refresh();
 	});	
 }
@@ -1394,11 +1377,7 @@ void DialogsInner::onFilterUpdate(QString newFilter, bool force) {
 							}
 						}
 						if (fi == fe) {
-							//CloudVeil start
-							if (GlobalSecuritySettings::getSettings().isDialogAllowed(row->history())) {
-								_filterResults.push_back(row);
-							}
-							//CloudVeil end
+							_filterResults.push_back(row);
 						}
 					}
 				}
@@ -1417,12 +1396,8 @@ void DialogsInner::onFilterUpdate(QString newFilter, bool force) {
 								break;
 							}
 						}
-						if (fi == fe) {
-							//CloudVeil start
-							if (GlobalSecuritySettings::getSettings().isDialogAllowed(row->history())) {
-								_filterResults.push_back(row);
-							}
-							//CloudVeil end
+						if (fi == fe) {						
+							_filterResults.push_back(row);
 						}
 					}
 				}
@@ -1606,12 +1581,9 @@ bool DialogsInner::searchReceived(const QVector<MTPMessage> &messages, DialogsSe
 		auto peerId = peerFromMessage(message);
 		auto lastDate = dateFromMessage(message);
 		if (auto peer = App::peerLoaded(peerId)) {
-			//CloudVeil start
-			if (GlobalSecuritySettings::getSettings().isDialogAllowed(peer)) {
 				if (lastDate) {
 					auto item = App::histories().addNewMessage(message, NewMessageExisting);
 					_searchResults.push_back(std::make_unique<Dialogs::FakeRow>(_searchInPeer, item));
-					//CloudVeil end
 					lastDateFound = lastDate;
 					if (isGlobalSearch) {
 						_lastSearchDate = lastDateFound;
@@ -1620,8 +1592,6 @@ bool DialogsInner::searchReceived(const QVector<MTPMessage> &messages, DialogsSe
 				if (isGlobalSearch) {
 					_lastSearchPeer = peer;
 				}
-			}
-			//CloudVeil end
 		} else {
 			LOG(("API Error: a search results with not loaded peer %1").arg(peerId));
 		}
@@ -1655,12 +1625,8 @@ void DialogsInner::peerSearchReceived(const QString &query, const QVector<MTPPee
 			}
 		}
 		if (auto peer = App::peerLoaded(peerId)) {
-			//CloudVeil start
 			auto peerData = App::peer(peerId);
-			if (GlobalSecuritySettings::getSettings().isDialogAllowed(peerData)) {
-				_peerSearchResults.push_back(std::make_unique<PeerSearchResult>(peerData));
-			}
-			//CloudVeil end
+			_peerSearchResults.push_back(std::make_unique<PeerSearchResult>(peerData));
 		} else {
 			LOG(("API Error: user %1 was not loaded in DialogsInner::peopleReceived()").arg(peerId));
 		}
@@ -2350,8 +2316,7 @@ MsgId DialogsInner::lastSearchMigratedId() const {
 	return _lastSearchMigratedId;
 }
 
-//CloudVeil start
 Dialogs::IndexedList *DialogsInner::shownDialogs() const {	
-	return _notBlockedDialogs.get();
+	Dialogs::IndexedList *res = (Global::DialogsMode() == Dialogs::Mode::Important) ? _dialogsImportant.get() : _dialogs.get();
+	return res;
 }
-//CloudVeil end

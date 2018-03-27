@@ -217,9 +217,6 @@ private:
 	not_null<Window::Controller*> _controller;
 
 	DialogsList _dialogs;
-	//CloudVeil start
-	DialogsList _notBlockedDialogs;
-	//CloudVeil end
 	DialogsList _dialogsImportant;
 
 	DialogsList _contactsNoDialogs;

@@ -112,6 +112,8 @@ void GlobalSecuritySettings::sendRequest(SettingsRequest &settingsRequestBody) {
 	connect(&manager, SIGNAL(finished(QNetworkReply*)), this, SLOT(requestFinished(QNetworkReply*)));
 	
 	QJsonObject json;
+	lastRequest = settingsRequestBody;
+
 	settingsRequestBody.writeToJson(json);
 
 	QJsonDocument doc(json);
@@ -127,14 +129,14 @@ void GlobalSecuritySettings::requestFinished(QNetworkReply *networkReply)
 	if (networkReply->error() == QNetworkReply::NoError)
 	{
 		qint32 httpStatusCode = networkReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-
+		
 		if (httpStatusCode >= 200 && httpStatusCode < 300) // OK
 		{
 			QJsonDocument json = QJsonDocument::fromJson(networkReply->readAll());
 			if (!json.isEmpty()) {
 				SettingsResponse settingsResponse;
 				QJsonObject jsonObj = json.object();
-				settingsResponse.readFromJson(jsonObj);
+				settingsResponse.readFromJson(jsonObj, lastRequest);
 				settingsResponse.saveToCache();
 				lastResponse = settingsResponse;
 

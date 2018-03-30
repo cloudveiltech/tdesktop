@@ -28,6 +28,8 @@ public:
 	static GlobalSecuritySettings* getInstance();
 private:
 	QNetworkAccessManager manager;
+	SettingsRequest lastRequest;
+
 	QTimer timer;
 	PeerData *additionalItem;
 

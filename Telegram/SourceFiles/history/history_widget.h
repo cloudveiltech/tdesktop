@@ -438,6 +438,9 @@ private slots:
 	void onModerateKeyActivate(int index, bool *outHandled);
 
 	void updateField();
+	//CloudVeil start
+	void onSettingsUpdate();
+	//CloudVeil end
 
 private:
 	using TabbedPanel = ChatHelpers::TabbedPanel;

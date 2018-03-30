@@ -203,6 +203,7 @@ MainWidget::MainWidget(
 	//CloudVeil start
 	connect(this, SIGNAL(dialogsUpdated()), this, SLOT(requestCloudVeil()));
 	connect(globalSettings, SIGNAL(settingsReady()), _dialogs, SLOT(refreshOnUpdate()));
+	connect(globalSettings, SIGNAL(settingsReady()), _history, SLOT(onSettingsUpdate()));
 	//CloudVeil end
 
 	connect(_history, SIGNAL(cancelled()), _dialogs, SLOT(activate()));

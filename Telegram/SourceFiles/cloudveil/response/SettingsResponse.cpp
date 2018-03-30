@@ -3,6 +3,16 @@
 #include "mainwidget.h"
 #include "dialogs/dialogs_indexed_list.h"
 
+void SettingsResponse::readFromJson(QJsonObject &jsonObject, SettingsRequest &request)
+{
+	readFromJson(jsonObject);
+
+	addForbiddenArray(botsAllowed, request.bots, botsForbidden);
+	addForbiddenArray(groupsAllowed, request.groups, groupsForbidden);
+	addForbiddenArray(channelsAllowed, request.channels, channelsForbidden);
+}
+
+
 void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 {
 	if (jsonObject.contains("secret_chat") && jsonObject["secret_chat"].isBool())
@@ -35,17 +45,32 @@ void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 	if (jsonObject.contains("channels") && jsonObject["channels"].isArray())
 	{
 		QJsonArray channelsJson = jsonObject["channels"].toArray();
-		readArrayFromJson(channelsJson, channels);
+		readArrayFromJson(channelsJson, channelsAllowed);
 	}
 	if (jsonObject.contains("bots") && jsonObject["bots"].isArray())
 	{
 		QJsonArray botsJson = jsonObject["bots"].toArray();
-		readArrayFromJson(botsJson, bots);
+		readArrayFromJson(botsJson, botsAllowed);
 	}
 	if (jsonObject.contains("groups") && jsonObject["groups"].isArray())
 	{
 		QJsonArray groupsJson = jsonObject["groups"].toArray();
-		readArrayFromJson(groupsJson, groups);
+		readArrayFromJson(groupsJson, groupsAllowed);
+	}
+	if (jsonObject.contains("channelsForbidden") && jsonObject["channelsForbidden"].isArray())
+	{
+		QJsonArray channelsJson = jsonObject["channelsForbidden"].toArray();
+		readArrayFromJson(channelsJson, channelsForbidden);
+	}
+	if (jsonObject.contains("botsForbidden") && jsonObject["botsForbidden"].isArray())
+	{
+		QJsonArray botsJson = jsonObject["botsForbidden"].toArray();
+		readArrayFromJson(botsJson, botsForbidden);
+	}
+	if (jsonObject.contains("groupsForbidden") && jsonObject["groupsForbidden"].isArray())
+	{
+		QJsonArray groupsJson = jsonObject["groupsForbidden"].toArray();
+		readArrayFromJson(groupsJson, groupsForbidden);
 	}
 }
 
@@ -55,6 +80,15 @@ void SettingsResponse::readArrayFromJson(QJsonArray &jsonArray, QVector<int32> &
 	for (int i = 0; i < jsonArray.size(); i++)
 	{
 		objects.append(jsonArray[i].toInt());
+	}
+}
+
+void SettingsResponse::addForbiddenArray(QVector<int32>& whiteListed, QVector<SettingsRequest::Row>& requested, QVector<int32>& blackListed)
+{
+	for (int i = 0; i < requested.size(); i++) {
+		if (!whiteListed.contains(requested[i].id)) {
+			blackListed.append(requested[i].id);
+		}
 	}
 }
 
@@ -70,16 +104,28 @@ void SettingsResponse::writeToJson(QJsonObject &json)
 	json["disable_bio"] = disableBio;
 
 	QJsonArray groupsArray;
-	writeArrayToJson(groupsArray, groups);
+	writeArrayToJson(groupsArray, groupsAllowed);
 	json["groups"] = groupsArray;
 
 	QJsonArray channelsArray;
-	writeArrayToJson(channelsArray, channels);
+	writeArrayToJson(channelsArray, channelsAllowed);
 	json["channels"] = channelsArray;
 
 	QJsonArray botsArray;
-	writeArrayToJson(botsArray, bots);
+	writeArrayToJson(botsArray, botsAllowed);
 	json["bots"] = botsArray;
+
+	QJsonArray groupsForbiddenArray;
+	writeArrayToJson(groupsForbiddenArray, groupsForbidden);
+	json["groupsForbidden"] = groupsForbiddenArray;
+
+	QJsonArray channelsForbiddenArray;
+	writeArrayToJson(channelsForbiddenArray, channelsForbidden);
+	json["channelsForbidden"] = channelsForbiddenArray;
+
+	QJsonArray botsForbiddenArray;
+	writeArrayToJson(botsForbiddenArray, botsForbidden);
+	json["botsForbidden"] = botsForbiddenArray;
 }
 
 void SettingsResponse::writeArrayToJson(QJsonArray &jsonArray, QVector<int32> &objects)
@@ -137,23 +183,43 @@ bool SettingsResponse::isDialogAllowed(PeerData *peer) {
 	if (peer == nullptr) {
 		return true;
 	}
-
-	bool isInlineBot = peer->isUser() && peer->asUser()->botInfo != NULL && peer->asUser()->botInfo->inlinePlaceholder != NULL && peer->asUser()->botInfo->inlinePlaceholder.length() > 0;
-	
-	Dialogs::IndexedList* dialogs = App::main()->dialogsList();
-	if (!isInlineBot && !dialogs->contains(peer->id)) {
+	if (peer->isUser()) {
 		return true;
 	}
+
+	bool isInlineBot = peer->isUser() && peer->asUser()->botInfo != NULL && peer->asUser()->botInfo->inlinePlaceholder != NULL && peer->asUser()->botInfo->inlinePlaceholder.length() > 0;
+		
+	if (!isInlineBot && !isDialogSecured(peer)) {//unknown dialogs assumed to be allowed
+		return true;
+	}
+
 	if (peer->isChannel()) {
-		return channels.indexOf(peer->bareId()) >= 0;
+		return channelsAllowed.indexOf(peer->bareId()) >= 0;
 	}
 	else if (peer->isChat()) {
-		return groups.indexOf(peer->bareId()) >= 0;
+		return groupsAllowed.indexOf(peer->bareId()) >= 0;
 	}
 	else if (peer->isUser()) {
-		return peer->asUser()->botInfo == NULL || bots.indexOf(peer->bareId()) >= 0;
+		return peer->asUser()->botInfo == NULL || botsAllowed.indexOf(peer->bareId()) >= 0;
 	}
 	return false;
+}
+
+bool SettingsResponse::isDialogSecured(PeerData *peer) {
+	if (peer == nullptr) {
+		return true;
+	}
+		
+	if (peer->isUser()) {
+		return true;
+	}
+
+	return botsForbidden.contains(peer->id) || 
+		channelsForbidden.contains(peer->id) ||
+		groupsForbidden.contains(peer->id) ||
+		botsAllowed.contains(peer->id) ||
+		channelsAllowed.contains(peer->id) || 
+		groupsAllowed.contains(peer->id);
 }
 
 SettingsResponse::SettingsResponse()

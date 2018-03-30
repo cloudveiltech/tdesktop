@@ -1467,3 +1467,4 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_dialog_forbidden" = "This channel/group/bot is blocked by our server policy. Please contact CloudVeil Support at support@cloudveil.org to request it be unblocked.";
 "lng_feature_forbidden" = "This feature is blocked by our server policy. Please contact CloudVeil Support at support@cloudveil.org to request it be unblocked.";
 // Keys finished
+"lng_blocked_for_protection" = "Content blocked for your protection.";

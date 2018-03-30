@@ -185,7 +185,6 @@ void HistoryHider::init() {
 	connect(_send, SIGNAL(clicked()), this, SLOT(forward()));
 	connect(_cancel, SIGNAL(clicked()), this, SLOT(startHide()));
 	subscribe(Global::RefPeerChooseCancel(), [this] { startHide(); });
-
 	_chooseWidth = st::historyForwardChooseFont->width(lang(_botAndQuery.isEmpty() ? lng_forward_choose : lng_inline_switch_choose));
 
 	resizeEvent(0);
@@ -1567,12 +1566,28 @@ void HistoryWidget::applyCloudDraft(History *history) {
 	}
 }
 
+void HistoryWidget::onSettingsUpdate() {
+	if (_peer) {
+		showHistory(_peer->id, _showAtMsgId);
+	}
+}
+
 void HistoryWidget::showHistory(const PeerId &peerId, MsgId showAtMsgId, bool reload) {
 	//CloudVeil start
 	if (!GlobalSecuritySettings::getSettings().isDialogAllowed(App::peer(peerId))) {
 		Ui::show(Box<InformBox>(lang(lng_dialog_forbidden)));
-		this->hide();
+		_tabbedSelector->showMegagroupSet(nullptr);
 		return;
+	}
+
+	bool inList = true;
+	if (!GlobalSecuritySettings::getSettings().isDialogSecured(App::peer(peerId))) {
+		Ui::show(Box<InformBox>(lang(lng_blocked_for_protection)));
+
+		_scroll->hide();
+		GlobalSecuritySettings::getInstance()->addAdditionalDataToRequest(App::peer(peerId));
+		GlobalSecuritySettings::getInstance()->updateFromServer();
+		inList = false;
 	}
 	//CloudVeil end
 
@@ -1800,7 +1815,13 @@ void HistoryWidget::showHistory(const PeerId &peerId, MsgId showAtMsgId, bool re
 	if (_peer) {
 		controller()->activePeer = _peer;
 	}
+	//CloudVeil start	
+	if (!inList) {
+		_scroll->hide();
+	}
+	//CloudVeil end
 	update();
+
 }
 
 void HistoryWidget::clearDelayedShowAt() {
@@ -1995,7 +2016,9 @@ void HistoryWidget::updateControlsVisibility() {
 	if (_firstLoadRequest && !_scroll->isHidden()) {
 		_scroll->hide();
 	} else if (!_firstLoadRequest && _scroll->isHidden()) {
-		_scroll->show();
+		if (GlobalSecuritySettings::getSettings().isDialogSecured(_peer)) {
+			_scroll->show();
+		}
 	}
 	if (_reportSpamPanel) {
 		_reportSpamPanel->show();

@@ -1575,8 +1575,8 @@ void HistoryWidget::onSettingsUpdate() {
 void HistoryWidget::showHistory(const PeerId &peerId, MsgId showAtMsgId, bool reload) {
 	//CloudVeil start
 	if (!GlobalSecuritySettings::getSettings().isDialogAllowed(App::peer(peerId))) {
+		Ui::showChatsList();
 		Ui::show(Box<InformBox>(lang(lng_dialog_forbidden)));
-		_tabbedSelector->showMegagroupSet(nullptr);
 		return;
 	}
 

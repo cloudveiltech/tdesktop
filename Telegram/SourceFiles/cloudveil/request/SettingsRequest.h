@@ -3,7 +3,7 @@ class SettingsRequest
 {
 public:
 	struct Row {
-		int32 id;
+		uint64 id;
 		QString title;
 		QString userName;
 
@@ -17,6 +17,8 @@ public:
 	QVector<Row> groups;
 	QVector<Row> channels;
 	QVector<Row> bots;
+	QVector<Row> stickers;
+	QVector<Row> users;
 
 	void writeToJson(QJsonObject &json);
 

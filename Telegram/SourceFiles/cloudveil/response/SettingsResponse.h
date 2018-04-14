@@ -1,16 +1,16 @@
 #pragma once
 #include "cloudveil/request/SettingsRequest.h"
+#include "chat_helpers/stickers.h"
 
 class SettingsResponse
 {
 public:
-	QVector<int32> channelsAllowed;
-	QVector<int32> botsAllowed;
-	QVector<int32> groupsAllowed;
+	QMap<int32, bool> channels;
+	QMap<int32, bool> bots;
+	QMap<int32, bool> groups;
+	QMap<uint64, bool> stickers;
+	QMap<int32, bool> users;
 
-	QVector<int32> channelsForbidden;
-	QVector<int32> botsForbidden;
-	QVector<int32> groupsForbidden;
 
 	bool secretChat;
 	int secretChatMinimumLength;
@@ -19,8 +19,9 @@ public:
 	bool disableBioChange;
 	bool disableProfilePhoto;
 	bool disableProfilePhotoChange;
+	bool disableStickers;
+	bool manageUsers;
 
-	void readFromJson(QJsonObject &jsonObject, SettingsRequest &request);
 	void readFromJson(QJsonObject &jsonObject);
 
 public:
@@ -30,14 +31,21 @@ public:
 	bool isDialogAllowed(History *history); 
 	bool isDialogAllowed(PeerData *peer);
 	bool isDialogSecured(PeerData *peer);
+	bool isStickerSetAllowed(Stickers::Set &set);
+	bool isStickerSetKnown(DocumentData *data);
+	bool isStickerSetAllowed(DocumentData *data);
+	bool isStickerSetAllowed(uint64 id);
+	Stickers::Pack filterStickersPack(Stickers::Pack &pack);
 
 	SettingsResponse();
 	~SettingsResponse();
+
 private:
-	void readArrayFromJson(QJsonArray &jsonArray, QVector<int32> &objects);
-	void addForbiddenArray(QVector<int32>& whiteListed, QVector<SettingsRequest::Row>& requested, QVector<int32> &blackListed);
+	template<typename T> void readAcccessObject(QJsonObject& accessObject, QString key, QMap<T, bool> &objects);
+	template<typename T> void readArrayFromJson(QJsonArray &jsonArray, QMap<T, bool> &objects);
 
 	void writeToJson(QJsonObject &json);
-	void writeArrayToJson(QJsonArray &jsonArray, QVector<int32> &objects);
+	template<typename T> void writeAcccessObject(QJsonObject& accessObject, QString key, QMap<T, bool> &objects);
+	template<typename T> void writeArrayToJson(QJsonArray &jsonArray, QMap<T, bool> channels);
 };
 

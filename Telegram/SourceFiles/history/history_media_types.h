@@ -680,8 +680,7 @@ private:
 	int16 _pixh = 1;
 	ClickHandlerPtr _packLink;
 	not_null<DocumentData*> _data;
-	QString _emoji;
-
+	QString _emoji;	
 };
 
 class HistoryContact : public HistoryMedia {

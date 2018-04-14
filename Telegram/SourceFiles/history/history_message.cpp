@@ -1083,6 +1083,9 @@ void HistoryMessage::initDimensions() {
 	if (via && via->bot && !GlobalSecuritySettings::getSettings().isDialogAllowed(via->bot)) {
 		_media = nullptr;
 	}
+	if (GlobalSecuritySettings::getSettings().disableStickers && _media && _media->getDocument() && _media->getDocument()->sticker()) {
+		_media = nullptr;
+	}
 	//CloudVeil end
 
 	if (drawBubble()) {

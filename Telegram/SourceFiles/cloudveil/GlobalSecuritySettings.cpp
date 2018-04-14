@@ -9,13 +9,14 @@
 #include "./response/SettingsResponse.h"
 #include "storage/localstorage.h"
 
+
 SettingsResponse GlobalSecuritySettings::lastResponse;
 GlobalSecuritySettings* GlobalSecuritySettings::instance;
 
 bool GlobalSecuritySettings::loaded = false;
 
 
-GlobalSecuritySettings::GlobalSecuritySettings(QObject *parent): QObject(parent), manager(this), timer(this) {
+GlobalSecuritySettings::GlobalSecuritySettings(QObject *parent) : QObject(parent), manager(this), timer(this) {
 	lastResponse = SettingsResponse::loadFromCache();
 	instance = this;
 	connect(&timer, SIGNAL(timeout()), SLOT(doServerRequest()));
@@ -68,14 +69,31 @@ void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 		addDialogToRequest(request, user);
 	}
 
+	for (auto it = Auth().data().stickerSets().begin(); it != Auth().data().stickerSets().end(); ++it) {
+		auto set = *it;
+		addStickerToRequest(request, set);
+	}
+
 	if (additionalItem) {
 		addDialogToRequest(request, additionalItem);
 		additionalItem = nullptr;
+	}
+	if (additionalStickers.size() > 0) {
+		for (auto it = additionalStickers.begin(); it != additionalStickers.end(); ++it) {
+			request.stickers.append(*it);
+		}
 	}
 
 	request.userId = Auth().user()->bareId();
 	request.userName = Auth().user()->username;
 	request.userPhone = Auth().user()->phone();
+}
+
+void GlobalSecuritySettings::checkStickerSetByDocumentAsync(DocumentData* sticker) {
+	if (sticker->sticker()) {
+		StickerData *data = sticker->sticker();
+		MTP::send(MTPmessages_GetStickerSet(data->set), rpcDone(&GlobalSecuritySettings::gotStickersSet), rpcFail(&GlobalSecuritySettings::failedStickersSet));
+	}
 }
 
 void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerData *peer) {
@@ -95,13 +113,44 @@ void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerDa
 		request.groups.append(row);
 	}
 	else if (peer->isUser()) {
-		if (peer->asUser()->botInfo.get() != nullptr) {
-			row.title = peer->asUser()->name;
+		row.title = peer->asUser()->name;
+		if (peer->asUser()->botInfo.get() != nullptr) {			
 			request.bots.append(row);
+		}
+		else if(!peer->asUser()->isSelf()) {
+			request.users.append(row);
 		}
 	}
 }
 
+void GlobalSecuritySettings::addStickerToRequest(SettingsRequest &request, Stickers::Set &set) {
+	SettingsRequest::Row row;
+	row.id = set.id;
+	row.userName = set.shortName;
+	row.title = set.title;
+	request.stickers.append(row);
+}
+
+void GlobalSecuritySettings::gotStickersSet(const MTPmessages_StickerSet &set) {
+	auto additionalSticker = &set.c_messages_stickerSet().vset.c_stickerSet();
+
+	SettingsRequest::Row row;
+	row.id = additionalSticker->vid.v;
+	row.userName = qs(additionalSticker->vshort_name);
+	row.title = qs(additionalSticker->vtitle);
+	for (int i = 0; i < additionalStickers.size(); i++) {
+		if (additionalStickers[i].id == row.id) {
+			return;
+		}
+	}
+	additionalStickers.append(row);
+
+	updateFromServer();
+}
+
+bool GlobalSecuritySettings::failedStickersSet(const RPCError &error) {
+	return true;
+}
 
 void GlobalSecuritySettings::sendRequest(SettingsRequest &settingsRequestBody) {
 	QUrl url(REQUEST_URL);
@@ -112,7 +161,6 @@ void GlobalSecuritySettings::sendRequest(SettingsRequest &settingsRequestBody) {
 	connect(&manager, SIGNAL(finished(QNetworkReply*)), this, SLOT(requestFinished(QNetworkReply*)));
 	
 	QJsonObject json;
-	lastRequest = settingsRequestBody;
 
 	settingsRequestBody.writeToJson(json);
 
@@ -136,7 +184,7 @@ void GlobalSecuritySettings::requestFinished(QNetworkReply *networkReply)
 			if (!json.isEmpty()) {
 				SettingsResponse settingsResponse;
 				QJsonObject jsonObj = json.object();
-				settingsResponse.readFromJson(jsonObj, lastRequest);
+				settingsResponse.readFromJson(jsonObj);
 				settingsResponse.saveToCache();
 				lastResponse = settingsResponse;
 

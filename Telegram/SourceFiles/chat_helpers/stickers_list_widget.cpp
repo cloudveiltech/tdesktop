@@ -25,6 +25,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 #include "styles/style_chat_helpers.h"
 #include "styles/style_window.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace ChatHelpers {
 namespace {
@@ -1207,6 +1208,11 @@ void StickersListWidget::processPanelHideFinished() {
 }
 
 void StickersListWidget::refreshStickers() {
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableStickers) {
+		return;
+	}
+	//CloudVeil end
 	clearSelection();
 
 	_mySets.clear();
@@ -1216,16 +1222,24 @@ void StickersListWidget::refreshStickers() {
 	refreshFavedStickers();
 	refreshRecentStickers(false);
 	refreshMegagroupStickers(GroupStickersPlace::Visible);
-	for_const (auto setId, Auth().data().stickerSetsOrder()) {
-		appendSet(_mySets, setId, AppendSkip::Archived);
+	for_const(auto setId, Auth().data().stickerSetsOrder()) {
+		//CloudVeil start
+		if (GlobalSecuritySettings::getSettings().isStickerSetAllowed(setId)) {
+			appendSet(_mySets, setId, AppendSkip::Archived);
+		}
+		//CloudVeil end
 	}
 	refreshMegagroupStickers(GroupStickersPlace::Hidden);
 
 	_featuredSets.clear();
 	_featuredSets.reserve(Auth().data().featuredStickerSetsOrder().size());
 
-	for_const (auto setId, Auth().data().featuredStickerSetsOrder()) {
-		appendSet(_featuredSets, setId, AppendSkip::Installed);
+	for_const(auto setId, Auth().data().featuredStickerSetsOrder()) {
+		//CloudVeil start
+		if (GlobalSecuritySettings::getSettings().isStickerSetAllowed(setId)) {
+			appendSet(_featuredSets, setId, AppendSkip::Installed);
+		}
+		//CloudVeil end
 	}
 
 	resizeToWidth(width());
@@ -1315,6 +1329,12 @@ void StickersListWidget::refreshRecent() {
 }
 
 void StickersListWidget::refreshRecentStickers(bool performResize) {
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableStickers) {
+		return;
+	}
+	//CloudVeil end
+
 	_custom.clear();
 	clearSelection();
 	auto &sets = Auth().data().stickerSets();
@@ -1328,30 +1348,44 @@ void StickersListWidget::refreshRecentStickers(bool performResize) {
 	recentPack.reserve(cloudCnt + recent.size() + customCnt);
 	_custom.reserve(cloudCnt + recent.size() + customCnt);
 	if (cloudCnt > 0) {
-		for_const (auto sticker, cloudIt->stickers) {
-			if (!_favedStickersMap.contains(sticker)) {
-				recentPack.push_back(sticker);
-				_custom.push_back(false);
+		//CloudVeil start
+		if (GlobalSecuritySettings::getSettings().isStickerSetAllowed(cloudIt.key())) {
+			for_const(auto sticker, cloudIt->stickers) {
+				if (!_favedStickersMap.contains(sticker)) {
+					recentPack.push_back(sticker);
+					_custom.push_back(false);
+				}
 			}
 		}
+		//CloudVeil end
 	}
 	for_const (auto &recentSticker, recent) {
 		auto sticker = recentSticker.first;
+		//CloudVeil start
+		if (!GlobalSecuritySettings::getSettings().isStickerSetAllowed(sticker)) {
+			continue;
+		}
 		if (!_favedStickersMap.contains(sticker)) {
 			recentPack.push_back(sticker);
 			_custom.push_back(false);
 		}
 	}
 	if (customCnt > 0) {
-		for_const (auto &sticker, customIt->stickers) {
-			auto index = recentPack.indexOf(sticker);
-			if (index >= cloudCnt) {
-				_custom[index] = true; // mark stickers from recent as custom
-			} else if (!_favedStickersMap.contains(sticker)) {
-				recentPack.push_back(sticker);
-				_custom.push_back(true);
+		//CloudVeil start
+		if (GlobalSecuritySettings::getSettings().isStickerSetAllowed(customIt.key())) {
+			for_const(auto &sticker, customIt->stickers) {
+
+				auto index = recentPack.indexOf(sticker);
+				if (index >= cloudCnt) {
+					_custom[index] = true; // mark stickers from recent as custom
+				}
+				else if (!_favedStickersMap.contains(sticker)) {
+					recentPack.push_back(sticker);
+					_custom.push_back(true);
+				}
 			}
 		}
+		//CloudVeil end	
 	}
 	auto recentIt = std::find_if(_mySets.begin(), _mySets.end(), [](auto &set) {
 		return set.id == Stickers::RecentSetId;
@@ -1374,11 +1408,12 @@ void StickersListWidget::refreshRecentStickers(bool performResize) {
 
 void StickersListWidget::refreshFavedStickers() {
 	clearSelection();
-	auto &sets = Auth().data().stickerSets();
+	auto &sets = Auth().data().stickerSetsFiltered();
 	auto it = sets.constFind(Stickers::FavedSetId);
 	if (it == sets.cend() || it->stickers.isEmpty()) {
 		return;
 	}
+
 	_mySets.push_back(Set(Stickers::FavedSetId, MTPDstickerSet::Flag::f_official | MTPDstickerSet_ClientFlag::f_special, Lang::Hard::FavedSetTitle(), it->stickers.size() * 2, it->stickers));
 	_favedStickersMap = base::flat_set<not_null<DocumentData*>> { it->stickers.begin(), it->stickers.end() };
 }
@@ -1413,7 +1448,7 @@ void StickersListWidget::refreshMegagroupStickers(GroupStickersPlace place) {
 	}
 	if (_megagroupSet->mgInfo->stickerSet.type() == mtpc_inputStickerSetID) {
 		auto &set = _megagroupSet->mgInfo->stickerSet.c_inputStickerSetID();
-		auto &sets = Auth().data().stickerSets();
+		auto &sets = Auth().data().stickerSetsFiltered();
 		auto it = sets.constFind(set.vid.v);
 		if (it != sets.cend()) {
 			auto isInstalled = (it->flags & MTPDstickerSet::Flag::f_installed)
@@ -1719,7 +1754,7 @@ void StickersListWidget::displaySet(uint64 setId) {
 			return;
 		}
 	}
-	auto &sets = Auth().data().stickerSets();
+	auto &sets = Auth().data().stickerSetsFiltered();
 	auto it = sets.constFind(setId);
 	if (it != sets.cend()) {
 		_displayingSetId = setId;
@@ -1734,7 +1769,7 @@ void StickersListWidget::displaySet(uint64 setId) {
 }
 
 void StickersListWidget::installSet(uint64 setId) {
-	auto &sets = Auth().data().stickerSets();
+	auto &sets = Auth().data().stickerSetsFiltered();
 	auto it = sets.constFind(setId);
 	if (it != sets.cend()) {
 		request(MTPmessages_InstallStickerSet(Stickers::inputSetId(*it), MTP_bool(false))).done([this](const MTPmessages_StickerSetInstallResult &result) {
@@ -1774,7 +1809,7 @@ void StickersListWidget::removeMegagroupSet(bool locally) {
 }
 
 void StickersListWidget::removeSet(uint64 setId) {
-	auto &sets = Auth().data().stickerSets();
+	auto &sets = Auth().data().stickerSetsFiltered();
 	auto it = sets.constFind(setId);
 	if (it != sets.cend()) {
 		_removingSetId = it->id;

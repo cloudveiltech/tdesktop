@@ -29,6 +29,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/empty_userpic.h"
 #include "ui/grouped_layout.h"
 #include "ui/text_options.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace {
 
@@ -3022,6 +3023,12 @@ void HistorySticker::draw(Painter &p, const QRect &r, TextSelection selection, T
 	auto sticker = _data->sticker();
 	if (!sticker) return;
 
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getSettings().isStickerSetKnown(_data)) {
+		GlobalSecuritySettings::getInstance()->checkStickerSetByDocumentAsync(_data);
+	}
+	
+
 	if (_width < st::msgPadding.left() + st::msgPadding.right() + 1) return;
 
 	_data->checkSticker();
@@ -3042,6 +3049,12 @@ void HistorySticker::draw(Painter &p, const QRect &r, TextSelection selection, T
 	}
 	if (rtl()) usex = _width - usex - usew;
 
+	if (!GlobalSecuritySettings::getSettings().isStickerSetAllowed(_data)) {
+		p.drawImage(QPoint(usex + (usew - _pixw) / 2, (_minh - _pixh) / 2), App::main()->getBannedImage().scaledToHeight(_height));
+		return;
+	}
+	//CloudVeil end
+	
 	if (selected) {
 		if (sticker->img->isNull()) {
 			p.drawPixmap(QPoint(usex + (usew - _pixw) / 2, (_minh - _pixh) / 2), _data->thumb->pixBlurredColored(st::msgStickerOverlay, _pixw, _pixh));

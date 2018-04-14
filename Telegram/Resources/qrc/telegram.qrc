@@ -8,6 +8,7 @@
     <file alias="art/logo_256.png">../art/logo_256.png</file>
     <file alias="art/logo_256_no_margin.png">../art/logo_256_no_margin.png</file>
     <file alias="art/sunrise.jpg">../art/sunrise.jpg</file>
+    <file alias="art/banned.png">../art/banned.png</file>
     <file alias="night.tdesktop-theme">../night.tdesktop-theme</file>
   </qresource>
   <qresource prefix="/sounds">

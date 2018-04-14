@@ -346,6 +346,11 @@ public:
 	bool cmd_next_chat();
 	bool cmd_previous_chat();
 
+	//CloudVeil start
+	QImage& getBannedImage() {
+		return bannedImage;
+	}
+	//CloudVeil end
 	~MainWidget();
 
 signals:
@@ -363,7 +368,7 @@ public slots:
 	void dialogsCancelled();
 
 	//CloudVeil start
-	void requestCloudVeil();
+	void requestCloudVeil();	
 	//CloudVeil end
 
 	void getDifference();
@@ -662,5 +667,6 @@ private:
 
 	//CloudVeil start
 	object_ptr<GlobalSecuritySettings> globalSettings;
+	QImage bannedImage;
 	//CloudVeil end
 };

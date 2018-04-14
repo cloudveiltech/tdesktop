@@ -2,16 +2,7 @@
 #include "SettingsResponse.h"
 #include "mainwidget.h"
 #include "dialogs/dialogs_indexed_list.h"
-
-void SettingsResponse::readFromJson(QJsonObject &jsonObject, SettingsRequest &request)
-{
-	readFromJson(jsonObject);
-
-	addForbiddenArray(botsAllowed, request.bots, botsForbidden);
-	addForbiddenArray(groupsAllowed, request.groups, groupsForbidden);
-	addForbiddenArray(channelsAllowed, request.channels, channelsForbidden);
-}
-
+#include "data/data_document.h"
 
 void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 {
@@ -40,54 +31,48 @@ void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 	{
 		disableProfilePhotoChange = jsonObject["disable_profile_photo_change"].toBool();
 	}
+	if (jsonObject.contains("disable_stickers") && jsonObject["disable_stickers"].isBool())
+	{
+		disableStickers = jsonObject["disable_stickers"].toBool();
+	}
+	if (jsonObject.contains("manage_users") && jsonObject["manage_users"].isBool())
+	{
+		manageUsers = jsonObject["manage_users"].toBool();
+	}
+	
 
+	if (jsonObject.contains("access") && jsonObject["access"].isObject())
+	{
+		QJsonObject accessObject = jsonObject["access"].toObject();
 
-	if (jsonObject.contains("channels") && jsonObject["channels"].isArray())
-	{
-		QJsonArray channelsJson = jsonObject["channels"].toArray();
-		readArrayFromJson(channelsJson, channelsAllowed);
-	}
-	if (jsonObject.contains("bots") && jsonObject["bots"].isArray())
-	{
-		QJsonArray botsJson = jsonObject["bots"].toArray();
-		readArrayFromJson(botsJson, botsAllowed);
-	}
-	if (jsonObject.contains("groups") && jsonObject["groups"].isArray())
-	{
-		QJsonArray groupsJson = jsonObject["groups"].toArray();
-		readArrayFromJson(groupsJson, groupsAllowed);
-	}
-	if (jsonObject.contains("channelsForbidden") && jsonObject["channelsForbidden"].isArray())
-	{
-		QJsonArray channelsJson = jsonObject["channelsForbidden"].toArray();
-		readArrayFromJson(channelsJson, channelsForbidden);
-	}
-	if (jsonObject.contains("botsForbidden") && jsonObject["botsForbidden"].isArray())
-	{
-		QJsonArray botsJson = jsonObject["botsForbidden"].toArray();
-		readArrayFromJson(botsJson, botsForbidden);
-	}
-	if (jsonObject.contains("groupsForbidden") && jsonObject["groupsForbidden"].isArray())
-	{
-		QJsonArray groupsJson = jsonObject["groupsForbidden"].toArray();
-		readArrayFromJson(groupsJson, groupsForbidden);
+		readAcccessObject(accessObject, "groups", groups);
+		readAcccessObject(accessObject, "bots", bots);
+		readAcccessObject(accessObject, "channels", channels);
+		readAcccessObject(accessObject, "stickers", stickers);
+		readAcccessObject(accessObject, "users", users);
 	}
 }
 
-void SettingsResponse::readArrayFromJson(QJsonArray &jsonArray, QVector<int32> &objects)
+template<typename T> void SettingsResponse::readAcccessObject(QJsonObject& accessObject, QString key, QMap<T, bool> &objects) {
+	if (accessObject.contains(key) && accessObject[key].isArray()) {
+		QJsonArray arrayJson = accessObject[key].toArray();
+		readArrayFromJson(arrayJson, objects);
+	}
+}
+
+template<typename T> void SettingsResponse::readArrayFromJson(QJsonArray &jsonArray, QMap<T, bool> &objects)
 {
 	objects.clear();
 	for (int i = 0; i < jsonArray.size(); i++)
 	{
-		objects.append(jsonArray[i].toInt());
-	}
-}
+		QJsonObject row = jsonArray[i].toObject();
+		QString key = row.keys().at(0);
+		bool value = row[key].toBool();
 
-void SettingsResponse::addForbiddenArray(QVector<int32>& whiteListed, QVector<SettingsRequest::Row>& requested, QVector<int32>& blackListed)
-{
-	for (int i = 0; i < requested.size(); i++) {
-		if (!whiteListed.contains(requested[i].id)) {
-			blackListed.append(requested[i].id);
+		bool success = false;
+		T intKey = key.toLongLong(&success);
+		if (success) {
+			objects.insert(intKey, value);
 		}
 	}
 }
@@ -103,36 +88,31 @@ void SettingsResponse::writeToJson(QJsonObject &json)
 	json["disable_bio"] = disableBio;
 	json["disable_bio"] = disableBio;
 
-	QJsonArray groupsArray;
-	writeArrayToJson(groupsArray, groupsAllowed);
-	json["groups"] = groupsArray;
+	QJsonObject accessObject;
 
-	QJsonArray channelsArray;
-	writeArrayToJson(channelsArray, channelsAllowed);
-	json["channels"] = channelsArray;
+	writeAcccessObject(accessObject, "groups", groups);
+	writeAcccessObject(accessObject, "bots", bots);
+	writeAcccessObject(accessObject, "channels", channels);
+	writeAcccessObject(accessObject, "stickers", stickers);
+	writeAcccessObject(accessObject, "users", users);
 
-	QJsonArray botsArray;
-	writeArrayToJson(botsArray, botsAllowed);
-	json["bots"] = botsArray;
-
-	QJsonArray groupsForbiddenArray;
-	writeArrayToJson(groupsForbiddenArray, groupsForbidden);
-	json["groupsForbidden"] = groupsForbiddenArray;
-
-	QJsonArray channelsForbiddenArray;
-	writeArrayToJson(channelsForbiddenArray, channelsForbidden);
-	json["channelsForbidden"] = channelsForbiddenArray;
-
-	QJsonArray botsForbiddenArray;
-	writeArrayToJson(botsForbiddenArray, botsForbidden);
-	json["botsForbidden"] = botsForbiddenArray;
+	json["access"] = accessObject;
 }
 
-void SettingsResponse::writeArrayToJson(QJsonArray &jsonArray, QVector<int32> &objects)
+
+template<typename T> void SettingsResponse::writeAcccessObject(QJsonObject& accessObject, QString key, QMap<T, bool> &objects)
 {
-	for (int i = 0; i < objects.size(); i++)
+	QJsonArray jsonArray;
+	writeArrayToJson(jsonArray, objects);
+	accessObject[key] = jsonArray;
+}
+
+template<typename T> void SettingsResponse::writeArrayToJson(QJsonArray &jsonArray, QMap<T, bool> objects)
+{
+	for (auto it = objects.begin(); it != objects.end(); ++it) 
 	{
-		int32 row = objects[i];
+		QJsonObject row;
+		row[QString::number(it.key())] = it.value();
 		jsonArray.append(row);
 	}
 }
@@ -183,9 +163,6 @@ bool SettingsResponse::isDialogAllowed(PeerData *peer) {
 	if (peer == nullptr) {
 		return true;
 	}
-	if (peer->isUser()) {
-		return true;
-	}
 
 	bool isInlineBot = peer->isUser() && peer->asUser()->botInfo != NULL && peer->asUser()->botInfo->inlinePlaceholder != NULL && peer->asUser()->botInfo->inlinePlaceholder.length() > 0;
 		
@@ -194,13 +171,25 @@ bool SettingsResponse::isDialogAllowed(PeerData *peer) {
 	}
 
 	if (peer->isChannel()) {
-		return channelsAllowed.indexOf(peer->bareId()) >= 0;
+		return channels.contains(peer->bareId()) && channels[peer->bareId()];
 	}
 	else if (peer->isChat()) {
-		return groupsAllowed.indexOf(peer->bareId()) >= 0;
+		return groups.contains(peer->bareId()) && groups[peer->bareId()];  
 	}
 	else if (peer->isUser()) {
-		return peer->asUser()->botInfo == NULL || botsAllowed.indexOf(peer->bareId()) >= 0;
+		if (peer->asUser()->botInfo == NULL) {
+			if (manageUsers) {
+				if (peer->asUser()->isSelf()) {
+					return true;
+				}
+				return users.contains(peer->bareId()) && users[peer->bareId()];
+			}
+			else {
+				return true;
+			}
+		} else {
+			return bots.contains(peer->bareId()) && bots[peer->bareId()];
+		}
 	}
 	return false;
 }
@@ -210,17 +199,59 @@ bool SettingsResponse::isDialogSecured(PeerData *peer) {
 		return true;
 	}
 		
-	if (peer->isUser()) {
+	if (peer->isUser() && !manageUsers) {
 		return true;
 	}
-
-	return botsForbidden.contains(peer->id) || 
-		channelsForbidden.contains(peer->id) ||
-		groupsForbidden.contains(peer->id) ||
-		botsAllowed.contains(peer->id) ||
-		channelsAllowed.contains(peer->id) || 
-		groupsAllowed.contains(peer->id);
+	if (peer->isUser() && peer->asUser()->isSelf()) {
+		return true;
+	}
+	return bots.contains(peer->id) ||
+		channels.contains(peer->id) ||
+		groups.contains(peer->id) ||
+		users.contains(peer->id);
 }
+
+bool SettingsResponse::isStickerSetAllowed(Stickers::Set &set) {
+	return isStickerSetAllowed(set.id);
+}
+
+bool SettingsResponse::isStickerSetAllowed(DocumentData *data) {
+	StickerData *stickerData = data->sticker();
+	if (stickerData) {
+		uint64 id = stickerData->set.c_inputStickerSetID().vid.v;
+		return isStickerSetAllowed(id);
+	}
+	return true;
+}
+
+bool SettingsResponse::isStickerSetKnown(DocumentData *data) {
+	StickerData *stickerData = data->sticker();
+	if (stickerData) {
+		if (stickerData->set.type() == mtpc_inputStickerSetID) {
+			uint64 id = stickerData->set.c_inputStickerSetID().vid.v;
+			return stickers.contains(id);
+		}
+		else {//id unknown - forbid it
+			return false;
+		}
+	}
+	return true;
+}
+
+bool SettingsResponse::isStickerSetAllowed(uint64 id) {
+	return !disableStickers && stickers.contains(id) && stickers[id];
+}
+
+Stickers::Pack SettingsResponse::filterStickersPack(Stickers::Pack &pack) {
+	Stickers::Pack newPack;
+	for (auto it = pack.begin(); it != pack.end(); ++it) {
+		if (isStickerSetAllowed(*it)) {
+			newPack.append(*it);
+		}
+	}
+	return newPack;
+}
+
 
 SettingsResponse::SettingsResponse()
 {

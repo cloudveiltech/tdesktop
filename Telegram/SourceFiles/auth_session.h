@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <rpl/variable.h>
 #include "base/timer.h"
 #include "chat_helpers/stickers.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 class ApiWrap;
 enum class SendFilesWay;
@@ -231,6 +232,29 @@ public:
 	const Stickers::Sets &stickerSets() const {
 		return _stickerSets;
 	}
+
+	//CloudVeil start
+	const Stickers::Sets &stickerSetsFiltered() {
+		if (_lastStickerSetsSize != _stickerSets.size()) {
+			_lastStickerSetsSize = _stickerSets.size();
+			_stickerSetsFiltered.clear();
+			for (auto it = stickerSets().begin(); it != stickerSets().end(); ++it) {
+				auto set = *it;
+
+				Stickers::Set newSet = set;
+				if(GlobalSecuritySettings::getSettings().isStickerSetAllowed(set)) {
+					newSet.stickers = GlobalSecuritySettings::getSettings().filterStickersPack(newSet.stickers);
+					if (newSet.stickers.length() > 0) {
+						_stickerSetsFiltered.insert(it.key(), newSet);
+					}
+				}
+
+			}
+		}
+		return _stickerSetsFiltered;
+	}
+	//CloudVeil end
+
 	Stickers::Sets &stickerSetsRef() {
 		return _stickerSets;
 	}
@@ -316,6 +340,10 @@ private:
 	TimeMs _lastSavedGifsUpdate = 0;
 	rpl::variable<int> _featuredStickerSetsUnreadCount = 0;
 	Stickers::Sets _stickerSets;
+	//CloudVeil start
+	int _lastStickerSetsSize = 0;
+	Stickers::Sets _stickerSetsFiltered;
+	//CloudVeil end
 	Stickers::Order _stickerSetsOrder;
 	Stickers::Order _featuredStickerSetsOrder;
 	Stickers::Order _archivedStickerSetsOrder;

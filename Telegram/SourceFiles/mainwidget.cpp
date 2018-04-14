@@ -195,6 +195,8 @@ MainWidget::MainWidget(
 	Messenger::Instance().mtp()->setUpdatesHandler(rpcDone(&MainWidget::updateReceived));
 	Messenger::Instance().mtp()->setGlobalFailHandler(rpcFail(&MainWidget::updateFail));
 
+	bannedImage.load(qsl(":/gui/art/banned.png"));
+
 	_ptsWaiter.setRequesting(true);
 	updateScrollColors();
 

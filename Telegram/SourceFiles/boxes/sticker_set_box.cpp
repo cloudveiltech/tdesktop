@@ -397,8 +397,8 @@ bool StickerSetBox::Inner::loaded() const {
 
 int32 StickerSetBox::Inner::notInstalled() const {
 	if (!_loaded) return 0;
-	auto it = Auth().data().stickerSets().constFind(_setId);
-	if (it == Auth().data().stickerSets().cend() || !(it->flags & MTPDstickerSet::Flag::f_installed) || (it->flags & MTPDstickerSet::Flag::f_archived)) return _pack.size();
+	auto it = Auth().data().stickerSetsFiltered().constFind(_setId);
+	if (it == Auth().data().stickerSetsFiltered().cend() || !(it->flags & MTPDstickerSet::Flag::f_installed) || (it->flags & MTPDstickerSet::Flag::f_archived)) return _pack.size();
 	return 0;
 }
 

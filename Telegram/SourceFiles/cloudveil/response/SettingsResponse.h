@@ -20,6 +20,7 @@ public:
 	bool disableProfilePhoto;
 	bool disableProfilePhotoChange;
 	bool disableStickers;
+	bool disableGifs = true;
 	bool manageUsers;
 
 	void readFromJson(QJsonObject &jsonObject);

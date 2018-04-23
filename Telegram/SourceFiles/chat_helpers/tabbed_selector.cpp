@@ -272,11 +272,11 @@ TabbedSelector::TabbedSelector(QWidget *parent, not_null<Window::Controller*> co
 , _topShadow(this)
 , _bottomShadow(this)
 , _scroll(this, st::emojiScroll)
-, _tabs { {
-	Tab { SelectorTab::Emoji, object_ptr<EmojiListWidget>(this, controller) },
-	Tab { SelectorTab::Stickers, object_ptr<StickersListWidget>(this, controller) },
-	Tab { SelectorTab::Gifs, object_ptr<GifsListWidget>(this, controller) },
-} }
+, _tabs{ {
+		Tab{ SelectorTab::Emoji, object_ptr<EmojiListWidget>(this, controller) },
+		Tab{ SelectorTab::Stickers, object_ptr<StickersListWidget>(this, controller) },
+		Tab{ SelectorTab::Gifs, object_ptr<GifsListWidget>(this, controller) },
+	} }
 , _currentTabType(Auth().data().selectorTab()) {
 	resize(st::emojiPanWidth, st::emojiPanMaxHeight);
 
@@ -306,15 +306,21 @@ TabbedSelector::TabbedSelector(QWidget *parent, not_null<Window::Controller*> co
 		});
 	}
 
+	
+
 	connect(stickers(), SIGNAL(scrollUpdated()), this, SLOT(onScroll()));
 	connect(_scroll, SIGNAL(scrolled()), this, SLOT(onScroll()));
 	connect(emoji(), SIGNAL(selected(EmojiPtr)), this, SIGNAL(emojiSelected(EmojiPtr)));
 	connect(stickers(), SIGNAL(selected(DocumentData*)), this, SIGNAL(stickerSelected(DocumentData*)));
 	connect(stickers(), SIGNAL(checkForHide()), this, SIGNAL(checkForHide()));
-	connect(gifs(), SIGNAL(selected(DocumentData*)), this, SIGNAL(stickerSelected(DocumentData*)));
-	connect(gifs(), SIGNAL(selected(PhotoData*)), this, SIGNAL(photoSelected(PhotoData*)));
-	connect(gifs(), SIGNAL(selected(InlineBots::Result*, UserData*)), this, SIGNAL(inlineResultSelected(InlineBots::Result*, UserData*)));
-	connect(gifs(), SIGNAL(cancelled()), this, SIGNAL(cancelled()));
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getSettings().disableGifs) {
+		connect(gifs(), SIGNAL(selected(DocumentData*)), this, SIGNAL(stickerSelected(DocumentData*)));
+		connect(gifs(), SIGNAL(selected(PhotoData*)), this, SIGNAL(photoSelected(PhotoData*)));
+		connect(gifs(), SIGNAL(selected(InlineBots::Result*, UserData*)), this, SIGNAL(inlineResultSelected(InlineBots::Result*, UserData*)));
+		connect(gifs(), SIGNAL(cancelled()), this, SIGNAL(cancelled()));
+	}
+	//CloudVeil end
 
 	_topShadow->raise();
 	_bottomShadow->raise();
@@ -621,7 +627,11 @@ void TabbedSelector::createTabsSlider() {
 	auto sections = QStringList();
 	sections.push_back(lang(lng_switch_emoji).toUpper());
 	sections.push_back(lang(lng_switch_stickers).toUpper());
-	sections.push_back(lang(lng_switch_gifs).toUpper());
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getSettings().disableGifs) {
+		sections.push_back(lang(lng_switch_gifs).toUpper());
+	}
+	//CloudVeil end
 	_tabsSlider->setSections(sections);
 
 	_tabsSlider->setActiveSectionFast(static_cast<int>(_currentTabType));

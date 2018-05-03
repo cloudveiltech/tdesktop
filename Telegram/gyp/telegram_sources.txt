@@ -714,6 +714,10 @@
 <(src_loc)/cloudveil/request/SettingsRequest.cpp
 <(src_loc)/cloudveil/response/SettingsResponse.h
 <(src_loc)/cloudveil/response/SettingsResponse.cpp
+<(src_loc)/cloudveil/SimpleUpdater.h
+<(src_loc)/cloudveil/SimpleUpdater.cpp
+<(src_loc)/cloudveil/response/UpdateResponse.h
+<(src_loc)/cloudveil/response/UpdateResponse.cpp
 
 <(emoji_suggestions_loc)/emoji_suggestions.cpp
 <(emoji_suggestions_loc)/emoji_suggestions.h

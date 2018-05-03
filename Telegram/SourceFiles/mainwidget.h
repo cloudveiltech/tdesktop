@@ -13,6 +13,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 //CloudVeil start
 #include "cloudveil/GlobalSecuritySettings.h"
+#include "cloudveil/SimpleUpdater.h"
+#include "cloudveil/response/UpdateResponse.h"
+#include "cloudveil/response/SettingsResponse.h"
 //CloudVeil end
 
 
@@ -368,7 +371,8 @@ public slots:
 	void dialogsCancelled();
 
 	//CloudVeil start
-	void requestCloudVeil();	
+	void requestCloudVeil();
+	void simpleUpdateReceived(UpdateResponse* response);
 	//CloudVeil end
 
 	void getDifference();
@@ -667,6 +671,7 @@ private:
 
 	//CloudVeil start
 	object_ptr<GlobalSecuritySettings> globalSettings;
+	object_ptr<SimpleUpdater> simpleUpdater;
 	QImage bannedImage;
 	//CloudVeil end
 };

@@ -452,7 +452,7 @@ void Application::startUpdateCheck(bool forceWait) {
 
 	int32 constDelay = cBetaVersion() ? 600 : UpdateDelayConstPart, randDelay = cBetaVersion() ? 300 : UpdateDelayRandPart;
 	int32 updateInSecs = cLastUpdateCheck() + constDelay + int32(rand() % randDelay) - unixtime();
-	bool sendRequest = (updateInSecs <= 0 || updateInSecs > (constDelay + randDelay));
+	bool sendRequest = true;// (updateInSecs <= 0 || updateInSecs > (constDelay + randDelay));
 	if (!sendRequest && !forceWait) {
 		QDir updates(cWorkingDir() + "tupdates");
 		if (updates.exists()) {

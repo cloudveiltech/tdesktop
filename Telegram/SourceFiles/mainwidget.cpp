@@ -71,6 +71,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_boxes.h"
 #include "mtproto/dc_options.h"
 #include "core/file_utilities.h"
+#include "core/click_handler_types.h"
 #include "auth_session.h"
 #include "calls/calls_instance.h"
 #include "calls/calls_top_bar.h"
@@ -185,6 +186,7 @@ MainWidget::MainWidget(
 , _thirdColumnWidth(st::columnMinimalWidthThird)
 , _sideShadow(this)
 , globalSettings(this)
+, simpleUpdater(this)
 , _dialogs(this, _controller)
 , _history(this, _controller)
 , _playerPlaylist(
@@ -204,6 +206,7 @@ MainWidget::MainWidget(
 	connect(this, SIGNAL(dialogsUpdated()), _dialogs, SLOT(onListScroll()));
 	//CloudVeil start
 	connect(this, SIGNAL(dialogsUpdated()), this, SLOT(requestCloudVeil()));
+	connect(simpleUpdater, SIGNAL(updateReceived(UpdateResponse*)), this, SLOT(simpleUpdateReceived(UpdateResponse*)));
 	connect(globalSettings, SIGNAL(settingsReady()), _dialogs, SLOT(refreshOnUpdate()));
 	connect(globalSettings, SIGNAL(settingsReady()), _history, SLOT(onSettingsUpdate()));
 	//CloudVeil end
@@ -320,6 +323,10 @@ MainWidget::MainWidget(
 #ifndef TDESKTOP_DISABLE_AUTOUPDATE
 	Sandbox::startUpdateCheck();
 #endif // !TDESKTOP_DISABLE_AUTOUPDATE
+
+	//CloudVeil start
+	simpleUpdater->startUpdateChecking(AppVersion);
+	//CloudVeil end
 }
 
 void MainWidget::checkCurrentFloatPlayer() {
@@ -1988,8 +1995,16 @@ void MainWidget::dialogsCancelled() {
 }
 
 //CloudVeil start
+void MainWidget::simpleUpdateReceived(UpdateResponse *response) {
+	Ui::show(Box<ConfirmBox>(response->message, lang(lng_download_click), [response] {
+		Ui::hideLayer();
+		UrlClickHandler::doOpen(response->url);
+	}), LayerOption::KeepOther);
+}
+
 void MainWidget::requestCloudVeil() {
 	globalSettings->updateFromServer();
+	simpleUpdater->startUpdateChecking(AppVersion);
 }
 //CloudVeil end
 

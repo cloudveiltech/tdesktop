@@ -2,23 +2,28 @@
 class SettingsRequest
 {
 public:
+	template<typename T> 
 	struct Row {
-		uint64 id;
+		T id;
 		QString title;
 		QString userName;
 
-		void writeToJson(QJsonObject &json);
+		void writeToJson(QJsonObject &json) {			
+			json["id"] = QString::number(id);
+			json["title"] = title;
+			json["user_name"] = userName;
+		}
 	};
 
 	int32 userId;
 	QString userPhone;
 	QString userName;
 
-	QVector<Row> groups;
-	QVector<Row> channels;
-	QVector<Row> bots;
-	QVector<Row> stickers;
-	QVector<Row> users;
+	QVector<Row<int32>> groups;
+	QVector<Row<int32>> channels;
+	QVector<Row<int32>> bots;
+	QVector<Row<uint64>> stickers;
+	QVector<Row<int32>> users;
 
 	void writeToJson(QJsonObject &json);
 
@@ -26,6 +31,6 @@ public:
 	~SettingsRequest();
 
 private:
-	void writeArrayToJson(QJsonArray &jsonArray, QVector<Row> &objects);
+	template<typename T> void writeArrayToJson(QJsonArray &jsonArray, QVector<Row<T>> &objects);
 };
 

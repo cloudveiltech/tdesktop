@@ -87,6 +87,8 @@ void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 	request.userId = Auth().user()->bareId();
 	request.userName = Auth().user()->username;
 	request.userPhone = Auth().user()->phone();
+
+	patchRequestIds(request);
 }
 
 void GlobalSecuritySettings::checkStickerSetByDocumentAsync(DocumentData* sticker) {
@@ -98,7 +100,7 @@ void GlobalSecuritySettings::checkStickerSetByDocumentAsync(DocumentData* sticke
 
 void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerData *peer) {
 	int32 dialogId = peer->bareId();
-	SettingsRequest::Row row;
+	SettingsRequest::Row<int32> row;
 	row.id = dialogId;
 
 	row.userName = peer->userName();
@@ -124,7 +126,7 @@ void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerDa
 }
 
 void GlobalSecuritySettings::addStickerToRequest(SettingsRequest &request, Stickers::Set &set) {
-	SettingsRequest::Row row;
+	SettingsRequest::Row<uint64> row;
 	row.id = set.id;
 	row.userName = set.shortName;
 	row.title = set.title;
@@ -134,7 +136,7 @@ void GlobalSecuritySettings::addStickerToRequest(SettingsRequest &request, Stick
 void GlobalSecuritySettings::gotStickersSet(const MTPmessages_StickerSet &set) {
 	auto additionalSticker = &set.c_messages_stickerSet().vset.c_stickerSet();
 
-	SettingsRequest::Row row;
+	SettingsRequest::Row<uint64> row;
 	row.id = additionalSticker->vid.v;
 	row.userName = qs(additionalSticker->vshort_name);
 	row.title = qs(additionalSticker->vtitle);
@@ -150,6 +152,22 @@ void GlobalSecuritySettings::gotStickersSet(const MTPmessages_StickerSet &set) {
 
 bool GlobalSecuritySettings::failedStickersSet(const RPCError &error) {
 	return true;
+}
+
+
+void GlobalSecuritySettings::patchRequestIds(SettingsRequest &request) {
+	patchRequestIds(request.groups);
+	patchRequestIds(request.channels);
+}
+
+void GlobalSecuritySettings::patchRequestIds(QVector<SettingsRequest::Row<int32>> &groups) {
+	for (size_t i = 0; i < groups.size(); i++) {
+		groups[i].id = patchId(groups[i].id);
+	}
+}
+
+int32 GlobalSecuritySettings::patchId(int32 id) {
+	return -id;
 }
 
 void GlobalSecuritySettings::sendRequest(SettingsRequest &settingsRequestBody) {
@@ -185,6 +203,9 @@ void GlobalSecuritySettings::requestFinished(QNetworkReply *networkReply)
 				SettingsResponse settingsResponse;
 				QJsonObject jsonObj = json.object();
 				settingsResponse.readFromJson(jsonObj);
+
+				patchResponseIds(settingsResponse);
+
 				settingsResponse.saveToCache();
 				lastResponse = settingsResponse;
 
@@ -210,4 +231,28 @@ void GlobalSecuritySettings::requestFinished(QNetworkReply *networkReply)
 	}
 
 	networkReply->deleteLater();
+}
+
+
+void GlobalSecuritySettings::patchResponseIds(SettingsResponse &response) {
+	patchResponseIds(response.channels);
+	patchResponseIds(response.groups);
+}
+
+template<typename T> void GlobalSecuritySettings::patchResponseIds(QMap<T, bool> &groups) {
+	QMap<T, bool> other;
+	QList<T> keys = groups.uniqueKeys();
+	for (int k = 0; k < keys.length(); k++) {
+		T key = keys[k];
+
+		//We're using insertMulti in case
+		//we have multiple values associated to single key
+		QList<bool> values = groups.values(key);
+
+		key = patchId(key);
+		for (int j = 0; j < values.length(); j++) {
+			other.insertMulti(key, values.at(j));
+		}
+	}
+	groups.swap(other);
 }

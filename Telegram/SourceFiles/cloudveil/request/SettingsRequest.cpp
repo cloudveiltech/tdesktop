@@ -29,23 +29,17 @@ void SettingsRequest::writeToJson(QJsonObject & json)
 	json["users"] = usersArray;
 }
 
-void SettingsRequest::writeArrayToJson(QJsonArray &jsonArray, QVector<Row> &objects) 
+template<typename T> void SettingsRequest::writeArrayToJson(QJsonArray &jsonArray, QVector<Row<T>> &objects)
 {
 	for (int i = 0; i < objects.size(); i++)
 	{
-		Row& row = objects[i];
+		Row<T>& row = objects[i];
 		QJsonObject json;
 		row.writeToJson(json);
 		jsonArray.append(json);
 	}
 }
 
-void SettingsRequest::Row::writeToJson(QJsonObject & json)
-{
-	json["id"] = QString::number(id);
-	json["title"] = title;
-	json["user_name"] = userName;
-}
 
 SettingsRequest::SettingsRequest()
 {

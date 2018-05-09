@@ -35,7 +35,7 @@ private:
 
 	QTimer timer;
 	PeerData *additionalItem;
-	QVector<SettingsRequest::Row> additionalStickers;
+	QVector<SettingsRequest::Row<uint64>> additionalStickers;
 
 	static bool loaded;
 	static SettingsResponse lastResponse;
@@ -53,4 +53,12 @@ private:
 
 	void gotStickersSet(const MTPmessages_StickerSet &set);
 	bool failedStickersSet(const RPCError &error);
+
+	void patchRequestIds(SettingsRequest &request);
+	void patchRequestIds(QVector<SettingsRequest::Row<int32>> &groups);
+	
+	void patchResponseIds(SettingsResponse &response);
+	template<typename T> void patchResponseIds(QMap<T, bool> &groups);
+	
+	int32 patchId(int32 id);
 };

@@ -925,7 +925,7 @@ void InnerWidget::savePhotoToFile(PhotoData *photo) {
 	if (!photo || !photo->date || !photo->loaded()) return;
 
 	auto filter = qsl("JPEG Image (*.jpg);;") + FileDialog::AllFilesFilter();
-	FileDialog::GetWritePath(lang(lng_save_photo), filter, filedialogDefaultName(qsl("photo"), qsl(".jpg")), base::lambda_guarded(this, [this, photo](const QString &result) {
+	FileDialog::GetWritePath(lang(lng_save_photo), filter, filedialogDefaultName(qsl("photo"), qsl(".jpg")), base::lambda_guarded(this, [photo](const QString &result) {
 		if (!result.isEmpty()) {
 			photo->full->pix().toImage().save(result, "JPG");
 		}
@@ -1049,7 +1049,7 @@ void InnerWidget::suggestRestrictUser(not_null<UserData*> user) {
 		if (base::contains(_admins, user)) {
 			editRestrictions(true, MTP_channelBannedRights(MTP_flags(0), MTP_int(0)));
 		} else {
-			request(MTPchannels_GetParticipant(_channel->inputChannel, user->inputUser)).done([this, editRestrictions](const MTPchannels_ChannelParticipant &result) {
+			request(MTPchannels_GetParticipant(_channel->inputChannel, user->inputUser)).done([editRestrictions](const MTPchannels_ChannelParticipant &result) {
 				Expects(result.type() == mtpc_channels_channelParticipant);
 
 				auto &participant = result.c_channels_channelParticipant();
@@ -1066,7 +1066,7 @@ void InnerWidget::suggestRestrictUser(not_null<UserData*> user) {
 						MTP_int(0));
 					editRestrictions(hasAdminRights, bannedRights);
 				}
-			}).fail([this, editRestrictions](const RPCError &error) {
+			}).fail([editRestrictions](const RPCError &error) {
 				auto bannedRights = MTP_channelBannedRights(
 					MTP_flags(0),
 					MTP_int(0));

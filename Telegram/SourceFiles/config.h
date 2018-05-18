@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#define CUSTOM_API_ID 1
+
 #include "core/version.h"
 #include "settings.h"
 
@@ -217,7 +219,7 @@ w/CVnbwQOw0g5GBwwFV3r0uTTvy44xx8XXxk+Qknu4eBCsmrAFNnAgMBAAE=\n\
 ";
 
 #ifdef CUSTOM_API_ID
-#include "../../../TelegramPrivate/custom_api_id.h" // Custom API id and API hash
+#include "custom_api_id.h" // Custom API id and API hash
 #else
 static const int32 ApiId = 17349;
 static const char *ApiHash = "344583e45741c457fe1862106095a5eb";

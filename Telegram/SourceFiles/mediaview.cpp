@@ -148,7 +148,7 @@ void MediaView::refreshLang() {
 }
 
 void MediaView::moveToScreen() {
-	auto widgetScreen = [this](auto &&widget) -> QScreen* {
+	auto widgetScreen = [](auto &&widget) -> QScreen* {
 		if (auto handle = widget ? widget->windowHandle() : nullptr) {
 			return handle->screen();
 		}
@@ -2266,7 +2266,7 @@ void MediaView::paintThemePreview(Painter &p, QRect clip) {
 		}
 	}
 
-	auto fillOverlay = [this, &p, clip](QRect fill) {
+	auto fillOverlay = [&p, clip](QRect fill) {
 		auto clipped = fill.intersected(clip);
 		if (!clipped.isEmpty()) {
 			p.setOpacity(st::themePreviewOverlayOpacity);

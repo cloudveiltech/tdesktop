@@ -21,7 +21,9 @@ public:
 	bool customWorkingDir() const {
 		return _customWorkingDir;
 	}
-
+    
+    virtual ~Launcher() = default;
+    
 protected:
 	enum class UpdaterLaunch {
 		PerformUpdate,

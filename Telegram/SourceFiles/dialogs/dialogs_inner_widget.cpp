@@ -89,7 +89,7 @@ DialogsInner::DialogsInner(QWidget *parent, not_null<Window::Controller*> contro
 		[this](auto item) { itemRemoved(item); },
 		lifetime());
 	Auth().data().itemRepaintRequest(
-	) | rpl::start_with_next([this](auto item) {
+	) | rpl::start_with_next([](auto item) {
 		if (item->history()->lastMsg == item) {
 			item->history()->updateChatListEntry();
 		}
@@ -99,7 +99,7 @@ DialogsInner::DialogsInner(QWidget *parent, not_null<Window::Controller*> contro
 		updateDialogRow(update.history->peer, MsgId(0), updateRect, UpdateRowSection::Default | UpdateRowSection::Filtered);
 	});
 
-	subscribe(Window::Theme::Background(), [this](const Window::Theme::BackgroundUpdate &data) {
+	subscribe(Window::Theme::Background(), [](const Window::Theme::BackgroundUpdate &data) {
 		if (data.paletteChanged()) {
 			Dialogs::Layout::clearUnreadBadgesCache();
 		}

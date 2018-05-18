@@ -576,7 +576,7 @@ HistoryMessage::HistoryMessage(
 
 	createComponents(config);
 
-	auto cloneMedia = [this, history, mediaType] {
+	auto cloneMedia = [history, mediaType] {
 		if (mediaType == MediaTypeWebPage) {
 			if (auto channel = history->peer->asChannel()) {
 				if (channel->restricted(ChannelRestriction::f_embed_links)) {

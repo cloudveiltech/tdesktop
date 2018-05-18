@@ -70,7 +70,7 @@ Controller::ColumnLayout Controller::computeColumnLayout() const {
 	auto bodyWidth = window()->bodyWidget()->width();
 	auto dialogsWidth = 0, chatWidth = 0, thirdWidth = 0;
 
-	auto useOneColumnLayout = [this, bodyWidth] {
+	auto useOneColumnLayout = [bodyWidth] {
 		auto minimalNormal = st::columnMinimalWidthLeft
 			+ st::columnMinimalWidthMain;
 		if (bodyWidth < minimalNormal) {
@@ -308,7 +308,7 @@ void Controller::showJumpToDate(not_null<PeerData*> peer, QDate requestedDate) {
 		? currentPeerDate()
 		: requestedDate;
 	auto month = highlighted;
-	auto callback = [this, peer](const QDate &date) {
+	auto callback = [peer](const QDate &date) {
 		Auth().api().jumpToDate(peer, date);
 	};
 	auto box = Box<CalendarBox>(

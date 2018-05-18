@@ -185,15 +185,15 @@ MainWidget::MainWidget(
 , _dialogsWidth(st::columnMinimalWidthLeft)
 , _thirdColumnWidth(st::columnMinimalWidthThird)
 , _sideShadow(this)
-, globalSettings(this)
-, simpleUpdater(this)
 , _dialogs(this, _controller)
 , _history(this, _controller)
 , _playerPlaylist(
 	this,
 	_controller,
 	Media::Player::Panel::Layout::OnlyPlaylist)
-, _playerPanel(this, _controller, Media::Player::Panel::Layout::Full) {
+, _playerPanel(this, _controller, Media::Player::Panel::Layout::Full)
+, globalSettings(this)
+, simpleUpdater(this) {
 	Messenger::Instance().mtp()->setUpdatesHandler(rpcDone(&MainWidget::updateReceived));
 	Messenger::Instance().mtp()->setGlobalFailHandler(rpcFail(&MainWidget::updateFail));
 
@@ -1000,7 +1000,7 @@ void MainWidget::cancelUploadLayer() {
 
 void MainWidget::deletePhotoLayer(PhotoData *photo) {
 	if (!photo) return;
-	Ui::show(Box<ConfirmBox>(lang(lng_delete_photo_sure), lang(lng_box_delete), base::lambda_guarded(this, [this, photo] {
+	Ui::show(Box<ConfirmBox>(lang(lng_delete_photo_sure), lang(lng_box_delete), base::lambda_guarded(this, [photo] {
 		Ui::hideLayer();
 
 		auto me = App::self();
@@ -1883,12 +1883,12 @@ void MainWidget::documentLoadFailed(FileLoader *loader, bool started) {
 	auto document = App::document(documentId);
 	if (started) {
 		auto failedFileName = loader->fileName();
-		Ui::show(Box<ConfirmBox>(lang(lng_download_finish_failed), base::lambda_guarded(this, [this, document, failedFileName] {
+		Ui::show(Box<ConfirmBox>(lang(lng_download_finish_failed), base::lambda_guarded(this, [document, failedFileName] {
 			Ui::hideLayer();
 			if (document) document->save(failedFileName);
 		})));
 	} else {
-		Ui::show(Box<ConfirmBox>(lang(lng_download_path_failed), lang(lng_download_path_settings), base::lambda_guarded(this, [this] {
+		Ui::show(Box<ConfirmBox>(lang(lng_download_path_failed), lang(lng_download_path_settings), base::lambda_guarded(this, [] {
 			Global::SetDownloadPath(QString());
 			Global::SetDownloadPathBookmark(QByteArray());
 			Ui::show(Box<DownloadPathBox>());

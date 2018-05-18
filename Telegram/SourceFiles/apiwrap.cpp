@@ -562,7 +562,7 @@ void ApiWrap::requestPeers(const QList<PeerData*> &peers) {
 			channels.push_back((*i)->asChannel()->inputChannel);
 		}
 	}
-	auto handleChats = [this](const MTPmessages_Chats &result) {
+	auto handleChats = [](const MTPmessages_Chats &result) {
 		if (auto chats = Api::getChatsFromMessagesChats(result)) {
 			App::feedChats(*chats);
 		}
@@ -574,7 +574,7 @@ void ApiWrap::requestPeers(const QList<PeerData*> &peers) {
 		request(MTPchannels_GetChannels(MTP_vector<MTPInputChannel>(channels))).done(handleChats).send();
 	}
 	if (!users.isEmpty()) {
-		request(MTPusers_GetUsers(MTP_vector<MTPInputUser>(users))).done([this](const MTPVector<MTPUser> &result) {
+		request(MTPusers_GetUsers(MTP_vector<MTPInputUser>(users))).done([](const MTPVector<MTPUser> &result) {
 			App::feedUsers(result);
 		}).send();
 	}
@@ -1292,7 +1292,7 @@ void ApiWrap::handlePrivacyChange(mtpTypeId keyTypeId, const MTPVector<MTPPrivac
 		}
 
 		auto now = unixtime();
-		App::enumerateUsers([&userRules, contactsRule, everyoneRule, now](UserData *user) {
+		App::enumerateUsers([now](UserData *user) {
 			if (user->isSelf() || user->loadedStatus != PeerData::FullLoaded) {
 				return;
 			}
@@ -1617,7 +1617,7 @@ void ApiWrap::requestParticipantsCountDelayed(
 		not_null<ChannelData*> channel) {
 	_participantsCountRequestTimer.call(
 		kReloadChannelMembersTimeout,
-		[this, channel] { channel->updateFullForced(); });
+		[channel] { channel->updateFullForced(); });
 }
 
 void ApiWrap::gotWebPages(ChannelData *channel, const MTPmessages_Messages &msgs, mtpRequestId req) {
@@ -1742,7 +1742,7 @@ void ApiWrap::requestStickers(TimeId now) {
 		default: Unexpected("Type in ApiWrap::stickersDone()");
 		}
 	};
-	_stickersUpdateRequest = request(MTPmessages_GetAllStickers(MTP_int(Local::countStickersHash(true)))).done(onDone).fail([this, onDone](const RPCError &error) {
+	_stickersUpdateRequest = request(MTPmessages_GetAllStickers(MTP_int(Local::countStickersHash(true)))).done(onDone).fail([onDone](const RPCError &error) {
 		LOG(("App Fail: Failed to get stickers!"));
 		onDone(MTP_messages_allStickersNotModified());
 	}).send();
@@ -1766,7 +1766,7 @@ void ApiWrap::requestRecentStickers(TimeId now) {
 		default: Unexpected("Type in ApiWrap::recentStickersDone()");
 		}
 	};
-	_recentStickersUpdateRequest = request(MTPmessages_GetRecentStickers(MTP_flags(0), MTP_int(Local::countRecentStickersHash()))).done(onDone).fail([this, onDone](const RPCError &error) {
+	_recentStickersUpdateRequest = request(MTPmessages_GetRecentStickers(MTP_flags(0), MTP_int(Local::countRecentStickersHash()))).done(onDone).fail([onDone](const RPCError &error) {
 		LOG(("App Fail: Failed to get recent stickers!"));
 		onDone(MTP_messages_recentStickersNotModified());
 	}).send();
@@ -1790,7 +1790,7 @@ void ApiWrap::requestFavedStickers(TimeId now) {
 		default: Unexpected("Type in ApiWrap::favedStickersDone()");
 		}
 	};
-	_favedStickersUpdateRequest = request(MTPmessages_GetFavedStickers(MTP_int(Local::countFavedStickersHash()))).done(onDone).fail([this, onDone](const RPCError &error) {
+	_favedStickersUpdateRequest = request(MTPmessages_GetFavedStickers(MTP_int(Local::countFavedStickersHash()))).done(onDone).fail([onDone](const RPCError &error) {
 		LOG(("App Fail: Failed to get faved stickers!"));
 		onDone(MTP_messages_favedStickersNotModified());
 	}).send();
@@ -1814,7 +1814,7 @@ void ApiWrap::requestFeaturedStickers(TimeId now) {
 		default: Unexpected("Type in ApiWrap::featuredStickersDone()");
 		}
 	};
-	_featuredStickersUpdateRequest = request(MTPmessages_GetFeaturedStickers(MTP_int(Local::countFeaturedStickersHash()))).done(onDone).fail([this, onDone](const RPCError &error) {
+	_featuredStickersUpdateRequest = request(MTPmessages_GetFeaturedStickers(MTP_int(Local::countFeaturedStickersHash()))).done(onDone).fail([onDone](const RPCError &error) {
 		LOG(("App Fail: Failed to get featured stickers!"));
 		onDone(MTP_messages_featuredStickersNotModified());
 	}).send();
@@ -1838,7 +1838,7 @@ void ApiWrap::requestSavedGifs(TimeId now) {
 		default: Unexpected("Type in ApiWrap::savedGifsDone()");
 		}
 	};
-	_savedGifsUpdateRequest = request(MTPmessages_GetSavedGifs(MTP_int(Local::countSavedGifsHash()))).done(onDone).fail([this, onDone](const RPCError &error) {
+	_savedGifsUpdateRequest = request(MTPmessages_GetSavedGifs(MTP_int(Local::countSavedGifsHash()))).done(onDone).fail([onDone](const RPCError &error) {
 		LOG(("App Fail: Failed to get saved gifs!"));
 		onDone(MTP_messages_savedGifsNotModified());
 	}).send();
@@ -2819,7 +2819,7 @@ void ApiWrap::uploadAlbumMedia(
 		const MessageGroupId &groupId,
 		const MTPInputMedia &media) {
 	const auto localId = item->fullId();
-	const auto failed = [this] {
+	const auto failed = [] {
 
 	};
 	request(MTPmessages_UploadMedia(

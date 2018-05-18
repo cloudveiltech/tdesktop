@@ -144,7 +144,7 @@ void StickersListWidget::Footer::enumerateVisibleIcons(Callback callback) {
 }
 
 void StickersListWidget::Footer::preloadImages() {
-	enumerateVisibleIcons([this](const StickerIcon &icon, int x) {
+	enumerateVisibleIcons([](const StickerIcon &icon, int x) {
 		if (auto sticker = icon.sticker) {
 			sticker->thumb->load();
 		}
@@ -1620,7 +1620,7 @@ void StickersListWidget::setSelected(OverState newSelected) {
 		setCursor(newSelected ? style::cur_pointer : style::cur_default);
 
 		auto &sets = shownSets();
-		auto updateSelected = [this, &sets]() {
+		auto updateSelected = [this]() {
 			if (auto sticker = base::get_if<OverSticker>(&_selected)) {
 				rtlupdate(stickerRect(sticker->section, sticker->index));
 			} else if (auto button = base::get_if<OverButton>(&_selected)) {
@@ -1772,7 +1772,7 @@ void StickersListWidget::installSet(uint64 setId) {
 	auto &sets = Auth().data().stickerSetsFiltered();
 	auto it = sets.constFind(setId);
 	if (it != sets.cend()) {
-		request(MTPmessages_InstallStickerSet(Stickers::inputSetId(*it), MTP_bool(false))).done([this](const MTPmessages_StickerSetInstallResult &result) {
+		request(MTPmessages_InstallStickerSet(Stickers::inputSetId(*it), MTP_bool(false))).done([](const MTPmessages_StickerSetInstallResult &result) {
 			if (result.type() == mtpc_messages_stickerSetInstallResultArchive) {
 				Stickers::ApplyArchivedResult(result.c_messages_stickerSetInstallResultArchive());
 			}

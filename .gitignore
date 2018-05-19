@@ -55,3 +55,4 @@ xcuserdata
 /Linux/
 /Telegram/Makefile
 *.*~
+/Telegram/SourceFiles/custom_api_id.h

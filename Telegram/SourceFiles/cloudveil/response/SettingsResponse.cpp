@@ -3,6 +3,7 @@
 #include "mainwidget.h"
 #include "dialogs/dialogs_indexed_list.h"
 #include "data/data_document.h"
+#include "history/history.h"
 
 void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 {

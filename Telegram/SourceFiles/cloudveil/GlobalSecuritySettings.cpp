@@ -1,6 +1,7 @@
 #define REQUEST_URL "https://manage.cloudveil.org/api/v1/messenger/settings"
 
 #include "stdafx.h"
+#include "auth_session.h"
 #include "GlobalSecuritySettings.h"
 #include "mainwidget.h"
 #include "auth_session.h"
@@ -8,7 +9,8 @@
 #include "./request/SettingsRequest.h"
 #include "./response/SettingsResponse.h"
 #include "storage/localstorage.h"
-
+#include "history/history.h"
+#include "data/data_session.h"
 
 SettingsResponse GlobalSecuritySettings::lastResponse;
 GlobalSecuritySettings* GlobalSecuritySettings::instance;
@@ -68,6 +70,7 @@ void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 	for_const(UserData* user, cRecentInlineBots()) {
 		addDialogToRequest(request, user);
 	}
+
 
 	for (auto it = Auth().data().stickerSets().begin(); it != Auth().data().stickerSets().end(); ++it) {
 		auto set = *it;

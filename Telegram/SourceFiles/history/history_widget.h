@@ -25,56 +25,56 @@ enum class CompressConfirm;
 class MessageLinksParser;
 
 namespace InlineBots {
-namespace Layout {
-class ItemBase;
-class Widget;
-} // namespace Layout
-class Result;
+	namespace Layout {
+		class ItemBase;
+		class Widget;
+	} // namespace Layout
+	class Result;
 } // namespace InlineBots
 
 namespace Data {
-struct Draft;
+	struct Draft;
 } // namespace Data
 
 namespace Ui {
-class AbstractButton;
-class InnerDropdown;
-class DropdownMenu;
-class PlainShadow;
-class PopupMenu;
-class IconButton;
-class HistoryDownButton;
-class EmojiButton;
-class SendButton;
-class SilentToggle;
-class FlatButton;
-class LinkButton;
-class RoundButton;
-namespace Emoji {
-class SuggestionsController;
-} // namespace Emoji
+	class AbstractButton;
+	class InnerDropdown;
+	class DropdownMenu;
+	class PlainShadow;
+	class PopupMenu;
+	class IconButton;
+	class HistoryDownButton;
+	class EmojiButton;
+	class SendButton;
+	class SilentToggle;
+	class FlatButton;
+	class LinkButton;
+	class RoundButton;
+	namespace Emoji {
+		class SuggestionsController;
+	} // namespace Emoji
 } // namespace Ui
 
 namespace Window {
-class Controller;
+	class Controller;
 } // namespace Window
 
 namespace ChatHelpers {
-class TabbedPanel;
-class TabbedSection;
-class TabbedSelector;
+	class TabbedPanel;
+	class TabbedSection;
+	class TabbedSelector;
 } // namespace ChatHelpers
 
 namespace Storage {
-enum class MimeDataState;
-struct PreparedList;
-struct UploadedPhoto;
-struct UploadedDocument;
-struct UploadedThumbDocument;
+	enum class MimeDataState;
+	struct PreparedList;
+	struct UploadedPhoto;
+	struct UploadedDocument;
+	struct UploadedThumbDocument;
 } // namespace Storage
 
 namespace HistoryView {
-class TopBarWidget;
+	class TopBarWidget;
 } // namespace HistoryView
 
 class DragArea;
@@ -197,7 +197,7 @@ public:
 	void leaveToChildEvent(QEvent *e, QWidget *child) override;
 	void dragEnterEvent(QDragEnterEvent *e) override;
 	void dragLeaveEvent(QDragLeaveEvent *e) override;
-    void dropEvent(QDropEvent *e) override;
+	void dropEvent(QDropEvent *e) override;
 
 	bool isItemCompletelyHidden(HistoryItem *item) const;
 	void updateTopBarSelection();
@@ -428,6 +428,7 @@ private slots:
 	void onModerateKeyActivate(int index, bool *outHandled);
 
 	void updateField();
+
 	//CloudVeil start
 	void onSettingsUpdate();
 	//CloudVeil end
@@ -704,7 +705,7 @@ private:
 	void countHistoryShowFrom();
 
 	enum class TextUpdateEvent {
-		SaveDraft  = (1 << 0),
+		SaveDraft = (1 << 0),
 		SendTyping = (1 << 1),
 	};
 	using TextUpdateEvents = base::flags<TextUpdateEvent>;

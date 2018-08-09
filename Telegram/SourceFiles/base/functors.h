@@ -21,7 +21,7 @@ struct abs_helper {
 };
 constexpr auto abs = abs_helper{};
 
-constexpr auto add = [](auto value) {
+auto add = [](auto value) {
 	return [value](auto other) {
 		return value + other;
 	};

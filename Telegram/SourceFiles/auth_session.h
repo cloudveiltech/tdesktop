@@ -11,7 +11,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <rpl/filter.h>
 #include <rpl/variable.h>
 #include "base/timer.h"
-#include "cloudveil/GlobalSecuritySettings.h"
 
 class ApiWrap;
 enum class SendFilesWay;
@@ -144,27 +143,6 @@ public:
 	void removeGroupStickersSectionHidden(PeerId peerId) {
 		_variables.groupStickersSectionHidden.remove(peerId);
 	}
-	//CloudVeil start
-	const Stickers::Sets &stickerSetsFiltered() {
-		if (_lastStickerSetsSize != _stickerSets.size()) {
-			_lastStickerSetsSize = _stickerSets.size();
-			_stickerSetsFiltered.clear();
-			for (auto it = stickerSets().begin(); it != stickerSets().end(); ++it) {
-				auto set = *it;
-
-				Stickers::Set newSet = set;
-				if(GlobalSecuritySettings::getSettings().isStickerSetAllowed(set)) {
-					newSet.stickers = GlobalSecuritySettings::getSettings().filterStickersPack(newSet.stickers);
-					if (newSet.stickers.length() > 0) {
-						_stickerSetsFiltered.insert(it.key(), newSet);
-					}
-				}
-
-			}
-		}
-		return _stickerSetsFiltered;
-	}
-	//CloudVeil end
 
 private:
 	struct Variables {

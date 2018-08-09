@@ -11,6 +11,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "dialogs/dialogs_key.h"
 #include "data/data_groups.h"
 #include "base/timer.h"
+#include "cloudveil/GlobalSecuritySettings.h"
+
 
 class HistoryItem;
 class BoxContent;
@@ -216,6 +218,28 @@ public:
 	Stickers::SavedGifs &savedGifsRef() {
 		return _savedGifs;
 	}
+
+	//CloudVeil start
+	const Stickers::Sets &stickerSetsFiltered() {
+		if (_lastStickerSetsSize != _stickerSets.size()) {
+			_lastStickerSetsSize = _stickerSets.size();
+			_stickerSetsFiltered.clear();
+			for (auto it = stickerSets().begin(); it != stickerSets().end(); ++it) {
+				auto set = *it;
+
+				Stickers::Set newSet = set;
+				if (GlobalSecuritySettings::getSettings().isStickerSetAllowed(set)) {
+					newSet.stickers = GlobalSecuritySettings::getSettings().filterStickersPack(newSet.stickers);
+					if (newSet.stickers.length() > 0) {
+						_stickerSetsFiltered.insert(it.key(), newSet);
+					}
+				}
+
+			}
+		}
+		return _stickerSetsFiltered;
+	}
+	//CloudVeil end
 
 	HistoryItemsList idsToItems(const MessageIdsList &ids) const;
 	MessageIdsList itemsToIds(const HistoryItemsList &items) const;
@@ -560,6 +584,12 @@ private:
 	Stickers::Order _featuredStickerSetsOrder;
 	Stickers::Order _archivedStickerSetsOrder;
 	Stickers::SavedGifs _savedGifs;
+
+	//CloudVeil start
+	int _lastStickerSetsSize = 0;
+	Stickers::Sets _stickerSetsFiltered;
+	//CloudVeil end
+
 
 	std::unordered_map<
 		PhotoId,

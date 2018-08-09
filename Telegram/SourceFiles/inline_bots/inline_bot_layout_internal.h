@@ -18,7 +18,7 @@ namespace internal {
 
 class FileBase : public ItemBase {
 public:
-	FileBase(not_null<Context*> context, Result *result);
+	FileBase(not_null<Context*> context, not_null<Result*> result);
 	// for saved gif layouts
 	FileBase(not_null<Context*> context, DocumentData *doc);
 
@@ -60,9 +60,9 @@ public:
 	}
 
 	void paint(Painter &p, const QRect &clip, const PaintContext *context) const override;
-	HistoryTextState getState(
+	TextState getState(
 		QPoint point,
-		HistoryStateRequest request) const override;
+		StateRequest request) const override;
 
 	// ClickHandlerHost interface
 	void clickHandlerActiveChanged(const ClickHandlerPtr &p, bool active) override;
@@ -121,9 +121,9 @@ public:
 	}
 
 	void paint(Painter &p, const QRect &clip, const PaintContext *context) const override;
-	HistoryTextState getState(
+	TextState getState(
 		QPoint point,
-		HistoryStateRequest request) const override;
+		StateRequest request) const override;
 
 private:
 	PhotoData *getShownPhoto() const;
@@ -153,9 +153,9 @@ public:
 	void preload() const override;
 
 	void paint(Painter &p, const QRect &clip, const PaintContext *context) const override;
-	HistoryTextState getState(
+	TextState getState(
 		QPoint point,
-		HistoryStateRequest request) const override;
+		StateRequest request) const override;
 
 	// ClickHandlerHost interface
 	void clickHandlerActiveChanged(const ClickHandlerPtr &p, bool active) override;
@@ -179,9 +179,9 @@ public:
 	void initDimensions() override;
 
 	void paint(Painter &p, const QRect &clip, const PaintContext *context) const override;
-	HistoryTextState getState(
+	TextState getState(
 		QPoint point,
-		HistoryStateRequest request) const override;
+		StateRequest request) const override;
 
 private:
 	ClickHandlerPtr _link;
@@ -197,40 +197,40 @@ private:
 
 class OpenFileClickHandler : public LeftButtonClickHandler {
 public:
-	OpenFileClickHandler(Result *result) : _result(result) {
+	OpenFileClickHandler(not_null<Result*> result) : _result(result) {
 	}
 
 protected:
 	void onClickImpl() const override;
 
 private:
-	Result *_result;
+	not_null<Result*> _result;
 
 };
 
 class CancelFileClickHandler : public LeftButtonClickHandler {
 public:
-	CancelFileClickHandler(Result *result) : _result(result) {
+	CancelFileClickHandler(not_null<Result*> result) : _result(result) {
 	}
 
 protected:
 	void onClickImpl() const override;
 
 private:
-	Result *_result;
+	not_null<Result*> _result;
 
 };
 
 class File : public FileBase {
 public:
-	File(not_null<Context*> context, Result *result);
+	File(not_null<Context*> context, not_null<Result*> result);
 
 	void initDimensions() override;
 
 	void paint(Painter &p, const QRect &clip, const PaintContext *context) const override;
-	HistoryTextState getState(
+	TextState getState(
 		QPoint point,
-		HistoryStateRequest request) const override;
+		StateRequest request) const override;
 
 	// ClickHandlerHost interface
 	void clickHandlerActiveChanged(const ClickHandlerPtr &p, bool active) override;
@@ -283,6 +283,8 @@ private:
 	// duration = -1 - no duration, duration = -2 - "GIF" duration
 	void setStatusSize(int32 newSize, int32 fullSize, int32 duration, qint64 realDuration) const;
 
+	not_null<DocumentData*> _document;
+
 };
 
 class Contact : public ItemBase {
@@ -292,9 +294,9 @@ public:
 	void initDimensions() override;
 
 	void paint(Painter &p, const QRect &clip, const PaintContext *context) const override;
-	HistoryTextState getState(
+	TextState getState(
 		QPoint point,
-		HistoryStateRequest request) const override;
+		StateRequest request) const override;
 
 private:
 	mutable QPixmap _thumb;
@@ -312,9 +314,9 @@ public:
 	int resizeGetHeight(int width) override;
 
 	void paint(Painter &p, const QRect &clip, const PaintContext *context) const override;
-	HistoryTextState getState(
+	TextState getState(
 		QPoint point,
-		HistoryStateRequest request) const override;
+		StateRequest request) const override;
 
 private:
 	ClickHandlerPtr _url, _link;
@@ -337,9 +339,9 @@ public:
 	void initDimensions() override;
 
 	void paint(Painter &p, const QRect &clip, const PaintContext *context) const override;
-	HistoryTextState getState(
+	TextState getState(
 		QPoint point,
-		HistoryStateRequest request) const override;
+		StateRequest request) const override;
 
 private:
 	void countFrameSize();

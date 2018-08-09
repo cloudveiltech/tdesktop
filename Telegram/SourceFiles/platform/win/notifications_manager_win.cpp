@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/win/windows_app_user_model_id.h"
 #include "platform/win/windows_event_filter.h"
 #include "platform/win/windows_dlls.h"
+#include "history/history.h"
 #include "mainwindow.h"
 
 #include <Shobjidl.h>
@@ -211,7 +212,7 @@ public:
 	}
 	~ToastEventHandler() = default;
 
-	void performOnMainQueue(base::lambda_once<void(Manager *manager)> task) {
+	void performOnMainQueue(FnMut<void(Manager *manager)> task) {
 		const auto weak = _weak;
 		crl::on_main(weak, [=, task = std::move(task)]() mutable {
 			task(*weak.lock());

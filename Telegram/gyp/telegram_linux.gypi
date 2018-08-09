@@ -7,6 +7,9 @@
 {
   'conditions': [[ 'build_linux', {
     'variables': {
+      'variables': {
+        'build_defines%': '',
+      },
       'not_need_gtk%': '<!(python -c "print(\'TDESKTOP_DISABLE_GTK_INTEGRATION\' in \'<(build_defines)\')")',
       'pkgconfig_libs': [
 # In order to work libxkbcommon must be linked statically,
@@ -63,6 +66,7 @@
     ],
     'cflags_cc': [
       '-Wno-strict-overflow',
+      '-Wno-maybe-uninitialized',
     ],
     'ldflags': [
       '-Wl,-wrap,aligned_alloc',
@@ -86,20 +90,7 @@
       },
     },
     'conditions': [
-      [ '"<!(uname -p)" == "x86_64"', {
-        # 32 bit version can't be linked with debug info or LTO,
-        # virtual memory exhausted :(
-        'cflags_c': [ '-g' ],
-        'cflags_cc': [ '-g' ],
-        'ldflags': [ '-g' ],
-        'configurations': {
-          'Release': {
-            'cflags_c': [ '-flto' ],
-            'cflags_cc': [ '-flto' ],
-            'ldflags': [ '-flto' ],
-          },
-        },
-      }, {
+      [ '"<!(uname -p)" != "x86_64"', {
         'ldflags': [
           '-Wl,-wrap,__divmoddi4',
         ],
@@ -112,7 +103,5 @@
         ],
       }]
     ],
-    'cmake_precompiled_header': '<(src_loc)/stdafx.h',
-    'cmake_precompiled_header_script': 'PrecompiledHeader.cmake',
   }]],
 }

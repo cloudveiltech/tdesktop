@@ -41,11 +41,10 @@ constexpr auto kEnableSearchMembersAfterCount = 20;
 
 Members::Members(
 	QWidget *parent,
-	not_null<Controller*> controller,
-	not_null<PeerData*> peer)
+	not_null<Controller*> controller)
 : RpWidget(parent)
 , _controller(controller)
-, _peer(peer)
+, _peer(_controller->key().peer())
 , _listController(CreateMembersController(controller, _peer)) {
 	setupHeader();
 	setupList();
@@ -410,11 +409,11 @@ void Members::visibleTopBottomUpdated(
 	setChildVisibleTopBottom(_list, visibleTop, visibleBottom);
 }
 
-void Members::peerListSetTitle(base::lambda<QString()> title) {
+void Members::peerListSetTitle(Fn<QString()> title) {
 }
 
 void Members::peerListSetAdditionalTitle(
-		base::lambda<QString()> title) {
+		Fn<QString()> title) {
 }
 
 bool Members::peerListIsRowSelected(not_null<PeerData*> peer) {

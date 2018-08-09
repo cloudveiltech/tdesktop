@@ -31,9 +31,9 @@ class ShareBox : public BoxContent, public RPCSender {
 	Q_OBJECT
 
 public:
-	using CopyCallback = base::lambda<void()>;
-	using SubmitCallback = base::lambda<void(const QVector<PeerData*> &)>;
-	using FilterCallback = base::lambda<bool(PeerData*)>;
+	using CopyCallback = Fn<void()>;
+	using SubmitCallback = Fn<void(const QVector<PeerData*> &)>;
+	using FilterCallback = Fn<bool(PeerData*)>;
 	ShareBox(QWidget*, CopyCallback &&copyCallback, SubmitCallback &&submitCallback, FilterCallback &&filterCallback);
 
 protected:
@@ -65,7 +65,9 @@ private:
 	void addPeerToMultiSelect(PeerData *peer, bool skipAnimation = false);
 	void onPeerSelectedChanged(PeerData *peer, bool checked);
 
-	void peopleReceived(const MTPcontacts_Found &result, mtpRequestId requestId);
+	void peopleReceived(
+		const MTPcontacts_Found &result,
+		mtpRequestId requestId);
 	bool peopleFailed(const RPCError &error, mtpRequestId requestId);
 
 	CopyCallback _copyCallback;
@@ -101,13 +103,16 @@ class ShareBox::Inner : public TWidget, public RPCSender, private base::Subscrib
 public:
 	Inner(QWidget *parent, ShareBox::FilterCallback &&filterCallback);
 
-	void setPeerSelectedChangedCallback(base::lambda<void(PeerData *peer, bool selected)> callback);
+	void setPeerSelectedChangedCallback(Fn<void(PeerData *peer, bool selected)> callback);
 	void peerUnselected(not_null<PeerData*> peer);
 
 	QVector<PeerData*> selected() const;
 	bool hasSelected() const;
 
-	void peopleReceived(const QString &query, const QVector<MTPPeer> &people);
+	void peopleReceived(
+		const QString &query,
+		const QVector<MTPPeer> &my,
+		const QVector<MTPPeer> &people);
 
 	void activateSkipRow(int direction);
 	void activateSkipColumn(int direction);
@@ -143,7 +148,7 @@ private:
 	int displayedChatsCount() const;
 
 	struct Chat {
-		Chat(PeerData *peer, base::lambda<void()> updateCallback);
+		Chat(PeerData *peer, Fn<void()> updateCallback);
 
 		PeerData *peer;
 		Ui::RoundImageCheckbox checkbox;
@@ -196,15 +201,13 @@ private:
 	using SelectedChats = OrderedSet<PeerData*>;
 	SelectedChats _selected;
 
-	base::lambda<void(PeerData *peer, bool selected)> _peerSelectedChangedCallback;
+	Fn<void(PeerData *peer, bool selected)> _peerSelectedChangedCallback;
 
 	ChatData *data(Dialogs::Row *row);
 
 	bool _searching = false;
 	QString _lastQuery;
-	using ByUsernameRows = QVector<PeerData*>;
-	using ByUsernameDatas = QVector<Chat*>;
-	ByUsernameRows _byUsernameFiltered;
-	ByUsernameDatas d_byUsernameFiltered;
+	std::vector<PeerData*> _byUsernameFiltered;
+	std::vector<Chat*> d_byUsernameFiltered;
 
 };

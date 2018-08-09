@@ -14,9 +14,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/username_box.h"
 #include "boxes/add_contact_box.h"
 #include "boxes/change_phone_box.h"
+#include "data/data_session.h"
 #include "observer_peer.h"
 #include "messenger.h"
 #include "cloudveil/GlobalSecuritySettings.h"
+#include "auth_session.h"
 
 namespace Settings {
 
@@ -48,13 +50,9 @@ void InfoWidget::refreshControls() {
 
 void InfoWidget::refreshMobileNumber() {
 	TextWithEntities phoneText;
-	if (auto user = self()->asUser()) {
-		if (!user->phone().isEmpty()) {
-			phoneText.text = App::formatPhone(user->phone());
-		} else {
-			phoneText.text = App::phoneFromSharedContact(peerToUser(user->id));
+	if (const auto user = self()->asUser()) {
+		phoneText.text = Auth().data().findContactPhone(user);
 		}
-	}
 	setLabeledText(
 		_mobileNumber,
 		lang(lng_profile_mobile_number),
@@ -91,7 +89,7 @@ void InfoWidget::refreshUsername() {
 		TextWithEntities(),
 		copyText);
 	if (auto text = _username->entity()->textLabel()) {
-		text->setClickHandlerHook([](const ClickHandlerPtr &handler, Qt::MouseButton button) {
+		text->setClickHandlerFilter([](auto&&...) {
 			Ui::show(Box<UsernameBox>());
 			return false;
 		});
@@ -119,7 +117,7 @@ void InfoWidget::refreshBio() {
 		QString());
 
 		if (auto text = _bio->entity()->textLabel()) {
-			text->setClickHandlerHook([](const ClickHandlerPtr &handler, Qt::MouseButton button) {
+		text->setClickHandlerFilter([](auto&&...) {
 				//CloudVeil start
 				if (!GlobalSecuritySettings::getSettings().disableBioChange) {
 					Ui::show(Box<EditBioBox>(App::self()));

@@ -11,10 +11,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/notifications_manager_default.h"
 #include "media/media_audio_track.h"
 #include "media/media_audio.h"
+#include "history/history.h"
 #include "history/history_item_components.h"
+#include "history/feed/history_feed_section.h"
 #include "lang/lang_keys.h"
+#include "data/data_session.h"
+#include "window/window_controller.h"
 #include "mainwindow.h"
 #include "mainwidget.h"
+#include "messenger.h"
 #include "apiwrap.h"
 #include "auth_session.h"
 
@@ -56,42 +61,40 @@ void System::createManager() {
 void System::schedule(History *history, HistoryItem *item) {
 	if (App::quitting() || !history->currentNotification() || !AuthSession::Exists()) return;
 
-	auto notifyByFrom = (!history->peer->isUser() && item->mentionsMe()) ? item->from() : nullptr;
+	const auto notifyBy = (!history->peer->isUser() && item->mentionsMe())
+		? item->from().get()
+		: nullptr;
 
 	if (item->isSilent()) {
 		history->popNotification(item);
 		return;
 	}
 
-	auto haveSetting = !history->peer->notifySettingsUnknown();
+	Auth().data().requestNotifySettings(history->peer);
+	if (notifyBy) {
+		Auth().data().requestNotifySettings(notifyBy);
+	}
+	auto haveSetting = !Auth().data().notifyMuteUnknown(history->peer);
+	if (haveSetting && Auth().data().notifyIsMuted(history->peer)) {
+		if (notifyBy) {
+			haveSetting = !Auth().data().notifyMuteUnknown(notifyBy);
 	if (haveSetting) {
-		if (history->peer->isMuted()) {
-			if (notifyByFrom) {
-				haveSetting = !item->from()->notifySettingsUnknown();
-				if (haveSetting) {
-					if (notifyByFrom->isMuted()) {
+				if (Auth().data().notifyIsMuted(notifyBy)) {
 						history->popNotification(item);
 						return;
 					}
-				} else {
-					Auth().api().requestNotifySetting(notifyByFrom);
 				}
 			} else {
 				history->popNotification(item);
 				return;
 			}
 		}
-	} else {
-		if (notifyByFrom && notifyByFrom->notifySettingsUnknown()) {
-			Auth().api().requestNotifySetting(notifyByFrom);
-		}
-		Auth().api().requestNotifySetting(history->peer);
-	}
 	if (!item->notificationReady()) {
 		haveSetting = false;
 	}
 
-	int delay = item->Has<HistoryMessageForwarded>() ? 500 : 100, t = unixtime();
+	auto delay = item->Has<HistoryMessageForwarded>() ? 500 : 100;
+	auto t = unixtime();
 	auto ms = getms(true);
 	bool isOnline = App::main()->lastWasOnline(), otherNotOld = ((cOtherOnline() * 1000LL) + Global::OnlineCloudTimeout() > t * 1000LL);
 	bool otherLaterThanMe = (cOtherOnline() * 1000LL + (ms - App::main()->lastSetOnline()) > t * 1000LL);
@@ -102,7 +105,7 @@ void System::schedule(History *history, HistoryItem *item) {
 	}
 
 	auto when = ms + delay;
-	_whenAlerts[history].insert(when, notifyByFrom);
+	_whenAlerts[history].insert(when, notifyBy);
 	if (Global::DesktopNotify() && !Platform::Notifications::SkipToast()) {
 		auto &whenMap = _whenMaps[history];
 		if (whenMap.constFind(item->id) == whenMap.cend()) {
@@ -112,7 +115,7 @@ void System::schedule(History *history, HistoryItem *item) {
 		auto &addTo = haveSetting ? _waiters : _settingWaiters;
 		auto it = addTo.constFind(history);
 		if (it == addTo.cend() || it->when > when) {
-			addTo.insert(history, Waiter(item->id, when, notifyByFrom));
+			addTo.insert(history, Waiter(item->id, when, notifyBy));
 		}
 	}
 	if (haveSetting) {
@@ -166,12 +169,12 @@ void System::checkDelayed() {
 		const auto peer = history->peer;
 		auto loaded = false;
 		auto muted = false;
-		if (!peer->notifySettingsUnknown()) {
-			if (!peer->isMuted()) {
+		if (!Auth().data().notifyMuteUnknown(peer)) {
+			if (!Auth().data().notifyIsMuted(peer)) {
 				loaded = true;
-			} else if (const auto from = i.value().notifyByFrom) {
-				if (!from->notifySettingsUnknown()) {
-					if (!from->isMuted()) {
+			} else if (const auto from = i.value().notifyBy) {
+				if (!Auth().data().notifyMuteUnknown(from)) {
+					if (!Auth().data().notifyIsMuted(from)) {
 						loaded = true;
 					} else {
 						loaded = muted = true;
@@ -215,11 +218,14 @@ void System::showNext() {
 	for (auto i = _whenAlerts.begin(); i != _whenAlerts.end();) {
 		while (!i.value().isEmpty() && i.value().begin().key() <= ms) {
 			const auto peer = i.key()->peer;
-			const auto peerUnknown = peer->notifySettingsUnknown();
-			const auto peerAlert = peerUnknown ? false : !peer->isMuted();
+			const auto peerUnknown = Auth().data().notifyMuteUnknown(peer);
+			const auto peerAlert = !peerUnknown
+				&& !Auth().data().notifyIsMuted(peer);
 			const auto from = i.value().begin().value();
-			const auto fromUnknown = (!from || from->notifySettingsUnknown());
-			const auto fromAlert = fromUnknown ? false : !from->isMuted();
+			const auto fromUnknown = (!from
+				|| Auth().data().notifyMuteUnknown(from));
+			const auto fromAlert = !fromUnknown
+				&& !Auth().data().notifyIsMuted(from);
 			if (peerAlert || fromAlert) {
 				alert = true;
 			}
@@ -341,7 +347,9 @@ void System::showNext() {
 						if (nextNotify) {
 							if (forwardedItem) {
 								auto nextForwarded = nextNotify->Has<HistoryMessageForwarded>() ? nextNotify : nullptr;
-								if (nextForwarded && forwardedItem->author() == nextForwarded->author() && qAbs(int64(nextForwarded->date.toTime_t()) - int64(forwardedItem->date.toTime_t())) < 2) {
+								if (nextForwarded
+									&& forwardedItem->author() == nextForwarded->author()
+									&& qAbs(int64(nextForwarded->date()) - int64(forwardedItem->date())) < 2) {
 									forwardedItem = nextForwarded;
 									++forwardedCount;
 								} else {
@@ -377,7 +385,8 @@ void System::ensureSoundCreated() {
 	}
 
 	_soundTrack = Media::Audio::Current().createTrack();
-	_soundTrack->fillFromFile(Auth().data().getSoundPath(qsl("msg_incoming")));
+	_soundTrack->fillFromFile(
+		Auth().settings().getSoundPath(qsl("msg_incoming")));
 }
 
 void System::updateAll() {
@@ -385,7 +394,8 @@ void System::updateAll() {
 }
 
 Manager::DisplayOptions Manager::getNotificationOptions(HistoryItem *item) {
-	auto hideEverything = (App::passcoded() || Global::ScreenIsLocked());
+	const auto hideEverything = Messenger::Instance().locked()
+		|| Global::ScreenIsLocked();
 
 	DisplayOptions result;
 	result.hideNameAndPhoto = hideEverything || (Global::NotifyView() > dbinvShowName);
@@ -400,49 +410,82 @@ void Manager::notificationActivated(PeerId peerId, MsgId msgId) {
 		auto history = App::history(peerId);
 		window->showFromTray();
 		window->reActivateWindow();
-		if (App::passcoded()) {
+		if (Messenger::Instance().locked()) {
 			window->setInnerFocus();
 			system()->clearAll();
 		} else {
-			auto tomsg = !history->peer->isUser() && (msgId > 0);
-			if (tomsg) {
-				auto item = App::histItemById(peerToChannel(peerId), msgId);
-				if (!item || !item->mentionsMe()) {
-					tomsg = false;
-				}
-			}
-			Ui::showPeerHistory(history, tomsg ? msgId : ShowAtUnreadMsgId);
-			system()->clearFromHistory(history);
+			openNotificationMessage(history, msgId);
 		}
 	}
 	onAfterNotificationActivated(peerId, msgId);
 }
 
+void Manager::openNotificationMessage(
+		not_null<History*> history,
+		MsgId messageId) {
+	const auto openExactlyMessage = [&] {
+		if (history->peer->isUser()
+			|| history->peer->isChannel()
+			|| !IsServerMsgId(messageId)) {
+			return false;
+		}
+		const auto item = App::histItemById(history->channelId(), messageId);
+				if (!item || !item->mentionsMe()) {
+			return false;
+				}
+		return true;
+	}();
+	const auto messageFeed = [&] {
+		if (const auto channel = history->peer->asChannel()) {
+			return channel->feed();
+			}
+		return (Data::Feed*)nullptr;
+	}();
+	if (openExactlyMessage) {
+		Ui::showPeerHistory(history, messageId);
+	} else if (messageFeed) {
+		App::wnd()->controller()->showSection(
+			HistoryFeed::Memento(messageFeed));
+	} else {
+		Ui::showPeerHistory(history, ShowAtUnreadMsgId);
+	}
+			system()->clearFromHistory(history);
+		}
+
 void Manager::notificationReplied(
 		PeerId peerId,
 		MsgId msgId,
-		const QString &reply) {
+		const TextWithTags &reply) {
 	if (!peerId) return;
 
-	auto history = App::history(peerId);
+	const auto history = App::history(peerId);
 
-	auto message = MainWidget::MessageToSend(history);
-	message.textWithTags = { reply, TextWithTags::Tags() };
+	auto message = ApiWrap::MessageToSend(history);
+	message.textWithTags = reply;
 	message.replyTo = (msgId > 0 && !history->peer->isUser()) ? msgId : 0;
 	message.clearDraft = false;
-	if (auto main = App::main()) {
-		main->sendMessage(message);
+	Auth().api().sendMessage(std::move(message));
 	}
-}
 
 void NativeManager::doShowNotification(HistoryItem *item, int forwardedCount) {
-	auto options = getNotificationOptions(item);
+	const auto options = getNotificationOptions(item);
 
-	QString title = options.hideNameAndPhoto ? qsl("CloudVeil Messenger Desktop") : item->history()->peer->name;
-	QString subtitle = options.hideNameAndPhoto ? QString() : item->notificationHeader();
-	QString text = options.hideMessageText ? lang(lng_notification_preview) : (forwardedCount < 2 ? item->notificationText() : lng_forward_messages(lt_count, forwardedCount));
+	const auto title = options.hideNameAndPhoto ? qsl("Telegram Desktop") : item->history()->peer->name;
+	const auto subtitle = options.hideNameAndPhoto ? QString() : item->notificationHeader();
+	const auto text = options.hideMessageText
+		? lang(lng_notification_preview)
+		: (forwardedCount < 2
+			? item->notificationText()
+			: lng_forward_messages(lt_count, forwardedCount));
 
-	doShowNativeNotification(item->history()->peer, item->id, title, subtitle, text, options.hideNameAndPhoto, options.hideReplyButton);
+	doShowNativeNotification(
+		item->history()->peer,
+		item->id,
+		title,
+		subtitle,
+		text,
+		options.hideNameAndPhoto,
+		options.hideReplyButton);
 }
 
 System::~System() = default;

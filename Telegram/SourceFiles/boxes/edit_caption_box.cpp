@@ -10,68 +10,54 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/input_fields.h"
 #include "ui/text_options.h"
 #include "media/media_clip_reader.h"
-#include "history/history_media_types.h"
+#include "history/history.h"
+#include "history/history_item.h"
+#include "data/data_media_types.h"
+#include "data/data_photo.h"
+#include "data/data_document.h"
 #include "lang/lang_keys.h"
+#include "chat_helpers/message_field.h"
 #include "window/window_controller.h"
 #include "mainwidget.h"
+#include "layout.h"
 #include "styles/style_history.h"
 #include "styles/style_boxes.h"
 
 EditCaptionBox::EditCaptionBox(
 	QWidget*,
-	not_null<HistoryMedia*> media,
-	FullMsgId msgId)
-: _msgId(msgId) {
-	Expects(media->canEditCaption());
+	not_null<Window::Controller*> controller,
+	not_null<HistoryItem*> item)
+: _controller(controller)
+, _msgId(item->fullId()) {
+	Expects(item->media() != nullptr);
+	Expects(item->media()->allowsEditCaption());
 
 	QSize dimensions;
 	ImagePtr image;
-	QString caption;
 	DocumentData *doc = nullptr;
 
-	switch (media->type()) {
-	case MediaTypeGif: {
-		_animated = true;
-		doc = static_cast<HistoryGif*>(media.get())->getDocument();
-		dimensions = doc->dimensions;
-		image = doc->thumb;
-	} break;
-
-	case MediaTypePhoto: {
+	const auto media = item->media();
+	if (const auto photo = media->photo()) {
 		_photo = true;
-		auto photo = static_cast<HistoryPhoto*>(media.get())->getPhoto();
 		dimensions = QSize(photo->full->width(), photo->full->height());
 		image = photo->full;
-	} break;
-
-	case MediaTypeVideo: {
-		_animated = true;
-		doc = static_cast<HistoryVideo*>(media.get())->getDocument();
-		dimensions = doc->dimensions;
-		image = doc->thumb;
-	} break;
-
-	case MediaTypeGrouped: {
-		if (const auto photo = media->getPhoto()) {
-			dimensions = QSize(photo->full->width(), photo->full->height());
-			image = photo->full;
-			_photo = true;
-		} else if (const auto doc = media->getDocument()) {
-			dimensions = doc->dimensions;
-			image = doc->thumb;
+	} else if (const auto document = media->document()) {
+		dimensions = document->dimensions;
+		image = document->thumb;
+		if (document->isAnimation()) {
 			_animated = true;
+		} else if (document->isVideoFile()) {
+			_animated = true;
+		} else {
+			_doc = true;
 		}
-	} break;
-
-	case MediaTypeFile:
-	case MediaTypeMusicFile:
-	case MediaTypeVoiceFile: {
-		_doc = true;
-		doc = static_cast<HistoryDocument*>(media.get())->getDocument();
-		image = doc->thumb;
-	} break;
+		doc = document;
 	}
-	caption = media->getCaption().text;
+	const auto original = item->originalText();
+	const auto editData = TextWithTags {
+		original.text,
+		ConvertEntitiesToTextTags(original.entities)
+	};
 
 	if (!_animated && (dimensions.isEmpty() || doc || image->isNull())) {
 		if (image->isNull()) {
@@ -151,9 +137,19 @@ EditCaptionBox::EditCaptionBox(
 	}
 	Assert(_animated || _photo || _doc);
 
-	_field.create(this, st::confirmCaptionArea, langFactory(lng_photo_caption), caption);
+	_field.create(
+		this,
+		st::confirmCaptionArea,
+		Ui::InputField::Mode::MultiLine,
+		langFactory(lng_photo_caption),
+		editData);
 	_field->setMaxLength(MaxPhotoCaption);
-	_field->setCtrlEnterSubmit(Ui::CtrlEnterSubmit::Both);
+	_field->setSubmitSettings(Ui::InputField::SubmitSettings::Both);
+	_field->setInstantReplaces(Ui::InstantReplaces::Default());
+	_field->setInstantReplacesEnabled(Global::ReplaceEmojiValue());
+	_field->setMarkdownReplacesEnabled(rpl::single(true));
+	_field->setEditLinkCallback(
+		DefaultEditLinkCallback(_controller, _field));
 }
 
 void EditCaptionBox::prepareGifPreview(DocumentData *document) {
@@ -198,13 +194,9 @@ void EditCaptionBox::prepare() {
 	addButton(langFactory(lng_cancel), [this] { closeBox(); });
 
 	updateBoxSize();
-	connect(_field, &Ui::InputArea::submitted, this, [this] { save(); });
-	connect(_field, &Ui::InputArea::cancelled, this, [this] {
-		closeBox();
-	});
-	connect(_field, &Ui::InputArea::resized, this, [this] {
-		captionResized();
-	});
+	connect(_field, &Ui::InputField::submitted, [=] { save(); });
+	connect(_field, &Ui::InputField::cancelled, [=] { closeBox(); });
+	connect(_field, &Ui::InputField::resized, [=] { captionResized(); });
 
 	auto cursor = _field->textCursor();
 	cursor.movePosition(QTextCursor::End);
@@ -249,7 +241,7 @@ void EditCaptionBox::paintEvent(QPaintEvent *e) {
 		}
 		if (_gifPreview && _gifPreview->started()) {
 			auto s = QSize(_thumbw, _thumbh);
-			auto paused = controller()->isGifPausedAtLeastFor(Window::GifPauseReason::Layer);
+			auto paused = _controller->isGifPausedAtLeastFor(Window::GifPauseReason::Layer);
 			auto frame = _gifPreview->current(s.width(), s.height(), s.width(), s.height(), ImageRoundRadius::None, RectPart::None, paused ? 0 : getms());
 			p.drawPixmap(_thumbx, st::boxPhotoPadding.top(), frame);
 		} else {
@@ -353,17 +345,30 @@ void EditCaptionBox::save() {
 	if (_previewCancelled) {
 		flags |= MTPmessages_EditMessage::Flag::f_no_webpage;
 	}
-	MTPVector<MTPMessageEntity> sentEntities;
+	const auto textWithTags = _field->getTextWithAppliedMarkdown();
+	auto sending = TextWithEntities{
+		textWithTags.text,
+		ConvertTextTagsToEntities(textWithTags.tags)
+	};
+	const auto prepareFlags = Ui::ItemTextOptions(
+		item->history(),
+		App::self()).flags;
+	TextUtilities::PrepareForSending(sending, prepareFlags);
+	TextUtilities::Trim(sending);
+
+	const auto sentEntities = TextUtilities::EntitiesToMTP(
+		sending.entities,
+		TextUtilities::ConvertOption::SkipLocal);
 	if (!sentEntities.v.isEmpty()) {
 		flags |= MTPmessages_EditMessage::Flag::f_entities;
 	}
-	auto text = TextUtilities::PrepareForSending(_field->getLastText(), TextUtilities::PrepareTextOption::CheckLinks);
 	_saveRequestId = MTP::send(
 		MTPmessages_EditMessage(
 			MTP_flags(flags),
 			item->history()->peer->input,
 			MTP_int(item->id),
-			MTP_string(text),
+			MTP_string(sending.text),
+			MTPInputMedia(),
 			MTPnullMarkup,
 			sentEntities,
 			MTP_inputGeoPointEmpty()),

@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include <atomic>
+#include <memory>
 
 namespace base {
 namespace details {
@@ -315,24 +316,3 @@ struct guard_traits<
 };
 
 } // namespace crl
-
-#ifdef QT_VERSION
-template <typename Lambda>
-inline void InvokeQueued(const base::has_weak_ptr *context, Lambda &&lambda) {
-	auto callback = [
-		guard = base::make_weak(context),
-		lambda = std::forward<Lambda>(lambda)
-	] {
-		if (guard) {
-			lambda();
-		}
-	};
-	QObject proxy;
-	QObject::connect(
-		&proxy,
-		&QObject::destroyed,
-		QCoreApplication::instance(),
-		std::move(callback),
-		Qt::QueuedConnection);
-}
-#endif // QT_VERSION

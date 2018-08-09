@@ -176,14 +176,14 @@ protected:
 };
 
 class StorageImageLocation;
-class WebFileImageLocation;
+class WebFileLocation;
 class mtpFileLoader : public FileLoader, public RPCSender {
 	Q_OBJECT
 
 public:
 	mtpFileLoader(const StorageImageLocation *location, int32 size, LoadFromCloudSetting fromCloud, bool autoLoading);
 	mtpFileLoader(int32 dc, uint64 id, uint64 accessHash, int32 version, LocationType type, const QString &toFile, int32 size, LoadToCacheSetting toCache, LoadFromCloudSetting fromCloud, bool autoLoading);
-	mtpFileLoader(const WebFileImageLocation *location, int32 size, LoadFromCloudSetting fromCloud, bool autoLoading);
+	mtpFileLoader(const WebFileLocation *location, int32 size, LoadFromCloudSetting fromCloud, bool autoLoading);
 
 	int32 currentOffset(bool includeSkipped = false) const override;
 
@@ -217,16 +217,17 @@ private:
 	RequestData prepareRequest(int offset) const;
 	void makeRequest(int offset);
 
+	MTPInputFileLocation computeLocation() const;
 	bool loadPart() override;
 	void normalPartLoaded(const MTPupload_File &result, mtpRequestId requestId);
 	void webPartLoaded(const MTPupload_WebFile &result, mtpRequestId requestId);
 	void cdnPartLoaded(const MTPupload_CdnFile &result, mtpRequestId requestId);
-	void reuploadDone(const MTPVector<MTPCdnFileHash> &result, mtpRequestId requestId);
+	void reuploadDone(const MTPVector<MTPFileHash> &result, mtpRequestId requestId);
 	void requestMoreCdnFileHashes();
-	void getCdnFileHashesDone(const MTPVector<MTPCdnFileHash> &result, mtpRequestId requestId);
+	void getCdnFileHashesDone(const MTPVector<MTPFileHash> &result, mtpRequestId requestId);
 
-	bool feedPart(int offset, base::const_byte_span bytes);
-	void partLoaded(int offset, base::const_byte_span bytes);
+	bool feedPart(int offset, bytes::const_span buffer);
+	void partLoaded(int offset, bytes::const_span buffer);
 
 	bool partFailed(const RPCError &error);
 	bool cdnPartFailed(const RPCError &error, mtpRequestId requestId);
@@ -234,15 +235,15 @@ private:
 	void placeSentRequest(mtpRequestId requestId, const RequestData &requestData);
 	int finishSentRequestGetOffset(mtpRequestId requestId);
 	void switchToCDN(int offset, const MTPDupload_fileCdnRedirect &redirect);
-	void addCdnHashes(const QVector<MTPCdnFileHash> &hashes);
-	void changeCDNParams(int offset, MTP::DcId dcId, const QByteArray &token, const QByteArray &encryptionKey, const QByteArray &encryptionIV, const QVector<MTPCdnFileHash> &hashes);
+	void addCdnHashes(const QVector<MTPFileHash> &hashes);
+	void changeCDNParams(int offset, MTP::DcId dcId, const QByteArray &token, const QByteArray &encryptionKey, const QByteArray &encryptionIV, const QVector<MTPFileHash> &hashes);
 
 	enum class CheckCdnHashResult {
 		NoHash,
 		Invalid,
 		Good,
 	};
-	CheckCdnHashResult checkCdnFileHash(int offset, base::const_byte_span bytes);
+	CheckCdnHashResult checkCdnFileHash(int offset, bytes::const_span buffer);
 
 	std::map<mtpRequestId, RequestData> _sentRequests;
 
@@ -257,7 +258,7 @@ private:
 	uint64 _accessHash = 0;
 	int32 _version = 0;
 
-	const WebFileImageLocation *_urlLocation = nullptr; // for webdocument locations
+	const WebFileLocation *_urlLocation = nullptr; // for webdocument locations
 
 	MTP::DcId _cdnDcId = 0;
 	QByteArray _cdnToken;
@@ -324,10 +325,6 @@ class WebLoadManager : public QObject {
 public:
 	WebLoadManager(QThread *thread);
 
-#ifndef TDESKTOP_DISABLE_NETWORK_PROXY
-	void setProxySettings(const QNetworkProxy &proxy);
-#endif // !TDESKTOP_DISABLE_NETWORK_PROXY
-
 	void append(webFileLoader *loader, const QString &url);
 	void stop(webFileLoader *reader);
 	bool carries(webFileLoader *reader) const;
@@ -336,7 +333,6 @@ public:
 
 signals:
 	void processDelayed();
-	void proxyApplyDelayed();
 
 	void progress(webFileLoader *loader, qint64 already, qint64 size);
 	void finished(webFileLoader *loader, QByteArray data);
@@ -349,7 +345,6 @@ public slots:
 	void onMeta();
 
 	void process();
-	void proxyApply();
 	void finish();
 
 private:
@@ -357,9 +352,6 @@ private:
 	void sendRequest(webFileLoaderPrivate *loader, const QString &redirect = QString());
 	bool handleReplyResult(webFileLoaderPrivate *loader, WebReplyProcessResult result);
 
-#ifndef TDESKTOP_DISABLE_NETWORK_PROXY
-	QNetworkProxy _proxySettings;
-#endif // !TDESKTOP_DISABLE_NETWORK_PROXY
 	QNetworkAccessManager _manager;
 	typedef QMap<webFileLoader*, webFileLoaderPrivate*> LoaderPointers;
 	LoaderPointers _loaderPointers;
@@ -391,5 +383,4 @@ static mtpFileLoader * const CancelledMtpFileLoader = static_cast<mtpFileLoader*
 static webFileLoader * const CancelledWebFileLoader = static_cast<webFileLoader*>(CancelledFileLoader);
 static WebLoadManager * const FinishedWebLoadManager = SharedMemoryLocation<WebLoadManager, 0>();
 
-void reinitWebLoadManager();
 void stopWebLoadManager();

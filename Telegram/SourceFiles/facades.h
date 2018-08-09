@@ -12,6 +12,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 class BoxContent;
 
+namespace Dialogs {
+enum class Mode;
+} // namespace Dialogs
+
 namespace InlineBots {
 namespace Layout {
 class ItemBase;
@@ -21,99 +25,34 @@ class ItemBase;
 namespace App {
 namespace internal {
 
-void CallDelayed(int duration, base::lambda_once<void()> &&lambda);
+void CallDelayed(int duration, FnMut<void()> &&lambda);
 
 } // namespace internal
 
-template <typename Lambda>
+template <typename Guard, typename Lambda>
 inline void CallDelayed(
 		int duration,
-		base::lambda_internal::guard_with_QObject<Lambda> &&guarded) {
+		crl::guarded_wrap<Guard, Lambda> &&guarded) {
 	return internal::CallDelayed(
 		duration,
 		std::move(guarded));
 }
 
-template <typename Lambda>
-inline void CallDelayed(
-		int duration,
-		base::lambda_internal::guard_with_weak<Lambda> &&guarded) {
-	return internal::CallDelayed(
-		duration,
-		std::move(guarded));
+template <typename Guard, typename Lambda>
+inline void CallDelayed(int duration, Guard &&object, Lambda &&lambda) {
+	return internal::CallDelayed(duration, crl::guard(
+		std::forward<Guard>(object),
+		std::forward<Lambda>(lambda)));
 }
 
-template <typename Lambda>
-inline void CallDelayed(
-		int duration,
-		const QObject *object,
-		Lambda &&lambda) {
-	return internal::CallDelayed(
-		duration,
-		base::lambda_guarded(object, std::forward<Lambda>(lambda)));
-}
-
-template <typename Lambda>
-inline void CallDelayed(
-		int duration,
-		const base::has_weak_ptr *object,
-		Lambda &&lambda) {
-	return internal::CallDelayed(
-		duration,
-		base::lambda_guarded(object, std::forward<Lambda>(lambda)));
-}
-
-template <typename Lambda>
-inline auto LambdaDelayed(
-		int duration,
-		const QObject *object,
-		Lambda &&lambda) {
-	auto guarded = base::lambda_guarded(
-		object,
+template <typename Guard, typename Lambda>
+inline auto LambdaDelayed(int duration, Guard &&object, Lambda &&lambda) {
+	auto guarded = crl::guard(
+		std::forward<Guard>(object),
 		std::forward<Lambda>(lambda));
 	return [saved = std::move(guarded), duration] {
 		auto copy = saved;
 		internal::CallDelayed(duration, std::move(copy));
-	};
-}
-
-template <typename Lambda>
-inline auto LambdaDelayed(
-		int duration,
-		const base::has_weak_ptr *object,
-		Lambda &&lambda) {
-	auto guarded = base::lambda_guarded(
-		object,
-		std::forward<Lambda>(lambda));
-	return [saved = std::move(guarded), duration] {
-		auto copy = saved;
-		internal::CallDelayed(duration, std::move(copy));
-	};
-}
-
-template <typename Lambda>
-inline auto LambdaDelayedOnce(
-		int duration,
-		const QObject *object,
-		Lambda &&lambda) {
-	auto guarded = base::lambda_guarded(
-		object,
-		std::forward<Lambda>(lambda));
-	return [saved = std::move(guarded), duration]() mutable {
-		internal::CallDelayed(duration, std::move(saved));
-	};
-}
-
-template <typename Lambda>
-inline auto LambdaDelayedOnce(
-		int duration,
-		const base::has_weak_ptr *object,
-		Lambda &&lambda) {
-	auto guarded = base::lambda_guarded(
-		object,
-		std::forward<Lambda>(lambda));
-	return [saved = std::move(guarded), duration]() mutable {
-		internal::CallDelayed(duration, std::move(saved));
 	};
 }
 
@@ -133,12 +72,10 @@ void openPeerByName(
 	MsgId msgId = ShowAtUnreadMsgId,
 	const QString &startToken = QString());
 void joinGroupByHash(const QString &hash);
-void removeDialog(History *history);
 void showSettings();
 
+void activateClickHandler(ClickHandlerPtr handler, ClickContext context);
 void activateClickHandler(ClickHandlerPtr handler, Qt::MouseButton button);
-
-void logOutDelayed();
 
 } // namespace App
 
@@ -179,29 +116,19 @@ void hideLayer(anim::type animated = anim::type::normal);
 void hideSettingsAndLayer(anim::type animated = anim::type::normal);
 bool isLayerShown();
 
-void autoplayMediaInlineAsync(const FullMsgId &msgId);
-
 void showPeerProfile(const PeerId &peer);
 inline void showPeerProfile(const PeerData *peer) {
 	showPeerProfile(peer->id);
 }
-inline void showPeerProfile(const History *history) {
-	showPeerProfile(history->peer->id);
-}
+void showPeerProfile(not_null<const History*> history);
 
 void showPeerHistory(const PeerId &peer, MsgId msgId);
+void showPeerHistoryAtItem(not_null<const HistoryItem*> item);
 
 inline void showPeerHistory(const PeerData *peer, MsgId msgId) {
 	showPeerHistory(peer->id, msgId);
 }
-inline void showPeerHistory(
-		const History *history,
-		MsgId msgId) {
-	showPeerHistory(history->peer->id, msgId);
-}
-inline void showPeerHistoryAtItem(const HistoryItem *item) {
-	showPeerHistory(item->history()->peer->id, item->id);
-}
+void showPeerHistory(not_null<const History*> history, MsgId msgId);
 inline void showChatsList() {
 	showPeerHistory(PeerId(0), 0);
 }
@@ -219,7 +146,6 @@ enum ClipStopperType {
 namespace Notify {
 
 void userIsBotChanged(UserData *user);
-void userIsContactChanged(UserData *user, bool fromThisApp = false);
 void botCommandsChanged(UserData *user);
 
 void inlineBotRequesting(bool requesting);
@@ -230,11 +156,7 @@ bool switchInlineBotButtonReceived(const QString &query, UserData *samePeerBot =
 void migrateUpdated(PeerData *peer);
 
 void historyMuteUpdated(History *history);
-
-// handle pending resize() / paint() on history items
-void handlePendingHistoryUpdate();
 void unreadCounterUpdated();
-
 
 enum class ScreenCorner {
 	TopLeft     = 0,
@@ -304,7 +226,6 @@ bool started();
 void start();
 void finish();
 
-DeclareRefVar(SingleQueuedInvokation, HandleHistoryUpdate);
 DeclareRefVar(SingleQueuedInvokation, HandleUnreadCounterUpdate);
 DeclareRefVar(SingleQueuedInvokation, HandleDelayedPeerUpdates);
 DeclareRefVar(SingleQueuedInvokation, HandleObservables);
@@ -341,11 +262,13 @@ DeclareVar(int32, OnlineFocusTimeout); // not from config
 DeclareVar(int32, OnlineCloudTimeout);
 DeclareVar(int32, NotifyCloudDelay);
 DeclareVar(int32, NotifyDefaultDelay);
-DeclareVar(int32, ChatBigSize);
 DeclareVar(int32, PushChatPeriod);
 DeclareVar(int32, PushChatLimit);
 DeclareVar(int32, SavedGifsLimit);
 DeclareVar(int32, EditTimeLimit);
+DeclareVar(int32, RevokeTimeLimit);
+DeclareVar(int32, RevokePrivateTimeLimit);
+DeclareVar(bool, RevokePrivateInbox);
 DeclareVar(int32, StickersRecentLimit);
 DeclareVar(int32, StickersFavedLimit);
 DeclareVar(int32, PinnedDialogsCountMax);
@@ -355,14 +278,14 @@ DeclareVar(int32, CallReceiveTimeoutMs);
 DeclareVar(int32, CallRingTimeoutMs);
 DeclareVar(int32, CallConnectTimeoutMs);
 DeclareVar(int32, CallPacketTimeoutMs);
+DeclareVar(int32, WebFileDcId);
+DeclareVar(QString, TxtDomainString);
 DeclareVar(bool, PhoneCallsEnabled);
+DeclareVar(bool, BlockedMode);
 DeclareRefVar(base::Observable<void>, PhoneCallsEnabledChanged);
 
 typedef QMap<PeerId, MsgId> HiddenPinnedMessagesMap;
 DeclareVar(HiddenPinnedMessagesMap, HiddenPinnedMessages);
-
-typedef OrderedSet<HistoryItem*> PendingItemsMap;
-DeclareRefVar(PendingItemsMap, PendingRepaintItems);
 
 typedef QMap<uint64, QPixmap> CircleMasksMap;
 DeclareRefVar(CircleMasksMap, CircleMasks);
@@ -374,6 +297,10 @@ DeclareVar(QString, DownloadPath);
 DeclareVar(QByteArray, DownloadPathBookmark);
 DeclareRefVar(base::Observable<void>, DownloadPathChanged);
 
+DeclareVar(bool, ReplaceEmoji);
+DeclareVar(bool, SuggestEmoji);
+DeclareVar(bool, SuggestStickersByEmoji);
+DeclareRefVar(base::Observable<void>, ReplaceEmojiChanged);
 DeclareVar(bool, SoundNotify);
 DeclareVar(bool, DesktopNotify);
 DeclareVar(bool, RestoreSoundNotifyFromTray);
@@ -384,10 +311,11 @@ DeclareVar(int, NotificationsCount);
 DeclareVar(Notify::ScreenCorner, NotificationsCorner);
 DeclareVar(bool, NotificationsDemoIsShown);
 
-DeclareVar(DBIConnectionType, ConnectionType);
-DeclareVar(DBIConnectionType, LastProxyType);
 DeclareVar(bool, TryIPv6);
-DeclareVar(ProxyData, ConnectionProxy);
+DeclareVar(std::vector<ProxyData>, ProxiesList);
+DeclareVar(ProxyData, SelectedProxy);
+DeclareVar(bool, UseProxy);
+DeclareVar(bool, UseProxyForCalls);
 DeclareRefVar(base::Observable<void>, ConnectionTypeChanged);
 
 DeclareVar(int, AutoLock);
@@ -398,6 +326,8 @@ DeclareRefVar(base::Variable<DBIWorkMode>, WorkMode);
 
 DeclareRefVar(base::Observable<void>, UnreadCounterUpdate);
 DeclareRefVar(base::Observable<void>, PeerChooseCancel);
+
+rpl::producer<bool> ReplaceEmojiValue();
 
 } // namespace Global
 

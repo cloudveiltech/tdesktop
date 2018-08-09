@@ -37,10 +37,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace {
 
 constexpr auto kUsernameCheckTimeout = TimeMs(200);
+constexpr auto kMinUsernameLength = 5;
+constexpr auto kMaxGroupChannelTitle = 255; // See also add_contact_box.
+constexpr auto kMaxChannelDescription = 255; // See also add_contact_box.
 
 class Controller
-	: private MTP::Sender
-	, private base::has_weak_ptr {
+	: public base::has_weak_ptr
+	, private MTP::Sender {
 public:
 	Controller(
 		not_null<BoxContent*> box,
@@ -69,7 +72,7 @@ private:
 	};
 	struct Controls {
 		Ui::InputField *title = nullptr;
-		Ui::InputArea *description = nullptr;
+		Ui::InputField *description = nullptr;
 		Ui::UserpicButton *photo = nullptr;
 		rpl::lifetime initialPhotoImageWaiting;
 
@@ -98,7 +101,7 @@ private:
 		base::optional<bool> everyoneInvites;
 	};
 
-	base::lambda<QString()> computeTitle() const;
+	Fn<QString()> computeTitle() const;
 	object_ptr<Ui::RpWidget> createPhotoAndTitleEdit();
 	object_ptr<Ui::RpWidget> createTitleEdit();
 	object_ptr<Ui::RpWidget> createPhotoEdit();
@@ -156,7 +159,7 @@ private:
 	void saveInvites();
 	void saveSignatures();
 	void savePhoto();
-	void pushSaveStage(base::lambda_once<void()> &&lambda);
+	void pushSaveStage(FnMut<void()> &&lambda);
 	void continueSave();
 	void cancelSave();
 
@@ -171,7 +174,7 @@ private:
 	UsernameState _usernameState = UsernameState::Normal;
 	rpl::event_stream<rpl::producer<QString>> _usernameResultTexts;
 
-	std::deque<base::lambda_once<void()>> _saveStagesQueue;
+	std::deque<FnMut<void()>> _saveStagesQueue;
 	Saving _savingData;
 
 };
@@ -192,7 +195,7 @@ Controller::Controller(
 	});
 }
 
-base::lambda<QString()> Controller::computeTitle() const {
+Fn<QString()> Controller::computeTitle() const {
 	return langFactory(_isGroup
 			? lng_edit_group
 			: lng_edit_channel_title);
@@ -274,7 +277,6 @@ object_ptr<Ui::RpWidget> Controller::createPhotoEdit() {
 		_wrap,
 		object_ptr<Ui::UserpicButton>(
 			_wrap,
-			_box->controller(),
 			_peer,
 			Ui::UserpicButton::Role::ChangePhoto,
 			st::defaultUserpicButton),
@@ -297,11 +299,15 @@ object_ptr<Ui::RpWidget> Controller::createTitleEdit() {
 				: lng_dlg_new_channel_name),
 			_peer->name),
 		st::editPeerTitleMargins);
+	result->entity()->setMaxLength(kMaxGroupChannelTitle);
+	result->entity()->setInstantReplaces(Ui::InstantReplaces::Default());
+	result->entity()->setInstantReplacesEnabled(
+		Global::ReplaceEmojiValue());
 
 	QObject::connect(
 		result->entity(),
 		&Ui::InputField::submitted,
-		[this] { submitTitle(); });
+		[=] { submitTitle(); });
 
 	_controls.title = result->entity();
 	return std::move(result);
@@ -315,19 +321,24 @@ object_ptr<Ui::RpWidget> Controller::createDescriptionEdit() {
 		return nullptr;
 	}
 
-	auto result = object_ptr<Ui::PaddingWrap<Ui::InputArea>>(
+	auto result = object_ptr<Ui::PaddingWrap<Ui::InputField>>(
 		_wrap,
-		object_ptr<Ui::InputArea>(
+		object_ptr<Ui::InputField>(
 			_wrap,
 			st::editPeerDescription,
+			Ui::InputField::Mode::MultiLine,
 			langFactory(lng_create_group_description),
 			channel->about()),
 		st::editPeerDescriptionMargins);
+	result->entity()->setMaxLength(kMaxChannelDescription);
+	result->entity()->setInstantReplaces(Ui::InstantReplaces::Default());
+	result->entity()->setInstantReplacesEnabled(
+		Global::ReplaceEmojiValue());
 
 	QObject::connect(
 		result->entity(),
-		&Ui::InputArea::submitted,
-		[this] { submitDescription(); });
+		&Ui::InputField::submitted,
+		[=] { submitDescription(); });
 
 	_controls.description = result->entity();
 	return std::move(result);
@@ -423,7 +434,7 @@ object_ptr<Ui::RpWidget> Controller::createUsernameEdit() {
 		object_ptr<Ui::UsernameInput>(
 			container,
 			st::setupChannelLink,
-			base::lambda<QString()>(),
+			Fn<QString()>(),
 			channel->username,
 			true));
 	_controls.username->heightValue(
@@ -503,7 +514,7 @@ void Controller::checkUsernameAvailability() {
 	auto checking = initial
 		? qsl(".bad.")
 		: _controls.username->getLastText().trimmed();
-	if (checking.size() < MinUsernameLength) {
+	if (checking.size() < kMinUsernameLength) {
 		return;
 	}
 	if (_checkUsernameRequestId) {
@@ -554,7 +565,7 @@ void Controller::checkUsernameAvailability() {
 
 void Controller::askUsernameRevoke() {
 	_controls.privacy->setValue(Privacy::Private);
-	auto revokeCallback = base::lambda_guarded(this, [this] {
+	auto revokeCallback = crl::guard(this, [this] {
 		_usernameState = UsernameState::Normal;
 		_controls.privacy->setValue(Privacy::Public);
 		checkUsernameAvailability();
@@ -580,7 +591,7 @@ void Controller::usernameChanged() {
 	if (bad) {
 		showUsernameError(
 			Lang::Viewer(lng_create_channel_link_bad_symbols));
-	} else if (username.size() < MinUsernameLength) {
+	} else if (username.size() < kMinUsernameLength) {
 		showUsernameError(
 			Lang::Viewer(lng_create_channel_link_too_short));
 	} else {
@@ -633,7 +644,7 @@ void Controller::revokeInviteLink() {
 
 void Controller::exportInviteLink(const QString &confirmation) {
 	auto boxPointer = std::make_shared<QPointer<ConfirmBox>>();
-	auto callback = base::lambda_guarded(this, [=] {
+	auto callback = crl::guard(this, [=] {
 		if (auto strong = *boxPointer) {
 			strong->closeBox();
 		}
@@ -699,7 +710,7 @@ object_ptr<Ui::RpWidget> Controller::createInviteLinkEdit() {
 	_controls.inviteLink->setSelectable(true);
 	_controls.inviteLink->setContextCopyText(QString());
 	_controls.inviteLink->setBreakEverywhere(true);
-	_controls.inviteLink->setClickHandlerHook([this](auto&&...) {
+	_controls.inviteLink->setClickHandlerFilter([=](auto&&...) {
 		Application::clipboard()->setText(inviteLinkText());
 		Ui::Toast::Show(lang(lng_group_invite_copied));
 		return false;
@@ -1174,7 +1185,7 @@ void Controller::save() {
 	}
 }
 
-void Controller::pushSaveStage(base::lambda_once<void()> &&lambda) {
+void Controller::pushSaveStage(FnMut<void()> &&lambda) {
 	_saveStagesQueue.push_back(std::move(lambda));
 }
 
@@ -1251,11 +1262,9 @@ void Controller::saveTitle() {
 			continueSave();
 			return;
 		}
+		_controls.title->showError();
 		if (type == qstr("NO_CHAT_TITLE")) {
-			_controls.title->showError();
 			_box->scrollToWidget(_controls.title);
-		} else {
-			_controls.title->setFocus();
 		}
 		cancelSave();
 	};
@@ -1301,7 +1310,7 @@ void Controller::saveDescription() {
 			successCallback();
 			return;
 		}
-		_controls.description->setFocus();
+		_controls.description->showError();
 		cancelSave();
 	}).send();
 }

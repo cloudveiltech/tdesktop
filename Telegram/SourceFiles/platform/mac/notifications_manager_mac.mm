@@ -9,9 +9,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "platform/platform_specific.h"
 #include "platform/mac/mac_utilities.h"
-#include "styles/style_window.h"
+#include "history/history.h"
 #include "mainwindow.h"
-#include "base/variant.h"
+#include "styles/style_window.h"
 
 #include <thread>
 #include <Cocoa/Cocoa.h>
@@ -101,7 +101,10 @@ NSImage *qt_mac_create_nsimage(const QPixmap &pm);
 		const auto notificationReply = QString::fromUtf8([[[notification response] string] UTF8String]);
 		const auto manager = _manager;
 		crl::on_main(manager, [=] {
-			manager->notificationReplied(notificationPeerId, notificationMsgId, notificationReply);
+			manager->notificationReplied(
+				notificationPeerId,
+				notificationMsgId,
+				{ notificationReply, {} });
 		});
 	} else if (notification.activationType == NSUserNotificationActivationTypeContentsClicked) {
 		const auto manager = _manager;

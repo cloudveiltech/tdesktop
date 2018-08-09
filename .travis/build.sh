@@ -100,10 +100,6 @@ build() {
   fi
 
   # Configure the build
-  if [[ $BUILD_VERSION == *"disable_autoupdate"* ]]; then
-    GYP_DEFINES+=",TDESKTOP_DISABLE_AUTOUPDATE"
-  fi
-
   if [[ $BUILD_VERSION == *"disable_register_custom_scheme"* ]]; then
     GYP_DEFINES+=",TDESKTOP_DISABLE_REGISTER_CUSTOM_SCHEME"
   fi
@@ -486,6 +482,9 @@ buildOpenAL() {
       -D CMAKE_INSTALL_PREFIX=$OPENAL_PATH \
       -D CMAKE_BUILD_TYPE=Release \
       -D LIBTYPE=STATIC \
+      -D ALSOFT_EXAMPLES=OFF \
+      -D ALSOFT_TESTS=OFF \
+      -D ALSOFT_UTILS=OFF \
       ..
   make $MAKE_ARGS
   sudo make install
@@ -582,10 +581,10 @@ buildCustomQt() {
   info_msg "Downloading and building patched qt"
 
   if [ -d "$EXTERNAL/qt${QT_VERSION}" ]; then
-    rm -rf "$EXTERNAL/qt${QT_VERSION}"
+    sudo rm -rf "$EXTERNAL/qt${QT_VERSION}"
   fi
   cd $QT_PATH
-  rm -rf *
+  sudo rm -rf *
 
   cd "$EXTERNAL"
   git clone git://code.qt.io/qt/qt5.git qt${QT_VERSION}
@@ -608,7 +607,7 @@ buildCustomQt() {
   ./configure -prefix $QT_PATH -release -opensource -confirm-license -qt-zlib \
               -qt-libpng -qt-libjpeg -qt-freetype -qt-harfbuzz -qt-pcre -qt-xcb \
               -qt-xkbcommon-x11 -no-opengl -no-gtkstyle -static \
-              -nomake examples -nomake tests \
+              -nomake examples -nomake tests -no-mirclient \
               -dbus-runtime -no-gstreamer -no-mtdev # <- Not sure about these
   make $MAKE_ARGS
   sudo make install

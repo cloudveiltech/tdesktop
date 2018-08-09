@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/notifications_utilities.h"
 #include "platform/linux/linux_libnotify.h"
 #include "platform/linux/linux_libs.h"
+#include "history/history.h"
 #include "lang/lang_keys.h"
 
 namespace Platform {
@@ -188,7 +189,7 @@ private:
 		PeerId peerId = 0;
 		MsgId msgId = 0;
 	};
-	static void performOnMainQueue(NotificationDataStruct *data, base::lambda_once<void(Manager *manager)> task) {
+	static void performOnMainQueue(NotificationDataStruct *data, FnMut<void(Manager *manager)> task) {
 		const auto weak = data->weak;
 		crl::on_main(weak, [=, task = std::move(task)]() mutable {
 			task(*weak.lock());

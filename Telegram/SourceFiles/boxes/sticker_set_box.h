@@ -50,9 +50,9 @@ public:
 	Inner(QWidget *parent, const MTPInputStickerSet &set);
 
 	bool loaded() const;
-	int32 notInstalled() const;
+	bool notInstalled() const;
 	bool official() const;
-	base::lambda<TextWithEntities()> title() const;
+	Fn<TextWithEntities()> title() const;
 	QString shortName() const;
 
 	void install();
@@ -98,9 +98,10 @@ private:
 	uint64 _setId = 0;
 	uint64 _setAccess = 0;
 	QString _setTitle, _setShortName;
-	int32 _setCount = 0;
+	int _setCount = 0;
 	int32 _setHash = 0;
 	MTPDstickerSet::Flags _setFlags = 0;
+	TimeId _setInstallDate = TimeId(0);
 
 	MTPInputStickerSet _input;
 

@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "inline_bots/inline_bot_result.h"
 #include "storage/localstorage.h"
 #include "lang/lang_keys.h"
+#include "history/history.h"
 
 namespace InlineBots {
 namespace internal {
@@ -98,11 +99,14 @@ SendDataCommon::SentMTPMessageFields SendVenue::getSentMessageFields() const {
 
 SendDataCommon::SentMTPMessageFields SendContact::getSentMessageFields() const {
 	SentMTPMessageFields result;
+	const auto userId = 0;
+	const auto vcard = QString();
 	result.media = MTP_messageMediaContact(
 		MTP_string(_phoneNumber),
 		MTP_string(_firstName),
 		MTP_string(_lastName),
-		MTP_int(0));
+		MTP_string(vcard),
+		MTP_int(userId));
 	return result;
 }
 
@@ -130,11 +134,11 @@ void SendPhoto::addToHistory(
 		flags,
 		viaBotId,
 		replyToId,
-		date(mtpDate),
+		mtpDate.v,
 		fromId,
 		postAuthor,
 		_photo,
-		_caption,
+		{ _message, _entities },
 		markup);
 }
 
@@ -165,11 +169,11 @@ void SendFile::addToHistory(
 		flags,
 		viaBotId,
 		replyToId,
-		date(mtpDate),
+		mtpDate.v,
 		fromId,
 		postAuthor,
 		_document,
-		_caption,
+		{ _message, _entities },
 		markup);
 }
 
@@ -207,7 +211,7 @@ void SendGame::addToHistory(
 		flags,
 		viaBotId,
 		replyToId,
-		date(mtpDate),
+		mtpDate.v,
 		fromId,
 		postAuthor,
 		_game,

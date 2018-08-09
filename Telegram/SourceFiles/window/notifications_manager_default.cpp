@@ -20,6 +20,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_window.h"
 #include "storage/file_download.h"
 #include "auth_session.h"
+#include "history/history.h"
+#include "history/history_item.h"
 #include "platform/platform_specific.h"
 
 namespace Window {
@@ -61,6 +63,16 @@ Manager::Manager(System *system) : Notifications::Manager(system) {
 		settingsChanged(change);
 	});
 	_inputCheckTimer.setTimeoutHandler([this] { checkLastInput(); });
+}
+
+Manager::QueuedNotification::QueuedNotification(
+	not_null<HistoryItem*> item
+	, int forwardedCount)
+: history(item->history())
+, peer(history->peer)
+, author((!peer->isUser() && !item->isPost()) ? item->author().get() : nullptr)
+, item((forwardedCount < 2) ? item.get() : nullptr)
+, forwardedCount(forwardedCount) {
 }
 
 QPixmap Manager::hiddenUserpicPlaceholder() const {
@@ -483,7 +495,7 @@ Notification::Notification(Manager *manager, History *history, PeerData *peer, P
 	updateNotifyDisplay();
 
 	_hideTimer.setSingleShot(true);
-	connect(&_hideTimer, SIGNAL(timeout()), this, SLOT(onHideByTimer()));
+	connect(&_hideTimer, &QTimer::timeout, [=] { startHiding(); });
 
 	_close->setClickedCallback([this] {
 		unlinkHistoryInManager();
@@ -564,15 +576,11 @@ bool Notification::checkLastInput(bool hasReplyingNotifications) {
 	return false;
 }
 
-void Notification::onReplyResize() {
+void Notification::replyResized() {
 	changeHeight(st::notifyMinHeight + _replyArea->height() + st::notifyBorderWidth);
 }
 
-void Notification::onReplySubmit(bool ctrlShiftEnter) {
-	sendReply();
-}
-
-void Notification::onReplyCancel() {
+void Notification::replyCancel() {
 	unlinkHistoryInManager();
 }
 
@@ -639,7 +647,7 @@ void Notification::updateNotifyDisplay() {
 
 		QRect rectForName(st::notifyPhotoPos.x() + st::notifyPhotoSize + st::notifyTextLeft, st::notifyTextTop, itemWidth, st::msgNameFont->height);
 		if (!options.hideNameAndPhoto) {
-			if (auto chatTypeIcon = Dialogs::Layout::ChatTypeIcon(_history->peer, false, false)) {
+			if (const auto chatTypeIcon = Dialogs::Layout::ChatTypeIcon(_history->peer, false, false)) {
 				chatTypeIcon->paint(p, rectForName.topLeft(), w);
 				rectForName.setLeft(rectForName.left() + st::dialogsChatTypeSkip);
 			}
@@ -664,7 +672,7 @@ void Notification::updateNotifyDisplay() {
 				if (_author) {
 					itemTextCache.setText(st::dialogsTextStyle, _author->name);
 					p.setPen(st::dialogsTextFgService);
-					itemTextCache.drawElided(p, r.left(), r.top(), r.width(), st::dialogsTextFont->height);
+					itemTextCache.drawElided(p, r.left(), r.top(), r.width());
 					r.setTop(r.top() + st::dialogsTextFont->height);
 				}
 				p.setPen(st::dialogsTextFg);
@@ -719,7 +727,10 @@ bool Notification::unlinkItem(HistoryItem *deleted) {
 }
 
 bool Notification::canReply() const {
-	return !_hideReplyButton && (_item != nullptr) && !App::passcoded() && (Global::NotifyView() <= dbinvShowPreview);
+	return !_hideReplyButton
+		&& (_item != nullptr)
+		&& !Messenger::Instance().locked()
+		&& (Global::NotifyView() <= dbinvShowPreview);
 }
 
 void Notification::unlinkHistoryInManager() {
@@ -748,19 +759,26 @@ void Notification::showReplyField() {
 	_background->setGeometry(0, st::notifyMinHeight, width(), st::notifySendReply.height + st::notifyBorderWidth);
 	_background->show();
 
-	_replyArea.create(this, st::notifyReplyArea, langFactory(lng_message_ph), QString());
+	_replyArea.create(
+		this,
+		st::notifyReplyArea,
+		Ui::InputField::Mode::MultiLine,
+		langFactory(lng_message_ph));
 	_replyArea->resize(width() - st::notifySendReply.width - 2 * st::notifyBorderWidth, st::notifySendReply.height);
 	_replyArea->moveToLeft(st::notifyBorderWidth, st::notifyMinHeight);
 	_replyArea->show();
 	_replyArea->setFocus();
 	_replyArea->setMaxLength(MaxMessageSize);
-	_replyArea->setCtrlEnterSubmit(Ui::CtrlEnterSubmit::Both);
+	_replyArea->setSubmitSettings(Ui::InputField::SubmitSettings::Both);
+	_replyArea->setInstantReplaces(Ui::InstantReplaces::Default());
+	_replyArea->setInstantReplacesEnabled(Global::ReplaceEmojiValue());
+	_replyArea->setMarkdownReplacesEnabled(rpl::single(true));
 
 	// Catch mouse press event to activate the window.
 	QCoreApplication::instance()->installEventFilter(this);
-	connect(_replyArea, SIGNAL(resized()), this, SLOT(onReplyResize()));
-	connect(_replyArea, SIGNAL(submitted(bool)), this, SLOT(onReplySubmit(bool)));
-	connect(_replyArea, SIGNAL(cancelled()), this, SLOT(onReplyCancel()));
+	connect(_replyArea, &Ui::InputField::resized, [=] { replyResized(); });
+	connect(_replyArea, &Ui::InputField::submitted, [=] { sendReply(); });
+	connect(_replyArea, &Ui::InputField::cancelled, [=] { replyCancel(); });
 
 	_replySend.create(this, st::notifySendReply);
 	_replySend->moveToRight(st::notifyBorderWidth, st::notifyMinHeight);
@@ -769,7 +787,7 @@ void Notification::showReplyField() {
 
 	toggleActionButtons(false);
 
-	onReplyResize();
+	replyResized();
 	update();
 }
 
@@ -778,7 +796,10 @@ void Notification::sendReply() {
 
 	auto peerId = _history->peer->id;
 	auto msgId = _item ? _item->id : ShowAtUnreadMsgId;
-	manager()->notificationReplied(peerId, msgId, _replyArea->getLastText());
+	manager()->notificationReplied(
+		peerId,
+		msgId,
+		_replyArea->getTextWithAppliedMarkdown());
 
 	manager()->startAllHiding();
 }
@@ -844,10 +865,6 @@ void Notification::stopHiding() {
 	if (!_history) return;
 	_hideTimer.stop();
 	Widget::hideStop();
-}
-
-void Notification::onHideByTimer() {
-	startHiding();
 }
 
 HideAllButton::HideAllButton(Manager *manager, QPoint startPosition, int shift, Direction shiftDirection) : Widget(manager, startPosition, shift, shiftDirection) {

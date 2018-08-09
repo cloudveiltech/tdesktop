@@ -91,8 +91,8 @@ public:
 protected:
 	class Row : public PeerListRow {
 	public:
-		Row(not_null<History*> history) : PeerListRow(history->peer), _history(history) {
-		}
+		Row(not_null<History*> history);
+
 		not_null<History*> history() const {
 			return _history;
 		}
@@ -230,7 +230,7 @@ private:
 class ChooseRecipientBoxController : public ChatsListBoxController {
 public:
 	ChooseRecipientBoxController(
-		base::lambda_once<void(not_null<PeerData*>)> callback);
+		FnMut<void(not_null<PeerData*>)> callback);
 
 	void rowClicked(not_null<PeerListRow*> row) override;
 
@@ -244,6 +244,6 @@ protected:
 		not_null<History*> history) override;
 
 private:
-	base::lambda_once<void(not_null<PeerData*>)> _callback;
+	FnMut<void(not_null<PeerData*>)> _callback;
 
 };

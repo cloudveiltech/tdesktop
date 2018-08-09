@@ -10,6 +10,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "messenger.h"
 #include "platform/platform_specific.h"
+#include "history/view/history_view_element.h"
+#include "history/history_item.h"
 #include "boxes/confirm_box.h"
 #include "base/qthelp_regex.h"
 #include "base/qthelp_url.h"
@@ -36,14 +38,20 @@ QString tryConvertUrlToLocal(QString url) {
 		} else if (auto confirmPhoneMatch = regex_match(qsl("^confirmphone/?\\?(.+)"), query, matchOptions)) {
 			return qsl("tg://confirmphone?") + confirmPhoneMatch->captured(1);
 		} else if (auto ivMatch = regex_match(qsl("iv/?\\?(.+)(#|$)"), query, matchOptions)) {
-			auto params = url_parse_params(ivMatch->captured(1), UrlParamNameTransform::ToLower);
-			auto previewedUrl = params.value(qsl("url"));
-			if (previewedUrl.startsWith(qstr("http://"), Qt::CaseInsensitive)
-				|| previewedUrl.startsWith(qstr("https://"), Qt::CaseInsensitive)) {
-				return previewedUrl;
-			}
+			//
+			// We need to show our t.me page, not the url directly.
+			//
+			//auto params = url_parse_params(ivMatch->captured(1), UrlParamNameTransform::ToLower);
+			//auto previewedUrl = params.value(qsl("url"));
+			//if (previewedUrl.startsWith(qstr("http://"), Qt::CaseInsensitive)
+			//	|| previewedUrl.startsWith(qstr("https://"), Qt::CaseInsensitive)) {
+			//	return previewedUrl;
+			//}
+			return url;
 		} else if (auto socksMatch = regex_match(qsl("socks/?\\?(.+)(#|$)"), query, matchOptions)) {
 			return qsl("tg://socks?") + socksMatch->captured(1);
+		} else if (auto proxyMatch = regex_match(qsl("proxy/?\\?(.+)(#|$)"), query, matchOptions)) {
+			return qsl("tg://proxy?") + proxyMatch->captured(1);
 		} else if (auto usernameMatch = regex_match(qsl("^([a-zA-Z0-9\\.\\_]+)(/?\\?|/?$|/(\\d+)/?(?:\\?|$))"), query, matchOptions)) {
 			auto params = query.mid(usernameMatch->captured(0).size()).toString();
 			auto postParam = QString();
@@ -63,6 +71,20 @@ bool UrlRequiresConfirmation(const QUrl &url) {
 
 } // namespace
 
+UrlClickHandler::UrlClickHandler(const QString &url, bool fullDisplayed)
+: TextClickHandler(fullDisplayed)
+, _originalUrl(url) {
+	if (isEmail()) {
+		_readable = _originalUrl;
+	} else {
+		const auto original = QUrl(_originalUrl);
+		const auto good = QUrl(original.isValid()
+			? original.toEncoded()
+			: QString());
+		_readable = good.isValid() ? good.toDisplayString() : _originalUrl;
+	}
+}
+
 QString UrlClickHandler::copyToClipboardContextItemText() const {
 	return lang(isEmail() ? lng_context_copy_email : lng_context_copy_link);
 }
@@ -81,7 +103,7 @@ QString UrlClickHandler::url() const {
 	return result;
 }
 
-void UrlClickHandler::doOpen(QString url) {
+void UrlClickHandler::Open(QString url, QVariant context) {
 	Ui::Tooltip::Hide();
 
 	if (isEmail(url)) {
@@ -92,7 +114,7 @@ void UrlClickHandler::doOpen(QString url) {
 	url = tryConvertUrlToLocal(url);
 
 	if (url.startsWith(qstr("tg://"), Qt::CaseInsensitive)) {
-		Messenger::Instance().openLocalUrl(url);
+		Messenger::Instance().openLocalUrl(url, context);
 	} else {
 		QDesktopServices::openUrl(url);
 	}
@@ -118,38 +140,52 @@ TextWithEntities UrlClickHandler::getExpandedLinkTextWithEntities(ExpandLinksMod
 	return result;
 }
 
-void HiddenUrlClickHandler::doOpen(QString url) {
+void HiddenUrlClickHandler::Open(QString url, QVariant context) {
 	auto urlText = tryConvertUrlToLocal(url);
 
 	if (urlText.startsWith(qstr("tg://"), Qt::CaseInsensitive)) {
-		Messenger::Instance().openLocalUrl(urlText);
+		Messenger::Instance().openLocalUrl(urlText, context);
 	} else {
+		const auto open = [=] {
+			UrlClickHandler::Open(urlText, context);
+		};
 		auto parsedUrl = QUrl::fromUserInput(urlText);
 		if (UrlRequiresConfirmation(urlText)) {
-			auto displayUrl = parsedUrl.isValid() ? parsedUrl.toDisplayString() : urlText;
-			Ui::show(Box<ConfirmBox>(lang(lng_open_this_link) + qsl("\n\n") + displayUrl, lang(lng_open_link), [urlText] {
-				Ui::hideLayer();
-				UrlClickHandler::doOpen(urlText);
-			}), LayerOption::KeepOther);
+			auto displayUrl = parsedUrl.isValid()
+				? parsedUrl.toDisplayString()
+				: urlText;
+			Ui::show(
+				Box<ConfirmBox>(
+					lang(lng_open_this_link) + qsl("\n\n") + displayUrl,
+					lang(lng_open_link),
+					[=] { Ui::hideLayer(); open(); }),
+				LayerOption::KeepOther);
 		} else {
-			UrlClickHandler::doOpen(urlText);
+			open();
 		}
 	}
 }
 
-void BotGameUrlClickHandler::onClick(Qt::MouseButton button) const {
+void BotGameUrlClickHandler::onClick(ClickContext context) const {
 	auto urlText = tryConvertUrlToLocal(url());
 
+	const auto open = [=] {
+		UrlClickHandler::Open(urlText, context.other);
+	};
 	if (urlText.startsWith(qstr("tg://"), Qt::CaseInsensitive)) {
-		Messenger::Instance().openLocalUrl(urlText);
+		Messenger::Instance().openLocalUrl(urlText, context.other);
 	} else if (!_bot || _bot->isVerified() || Local::isBotTrusted(_bot)) {
-		doOpen(urlText);
+		open();
 	} else {
-		Ui::show(Box<ConfirmBox>(lng_allow_bot_pass(lt_bot_name, _bot->name), lang(lng_allow_bot), [bot = _bot, urlText] {
+		const auto callback = [=, bot = _bot] {
 			Ui::hideLayer();
 			Local::makeBotTrusted(bot);
-			UrlClickHandler::doOpen(urlText);
-		}));
+			open();
+		};
+		Ui::show(Box<ConfirmBox>(
+			lng_allow_bot_pass(lt_bot_name, _bot->name),
+			lang(lng_allow_bot),
+			callback));
 	}
 }
 
@@ -181,7 +217,8 @@ QString MentionClickHandler::copyToClipboardContextItemText() const {
 	return lang(lng_context_copy_mention);
 }
 
-void MentionClickHandler::onClick(Qt::MouseButton button) const {
+void MentionClickHandler::onClick(ClickContext context) const {
+	const auto button = context.button;
 	if (button == Qt::LeftButton || button == Qt::MiddleButton) {
 		App::openPeerByName(_tag.mid(1), ShowAtProfileMsgId);
 	}
@@ -191,7 +228,8 @@ TextWithEntities MentionClickHandler::getExpandedLinkTextWithEntities(ExpandLink
 	return simpleTextWithEntity({ EntityInTextMention, entityOffset, textPart.size() });
 }
 
-void MentionNameClickHandler::onClick(Qt::MouseButton button) const {
+void MentionNameClickHandler::onClick(ClickContext context) const {
+	const auto button = context.button;
 	if (button == Qt::LeftButton || button == Qt::MiddleButton) {
 		if (auto user = App::userLoaded(_userId)) {
 			Ui::showPeerProfile(user);
@@ -218,7 +256,8 @@ QString HashtagClickHandler::copyToClipboardContextItemText() const {
 	return lang(lng_context_copy_hashtag);
 }
 
-void HashtagClickHandler::onClick(Qt::MouseButton button) const {
+void HashtagClickHandler::onClick(ClickContext context) const {
+	const auto button = context.button;
 	if (button == Qt::LeftButton || button == Qt::MiddleButton) {
 		App::searchByHashtag(_tag, Ui::getPeerForMouseAction());
 	}
@@ -228,9 +267,28 @@ TextWithEntities HashtagClickHandler::getExpandedLinkTextWithEntities(ExpandLink
 	return simpleTextWithEntity({ EntityInTextHashtag, entityOffset, textPart.size() });
 }
 
+QString CashtagClickHandler::copyToClipboardContextItemText() const {
+	return lang(lng_context_copy_hashtag);
+}
+
+void CashtagClickHandler::onClick(ClickContext context) const {
+	const auto button = context.button;
+	if (button == Qt::LeftButton || button == Qt::MiddleButton) {
+		App::searchByHashtag(_tag, Ui::getPeerForMouseAction());
+	}
+}
+
+TextWithEntities CashtagClickHandler::getExpandedLinkTextWithEntities(
+		ExpandLinksMode mode,
+		int entityOffset,
+		const QStringRef &textPart) const {
+	return simpleTextWithEntity({ EntityInTextCashtag, entityOffset, textPart.size() });
+}
+
 PeerData *BotCommandClickHandler::_peer = nullptr;
 UserData *BotCommandClickHandler::_bot = nullptr;
-void BotCommandClickHandler::onClick(Qt::MouseButton button) const {
+void BotCommandClickHandler::onClick(ClickContext context) const {
+	const auto button = context.button;
 	if (button == Qt::LeftButton || button == Qt::MiddleButton) {
 		if (auto peer = peerForCommand()) {
 			if (auto bot = peer->isUser() ? peer->asUser() : botForCommand()) {
@@ -241,10 +299,11 @@ void BotCommandClickHandler::onClick(Qt::MouseButton button) const {
 		}
 
 		if (auto peer = Ui::getPeerForMouseAction()) { // old way
-			UserData *bot = peer->isUser() ? peer->asUser() : nullptr;
-			if (auto item = App::hoveredLinkItem()) {
-				if (!bot) {
-					bot = item->fromOriginal()->asUser(); // may return nullptr
+			auto bot = peer->isUser() ? peer->asUser() : nullptr;
+			if (!bot) {
+				if (const auto view = App::hoveredLinkItem()) {
+					// may return nullptr
+					bot = view->data()->fromOriginal()->asUser();
 				}
 			}
 			Ui::showPeerHistory(peer, ShowAtTheEndMsgId);

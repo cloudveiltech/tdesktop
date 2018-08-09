@@ -346,11 +346,14 @@ void SuggestionsWidget::leaveEventHook(QEvent *e) {
 	return TWidget::leaveEventHook(e);
 }
 
-SuggestionsController::SuggestionsController(QWidget *parent, not_null<QTextEdit*> field) : QObject(nullptr)
+SuggestionsController::SuggestionsController(QWidget *parent, not_null<QTextEdit*> field)
+: QObject(nullptr)
 , _field(field)
 , _container(parent, st::emojiSuggestionsDropdown)
 , _suggestions(_container->setOwnedWidget(object_ptr<Ui::Emoji::SuggestionsWidget>(parent, st::emojiSuggestionsMenu))) {
 	_container->setAutoHiding(false);
+
+	setReplaceCallback(nullptr);
 
 	_field->installEventFilter(this);
 	connect(_field, &QTextEdit::textChanged, this, [this] { handleTextChange(); });
@@ -361,6 +364,23 @@ SuggestionsController::SuggestionsController(QWidget *parent, not_null<QTextEdit
 	updateForceHidden();
 
 	handleTextChange();
+}
+
+void SuggestionsController::setReplaceCallback(
+	Fn<void(
+		int from,
+		int till,
+		const QString &replacement)> callback) {
+	if (callback) {
+		_replaceCallback = std::move(callback);
+	} else {
+		_replaceCallback = [=](int from, int till, const QString &replacement) {
+			auto cursor = _field->textCursor();
+			cursor.setPosition(from);
+			cursor.setPosition(till, QTextCursor::KeepAnchor);
+			cursor.insertText(replacement);
+		};
+	}
 }
 
 void SuggestionsController::handleTextChange() {
@@ -374,16 +394,16 @@ void SuggestionsController::handleTextChange() {
 }
 
 QString SuggestionsController::getEmojiQuery() {
-	if (!cReplaceEmojis()) {
+	if (!Global::SuggestEmoji()) {
 		return QString();
 	}
 
 	auto cursor = _field->textCursor();
-	auto position = _field->textCursor().position();
-	if (cursor.anchor() != position) {
+	if (cursor.hasSelection()) {
 		return QString();
 	}
 
+	auto position = cursor.position();
 	auto findTextPart = [this, &position] {
 		auto document = _field->document();
 		auto block = document->findBlock(position);
@@ -411,10 +431,23 @@ QString SuggestionsController::getEmojiQuery() {
 		return QString();
 	}
 
-	auto isSuggestionChar = [](QChar ch) {
-		return (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || (ch == '_') || (ch == '-') || (ch == '+');
+	const auto isUpperCaseLetter = [](QChar ch) {
+		return (ch >= 'A' && ch <= 'Z');
 	};
-	auto isGoodCharBeforeSuggestion = [isSuggestionChar](QChar ch) {
+	const auto isLetter = [](QChar ch) {
+		return (ch >= 'a' && ch <= 'z')
+			|| (ch >= 'A' && ch <= 'Z')
+			|| (ch >= '0' && ch <= '9');
+	};
+	const auto isSuggestionChar = [](QChar ch) {
+		return (ch >= 'a' && ch <= 'z')
+			|| (ch >= 'A' && ch <= 'Z')
+			|| (ch >= '0' && ch <= '9')
+			|| (ch == '_')
+			|| (ch == '-')
+			|| (ch == '+');
+	};
+	const auto isGoodCharBeforeSuggestion = [&](QChar ch) {
 		return !isSuggestionChar(ch) || (ch == 0);
 	};
 	Assert(position > 0 && position <= text.size());
@@ -427,7 +460,22 @@ QString SuggestionsController::getEmojiQuery() {
 				if (position > i + 1) {
 					// Skip colon and the first letter.
 					_queryStartPosition += i + 2;
-					return text.mid(i, position - i);
+					const auto length = position - i;
+					auto result = text.mid(i, length);
+					const auto upperCaseLetters = std::count_if(
+						result.begin(),
+						result.end(),
+						isUpperCaseLetter);
+					const auto letters = std::count_if(
+						result.begin(),
+						result.end(),
+						isLetter);
+					if (letters == upperCaseLetters && letters == 1) {
+						// No upper case single letter suggestions.
+						// We don't want to suggest emoji on :D and :-P
+						return QString();
+					}
+					return result.toLower();
 				}
 			}
 			return QString();
@@ -443,24 +491,14 @@ QString SuggestionsController::getEmojiQuery() {
 }
 
 void SuggestionsController::replaceCurrent(const QString &replacement) {
-	auto cursor = _field->textCursor();
 	auto suggestion = getEmojiQuery();
 	if (suggestion.isEmpty()) {
 		_suggestions->showWithQuery(QString());
 	} else {
-		cursor.setPosition(cursor.position() - suggestion.size(), QTextCursor::KeepAnchor);
-		cursor.insertText(replacement);
-	}
-
-	auto emojiText = GetSuggestionEmoji(QStringToUTF16(replacement));
-	if (auto emoji = Find(QStringFromUTF16(emojiText))) {
-		if (emoji->hasVariants()) {
-			auto it = cEmojiVariants().constFind(emoji->nonColoredId());
-			if (it != cEmojiVariants().cend()) {
-				emoji = emoji->variant(it.value());
-			}
-		}
-		AddRecent(emoji);
+		const auto cursor = _field->textCursor();
+		const auto position = cursor.position();
+		const auto from = position - suggestion.size();
+		_replaceCallback(from, position, replacement);
 	}
 }
 

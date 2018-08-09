@@ -12,15 +12,20 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/timer.h"
 
 class AuthSession;
-class AuthSessionData;
+class AuthSessionSettings;
 class MainWidget;
 class FileUploader;
 class Translator;
 class MediaView;
+class BoxContent;
 
 namespace Core {
 class Launcher;
 } // namespace Core
+
+namespace Window {
+struct TermsLock;
+} // namespace Window
 
 namespace App {
 void quit();
@@ -98,13 +103,16 @@ public:
 	MTP::DcOptions *dcOptions() {
 		return _dcOptions.get();
 	}
+	void setCurrentProxy(const ProxyData &proxy, bool enabled);
+	void badMtprotoConfigurationError();
 
 	// Set from legacy storage.
 	void setMtpMainDcId(MTP::DcId mainDcId);
 	void setMtpKey(MTP::DcId dcId, const MTP::AuthKey::Data &keyData);
 	void setAuthSessionUserId(UserId userId);
-	void setAuthSessionFromStorage(std::unique_ptr<AuthSessionData> data);
-	AuthSessionData *getAuthSessionData();
+	void setAuthSessionFromStorage(
+		std::unique_ptr<AuthSessionSettings> data);
+	AuthSessionSettings *getAuthSessionSettings();
 
 	// Serialization.
 	QByteArray serializeMtpAuthorization() const;
@@ -128,10 +136,10 @@ public:
 		return _langCloudManager.get();
 	}
 	void authSessionCreate(UserId userId);
-	void authSessionDestroy();
 	base::Observable<void> &authSessionChanged() {
 		return _authSessionChanged;
 	}
+	void logOut();
 
 	// Media component.
 	Media::Audio::Instance &audio() {
@@ -143,7 +151,7 @@ public:
 	QString createInternalLink(const QString &query) const;
 	QString createInternalLinkFull(const QString &query) const;
 	void checkStartUrl();
-	bool openLocalUrl(const QString &url);
+	bool openLocalUrl(const QString &url, QVariant context);
 
 	void uploadProfilePhoto(QImage &&tosend, const PeerId &peerId);
 	void regPhotoUpdate(const PeerId &peer, const FullMsgId &msgId);
@@ -162,12 +170,24 @@ public:
 	void killDownloadSessionsStart(MTP::DcId dcId);
 	void killDownloadSessionsStop(MTP::DcId dcId);
 
+	void forceLogOut(const TextWithEntities &explanation);
 	void checkLocalTime();
-	void setupPasscode();
-	void clearPasscode();
-	base::Observable<void> &passcodedChanged() {
-		return _passcodedChanged;
-	}
+	void lockByPasscode();
+	void unlockPasscode();
+	[[nodiscard]] bool passcodeLocked() const;
+	rpl::producer<bool> passcodeLockChanges() const;
+	rpl::producer<bool> passcodeLockValue() const;
+
+	void lockByTerms(const Window::TermsLock &data);
+	void unlockTerms();
+	[[nodiscard]] base::optional<Window::TermsLock> termsLocked() const;
+	rpl::producer<bool> termsLockChanges() const;
+	rpl::producer<bool> termsLockValue() const;
+	void termsDeleteNow();
+
+	[[nodiscard]] bool locked() const;
+	rpl::producer<bool> lockChanges() const;
+	rpl::producer<bool> lockValue() const;
 
 	void registerLeaveSubscription(QWidget *widget);
 	void unregisterLeaveSubscription(QWidget *widget);
@@ -177,12 +197,11 @@ public:
 	void handleAppActivated();
 	void handleAppDeactivated();
 
-	void call_handleHistoryUpdate();
 	void call_handleUnreadCounterUpdate();
 	void call_handleDelayedPeerUpdates();
 	void call_handleObservables();
 
-	void callDelayed(int duration, base::lambda_once<void()> &&lambda) {
+	void callDelayed(int duration, FnMut<void()> &&lambda) {
 		_callDelayedTimer.call(duration, std::move(lambda));
 	}
 
@@ -195,8 +214,6 @@ signals:
 
 public slots:
 	void onAllKeysDestroyed();
-
-	void photoUpdated(const FullMsgId &msgId, bool silent, const MTPInputFile &file);
 
 	void onSwitchDebugMode();
 	void onSwitchWorkMode();
@@ -213,6 +230,10 @@ private:
 	static void QuitAttempt();
 	void quitDelayed();
 
+	void photoUpdated(const FullMsgId &msgId, const MTPInputFile &file);
+	void resetAuthorizationKeys();
+	void authSessionDestroy();
+	void clearPasscodeLock();
 	void loggedOut();
 
 	not_null<Core::Launcher*> _launcher;
@@ -239,10 +260,18 @@ private:
 	std::unique_ptr<AuthSession> _authSession;
 	base::Observable<void> _authSessionChanged;
 	base::Observable<void> _passcodedChanged;
+	QPointer<BoxContent> _badProxyDisableBox;
+
+	// While profile photo uploading is not moved to apiwrap.
+	rpl::lifetime _uploaderSubscription;
 
 	std::unique_ptr<Media::Audio::Instance> _audio;
 	QImage _logo;
 	QImage _logoNoMargin;
+
+	rpl::variable<bool> _passcodeLock;
+	rpl::event_stream<bool> _termsLockChanges;
+	std::unique_ptr<Window::TermsLock> _termsLock;
 
 	base::DelayedCallTimer _callDelayedTimer;
 

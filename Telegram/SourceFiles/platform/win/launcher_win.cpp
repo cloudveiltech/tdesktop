@@ -8,12 +8,37 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/win/launcher_win.h"
 
 #include "core/crash_reports.h"
+#include "core/update_checker.h"
 #include "platform/platform_specific.h"
 
 #include <windows.h>
 #include <shellapi.h>
 
 namespace Platform {
+namespace {
+
+QString DeviceModel() {
+	return "PC";
+}
+
+QString SystemVersion() {
+	switch (QSysInfo::windowsVersion()) {
+	case QSysInfo::WV_XP: return "Windows XP";
+	case QSysInfo::WV_2003: return "Windows 2003";
+	case QSysInfo::WV_VISTA: return "Windows Vista";
+	case QSysInfo::WV_WINDOWS7: return "Windows 7";
+	case QSysInfo::WV_WINDOWS8: return "Windows 8";
+	case QSysInfo::WV_WINDOWS8_1: return "Windows 8.1";
+	case QSysInfo::WV_WINDOWS10: return "Windows 10";
+	default: return "Windows";
+	}
+}
+
+} // namespace
+
+Launcher::Launcher(int argc, char *argv[])
+: Core::Launcher(argc, argv, DeviceModel(), SystemVersion()) {
+}
 
 base::optional<QStringList> Launcher::readArgumentsHook(
 		int argc,
@@ -56,7 +81,7 @@ bool Launcher::launchUpdater(UpdaterLaunch action) {
 	if (cLaunchMode() == LaunchModeAutoStart) {
 		pushArgument(qsl("-autostart"));
 	}
-	if (cDebug()) {
+	if (Logs::DebugEnabled()) {
 		pushArgument(qsl("-debug"));
 	}
 	if (cStartInTray()) {
@@ -65,6 +90,11 @@ bool Launcher::launchUpdater(UpdaterLaunch action) {
 	if (cTestMode()) {
 		pushArgument(qsl("-testmode"));
 	}
+#ifndef TDESKTOP_DISABLE_AUTOUPDATE
+	if (Core::UpdaterDisabled()) {
+		pushArgument(qsl("-externalupdater"));
+	}
+#endif // !TDESKTOP_DISABLE_AUTOUPDATE
 	if (customWorkingDir()) {
 		pushArgument(qsl("-workdir"));
 		pushArgument('"' + cWorkingDir() + '"');

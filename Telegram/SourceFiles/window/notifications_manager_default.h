@@ -13,7 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Ui {
 class IconButton;
 class RoundButton;
-class InputArea;
+class InputField;
 } // namespace Ui
 
 namespace Window {
@@ -82,16 +82,10 @@ private:
 	SingleTimer _inputCheckTimer;
 
 	struct QueuedNotification {
-		QueuedNotification(HistoryItem *item, int forwardedCount)
-		: history(item->history())
-		, peer(history->peer)
-		, author((!peer->isUser() && !item->isPost()) ? item->author() : nullptr)
-		, item((forwardedCount > 1) ? nullptr : item)
-		, forwardedCount(forwardedCount) {
-		}
+		QueuedNotification(not_null<HistoryItem*> item, int forwardedCount);
 
-		History *history;
-		PeerData *peer;
+		not_null<History*> history;
+		not_null<PeerData*> peer;
 		PeerData *author;
 		HistoryItem *item;
 		int forwardedCount;
@@ -170,8 +164,6 @@ protected:
 };
 
 class Notification : public Widget {
-	Q_OBJECT
-
 public:
 	Notification(Manager *manager, History *history, PeerData *peer, PeerData *author, HistoryItem *item, int forwardedCount, QPoint startPosition, int shift, Direction shiftDirection);
 
@@ -200,16 +192,12 @@ protected:
 	void mousePressEvent(QMouseEvent *e) override;
 	bool eventFilter(QObject *o, QEvent *e) override;
 
-private slots:
-	void onHideByTimer();
-	void onReplyResize();
-	void onReplySubmit(bool ctrlShiftEnter);
-	void onReplyCancel();
-
 private:
 	void refreshLang();
 	void updateReplyGeometry();
 	bool canReply() const;
+	void replyResized();
+	void replyCancel();
 
 	void unlinkHistoryInManager();
 	void toggleActionButtons(bool visible);
@@ -239,7 +227,7 @@ private:
 	object_ptr<Ui::IconButton> _close;
 	object_ptr<Ui::RoundButton> _reply;
 	object_ptr<Background> _background = { nullptr };
-	object_ptr<Ui::InputArea> _replyArea = { nullptr };
+	object_ptr<Ui::InputField> _replyArea = { nullptr };
 	object_ptr<Ui::IconButton> _replySend = { nullptr };
 	bool _waitingForInput = true;
 

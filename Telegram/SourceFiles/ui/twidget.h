@@ -49,13 +49,15 @@ inline ChildWidget *AttachParentChild(
 void SendPendingMoveResizeEvents(not_null<QWidget*> target);
 
 QPixmap GrabWidget(
-	not_null<TWidget*> target,
+	not_null<QWidget*> target,
 	QRect rect = QRect(),
 	QColor bg = QColor(255, 255, 255, 0));
 QImage GrabWidgetToImage(
-	not_null<TWidget*> target,
+	not_null<QWidget*> target,
 	QRect rect = QRect(),
 	QColor bg = QColor(255, 255, 255, 0));
+
+void ForceFullRepaint(not_null<QWidget*> widget);
 
 } // namespace Ui
 
@@ -326,10 +328,6 @@ class TWidget : public TWidgetHelper<QWidget> {
 public:
 	TWidget(QWidget *parent = nullptr) : TWidgetHelper<QWidget>(parent) {
 	}
-	virtual void grabStart() {
-	}
-	virtual void grabFinish() {
-	}
 
 	bool inFocusChain() const {
 		return Ui::InFocusChain(this);
@@ -442,9 +440,19 @@ QPointer<const Widget> make_weak(const Widget *object) {
 	return QPointer<const Widget>(object);
 }
 
+template <typename Widget>
+QPointer<Widget> make_weak(not_null<Widget*> object) {
+	return QPointer<Widget>(object.get());
+}
+
+template <typename Widget>
+QPointer<const Widget> make_weak(not_null<const Widget*> object) {
+	return QPointer<const Widget>(object.get());
+}
+
 class SingleQueuedInvokation : public QObject {
 public:
-	SingleQueuedInvokation(base::lambda<void()> callback) : _callback(callback) {
+	SingleQueuedInvokation(Fn<void()> callback) : _callback(callback) {
 	}
 	void call() {
 		if (_pending.testAndSetAcquire(0, 1)) {
@@ -457,7 +465,7 @@ public:
 	}
 
 private:
-	base::lambda<void()> _callback;
+	Fn<void()> _callback;
 	QAtomicInt _pending = { 0 };
 
 };

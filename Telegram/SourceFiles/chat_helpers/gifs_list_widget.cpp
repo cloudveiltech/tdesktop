@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "data/data_photo.h"
 #include "data/data_document.h"
+#include "data/data_session.h"
 #include "styles/style_chat_helpers.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/input_fields.h"
@@ -20,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "mainwindow.h"
 #include "window/window_controller.h"
+#include "history/view/history_view_cursor_state.h"
 
 namespace ChatHelpers {
 namespace {
@@ -61,23 +63,23 @@ GifsListWidget::Footer::Footer(not_null<GifsListWidget*> parent) : InnerFooter(p
 , _pan(parent)
 , _field(this, st::gifsSearchField, langFactory(lng_gifs_search))
 , _cancel(this, st::gifsSearchCancel) {
-	connect(_field, &Ui::InputField::submitted, this, [this](bool ctrlShiftEnter) {
+	connect(_field, &Ui::InputField::submitted, [=] {
 		_pan->sendInlineRequest();
 	});
-	connect(_field, &Ui::InputField::cancelled, this, [this] {
+	connect(_field, &Ui::InputField::cancelled, [=] {
 		if (_field->getLastText().isEmpty()) {
 			emit _pan->cancelled();
 		} else {
 			_field->setText(QString());
 		}
 	});
-	connect(_field, &Ui::InputField::changed, this, [this] {
+	connect(_field, &Ui::InputField::changed, [=] {
 		_cancel->toggle(
 			!_field->getLastText().isEmpty(),
 			anim::type::normal);
 		_pan->searchForGifs(_field->getLastText());
 	});
-	_cancel->setClickedCallback([this] {
+	_cancel->setClickedCallback([=] {
 		_field->setText(QString());
 	});
 }
@@ -207,9 +209,10 @@ void GifsListWidget::inlineResultsDone(const MTPmessages_BotResults &result) {
 
 	auto it = _inlineCache.find(_inlineQuery);
 	auto adding = (it != _inlineCache.cend());
-	// #TODO layer 72 feed users
 	if (result.type() == mtpc_messages_botResults) {
 		auto &d = result.c_messages_botResults();
+		App::feedUsers(d.vusers);
+
 		auto &v = d.vresults.v;
 		auto queryId = d.vquery_id.v;
 
@@ -857,7 +860,14 @@ void GifsListWidget::sendInlineRequest() {
 	}
 
 	_footer->setLoading(true);
-	_inlineRequestId = request(MTPmessages_GetInlineBotResults(MTP_flags(0), _searchBot->inputUser, _inlineQueryPeer->input, MTPInputGeoPoint(), MTP_string(_inlineQuery), MTP_string(nextOffset))).done([this](const MTPmessages_BotResults &result, mtpRequestId requestId) {
+	_inlineRequestId = request(MTPmessages_GetInlineBotResults(
+		MTP_flags(0),
+		_searchBot->inputUser,
+		_inlineQueryPeer->input,
+		MTPInputGeoPoint(),
+		MTP_string(_inlineQuery),
+		MTP_string(nextOffset)
+	)).done([this](const MTPmessages_BotResults &result) {
 		inlineResultsDone(result);
 	}).fail([this](const RPCError &error) {
 		// show error?
@@ -885,7 +895,7 @@ void GifsListWidget::updateSelected() {
 	int row = -1, col = -1, sel = -1;
 	ClickHandlerPtr lnk;
 	ClickHandlerHost *lnkhost = nullptr;
-	HistoryCursorState cursor = HistoryDefaultCursorState;
+	HistoryView::CursorState cursor = HistoryView::CursorState::None;
 	if (sy >= 0) {
 		row = 0;
 		for (int rows = _rows.size(); row < rows; ++row) {
@@ -910,10 +920,12 @@ void GifsListWidget::updateSelected() {
 		}
 		if (col < inlineItems.size()) {
 			sel = row * MatrixRowShift + col;
-			auto result = inlineItems[col]->getState(QPoint(sx, sy), HistoryStateRequest());
+			auto result = inlineItems[col]->getState(
+				QPoint(sx, sy),
+				HistoryView::StateRequest());
 			lnk = result.link;
 			cursor = result.cursor;
-			lnkhost = inlineItems.at(col);
+			lnkhost = inlineItems[col];
 		} else {
 			row = col = -1;
 		}

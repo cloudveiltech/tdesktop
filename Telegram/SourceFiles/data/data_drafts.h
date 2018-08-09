@@ -8,27 +8,29 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 namespace Ui {
-class FlatTextarea;
+class InputField;
 } // namespace Ui
 
 namespace Data {
 
 void applyPeerCloudDraft(PeerId peerId, const MTPDdraftMessage &draft);
-void clearPeerCloudDraft(PeerId peerId);
+void clearPeerCloudDraft(PeerId peerId, TimeId date);
 
 struct Draft {
-	Draft() {
-	}
-	Draft(const TextWithTags &textWithTags, MsgId msgId, const MessageCursor &cursor, bool previewCancelled, mtpRequestId saveRequestId = 0)
-		: textWithTags(textWithTags)
-		, msgId(msgId)
-		, cursor(cursor)
-		, previewCancelled(previewCancelled)
-		, saveRequestId(saveRequestId) {
-	}
-	Draft(const Ui::FlatTextarea *field, MsgId msgId, bool previewCancelled, mtpRequestId saveRequestId = 0);
+	Draft() = default;
+	Draft(
+		const TextWithTags &textWithTags,
+		MsgId msgId,
+		const MessageCursor &cursor,
+		bool previewCancelled,
+		mtpRequestId saveRequestId = 0);
+	Draft(
+		not_null<const Ui::InputField*> field,
+		MsgId msgId,
+		bool previewCancelled,
+		mtpRequestId saveRequestId = 0);
 
-	QDateTime date;
+	TimeId date = 0;
 	TextWithTags textWithTags;
 	MsgId msgId = 0; // replyToId for message draft, editMsgId for edit draft
 	MessageCursor cursor;

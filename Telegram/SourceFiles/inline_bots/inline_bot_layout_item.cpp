@@ -99,17 +99,28 @@ std::unique_ptr<ItemBase> ItemBase::createLayout(not_null<Context*> context, Res
 	using Type = Result::Type;
 
 	switch (result->_type) {
-	case Type::Photo: return std::make_unique<internal::Photo>(context, result); break;
+	case Type::Photo:
+		return std::make_unique<internal::Photo>(context, result);
 	case Type::Audio:
-	case Type::File: return std::make_unique<internal::File>(context, result); break;
-	case Type::Video: return std::make_unique<internal::Video>(context, result); break;
-	case Type::Sticker: return std::make_unique<internal::Sticker>(context, result); break;
-	case Type::Gif: return std::make_unique<internal::Gif>(context, result); break;
+	case Type::File:
+		return std::make_unique<internal::File>(context, result);
+	case Type::Video:
+		return std::make_unique<internal::Video>(context, result);
+	case Type::Sticker:
+		return std::make_unique<internal::Sticker>(context, result);
+	case Type::Gif:
+		return std::make_unique<internal::Gif>(context, result);
 	case Type::Article:
 	case Type::Geo:
-	case Type::Venue: return std::make_unique<internal::Article>(context, result, forceThumb); break;
-	case Type::Game: return std::make_unique<internal::Game>(context, result); break;
-	case Type::Contact: return std::make_unique<internal::Contact>(context, result); break;
+	case Type::Venue:
+		return std::make_unique<internal::Article>(
+			context,
+			result,
+			forceThumb);
+	case Type::Game:
+		return std::make_unique<internal::Game>(context, result);
+	case Type::Contact:
+		return std::make_unique<internal::Contact>(context, result);
 	}
 	return nullptr;
 }
@@ -154,7 +165,7 @@ QPixmap ItemBase::getResultContactAvatar(int width, int height) const {
 }
 
 int ItemBase::getResultDuration() const {
-	return _result->_duration;
+	return 0;
 }
 
 QString ItemBase::getResultUrl() const {
@@ -210,18 +221,25 @@ const DocumentItems *documentItems() {
 
 namespace internal {
 
-void regDocumentItem(DocumentData *document, ItemBase *item) {
+void regDocumentItem(
+		not_null<const DocumentData*> document,
+		not_null<ItemBase*> item) {
 	documentItemsMap.createIfNull();
 	(*documentItemsMap)[document].insert(item);
 }
 
-void unregDocumentItem(DocumentData *document, ItemBase *item) {
+void unregDocumentItem(
+		not_null<const DocumentData*> document,
+		not_null<ItemBase*> item) {
 	if (documentItemsMap) {
 		auto i = documentItemsMap->find(document);
 		if (i != documentItemsMap->cend()) {
-			if (i->remove(item) && i->isEmpty()) {
+			if (i->second.remove(item) && i->second.empty()) {
 				documentItemsMap->erase(i);
 			}
+		}
+		if (documentItemsMap->empty()) {
+			documentItemsMap.clear();
 		}
 	}
 }

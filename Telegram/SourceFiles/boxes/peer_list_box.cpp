@@ -31,7 +31,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 PeerListBox::PeerListBox(
 	QWidget*,
 	std::unique_ptr<PeerListController> controller,
-	base::lambda<void(not_null<PeerListBox*>)> init)
+	Fn<void(not_null<PeerListBox*>)> init)
 : _controller(std::move(controller))
 , _init(std::move(init)) {
 	Expects(_controller != nullptr);
@@ -46,7 +46,7 @@ void PeerListBox::createMultiSelect() {
 	) | rpl::start_with_next(
 		[this] { updateScrollSkips(); },
 		lifetime());
-	_select->entity()->setSubmittedCallback([this](bool chtrlShiftEnter) { content()->submitted(); });
+	_select->entity()->setSubmittedCallback([this](Qt::KeyboardModifiers) { content()->submitted(); });
 	_select->entity()->setQueryChangedCallback([this](const QString &query) { searchQueryChanged(query); });
 	_select->entity()->setItemRemovedCallback([this](uint64 itemId) {
 		if (auto peer = App::peerLoaded(itemId)) {
@@ -248,6 +248,11 @@ void PeerListController::setSearchNoResultsText(const QString &text) {
 	} else {
 		setSearchNoResults(object_ptr<Ui::FlatLabel>(nullptr, text, Ui::FlatLabel::InitType::Simple, st::membersAbout));
 	}
+}
+
+base::unique_qptr<Ui::PopupMenu> PeerListController::rowContextMenu(
+		not_null<PeerListRow*> row) {
+	return nullptr;
 }
 
 std::unique_ptr<PeerListState> PeerListController::saveState() const {
@@ -520,7 +525,7 @@ void PeerListRow::lazyInitialize(const style::PeerListItem &st) {
 	refreshStatus();
 }
 
-void PeerListRow::createCheckbox(base::lambda<void()> updateCallback) {
+void PeerListRow::createCheckbox(Fn<void()> updateCallback) {
 	_checkbox = std::make_unique<Ui::RoundImageCheckbox>(
 		st::contactsPhotoCheckbox,
 		std::move(updateCallback),
@@ -563,6 +568,7 @@ PeerListContent::PeerListContent(
 
 void PeerListContent::appendRow(std::unique_ptr<PeerListRow> row) {
 	Expects(row != nullptr);
+
 	if (_rowsById.find(row->id()) == _rowsById.cend()) {
 		row->setAbsoluteIndex(_rows.size());
 		addRowEntry(row.get());
@@ -573,6 +579,7 @@ void PeerListContent::appendRow(std::unique_ptr<PeerListRow> row) {
 void PeerListContent::appendSearchRow(std::unique_ptr<PeerListRow> row) {
 	Expects(row != nullptr);
 	Expects(showingSearch());
+
 	if (_rowsById.find(row->id()) == _rowsById.cend()) {
 		row->setAbsoluteIndex(_searchRows.size());
 		row->setIsSearchResult(true);
@@ -584,13 +591,17 @@ void PeerListContent::appendSearchRow(std::unique_ptr<PeerListRow> row) {
 
 void PeerListContent::appendFoundRow(not_null<PeerListRow*> row) {
 	Expects(showingSearch());
+
 	auto index = findRowIndex(row);
 	if (index.value < 0) {
 		_filterResults.push_back(row);
 	}
 }
 
-void PeerListContent::changeCheckState(not_null<PeerListRow*> row, bool checked, PeerListRow::SetStyle style) {
+void PeerListContent::changeCheckState(
+		not_null<PeerListRow*> row,
+		bool checked,
+		PeerListRow::SetStyle style) {
 	row->setChecked(
 		checked,
 		style,
@@ -629,16 +640,16 @@ void PeerListContent::addToSearchIndex(not_null<PeerListRow*> row) {
 	}
 
 	removeFromSearchIndex(row);
-	row->setNameFirstChars(row->peer()->nameFirstChars());
-	for (auto ch : row->nameFirstChars()) {
+	row->setNameFirstLetters(row->peer()->nameFirstLetters());
+	for (auto ch : row->nameFirstLetters()) {
 		_searchIndex[ch].push_back(row);
 	}
 }
 
 void PeerListContent::removeFromSearchIndex(not_null<PeerListRow*> row) {
-	auto &nameFirstChars = row->nameFirstChars();
-	if (!nameFirstChars.empty()) {
-		for (auto ch : row->nameFirstChars()) {
+	const auto &nameFirstLetters = row->nameFirstLetters();
+	if (!nameFirstLetters.empty()) {
+		for (auto ch : row->nameFirstLetters()) {
 			auto it = _searchIndex.find(ch);
 			if (it != _searchIndex.cend()) {
 				auto &entry = it->second;
@@ -648,7 +659,7 @@ void PeerListContent::removeFromSearchIndex(not_null<PeerListRow*> row) {
 				}
 			}
 		}
-		row->setNameFirstChars({});
+		row->setNameFirstLetters({});
 	}
 }
 
@@ -1008,10 +1019,10 @@ void PeerListContent::contextMenuEvent(QContextMenuEvent *e) {
 		mousePressReleased(_pressButton);
 	}
 
-	if (auto row = getRow(_contexted.index)) {
+	if (const auto row = getRow(_contexted.index)) {
 		_contextMenu = _controller->rowContextMenu(row);
 		if (_contextMenu) {
-			_contextMenu->setDestroyedCallback(base::lambda_guarded(
+			_contextMenu->setDestroyedCallback(crl::guard(
 				this,
 				[this] {
 					setContexted(Selected());
@@ -1551,5 +1562,11 @@ void PeerListContent::handleNameChanged(const Notify::PeerUpdate &update) {
 			row->refreshName(_st.item);
 			updateRow(row);
 		}
+	}
+}
+
+PeerListContent::~PeerListContent() {
+	if (_contextMenu) {
+		_contextMenu->setDestroyedCallback(nullptr);
 	}
 }

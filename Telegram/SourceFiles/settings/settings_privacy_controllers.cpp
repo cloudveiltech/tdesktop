@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwidget.h"
 #include "auth_session.h"
 #include "storage/localstorage.h"
+#include "history/history.h"
 #include "boxes/peer_list_controllers.h"
 #include "boxes/confirm_box.h"
 
@@ -25,7 +26,7 @@ class BlockUserBoxController : public ChatsListBoxController {
 public:
 	void rowClicked(not_null<PeerListRow*> row) override;
 
-	void setBlockUserCallback(base::lambda<void(not_null<UserData*> user)> callback) {
+	void setBlockUserCallback(Fn<void(not_null<UserData*> user)> callback) {
 		_blockUserCallback = std::move(callback);
 	}
 
@@ -40,7 +41,7 @@ protected:
 private:
 	void updateIsBlocked(not_null<PeerListRow*> row, UserData *user) const;
 
-	base::lambda<void(not_null<UserData*> user)> _blockUserCallback;
+	Fn<void(not_null<UserData*> user)> _blockUserCallback;
 
 };
 
@@ -255,15 +256,15 @@ QString LastSeenPrivacyController::exceptionsDescription() {
 	return lang(lng_edit_privacy_lastseen_exceptions);
 }
 
-void LastSeenPrivacyController::confirmSave(bool someAreDisallowed, base::lambda_once<void()> saveCallback) {
-	if (someAreDisallowed && !Auth().data().lastSeenWarningSeen()) {
+void LastSeenPrivacyController::confirmSave(bool someAreDisallowed, FnMut<void()> saveCallback) {
+	if (someAreDisallowed && !Auth().settings().lastSeenWarningSeen()) {
 		auto weakBox = std::make_shared<QPointer<ConfirmBox>>();
 		auto callback = [weakBox, saveCallback = std::move(saveCallback)]() mutable {
 			if (auto box = *weakBox) {
 				box->closeBox();
 			}
 			saveCallback();
-			Auth().data().setLastSeenWarningSeen(true);
+			Auth().settings().setLastSeenWarningSeen(true);
 			Local::writeUserSettings();
 		};
 		auto box = Box<ConfirmBox>(lang(lng_edit_privacy_lastseen_warning), lang(lng_continue), lang(lng_cancel), std::move(callback));

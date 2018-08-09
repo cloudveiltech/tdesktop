@@ -23,32 +23,49 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_file_parser.h"
 #include "lang/lang_cloud_manager.h"
 #include "messenger.h"
-#include "autoupdater.h"
+#include "core/update_checker.h"
 
 namespace Settings {
 
-#ifndef TDESKTOP_DISABLE_AUTOUPDATE
 UpdateStateRow::UpdateStateRow(QWidget *parent) : RpWidget(parent)
 , _check(this, lang(lng_settings_check_now))
 , _restart(this, lang(lng_settings_update_now)) {
+	Expects(!Core::UpdaterDisabled());
+
 	connect(_check, SIGNAL(clicked()), this, SLOT(onCheck()));
 	connect(_restart, SIGNAL(clicked()), this, SIGNAL(restart()));
 
-	Sandbox::connect(SIGNAL(updateChecking()), this, SLOT(onChecking()));
-	Sandbox::connect(SIGNAL(updateLatest()), this, SLOT(onLatest()));
-	Sandbox::connect(SIGNAL(updateProgress(qint64, qint64)), this, SLOT(onDownloading(qint64, qint64)));
-	Sandbox::connect(SIGNAL(updateFailed()), this, SLOT(onFailed()));
-	Sandbox::connect(SIGNAL(updateReady()), this, SLOT(onReady()));
-
 	_versionText = lng_settings_current_version_label(lt_version, currentVersionText());
 
-	switch (Sandbox::updatingState()) {
-	case Application::UpdatingDownload:
+	Core::UpdateChecker checker;
+	checker.checking() | rpl::start_with_next([=] {
+		onChecking();
+	}, lifetime());
+	checker.isLatest() | rpl::start_with_next([=] {
+		onLatest();
+	}, lifetime());
+	checker.progress(
+	) | rpl::start_with_next([=](Core::UpdateChecker::Progress progress) {
+		onDownloading(progress.already, progress.size);
+	}, lifetime());
+	checker.failed() | rpl::start_with_next([=] {
+		onFailed();
+	}, lifetime());
+	checker.ready() | rpl::start_with_next([=] {
+		onReady();
+	}, lifetime());
+
+	switch (checker.state()) {
+	case Core::UpdateChecker::State::Download:
 		setState(State::Download, true);
-		setDownloadProgress(Sandbox::updatingReady(), Sandbox::updatingSize());
-	break;
-	case Application::UpdatingReady: setState(State::Ready, true); break;
-	default: setState(State::None, true); break;
+		setDownloadProgress(checker.already(), checker.size());
+		break;
+	case Core::UpdateChecker::State::Ready:
+		setState(State::Ready, true);
+		break;
+	default:
+		setState(State::None, true);
+		break;
 	}
 }
 
@@ -89,9 +106,11 @@ void UpdateStateRow::paintEvent(QPaintEvent *e) {
 void UpdateStateRow::onCheck() {
 	if (!cAutoUpdate()) return;
 
+	Core::UpdateChecker checker;
+
 	setState(State::Check);
 	cSetLastUpdateCheck(0);
-	Sandbox::startUpdateCheck();
+	checker.start();
 }
 
 void UpdateStateRow::setState(State state, bool force) {
@@ -142,12 +161,16 @@ void UpdateStateRow::onReady() {
 void UpdateStateRow::onFailed() {
 	setState(State::Fail);
 }
-#endif // !TDESKTOP_DISABLE_AUTOUPDATE
 
 GeneralWidget::GeneralWidget(QWidget *parent, UserData *self) : BlockWidget(parent, self, lang(lng_settings_section_general))
 , _changeLanguage(this, lang(lng_settings_change_lang), st::boxLinkButton) {
 	connect(_changeLanguage, SIGNAL(clicked()), this, SLOT(onChangeLanguage()));
 	refreshControls();
+}
+
+int GeneralWidget::getUpdateTop() const {
+	// Just scroll to the top of the whole General widget
+	return Core::UpdaterDisabled() ? -1 : 0;
 }
 
 int GeneralWidget::resizeGetHeight(int newWidth) {
@@ -161,15 +184,15 @@ void GeneralWidget::refreshControls() {
 	style::margins marginSmall(0, 0, 0, st::settingsSmallSkip);
 	style::margins slidedPadding(0, marginSmall.bottom() / 2, 0, marginSmall.bottom() - (marginSmall.bottom() / 2));
 
-#ifndef TDESKTOP_DISABLE_AUTOUPDATE
-	createChildRow(_updateAutomatically, marginSub, lang(lng_settings_update_automatically), [this](bool) { onUpdateAutomatically(); }, cAutoUpdate());
-	style::margins marginLink(st::defaultCheck.diameter + st::defaultBoxCheckbox.textPosition.x(), 0, 0, st::settingsSkip);
-	createChildRow(_updateRow, marginLink, slidedPadding);
-	connect(_updateRow->entity(), SIGNAL(restart()), this, SLOT(onRestart()));
-	if (!cAutoUpdate()) {
-		_updateRow->hide(anim::type::instant);
+	if (!Core::UpdaterDisabled()) {
+		createChildRow(_updateAutomatically, marginSub, lang(lng_settings_update_automatically), [this](bool) { onUpdateAutomatically(); }, cAutoUpdate());
+		style::margins marginLink(st::defaultCheck.diameter + st::defaultBoxCheckbox.textPosition.x(), 0, 0, st::settingsSkip);
+		createChildRow(_updateRow, marginLink, slidedPadding);
+		connect(_updateRow->entity(), SIGNAL(restart()), this, SLOT(onRestart()));
+		if (!cAutoUpdate()) {
+			_updateRow->hide(anim::type::instant);
+		}
 	}
-#endif // !TDESKTOP_DISABLE_AUTOUPDATE
 
 	if (cPlatform() == dbipWindows || cSupportTray()) {
 		auto workMode = Global::WorkMode().value();
@@ -211,26 +234,27 @@ void GeneralWidget::onChangeLanguage() {
 }
 
 void GeneralWidget::onRestart() {
-#ifndef TDESKTOP_DISABLE_AUTOUPDATE
-	checkReadyUpdate();
-#endif // !TDESKTOP_DISABLE_AUTOUPDATE
+	if (!Core::UpdaterDisabled()) {
+		Core::checkReadyUpdate();
+	}
 	App::restart();
 }
 
-#ifndef TDESKTOP_DISABLE_AUTOUPDATE
 void GeneralWidget::onUpdateAutomatically() {
+	Expects(!Core::UpdaterDisabled());
+
 	cSetAutoUpdate(_updateAutomatically->checked());
 	Local::writeSettings();
 	_updateRow->toggle(
 		cAutoUpdate(),
 		anim::type::normal);
+	Core::UpdateChecker checker;
 	if (cAutoUpdate()) {
-		Sandbox::startUpdateCheck();
+		checker.start();
 	} else {
-		Sandbox::stopUpdate();
+		checker.stop();
 	}
 }
-#endif // !TDESKTOP_DISABLE_AUTOUPDATE
 
 void GeneralWidget::onEnableTrayIcon() {
 	if ((!_enableTrayIcon->checked() || cPlatform() != dbipWindows) && _enableTaskbarIcon && !_enableTaskbarIcon->checked()) {

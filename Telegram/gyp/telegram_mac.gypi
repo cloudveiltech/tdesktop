@@ -7,8 +7,6 @@
 {
   'conditions': [[ 'build_mac', {
     'xcode_settings': {
-      'GCC_PREFIX_HEADER': '<(src_loc)/stdafx.h',
-      'GCC_PRECOMPILE_PREFIX_HEADER': 'YES',
       'INFOPLIST_FILE': '../Telegram.plist',
       'CURRENT_PROJECT_VERSION': '<!(./print_version.sh)',
       'ASSETCATALOG_COMPILER_APPICON_NAME': 'AppIcon',
@@ -38,14 +36,8 @@
         },
       },
     },
-    'mac_bundle': '1',
-    'mac_bundle_resources': [
-      '<!@(python -c "for s in \'<@(langpacks)\'.split(\' \'): print(\'<(res_loc)/langs/\' + s + \'.lproj/Localizable.strings\')")',
-      '../Telegram/Images.xcassets',
-    ],
   }], [ 'build_macold', {
     'xcode_settings': {
-      'PRODUCT_BUNDLE_IDENTIFIER': 'com.tdesktop.Telegram',
       'OTHER_CPLUSPLUSFLAGS': [ '-nostdinc++' ],
       'OTHER_LDFLAGS': [
         '-lbase',
@@ -77,11 +69,17 @@
     ],
     'configurations': {
       'Debug': {
+        'xcode_settings': {
+          'PRODUCT_BUNDLE_IDENTIFIER': 'com.tdesktop.TelegramDebugOld',
+        },
         'library_dirs': [
           '<(libs_loc)/macold/crashpad/out/Debug',
         ],
       },
       'Release': {
+        'xcode_settings': {
+          'PRODUCT_BUNDLE_IDENTIFIER': 'com.tdesktop.Telegram',
+        },
         'library_dirs': [
           '<(libs_loc)/macold/crashpad/out/Release',
         ],
@@ -147,13 +145,24 @@
     },
   }], [ '"<(build_macold)" != "1" and "<(build_macstore)" != "1"', {
     'xcode_settings': {
-      'PRODUCT_BUNDLE_IDENTIFIER': 'com.tdesktop.Telegram',
       'OTHER_LDFLAGS': [
         '-lbase',
         '-lcrashpad_client',
         '-lcrashpad_util',
       ],
      },
+    'configurations': {
+      'Debug': {
+        'xcode_settings': {
+          'PRODUCT_BUNDLE_IDENTIFIER': 'com.tdesktop.TelegramDebug',
+        },
+      },
+      'Release': {
+        'xcode_settings': {
+          'PRODUCT_BUNDLE_IDENTIFIER': 'com.tdesktop.Telegram',
+        },
+      },
+    },
     'postbuilds': [{
       'postbuild_name': 'Force Frameworks path',
       'action': [

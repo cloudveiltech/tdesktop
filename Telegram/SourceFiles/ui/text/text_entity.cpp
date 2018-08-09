@@ -24,20 +24,51 @@ QString ExpressionDomainExplicit() {
 }
 
 QString ExpressionMailNameAtEnd() {
-	// Matches e-mail first part (before '@') at the end of the string.
+	// Matches email first part (before '@') at the end of the string.
 	// First we find a domain without protocol (like "gmail.com"), then
 	// we find '@' before it and then we look for the name before '@'.
 	return qsl("[a-zA-Z\\-_\\.0-9]{1,256}$");
 }
 
+QString Quotes() {
+	// UTF8 quotes and ellipsis
+	return QString::fromUtf8("\xC2\xAB\xC2\xBB\xE2\x80\x9C\xE2\x80\x9D\xE2\x80\x98\xE2\x80\x99\xE2\x80\xA6");
+}
+
 QString ExpressionSeparators(const QString &additional) {
-	// UTF8 quotes
-	const auto quotes = QString::fromUtf8("\xC2\xAB\xC2\xBB\xE2\x80\x9C\xE2\x80\x9D\xE2\x80\x98\xE2\x80\x99");
+	static const auto quotes = Quotes();
 	return qsl("\\s\\.,:;<>|'\"\\[\\]\\{\\}\\~\\!\\?\\%\\^\\(\\)\\-\\+=\\x10") + quotes + additional;
+}
+
+QString Separators(const QString &additional) {
+	static const auto quotes = Quotes();
+	return qsl(" \x10\n\r\t.,:;<>|'\"[]{}~!?%^()-+=")
+		+ QChar(0xfdd0) // QTextBeginningOfFrame
+		+ QChar(0xfdd1) // QTextEndOfFrame
+		+ QChar(QChar::ParagraphSeparator)
+		+ QChar(QChar::LineSeparator)
+		+ quotes
+		+ additional;
+}
+
+QString SeparatorsBold() {
+	return Separators(qsl("`/"));
+}
+
+QString SeparatorsItalic() {
+	return Separators(qsl("`*/"));
+}
+
+QString SeparatorsMono() {
+	return Separators(qsl("*/"));
 }
 
 QString ExpressionHashtag() {
 	return qsl("(^|[") + ExpressionSeparators(qsl("`\\*/")) + qsl("])#[\\w]{2,64}([\\W]|$)");
+}
+
+QString ExpressionHashtagExclude() {
+	return qsl("^#?\\d+$");
 }
 
 QString ExpressionMention() {
@@ -48,28 +79,14 @@ QString ExpressionBotCommand() {
 	return qsl("(^|[") + ExpressionSeparators(qsl("`\\*")) + qsl("])/[A-Za-z_0-9]{1,64}(@[A-Za-z_0-9]{5,32})?([\\W]|$)");
 }
 
-QString ExpressionMarkdownBold() {
-	auto separators = ExpressionSeparators(qsl("`/"));
-	return qsl("(^|[") + separators + qsl("])(\\*\\*)[\\s\\S]+?(\\*\\*)([") + separators + qsl("]|$)");
-}
-
-QString ExpressionMarkdownItalic() {
-	auto separators = ExpressionSeparators(qsl("`\\*/"));
-	return qsl("(^|[") + separators + qsl("])(__)[\\s\\S]+?(__)([") + separators + qsl("]|$)");
-}
-
-QString ExpressionMarkdownMonoInline() { // code
-	auto separators = ExpressionSeparators(qsl("\\*/"));
-	return qsl("(^|[") + separators + qsl("])(`)[^\\n]+?(`)([") + separators + qsl("]|$)");
-}
-
-QString ExpressionMarkdownMonoBlock() { // pre
-	auto separators = ExpressionSeparators(qsl("\\*/"));
-	return qsl("(^|[") + separators + qsl("])(````?)[\\s\\S]+?(````?)([") + separators + qsl("]|$)");
-}
-
 QRegularExpression CreateRegExp(const QString &expression) {
-	return QRegularExpression(expression, QRegularExpression::UseUnicodePropertiesOption);
+	auto result = QRegularExpression(
+		expression,
+		QRegularExpression::UseUnicodePropertiesOption);
+#ifndef OS_MAC_OLD
+	result.optimize();
+#endif // OS_MAC_OLD
+	return result;
 }
 
 QSet<int32> CreateValidProtocols() {
@@ -1141,6 +1158,11 @@ const QRegularExpression &RegExpHashtag() {
 	return result;
 }
 
+const QRegularExpression &RegExpHashtagExclude() {
+	static const auto result = CreateRegExp(ExpressionHashtagExclude());
+	return result;
+}
+
 const QRegularExpression &RegExpMention() {
 	static const auto result = CreateRegExp(ExpressionMention());
 	return result;
@@ -1151,24 +1173,36 @@ const QRegularExpression &RegExpBotCommand() {
 	return result;
 }
 
-const QRegularExpression &RegExpMarkdownBold() {
-	static const auto result = CreateRegExp(ExpressionMarkdownBold());
-	return result;
+QString MarkdownBoldGoodBefore() {
+	return SeparatorsBold();
 }
 
-const QRegularExpression &RegExpMarkdownItalic() {
-	static const auto result = CreateRegExp(ExpressionMarkdownItalic());
-	return result;
+QString MarkdownBoldBadAfter() {
+	return qsl("*");
 }
 
-const QRegularExpression &RegExpMarkdownMonoInline() {
-	static const auto result = CreateRegExp(ExpressionMarkdownMonoInline());
-	return result;
+QString MarkdownItalicGoodBefore() {
+	return SeparatorsItalic();
 }
 
-const QRegularExpression &RegExpMarkdownMonoBlock() {
-	static const auto result = CreateRegExp(ExpressionMarkdownMonoBlock());
-	return result;
+QString MarkdownItalicBadAfter() {
+	return qsl("_");
+}
+
+QString MarkdownCodeGoodBefore() {
+	return SeparatorsMono();
+}
+
+QString MarkdownCodeBadAfter() {
+	return qsl("`\n\r");
+}
+
+QString MarkdownPreGoodBefore() {
+	return SeparatorsMono();
+}
+
+QString MarkdownPreBadAfter() {
+	return qsl("`");
 }
 
 bool IsValidProtocol(const QString &protocol) {
@@ -1449,6 +1483,8 @@ EntitiesInText EntitiesFromMTP(const QVector<MTPMessageEntity> &entities) {
 			case mtpc_messageEntityTextUrl: { auto &d = entity.c_messageEntityTextUrl(); result.push_back(EntityInText(EntityInTextCustomUrl, d.voffset.v, d.vlength.v, Clean(qs(d.vurl)))); } break;
 			case mtpc_messageEntityEmail: { auto &d = entity.c_messageEntityEmail(); result.push_back(EntityInText(EntityInTextEmail, d.voffset.v, d.vlength.v)); } break;
 			case mtpc_messageEntityHashtag: { auto &d = entity.c_messageEntityHashtag(); result.push_back(EntityInText(EntityInTextHashtag, d.voffset.v, d.vlength.v)); } break;
+			case mtpc_messageEntityCashtag: { auto &d = entity.c_messageEntityCashtag(); result.push_back(EntityInText(EntityInTextCashtag, d.voffset.v, d.vlength.v)); } break;
+			case mtpc_messageEntityPhone: break; // Skipping phones.
 			case mtpc_messageEntityMention: { auto &d = entity.c_messageEntityMention(); result.push_back(EntityInText(EntityInTextMention, d.voffset.v, d.vlength.v)); } break;
 			case mtpc_messageEntityMentionName: {
 				auto &d = entity.c_messageEntityMentionName();
@@ -1498,7 +1534,8 @@ MTPVector<MTPMessageEntity> EntitiesToMTP(const EntitiesInText &entities, Conver
 			&& entity.type() != EntityInTextItalic
 			&& entity.type() != EntityInTextCode
 			&& entity.type() != EntityInTextPre
-			&& entity.type() != EntityInTextMentionName) {
+			&& entity.type() != EntityInTextMentionName
+			&& entity.type() != EntityInTextCustomUrl) {
 			continue;
 		}
 
@@ -1509,6 +1546,7 @@ MTPVector<MTPMessageEntity> EntitiesToMTP(const EntitiesInText &entities, Conver
 		case EntityInTextCustomUrl: v.push_back(MTP_messageEntityTextUrl(offset, length, MTP_string(entity.data()))); break;
 		case EntityInTextEmail: v.push_back(MTP_messageEntityEmail(offset, length)); break;
 		case EntityInTextHashtag: v.push_back(MTP_messageEntityHashtag(offset, length)); break;
+		case EntityInTextCashtag: v.push_back(MTP_messageEntityCashtag(offset, length)); break;
 		case EntityInTextMention: v.push_back(MTP_messageEntityMention(offset, length)); break;
 		case EntityInTextMentionName: {
 			auto inputUser = ([](const QString &data) -> MTPInputUser {
@@ -1534,259 +1572,16 @@ MTPVector<MTPMessageEntity> EntitiesToMTP(const EntitiesInText &entities, Conver
 	return MTP_vector<MTPMessageEntity>(std::move(v));
 }
 
-struct MarkdownPart {
-	MarkdownPart() = default;
-	MarkdownPart(EntityInTextType type) : type(type), outerStart(-1) {
-	}
-	EntityInTextType type = EntityInTextInvalid;
-	int outerStart = 0;
-	int innerStart = 0;
-	int innerEnd = 0;
-	int outerEnd = 0;
-	bool addNewlineBefore = false;
-	bool addNewlineAfter = false;
-};
-
-MarkdownPart GetMarkdownPart(EntityInTextType type, const QString &text, int matchFromOffset, bool rich) {
-	auto result = MarkdownPart();
-	auto regexp = [type] {
-		switch (type) {
-		case EntityInTextBold: return RegExpMarkdownBold();
-		case EntityInTextItalic: return RegExpMarkdownItalic();
-		case EntityInTextCode: return RegExpMarkdownMonoInline();
-		case EntityInTextPre: return RegExpMarkdownMonoBlock();
-		}
-		Unexpected("Type in GetMardownPart()");
-	};
-
-	if (matchFromOffset > 1) {
-		// If matchFromOffset is after some separator that is allowed to
-		// start our markdown tag the tag itself will start where we want it.
-		// So we allow to see this separator and make a match.
-		--matchFromOffset;
-	}
-	auto match = regexp().match(text, matchFromOffset);
-	if (!match.hasMatch()) {
-		return result;
-	}
-
-	result.outerStart = match.capturedStart();
-	result.outerEnd = match.capturedEnd();
-	if (!match.capturedRef(1).isEmpty()) {
-		++result.outerStart;
-	}
-	if (!match.capturedRef(4).isEmpty()) {
-		--result.outerEnd;
-	}
-	result.innerStart = result.outerStart + match.capturedLength(2);
-	result.innerEnd = result.outerEnd - match.capturedLength(3);
-	result.type = type;
+TextWithEntities ParseEntities(const QString &text, int32 flags) {
+	const auto rich = ((flags & TextParseRichText) != 0);
+	auto result = TextWithEntities{ text, EntitiesInText() };
+	ParseEntities(result, flags, rich);
 	return result;
 }
 
-void AdjustMarkdownPrePart(MarkdownPart &result, const TextWithEntities &text, bool rich) {
-	auto start = text.text.constData();
-	auto length = text.text.size();
-	auto lastEntityBeforeEnd = 0;
-	auto firstEntityInsideStart = result.innerEnd;
-	auto lastEntityInsideEnd = result.innerStart;
-	auto firstEntityAfterStart = length;
-	for_const (auto &entity, text.entities) {
-		if (entity.offset() < result.outerStart) {
-			lastEntityBeforeEnd = entity.offset() + entity.length();
-		} else if (entity.offset() >= result.outerEnd) {
-			firstEntityAfterStart = entity.offset();
-			break;
-		} else if (entity.offset() >= result.innerStart) {
-			accumulate_min(firstEntityInsideStart, entity.offset());
-			lastEntityInsideEnd = entity.offset() + entity.length();
-		}
-	}
-	while (result.outerStart > lastEntityBeforeEnd
-		&& chIsSpace(*(start + result.outerStart - 1), rich)
-		&& !chIsNewline(*(start + result.outerStart - 1))) {
-		--result.outerStart;
-	}
-	result.addNewlineBefore = (result.outerStart > 0 && !chIsNewline(*(start + result.outerStart - 1)));
-
-	for (auto testInnerStart = result.innerStart; testInnerStart < firstEntityInsideStart; ++testInnerStart) {
-		if (chIsNewline(*(start + testInnerStart))) {
-			result.innerStart = testInnerStart + 1;
-			break;
-		} else if (!chIsSpace(*(start + testInnerStart))) {
-			break;
-		}
-	}
-	for (auto testInnerEnd = result.innerEnd; lastEntityInsideEnd < testInnerEnd;) {
-		--testInnerEnd;
-		if (chIsNewline(*(start + testInnerEnd))) {
-			result.innerEnd = testInnerEnd;
-			break;
-		} else if (!chIsSpace(*(start + testInnerEnd))) {
-			break;
-		}
-	}
-
-	while (result.outerEnd < firstEntityAfterStart
-		&& chIsSpace(*(start + result.outerEnd))
-		&& !chIsNewline(*(start + result.outerEnd))) {
-		++result.outerEnd;
-	}
-	result.addNewlineAfter = (result.outerEnd < length && !chIsNewline(*(start + result.outerEnd)));
-}
-
-void ParseMarkdown(
-		TextWithEntities &result,
-		const EntitiesInText &linkEntities,
-		bool rich) {
-	if (result.empty()) {
-		return;
-	}
-	auto newResult = TextWithEntities();
-
-	MarkdownPart computedParts[4] = {
-		{ EntityInTextBold },
-		{ EntityInTextItalic },
-		{ EntityInTextPre },
-		{ EntityInTextCode },
-	};
-
-	auto existingEntityIndex = 0;
-	auto existingEntitiesCount = result.entities.size();
-	auto existingEntityShiftLeft = 0;
-
-	auto copyFromOffset = 0;
-	auto matchFromOffset = 0;
-	auto length = result.text.size();
-	auto nextCommandOffset = rich ? 0 : length;
-	auto inLink = false;
-	auto commandIsLink = false;
-	const auto start = result.text.constData();
-	for (; matchFromOffset < length;) {
-		if (nextCommandOffset <= matchFromOffset) {
-			for (nextCommandOffset = matchFromOffset; nextCommandOffset != length; ++nextCommandOffset) {
-				if (*(start + nextCommandOffset) == TextCommand) {
-					inLink = commandIsLink;
-					commandIsLink = textcmdStartsLink(start, length, nextCommandOffset);
-					break;
-				}
-			}
-			if (nextCommandOffset >= length) {
-				inLink = commandIsLink;
-				commandIsLink = false;
-			}
-		}
-		auto part = MarkdownPart();
-		auto checkType = [&part, &result, matchFromOffset, rich](MarkdownPart &computedPart) {
-			if (computedPart.type == EntityInTextInvalid) {
-				return;
-			}
-			if (matchFromOffset > computedPart.outerStart) {
-				computedPart = GetMarkdownPart(computedPart.type, result.text, matchFromOffset, rich);
-				if (computedPart.type == EntityInTextInvalid) {
-					return;
-				}
-			}
-			if (part.type == EntityInTextInvalid || part.outerStart > computedPart.outerStart) {
-				part = computedPart;
-			}
-		};
-		for (auto &computedPart : computedParts) {
-			checkType(computedPart);
-		}
-		if (part.type == EntityInTextInvalid) {
-			break;
-		}
-
-		// Check if start sequence intersects a command.
-		auto inCommand = checkTagStartInCommand(
-			start,
-			length,
-			part.outerStart,
-			nextCommandOffset,
-			commandIsLink,
-			inLink);
-		if (inCommand || inLink) {
-			matchFromOffset = nextCommandOffset;
-			continue;
-		}
-
-		// Check if start or end sequences intersect any existing entity.
-		auto intersectedEntityEnd = 0;
-		for_const (auto &entity, result.entities) {
-			if (qMin(part.innerStart, entity.offset() + entity.length()) > qMax(part.outerStart, entity.offset()) ||
-				qMin(part.outerEnd, entity.offset() + entity.length()) > qMax(part.innerEnd, entity.offset())) {
-				intersectedEntityEnd = entity.offset() + entity.length();
-				break;
-			}
-		}
-
-		// Check if any of sequence outer edges are inside a link.
-		for_const (auto &entity, linkEntities) {
-			const auto startIntersects = (part.outerStart >= entity.offset())
-				&& (part.outerStart < entity.offset() + entity.length());
-			const auto endIntersects = (part.outerEnd > entity.offset())
-				&& (part.outerEnd <= entity.offset() + entity.length());
-			if (startIntersects || endIntersects) {
-				intersectedEntityEnd = entity.offset() + entity.length();
-				break;
-			}
-		}
-
-		if (intersectedEntityEnd > 0) {
-			matchFromOffset = qMax(part.innerStart, intersectedEntityEnd);
-			continue;
-		}
-
-		if (part.type == EntityInTextPre) {
-			AdjustMarkdownPrePart(part, result, rich);
-		}
-
-		if (newResult.text.isEmpty()) newResult.text.reserve(result.text.size());
-		for (; existingEntityIndex < existingEntitiesCount && result.entities[existingEntityIndex].offset() < part.innerStart; ++existingEntityIndex) {
-			auto &entity = result.entities[existingEntityIndex];
-			newResult.entities.push_back(entity);
-			newResult.entities.back().shiftLeft(existingEntityShiftLeft);
-		}
-		if (part.outerStart > copyFromOffset) {
-			newResult.text.append(start + copyFromOffset, part.outerStart - copyFromOffset);
-		}
-		if (part.addNewlineBefore) newResult.text.append('\n');
-		existingEntityShiftLeft += (part.innerStart - part.outerStart) - (part.addNewlineBefore ? 1 : 0);
-
-		auto entityStart = newResult.text.size();
-		auto entityLength = part.innerEnd - part.innerStart;
-		newResult.entities.push_back(EntityInText(part.type, entityStart, entityLength));
-
-		for (; existingEntityIndex < existingEntitiesCount && result.entities[existingEntityIndex].offset() <= part.innerEnd; ++existingEntityIndex) {
-			auto &entity = result.entities[existingEntityIndex];
-			newResult.entities.push_back(entity);
-			newResult.entities.back().shiftLeft(existingEntityShiftLeft);
-		}
-		newResult.text.append(start + part.innerStart, entityLength);
-		if (part.addNewlineAfter) newResult.text.append('\n');
-		existingEntityShiftLeft += (part.outerEnd - part.innerEnd) - (part.addNewlineAfter ? 1 : 0);
-
-		copyFromOffset = matchFromOffset = part.outerEnd;
-	}
-	if (!newResult.empty()) {
-		newResult.text.append(start + copyFromOffset, length - copyFromOffset);
-		for (; existingEntityIndex < existingEntitiesCount; ++existingEntityIndex) {
-			auto &entity = result.entities[existingEntityIndex];
-			newResult.entities.push_back(entity);
-			newResult.entities.back().shiftLeft(existingEntityShiftLeft);
-		}
-		result = std::move(newResult);
-	}
-}
-
-// Some code is duplicated in flattextarea.cpp!
+// Some code is duplicated in message_field.cpp!
 void ParseEntities(TextWithEntities &result, int32 flags, bool rich) {
-	if (flags & TextParseMarkdown) { // parse markdown entities (bold, italic, code and pre)
-		auto copy = TextWithEntities{ result.text, EntitiesInText() };
-		ParseEntities(copy, TextParseLinks, false);
-		ParseMarkdown(result, copy.entities, rich);
-	}
+	constexpr auto kNotFound = std::numeric_limits<int>::max();
 
 	auto newEntities = EntitiesInText();
 	bool withHashtags = (flags & TextParseHashtags);
@@ -1817,22 +1612,31 @@ void ParseEntities(TextWithEntities &result, int32 flags, bool rich) {
 
 		EntityInTextType lnkType = EntityInTextUrl;
 		int32 lnkStart = 0, lnkLength = 0;
-		int32 domainStart = mDomain.hasMatch() ? mDomain.capturedStart() : INT_MAX,
-			domainEnd = mDomain.hasMatch() ? mDomain.capturedEnd() : INT_MAX,
-			explicitDomainStart = mExplicitDomain.hasMatch() ? mExplicitDomain.capturedStart() : INT_MAX,
-			explicitDomainEnd = mExplicitDomain.hasMatch() ? mExplicitDomain.capturedEnd() : INT_MAX,
-			hashtagStart = mHashtag.hasMatch() ? mHashtag.capturedStart() : INT_MAX,
-			hashtagEnd = mHashtag.hasMatch() ? mHashtag.capturedEnd() : INT_MAX,
-			mentionStart = mMention.hasMatch() ? mMention.capturedStart() : INT_MAX,
-			mentionEnd = mMention.hasMatch() ? mMention.capturedEnd() : INT_MAX,
-			botCommandStart = mBotCommand.hasMatch() ? mBotCommand.capturedStart() : INT_MAX,
-			botCommandEnd = mBotCommand.hasMatch() ? mBotCommand.capturedEnd() : INT_MAX;
+		auto domainStart = mDomain.hasMatch() ? mDomain.capturedStart() : kNotFound,
+			domainEnd = mDomain.hasMatch() ? mDomain.capturedEnd() : kNotFound,
+			explicitDomainStart = mExplicitDomain.hasMatch() ? mExplicitDomain.capturedStart() : kNotFound,
+			explicitDomainEnd = mExplicitDomain.hasMatch() ? mExplicitDomain.capturedEnd() : kNotFound,
+			hashtagStart = mHashtag.hasMatch() ? mHashtag.capturedStart() : kNotFound,
+			hashtagEnd = mHashtag.hasMatch() ? mHashtag.capturedEnd() : kNotFound,
+			mentionStart = mMention.hasMatch() ? mMention.capturedStart() : kNotFound,
+			mentionEnd = mMention.hasMatch() ? mMention.capturedEnd() : kNotFound,
+			botCommandStart = mBotCommand.hasMatch() ? mBotCommand.capturedStart() : kNotFound,
+			botCommandEnd = mBotCommand.hasMatch() ? mBotCommand.capturedEnd() : kNotFound;
+		auto hashtagIgnore = false;
+		auto mentionIgnore = false;
+
 		if (mHashtag.hasMatch()) {
 			if (!mHashtag.capturedRef(1).isEmpty()) {
 				++hashtagStart;
 			}
 			if (!mHashtag.capturedRef(2).isEmpty()) {
 				--hashtagEnd;
+			}
+			if (RegExpHashtagExclude().match(
+				result.text.mid(
+					hashtagStart + 1,
+					hashtagEnd - hashtagStart - 1)).hasMatch()) {
+				hashtagIgnore = true;
 			}
 		}
 		while (mMention.hasMatch()) {
@@ -1849,8 +1653,7 @@ void ParseEntities(TextWithEntities &result, int32 flags, bool rich) {
 					mentionStart = mMention.capturedStart();
 					mentionEnd = mMention.capturedEnd();
 				} else {
-					mentionStart = INT_MAX;
-					mentionEnd = INT_MAX;
+					mentionIgnore = true;
 				}
 			} else {
 				break;
@@ -1864,7 +1667,11 @@ void ParseEntities(TextWithEntities &result, int32 flags, bool rich) {
 				--botCommandEnd;
 			}
 		}
-		if (!mDomain.hasMatch() && !mExplicitDomain.hasMatch() && !mHashtag.hasMatch() && !mMention.hasMatch() && !mBotCommand.hasMatch()) {
+		if (!mDomain.hasMatch()
+			&& !mExplicitDomain.hasMatch()
+			&& !mHashtag.hasMatch()
+			&& !mMention.hasMatch()
+			&& !mBotCommand.hasMatch()) {
 			break;
 		}
 
@@ -1873,8 +1680,20 @@ void ParseEntities(TextWithEntities &result, int32 flags, bool rich) {
 			domainEnd = explicitDomainEnd;
 			mDomain = mExplicitDomain;
 		}
-		if (mentionStart < hashtagStart && mentionStart < domainStart && mentionStart < botCommandStart) {
-			bool inCommand = checkTagStartInCommand(start, len, mentionStart, commandOffset, commandIsLink, inLink);
+		if (mentionStart < hashtagStart
+			&& mentionStart < domainStart
+			&& mentionStart < botCommandStart) {
+			if (mentionIgnore) {
+				offset = matchOffset = mentionEnd;
+				continue;
+			}
+			const auto inCommand = checkTagStartInCommand(
+				start,
+				len,
+				mentionStart,
+				commandOffset,
+				commandIsLink,
+				inLink);
 			if (inCommand || inLink) {
 				offset = matchOffset = commandOffset;
 				continue;
@@ -1883,8 +1702,19 @@ void ParseEntities(TextWithEntities &result, int32 flags, bool rich) {
 			lnkType = EntityInTextMention;
 			lnkStart = mentionStart;
 			lnkLength = mentionEnd - mentionStart;
-		} else if (hashtagStart < domainStart && hashtagStart < botCommandStart) {
-			bool inCommand = checkTagStartInCommand(start, len, hashtagStart, commandOffset, commandIsLink, inLink);
+		} else if (hashtagStart < domainStart
+			&& hashtagStart < botCommandStart) {
+			if (hashtagIgnore) {
+				offset = matchOffset = hashtagEnd;
+				continue;
+			}
+			const auto inCommand = checkTagStartInCommand(
+				start,
+				len,
+				hashtagStart,
+				commandOffset,
+				commandIsLink,
+				inLink);
 			if (inCommand || inLink) {
 				offset = matchOffset = commandOffset;
 				continue;
@@ -1894,7 +1724,13 @@ void ParseEntities(TextWithEntities &result, int32 flags, bool rich) {
 			lnkStart = hashtagStart;
 			lnkLength = hashtagEnd - hashtagStart;
 		} else if (botCommandStart < domainStart) {
-			bool inCommand = checkTagStartInCommand(start, len, botCommandStart, commandOffset, commandIsLink, inLink);
+			const auto inCommand = checkTagStartInCommand(
+				start,
+				len,
+				botCommandStart,
+				commandOffset,
+				commandIsLink,
+				inLink);
 			if (inCommand || inLink) {
 				offset = matchOffset = commandOffset;
 				continue;
@@ -1904,7 +1740,13 @@ void ParseEntities(TextWithEntities &result, int32 flags, bool rich) {
 			lnkStart = botCommandStart;
 			lnkLength = botCommandEnd - botCommandStart;
 		} else {
-			auto inCommand = checkTagStartInCommand(start, len, domainStart, commandOffset, commandIsLink, inLink);
+			const auto inCommand = checkTagStartInCommand(
+				start,
+				len,
+				domainStart,
+				commandOffset,
+				commandIsLink,
+				inLink);
 			if (inCommand || inLink) {
 				offset = matchOffset = commandOffset;
 				continue;
@@ -1991,74 +1833,6 @@ void ParseEntities(TextWithEntities &result, int32 flags, bool rich) {
 	}
 }
 
-QString ApplyEntities(const TextWithEntities &text) {
-	if (text.entities.isEmpty()) return text.text;
-
-	QMultiMap<int32, QString> closingTags;
-	QMap<EntityInTextType, QString> tags;
-	tags.insert(EntityInTextCode, qsl("`"));
-	tags.insert(EntityInTextPre, qsl("```"));
-	tags.insert(EntityInTextBold, qsl("**"));
-	tags.insert(EntityInTextItalic, qsl("__"));
-	constexpr auto kLargestOpenCloseLength = 6;
-
-	QString result;
-	int32 size = text.text.size();
-	const QChar *b = text.text.constData(), *already = b, *e = b + size;
-	auto entity = text.entities.cbegin(), end = text.entities.cend();
-	auto skipTillRelevantAndGetTag = [&entity, &end, size, &tags] {
-		while (entity != end) {
-			if (entity->length() <= 0 || entity->offset() >= size) {
-				++entity;
-				continue;
-			}
-			auto it = tags.constFind(entity->type());
-			if (it == tags.cend()) {
-				++entity;
-				continue;
-			}
-			return it.value();
-		}
-		return QString();
-	};
-
-	auto tag = skipTillRelevantAndGetTag();
-	while (entity != end || !closingTags.isEmpty()) {
-		auto nextOpenEntity = (entity == end) ? (size + 1) : entity->offset();
-		auto nextCloseEntity = closingTags.isEmpty() ? (size + 1) : closingTags.cbegin().key();
-		if (nextOpenEntity <= nextCloseEntity) {
-			if (result.isEmpty()) result.reserve(text.text.size() + text.entities.size() * kLargestOpenCloseLength);
-
-			const QChar *offset = b + nextOpenEntity;
-			if (offset > already) {
-				result.append(already, offset - already);
-				already = offset;
-			}
-			result.append(tag);
-			closingTags.insert(qMin(entity->offset() + entity->length(), size), tag);
-
-			++entity;
-			tag = skipTillRelevantAndGetTag();
-		} else {
-			const QChar *offset = b + nextCloseEntity;
-			if (offset > already) {
-				result.append(already, offset - already);
-				already = offset;
-			}
-			result.append(closingTags.cbegin().value());
-			closingTags.erase(closingTags.begin());
-		}
-	}
-	if (result.isEmpty()) {
-		return text.text;
-	}
-	const QChar *offset = b + size;
-	if (offset > already) {
-		result.append(already, offset - already);
-	}
-	return result;
-}
-
 void MoveStringPart(TextWithEntities &result, int to, int from, int count) {
 	if (!count) return;
 	if (to != from) {
@@ -2085,60 +1859,11 @@ void MovePartAndGoForward(TextWithEntities &result, int &to, int &from, int coun
 	from += count;
 }
 
-void ReplaceStringWithChar(const QLatin1String &from, QChar to, TextWithEntities &result, bool checkSpace = false) {
-	Expects(from.size() > 1);
-	auto len = from.size(), s = result.text.size(), offset = 0, length = 0;
-	auto i = result.entities.begin(), e = result.entities.end();
-	for (auto start = result.text.data(); offset < s;) {
-		auto nextOffset = result.text.indexOf(from, offset);
-		if (nextOffset < 0) {
-			MovePartAndGoForward(result, length, offset, s - offset);
-			break;
-		}
-
-		if (checkSpace) {
-			bool spaceBefore = (nextOffset > 0) && (start + nextOffset - 1)->isSpace();
-			bool spaceAfter = (nextOffset + len < s) && (start + nextOffset + len)->isSpace();
-			if (!spaceBefore && !spaceAfter) {
-				MovePartAndGoForward(result, length, offset, nextOffset - offset + len + 1);
-				continue;
-			}
-		}
-
-		auto skip = false;
-		for (; i != e; ++i) { // find and check next finishing entity
-			if (i->offset() + i->length() > nextOffset) {
-				skip = (i->offset() < nextOffset + len);
-				break;
-			}
-		}
-		if (skip) {
-			MovePartAndGoForward(result, length, offset, nextOffset - offset + len);
-			continue;
-		}
-
-		MovePartAndGoForward(result, length, offset, nextOffset - offset);
-
-		*(start + length) = to;
-		++length;
-		offset += len;
-	}
-	if (length < s) result.text.resize(length);
-}
-
 void PrepareForSending(TextWithEntities &result, int32 flags) {
 	ApplyServerCleaning(result);
 
 	if (flags) {
 		ParseEntities(result, flags);
-	}
-
-	ReplaceStringWithChar(qstr("--"), QChar(8212), result, true);
-	ReplaceStringWithChar(qstr("<<"), QChar(171), result);
-	ReplaceStringWithChar(qstr(">>"), QChar(187), result);
-
-	if (cReplaceEmojis()) {
-		Ui::Emoji::ReplaceInText(result);
 	}
 
 	Trim(result);
@@ -2220,6 +1945,60 @@ void Trim(TextWithEntities &result) {
 			break;
 		}
 	}
+}
+
+QByteArray SerializeTags(const TextWithTags::Tags &tags) {
+	if (tags.isEmpty()) {
+		return QByteArray();
+	}
+
+	QByteArray tagsSerialized;
+	{
+		QDataStream stream(&tagsSerialized, QIODevice::WriteOnly);
+		stream.setVersion(QDataStream::Qt_5_1);
+		stream << qint32(tags.size());
+		for (const auto &tag : tags) {
+			stream << qint32(tag.offset) << qint32(tag.length) << tag.id;
+		}
+	}
+	return tagsSerialized;
+}
+
+TextWithTags::Tags DeserializeTags(QByteArray data, int textLength) {
+	auto result = TextWithTags::Tags();
+	if (data.isEmpty()) {
+		return result;
+	}
+
+	QDataStream stream(data);
+	stream.setVersion(QDataStream::Qt_5_1);
+
+	qint32 tagCount = 0;
+	stream >> tagCount;
+	if (stream.status() != QDataStream::Ok) {
+		return result;
+	}
+	if (tagCount <= 0 || tagCount > textLength) {
+		return result;
+	}
+
+	for (auto i = 0; i != tagCount; ++i) {
+		qint32 offset = 0, length = 0;
+		QString id;
+		stream >> offset >> length >> id;
+		if (stream.status() != QDataStream::Ok) {
+			return result;
+		}
+		if (offset < 0 || length <= 0 || offset + length > textLength) {
+			return result;
+		}
+		result.push_back({ offset, length, id });
+	}
+	return result;
+}
+
+QString TagsMimeType() {
+	return qsl("application/x-td-field-tags");
 }
 
 } // namespace TextUtilities

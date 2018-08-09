@@ -7,9 +7,19 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "logs.h"
 #include "core/basic_types.h"
 #include "base/flags.h"
 #include "base/algorithm.h"
+#include "base/assertion.h"
+#include "base/bytes.h"
+
+#include <QtCore/QReadWriteLock>
+#include <QtCore/QRegularExpression>
+#include <QtNetwork/QNetworkProxy>
+
+#include <cmath>
+#include <set>
 
 // Define specializations for QByteArray for Qt 5.3.2, because
 // QByteArray in Qt 5.3.2 doesn't declare "pointer" subtype.
@@ -92,31 +102,6 @@ using set_of_unique_ptr = std::set<std::unique_ptr<T>, base::pointer_comparator<
 template <typename T>
 using set_of_shared_ptr = std::set<std::shared_ptr<T>, base::pointer_comparator<T>>;
 
-using byte_span = gsl::span<gsl::byte>;
-using const_byte_span = gsl::span<const gsl::byte>;
-using byte_vector = std::vector<gsl::byte>;
-template <size_t N>
-using byte_array = std::array<gsl::byte, N>;
-
-inline void copy_bytes(byte_span destination, const_byte_span source) {
-	Expects(destination.size() >= source.size());
-	memcpy(destination.data(), source.data(), source.size());
-}
-
-inline void move_bytes(byte_span destination, const_byte_span source) {
-	Expects(destination.size() >= source.size());
-	memmove(destination.data(), source.data(), source.size());
-}
-
-inline void set_bytes(byte_span destination, gsl::byte value) {
-	memset(destination.data(), gsl::to_integer<unsigned char>(value), destination.size());
-}
-
-inline int compare_bytes(const_byte_span a, const_byte_span b) {
-	auto aSize = a.size(), bSize = b.size();
-	return (aSize > bSize) ? 1 : (aSize < bSize) ? -1 : memcmp(a.data(), b.data(), aSize);
-}
-
 // Thanks https://stackoverflow.com/a/28139075
 
 template <typename Container>
@@ -137,6 +122,11 @@ auto end(reversion_wrapper<Container> wrapper) {
 template <typename Container>
 reversion_wrapper<Container> reversed(Container &&container) {
 	return { container };
+}
+
+template <typename Value, typename From, typename Till>
+inline bool in_range(Value &&value, From &&from, Till &&till) {
+	return (value >= from) && (value < till);
 }
 
 } // namespace base
@@ -199,53 +189,13 @@ inline void accumulate_max(T &a, const T &b) { if (a < b) a = b; }
 template <typename T>
 inline void accumulate_min(T &a, const T &b) { if (a > b) a = b; }
 
-class Exception : public std::exception {
-public:
-	Exception(const QString &msg, bool isFatal = true) : _fatal(isFatal), _msg(msg.toUtf8()) {
-		LOG(("Exception: %1").arg(msg));
-	}
-	bool fatal() const {
-		return _fatal;
-	}
-
-	virtual const char *what() const throw() {
-		return _msg.constData();
-	}
-	virtual ~Exception() throw() {
-	}
-
-private:
-	bool _fatal;
-	QByteArray _msg;
-
-};
-
-class MTPint;
-using TimeId = int32;
-TimeId myunixtime();
 void unixtimeInit();
-void unixtimeSet(TimeId servertime, bool force = false);
+void unixtimeSet(TimeId serverTime, bool force = false);
 TimeId unixtime();
-TimeId fromServerTime(const MTPint &serverTime);
-MTPint toServerTime(const TimeId &clientTime);
 uint64 msgid();
-int32 reqid();
+int GetNextRequestId();
 
-inline QDateTime date(int32 time = -1) {
-	QDateTime result;
-	if (time >= 0) result.setTime_t(time);
-	return result;
-}
-
-inline QDateTime dateFromServerTime(const MTPint &time) {
-	return date(fromServerTime(time));
-}
-
-inline QDateTime date(const MTPint &time) {
-	return dateFromServerTime(time);
-}
-
-QDateTime dateFromServerTime(TimeId time);
+QDateTime ParseDateTime(TimeId serverTime);
 
 inline void mylocaltime(struct tm * _Tm, const time_t * _Time) {
 #ifdef Q_OS_WIN
@@ -262,7 +212,6 @@ void finish();
 
 }
 
-using TimeMs = int64;
 bool checkms(); // returns true if time has changed
 TimeMs getms(bool checked = false);
 
@@ -433,18 +382,37 @@ enum DBIWorkMode {
 	dbiwmWindowOnly = 2,
 };
 
-enum DBIConnectionType {
-	dbictAuto = 0,
-	dbictHttpAuto = 1, // not used
-	dbictHttpProxy = 2,
-	dbictTcpProxy = 3,
-};
-
 struct ProxyData {
+	enum class Type {
+		None,
+		Socks5,
+		Http,
+		Mtproto,
+	};
+
+	Type type = Type::None;
 	QString host;
 	uint32 port = 0;
 	QString user, password;
+
+	std::vector<QString> resolvedIPs;
+	TimeMs resolvedExpireAt = 0;
+
+	bool valid() const;
+	bool supportsCalls() const;
+	bool tryCustomResolve() const;
+	bytes::vector secretFromMtprotoPassword() const;
+	explicit operator bool() const;
+	bool operator==(const ProxyData &other) const;
+	bool operator!=(const ProxyData &other) const;
+
+	static bool ValidMtprotoPassword(const QString &secret);
+	static int MaxMtprotoPasswordLength();
+
 };
+
+ProxyData ToDirectIpProxy(const ProxyData &proxy, int ipIndex = 0);
+QNetworkProxy ToNetworkProxy(const ProxyData &proxy);
 
 enum DBIScale {
 	dbisAuto = 0,
@@ -475,35 +443,6 @@ enum DBIPeerReportSpamStatus {
 	dbiprsRequesting = 5, // requesting the cloud setting right now
 };
 
-class MimeType {
-public:
-	enum class Known {
-		Unknown,
-		TDesktopTheme,
-		TDesktopPalette,
-		WebP,
-	};
-
-	MimeType(const QMimeType &type) : _typeStruct(type) {
-	}
-	MimeType(Known type) : _type(type) {
-	}
-	QStringList globPatterns() const;
-	QString filterString() const;
-	QString name() const;
-
-private:
-	QMimeType _typeStruct;
-	Known _type = Known::Unknown;
-
-};
-
-MimeType mimeTypeForName(const QString &mime);
-MimeType mimeTypeForFile(const QFileInfo &file);
-MimeType mimeTypeForData(const QByteArray &data);
-
-#include <cmath>
-
 inline int rowscount(int fullCount, int countPerRow) {
 	return (fullCount + countPerRow - 1) / countPerRow;
 }
@@ -519,13 +458,6 @@ inline int ceilclamp(int value, int step, int lowest, int highest) {
 inline int ceilclamp(float64 value, int32 step, int32 lowest, int32 highest) {
 	return qMax(qMin(static_cast<int>(std::ceil(value / step)), highest), lowest);
 }
-
-enum ForwardWhatMessages {
-	ForwardSelectedMessages,
-	ForwardContextMessage,
-	ForwardPressedMessage,
-	ForwardPressedLinkMessage
-};
 
 static int32 FullArcLength = 360 * 16;
 static int32 QuarterArcLength = (FullArcLength / 4);

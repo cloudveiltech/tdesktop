@@ -29,7 +29,7 @@ public:
 // this type used as a flag, we dynamic_cast<> to it
 class SendClickHandler : public ClickHandler {
 public:
-	void onClick(Qt::MouseButton) const override {
+	void onClick(ClickContext context) const override {
 	}
 };
 
@@ -42,9 +42,13 @@ public:
 
 class ItemBase : public LayoutItemBase {
 public:
-	ItemBase(not_null<Context*> context, Result *result) : _result(result), _context(context) {
+	ItemBase(not_null<Context*> context, not_null<Result*> result)
+	: _result(result)
+	, _context(context) {
 	}
-	ItemBase(not_null<Context*> context, DocumentData *doc) : _doc(doc), _context(context) {
+	ItemBase(not_null<Context*> context, DocumentData *doc)
+	: _doc(doc)
+	, _context(context) {
 	}
 	// Not used anywhere currently.
 	//ItemBase(not_null<Context*> context, PhotoData *photo) : _photo(photo), _context(context) {
@@ -115,13 +119,19 @@ private:
 
 };
 
-using DocumentItems = QMap<DocumentData*, OrderedSet<ItemBase*>>;
+using DocumentItems = std::map<
+	not_null<const DocumentData*>,
+	base::flat_set<not_null<ItemBase*>>>;
 const DocumentItems *documentItems();
 
 namespace internal {
 
-void regDocumentItem(DocumentData *document, ItemBase *item);
-void unregDocumentItem(DocumentData *document, ItemBase *item);
+void regDocumentItem(
+	not_null<const DocumentData*> document,
+	not_null<ItemBase*> item);
+void unregDocumentItem(
+	not_null<const DocumentData*> document,
+	not_null<ItemBase*> item);
 
 } // namespace internal
 } // namespace Layout

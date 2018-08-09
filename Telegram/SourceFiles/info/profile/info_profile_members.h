@@ -20,7 +20,6 @@ class AbstractButton;
 } // namespace Ui
 
 namespace Profile {
-class GroupMembersWidget;
 class ParticipantsBoxController;
 } // namespace Profile
 
@@ -44,8 +43,7 @@ class Members
 public:
 	Members(
 		QWidget *parent,
-		not_null<Controller*> controller,
-		not_null<PeerData*> peer);
+		not_null<Controller*> controller);
 
 	rpl::producer<Ui::ScrollToRequest> scrollToRequests() const;
 
@@ -65,9 +63,9 @@ private:
 	using ListWidget = PeerListContent;
 
 	// PeerListContentDelegate interface.
-	void peerListSetTitle(base::lambda<QString()> title) override;
+	void peerListSetTitle(Fn<QString()> title) override;
 	void peerListSetAdditionalTitle(
-		base::lambda<QString()> title) override;
+		Fn<QString()> title) override;
 	bool peerListIsRowSelected(not_null<PeerData*> peer) override;
 	int peerListSelectedRowsCount() override;
 	std::vector<not_null<PeerData*>> peerListCollectSelectedRows() override;

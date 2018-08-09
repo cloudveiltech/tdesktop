@@ -14,6 +14,10 @@ namespace Ui {
 class SettingsSlider;
 } // namespace Ui
 
+namespace Window {
+class ConnectingWidget;
+} // namespace Window
+
 namespace Info {
 
 class Memento;
@@ -35,7 +39,7 @@ public:
 		Wrap wrap,
 		not_null<MoveMemento*> memento);
 
-	PeerData *activePeer() const override;
+	Dialogs::RowDescriptor activeChat() const override;
 
 	bool hasTopBarShadow() const override;
 	QPixmap grabForShowAnimation(
@@ -65,6 +69,7 @@ private:
 
 	object_ptr<WrapWidget> _content;
 	object_ptr<Ui::RpWidget> _topBarSurrogate = { nullptr };
+	base::unique_qptr<Window::ConnectingWidget> _connecting;
 
 };
 

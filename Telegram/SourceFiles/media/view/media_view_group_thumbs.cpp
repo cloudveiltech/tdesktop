@@ -11,7 +11,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_user_photos.h"
 #include "data/data_photo.h"
 #include "data/data_document.h"
+#include "data/data_media_types.h"
+#include "data/data_session.h"
+#include "history/history.h"
 #include "history/history_media.h"
+#include "auth_session.h"
 #include "styles/style_mediaview.h"
 
 namespace Media {
@@ -92,7 +96,7 @@ public:
 		Dying,
 	};
 
-	Thumb(Key key, ImagePtr image, base::lambda<void()> handler);
+	Thumb(Key key, ImagePtr image, Fn<void()> handler);
 
 	int leftToUpdate() const;
 	int rightToUpdate() const;
@@ -133,7 +137,7 @@ private:
 GroupThumbs::Thumb::Thumb(
 	Key key,
 	ImagePtr image,
-	base::lambda<void()> handler)
+	Fn<void()> handler)
 : _key(key)
 , _image(image) {
 	_link = std::make_shared<LambdaClickHandler>(std::move(handler));
@@ -468,14 +472,14 @@ void GroupThumbs::animatePreviouslyAlive(
 
 auto GroupThumbs::createThumb(Key key) -> std::unique_ptr<Thumb> {
 	if (const auto photoId = base::get_if<PhotoId>(&key)) {
-		const auto photo = App::photo(*photoId);
+		const auto photo = Auth().data().photo(*photoId);
 		return createThumb(key, photo->date ? photo->thumb : ImagePtr());
 	} else if (const auto msgId = base::get_if<FullMsgId>(&key)) {
 		if (const auto item = App::histItemById(*msgId)) {
-			if (const auto media = item->getMedia()) {
-				if (const auto photo = media->getPhoto()) {
+			if (const auto media = item->media()) {
+				if (const auto photo = media->photo()) {
 					return createThumb(key, photo->thumb);
-				} else if (const auto document = media->getDocument()) {
+				} else if (const auto document = media->document()) {
 					return createThumb(key, document->thumb);
 				}
 			}
@@ -503,9 +507,7 @@ auto GroupThumbs::validateCacheEntry(Key key) -> not_null<Thumb*> {
 }
 
 void GroupThumbs::markCacheStale() {
-	while (!_dying.empty()) {
-		_dying.pop_back();
-	}
+	_dying.clear();
 	for (const auto &cacheItem : _cache) {
 		const auto &thumb = cacheItem.second;
 		thumb->setState(Thumb::State::Unknown);

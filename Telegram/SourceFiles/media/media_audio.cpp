@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "media/media_audio.h"
 
@@ -26,7 +13,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "media/media_audio_loaders.h"
 #include "media/media_audio_track.h"
 #include "platform/platform_audio.h"
-#include "base/task_queue.h"
+#include "messenger.h"
 
 #include <AL/al.h>
 #include <AL/alc.h>
@@ -230,27 +217,35 @@ bool AttachToDevice() {
 		emit m->faderOnTimer();
 	}
 
-	base::TaskQueue::Main().Put([] {
-		Current().reattachTracks();
+	crl::on_main([] {
+		if (Messenger::InstancePointer()) {
+			Current().reattachTracks();
+		}
 	});
 	return true;
 }
 
 void ScheduleDetachFromDeviceSafe() {
-	base::TaskQueue::Main().Put([] {
-		Current().scheduleDetachFromDevice();
+	crl::on_main([] {
+		if (Messenger::InstancePointer()) {
+			Current().scheduleDetachFromDevice();
+		}
 	});
 }
 
 void ScheduleDetachIfNotUsedSafe() {
-	base::TaskQueue::Main().Put([] {
-		Current().scheduleDetachIfNotUsed();
+	crl::on_main([] {
+		if (Messenger::InstancePointer()) {
+			Current().scheduleDetachIfNotUsed();
+		}
 	});
 }
 
 void StopDetachIfNotUsedSafe() {
-	base::TaskQueue::Main().Put([] {
-		Current().stopDetachIfNotUsed();
+	crl::on_main([] {
+		if (Messenger::InstancePointer()) {
+			Current().stopDetachIfNotUsed();
+		}
 	});
 }
 
@@ -1397,8 +1392,8 @@ void DetachFromDevice() {
 
 class FFMpegAttributesReader : public AbstractFFMpegLoader {
 public:
-
-	FFMpegAttributesReader(const FileLocation &file, const QByteArray &data) : AbstractFFMpegLoader(file, data, base::byte_vector()) {
+	FFMpegAttributesReader(const FileLocation &file, const QByteArray &data)
+	: AbstractFFMpegLoader(file, data, base::byte_vector()) {
 	}
 
 	bool open(TimeMs positionMs) override {
@@ -1416,15 +1411,22 @@ public:
 		}
 
 		for (int32 i = 0, l = fmtContext->nb_streams; i < l; ++i) {
-			AVStream *stream = fmtContext->streams[i];
+			const auto stream = fmtContext->streams[i];
 			if (stream->disposition & AV_DISPOSITION_ATTACHED_PIC) {
-				const AVPacket &packet(stream->attached_pic);
+				const auto &packet = stream->attached_pic;
 				if (packet.size) {
-					bool animated = false;
-					QByteArray cover((const char*)packet.data, packet.size), format;
-					_cover = App::readImage(cover, &format, true, &animated);
+					const auto coverBytes = QByteArray(
+						(const char*)packet.data,
+						packet.size);
+					auto format = QByteArray();
+					auto animated = false;
+					_cover = App::readImage(
+						coverBytes,
+						&format,
+						true,
+						&animated);
 					if (!_cover.isNull()) {
-						_coverBytes = cover;
+						_coverBytes = coverBytes;
 						_coverFormat = format;
 						break;
 					}
@@ -1456,7 +1458,7 @@ public:
 		//}
 	}
 
-	int32 format() override {
+	int format() override {
 		return 0;
 	}
 
@@ -1499,8 +1501,8 @@ private:
 namespace Media {
 namespace Player {
 
-FileLoadTask::Song PrepareForSending(const QString &fname, const QByteArray &data) {
-	auto result = FileLoadTask::Song();
+FileMediaInformation::Song PrepareForSending(const QString &fname, const QByteArray &data) {
+	auto result = FileMediaInformation::Song();
 	FFMpegAttributesReader reader(FileLocation(fname), data);
 	const auto positionMs = TimeMs(0);
 	if (reader.open(positionMs) && reader.samplesCount() > 0) {
@@ -1527,7 +1529,9 @@ public:
 
 		QByteArray buffer;
 		buffer.reserve(AudioVoiceMsgBufferSize);
-		int64 countbytes = sampleSize * samplesCount(), processed = 0, sumbytes = 0;
+		int64 countbytes = sampleSize() * samplesCount();
+		int64 processed = 0;
+		int64 sumbytes = 0;
 		if (samplesCount() < Media::Player::kWaveformSamplesCount) {
 			return false;
 		}
@@ -1537,7 +1541,7 @@ public:
 
 		auto fmt = format();
 		auto peak = uint16(0);
-		auto callback = [&peak, &sumbytes, &peaks, countbytes](uint16 sample) {
+		auto callback = [&](uint16 sample) {
 			accumulate_max(peak, sample);
 			sumbytes += Media::Player::kWaveformSamplesCount;
 			if (sumbytes >= countbytes) {
@@ -1564,7 +1568,7 @@ public:
 			} else if (fmt == AL_FORMAT_MONO16 || fmt == AL_FORMAT_STEREO16) {
 				Media::Audio::IterateSamples<int16>(sampleBytes, callback);
 			}
-			processed += sampleSize * samples;
+			processed += sampleSize() * samples;
 		}
 		if (sumbytes > 0 && peaks.size() < Media::Player::kWaveformSamplesCount) {
 			peaks.push_back(peak);

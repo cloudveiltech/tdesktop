@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/settings_cover.h"
 
@@ -37,6 +24,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "styles/style_settings.h"
 #include "styles/style_profile.h" // for divider
 #include "platform/platform_file_utilities.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace Settings {
 
@@ -65,6 +53,7 @@ CoverWidget::CoverWidget(QWidget *parent, UserData *self)
 		st::settingsPrimaryButton.ripple.hideDuration,
 		this,
 		[this] { chooseNewPhoto(); }));
+
 	_editName->addClickHandler([this] { editName(); });
 	_editNameInline->addClickHandler([this] { editName(); });
 
@@ -94,6 +83,8 @@ CoverWidget::CoverWidget(QWidget *parent, UserData *self)
 }
 
 PhotoData *CoverWidget::validatePhoto() const {
+	Expects(_self != nullptr);
+
 	const auto photo = _self->userpicPhotoId()
 		? App::photo(_self->userpicPhotoId())
 		: nullptr;
@@ -106,7 +97,7 @@ PhotoData *CoverWidget::validatePhoto() const {
 }
 
 void CoverWidget::showPhoto() {
-	if (auto photo = validatePhoto()) {
+	if (const auto photo = validatePhoto()) {
 		Messenger::Instance().showPhoto(photo, _self);
 	}
 }
@@ -287,6 +278,8 @@ void CoverWidget::dropEvent(QDropEvent *e) {
 	e->acceptProposedAction();
 
 	showSetPhotoBox(img);
+
+	App::wnd()->activateWindow();
 }
 
 void CoverWidget::paintDivider(Painter &p) {
@@ -349,6 +342,13 @@ void CoverWidget::refreshStatusText() {
 }
 
 void CoverWidget::chooseNewPhoto() {
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableProfilePhotoChange) {
+		Ui::show(Box<InformBox>(lang(lng_feature_forbidden)));
+		return;
+	}
+	//CloudVeil end
+
 	auto imageExtensions = cImgExtensions();
 	auto filter = qsl("Image files (*") + imageExtensions.join(qsl(" *")) + qsl(");;") + FileDialog::AllFilesFilter();
 	FileDialog::GetOpenPath(lang(lng_choose_image), filter, base::lambda_guarded(this, [this](const FileDialog::OpenResult &result) {
@@ -379,12 +379,12 @@ void CoverWidget::showSetPhotoBox(const QImage &img) {
 
 	auto peer = _self;
 	auto box = Ui::show(Box<PhotoCropBox>(img, peer));
-	box->ready()
-		| rpl::start_with_next([=](QImage &&image) {
-			Messenger::Instance().uploadProfilePhoto(
-				std::move(image),
-				peer->id);
-		}, box->lifetime());
+	box->ready(
+	) | rpl::start_with_next([=](QImage &&image) {
+		Messenger::Instance().uploadProfilePhoto(
+			std::move(image),
+			peer->id);
+	}, box->lifetime());
 	subscribe(box->boxClosing, [this] { onPhotoUploadStatusChanged(); });
 }
 

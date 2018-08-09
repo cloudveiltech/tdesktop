@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/info_wrap_widget.h"
 
@@ -73,21 +60,22 @@ WrapWidget::WrapWidget(
 , _wrap(wrap)
 , _controller(createController(window, memento->content()))
 , _topShadow(this) {
-	_topShadow->toggleOn(topShadowToggledValue()
-		| rpl::filter([](bool shown) {
+	_topShadow->toggleOn(
+		topShadowToggledValue(
+		) | rpl::filter([](bool shown) {
 			return true;
 		}));
-	_wrap.changes()
-		| rpl::start_with_next([this] {
-			setupTop();
-			finishShowContent();
-		}, lifetime());
-	selectedListValue()
-		| rpl::start_with_next([this](SelectedItems &&items) {
-			InvokeQueued(this, [this, items = std::move(items)]() mutable {
-				if (_topBar) _topBar->setSelectedItems(std::move(items));
-			});
-		}, lifetime());
+	_wrap.changes(
+	) | rpl::start_with_next([this] {
+		setupTop();
+		finishShowContent();
+	}, lifetime());
+	selectedListValue(
+	) | rpl::start_with_next([this](SelectedItems &&items) {
+		InvokeQueued(this, [this, items = std::move(items)]() mutable {
+			if (_topBar) _topBar->setSelectedItems(std::move(items));
+		});
+	}, lifetime());
 	restoreHistoryStack(memento->takeStack());
 }
 
@@ -116,12 +104,14 @@ void WrapWidget::startInjectingActivePeerProfiles() {
 	using namespace rpl::mappers;
 	rpl::combine(
 		_wrap.value(),
-		_controller->parentController()->activePeer.value())
-		| rpl::filter((_1 == Wrap::Side) && (_2 != nullptr))
-		| rpl::map(_2)
-		| rpl::start_with_next([this](not_null<PeerData*> peer) {
-			injectActivePeerProfile(peer);
-		}, lifetime());
+		_controller->parentController()->activePeer.value()
+	) | rpl::filter(
+		(_1 == Wrap::Side) && (_2 != nullptr)
+	) | rpl::map(
+		_2
+	) | rpl::start_with_next([this](not_null<PeerData*> peer) {
+		injectActivePeerProfile(peer);
+	}, lifetime());
 
 }
 
@@ -190,11 +180,12 @@ not_null<PeerData*> WrapWidget::peer() const {
 //	_topTabs->setActiveSection(static_cast<int>(_tab));
 //	_topTabs->finishAnimating();
 //
-//	_topTabs->sectionActivated()
-//		| rpl::map([](int index) { return static_cast<Tab>(index); })
-//		| rpl::start_with_next(
-//			[this](Tab tab) { showTab(tab); },
-//			lifetime());
+//	_topTabs->sectionActivated(
+//	) | rpl::map([](int index) {
+//		return static_cast<Tab>(index);
+//	}) | rpl::start_with_next(
+//		[this](Tab tab) { showTab(tab); },
+//		lifetime());
 //
 //	_topTabs->move(0, 0);
 //	_topTabs->resizeToWidth(width());
@@ -310,10 +301,10 @@ void WrapWidget::createTopBar() {
 		? _topBar->takeSelectedItems()
 		: SelectedItems(Section::MediaType::kCount);
 	_topBar.create(this, TopBarStyle(wrapValue), std::move(selectedItems));
-	_topBar->cancelSelectionRequests()
-		| rpl::start_with_next([this](auto) {
-			_content->cancelSelection();
-		}, _topBar->lifetime());
+	_topBar->cancelSelectionRequests(
+	) | rpl::start_with_next([this] {
+		_content->cancelSelection();
+	}, _topBar->lifetime());
 
 	_topBar->setTitle(TitleValue(
 		_controller->section(),
@@ -321,10 +312,10 @@ void WrapWidget::createTopBar() {
 		!hasStackHistory()));
 	if (wrapValue == Wrap::Narrow || hasStackHistory()) {
 		_topBar->enableBackButton();
-		_topBar->backRequest()
-			| rpl::start_with_next([this] {
-				_controller->showBackFromStack();
-			}, _topBar->lifetime());
+		_topBar->backRequest(
+		) | rpl::start_with_next([this] {
+			_controller->showBackFromStack();
+		}, _topBar->lifetime());
 	} else if (wrapValue == Wrap::Side) {
 		auto close = _topBar->addButton(
 			base::make_unique_q<Ui::IconButton>(
@@ -425,17 +416,18 @@ void WrapWidget::addProfileNotificationsButton() {
 			: Data::NotifySettings::MuteChange::Mute;
 		App::main()->updateNotifySettings(peer, muteState);
 	});
-	Profile::NotificationsEnabledValue(peer)
-		| rpl::start_with_next([notifications](bool enabled) {
-			const auto iconOverride = enabled
-				? &st::infoNotificationsActive
-				: nullptr;
-			const auto rippleOverride = enabled
-				? &st::lightButtonBgOver
-				: nullptr;
-			notifications->setIconOverride(iconOverride, iconOverride);
-			notifications->setRippleColorOverride(rippleOverride);
-		}, notifications->lifetime());
+	Profile::NotificationsEnabledValue(
+		peer
+	) | rpl::start_with_next([notifications](bool enabled) {
+		const auto iconOverride = enabled
+			? &st::infoNotificationsActive
+			: nullptr;
+		const auto rippleOverride = enabled
+			? &st::lightButtonBgOver
+			: nullptr;
+		notifications->setIconOverride(iconOverride, iconOverride);
+		notifications->setRippleColorOverride(rippleOverride);
+	}, notifications->lifetime());
 }
 
 void WrapWidget::showProfileMenu() {
@@ -647,7 +639,7 @@ QPixmap WrapWidget::grabForShowAnimation(
 	//if (params.withTabs && _topTabs) {
 	//	_topTabs->hide();
 	//}
-	auto result = myGrab(this);
+	auto result = Ui::GrabWidget(this);
 	if (params.withTopBarShadow) {
 		_topShadow->setVisible(true);
 	}

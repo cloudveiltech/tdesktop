@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/info_content_widget.h"
 
@@ -51,29 +38,30 @@ ContentWidget::ContentWidget(
 	using namespace rpl::mappers;
 
 	setAttribute(Qt::WA_OpaquePaintEvent);
-	_controller->wrapValue()
-		| rpl::start_with_next([this](Wrap value) {
-			if (value != Wrap::Layer) {
-				applyAdditionalScroll(0);
-			}
-			_bg = (value == Wrap::Layer)
-				? st::boxBg
-				: st::profileBg;
-			update();
-		}, lifetime());
+	_controller->wrapValue(
+	) | rpl::start_with_next([this](Wrap value) {
+		if (value != Wrap::Layer) {
+			applyAdditionalScroll(0);
+		}
+		_bg = (value == Wrap::Layer)
+			? st::boxBg
+			: st::profileBg;
+		update();
+	}, lifetime());
 	if (_controller->section().type() != Section::Type::Profile) {
 		rpl::combine(
 			_controller->wrapValue(),
 			_controller->searchEnabledByContent(),
-			(_1 == Wrap::Layer) && _2)
-			| rpl::start_with_next([this](bool shown) {
-				refreshSearchField(shown);
-			}, lifetime());
-	}
-	_scrollTopSkip.changes()
-		| rpl::start_with_next([this] {
-			updateControlsGeometry();
+			(_1 == Wrap::Layer) && _2
+		) | rpl::distinct_until_changed(
+		) | rpl::start_with_next([this](bool shown) {
+			refreshSearchField(shown);
 		}, lifetime());
+	}
+	_scrollTopSkip.changes(
+	) | rpl::start_with_next([this] {
+		updateControlsGeometry();
+	}, lifetime());
 }
 
 void ContentWidget::resizeEvent(QResizeEvent *e) {
@@ -144,15 +132,15 @@ Ui::RpWidget *ContentWidget::doSetInnerWidget(
 		_scroll->scrollTopValue(),
 		_scroll->heightValue(),
 		_innerWrap->entity()->desiredHeightValue(),
-		tuple(_1, _1 + _2, _3))
-		| rpl::start_with_next([this](
-				int top,
-				int bottom,
-				int desired) {
-			_innerDesiredHeight = desired;
-			_innerWrap->setVisibleTopBottom(top, bottom);
-			_scrollTillBottomChanges.fire_copy(std::max(desired - bottom, 0));
-		}, _innerWrap->lifetime());
+		tuple(_1, _1 + _2, _3)
+	) | rpl::start_with_next([this](
+			int top,
+			int bottom,
+			int desired) {
+		_innerDesiredHeight = desired;
+		_innerWrap->setVisibleTopBottom(top, bottom);
+		_scrollTillBottomChanges.fire_copy(std::max(desired - bottom, 0));
+	}, _innerWrap->lifetime());
 
 	return _innerWrap->entity();
 }
@@ -190,16 +178,16 @@ rpl::producer<int> ContentWidget::desiredHeightValue() const {
 	using namespace rpl::mappers;
 	return rpl::combine(
 		_innerWrap->entity()->desiredHeightValue(),
-		_scrollTopSkip.value())
-		| rpl::map(_1 + _2);
+		_scrollTopSkip.value()
+	) | rpl::map(_1 + _2);
 }
 
 rpl::producer<bool> ContentWidget::desiredShadowVisibility() const {
 	using namespace rpl::mappers;
 	return rpl::combine(
 		_scroll->scrollTopValue(),
-		_scrollTopSkip.value())
-		| rpl::map((_1 > 0) || (_2 > 0));
+		_scrollTopSkip.value()
+	) | rpl::map((_1 > 0) || (_2 > 0));
 }
 
 bool ContentWidget::hasTopBarShadow() const {
@@ -248,16 +236,18 @@ void ContentWidget::refreshSearchField(bool shown) {
 		_searchField = rowView.field;
 
 		const auto view = _searchWrap.get();
-		widthValue()
-			| rpl::start_with_next([=](int newWidth) {
-				view->resizeToWidth(newWidth);
-				view->moveToLeft(0, 0);
-			}, view->lifetime());
+		widthValue(
+		) | rpl::start_with_next([=](int newWidth) {
+			view->resizeToWidth(newWidth);
+			view->moveToLeft(0, 0);
+		}, view->lifetime());
 		view->show();
 		_searchField->setFocus();
 		setScrollTopSkip(view->heightNoMargins() - st::lineWidth);
 	} else {
-		setFocus();
+		if (Ui::InFocusChain(this)) {
+			setFocus();
+		}
 		_searchWrap = nullptr;
 		setScrollTopSkip(0);
 	}

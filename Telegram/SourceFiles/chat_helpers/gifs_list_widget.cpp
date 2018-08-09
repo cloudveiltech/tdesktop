@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "chat_helpers/gifs_list_widget.h"
 
@@ -148,10 +135,10 @@ GifsListWidget::GifsListWidget(
 	_inlineRequestTimer.setSingleShot(true);
 	connect(&_inlineRequestTimer, &QTimer::timeout, this, [this] { sendInlineRequest(); });
 
-	Auth().data().savedGifsUpdated()
-		| rpl::start_with_next([this] {
-			refreshSavedGifs();
-		}, lifetime());
+	Auth().data().savedGifsUpdated(
+	) | rpl::start_with_next([this] {
+		refreshSavedGifs();
+	}, lifetime());
 	subscribe(Auth().downloaderTaskFinished(), [this] {
 		update();
 	});
@@ -335,7 +322,7 @@ void GifsListWidget::mouseReleaseEvent(QMouseEvent *e) {
 		return;
 	}
 
-	if (dynamic_cast<InlineBots::Layout::SendClickHandler*>(activated.data())) {
+	if (dynamic_cast<InlineBots::Layout::SendClickHandler*>(activated.get())) {
 		int row = _selected / MatrixRowShift, column = _selected % MatrixRowShift;
 		selectInlineResult(row, column);
 	} else {
@@ -596,12 +583,13 @@ void GifsListWidget::layoutInlineRow(Row &row, int fullWidth) {
 	row.height = 0;
 	int availw = fullWidth - (st::inlineResultsLeft - st::buttonRadius);
 	for (int i = 0; i < count; ++i) {
-		int index = indices[i];
-		int w = desiredWidth
-			? (row.items[index]->maxWidth() * availw / desiredWidth)
-			: row.items[index]->maxWidth();
-		int actualw = qMax(w, int(st::inlineResultsMinWidth));
-		row.height = qMax(row.height, row.items[index]->resizeGetHeight(actualw));
+		const auto index = indices[i];
+		const auto &item = row.items[index];
+		const auto w = desiredWidth
+			? (item->maxWidth() * availw / desiredWidth)
+			: item->maxWidth();
+		auto actualw = qMax(w, st::inlineResultsMinWidth);
+		row.height = qMax(row.height, item->resizeGetHeight(actualw));
 		if (desiredWidth) {
 			availw -= actualw;
 			desiredWidth -= row.items[index]->maxWidth();

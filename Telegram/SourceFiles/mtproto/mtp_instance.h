@@ -1,35 +1,24 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
 #include <map>
 #include <set>
+#include "mtproto/rpc_sender.h"
 
 namespace MTP {
 namespace internal {
 class Dcenter;
+class Session;
+class Connection;
 } // namespace internal
 
 class DcOptions;
-class Session;
 class AuthKey;
 using AuthKeyPtr = std::shared_ptr<AuthKey>;
 using AuthKeysList = std::vector<AuthKeyPtr>;
@@ -70,23 +59,37 @@ public:
 	not_null<DcOptions*> dcOptions();
 
 	template <typename TRequest>
-	mtpRequestId send(const TRequest &request, RPCResponseHandler callbacks = RPCResponseHandler(), ShiftedDcId dcId = 0, TimeMs msCanWait = 0, mtpRequestId after = 0) {
-		if (auto session = getSession(dcId)) {
-			return session->send(request, callbacks, msCanWait, true, !dcId, after);
-		}
-		return 0;
+	mtpRequestId send(
+			const TRequest &request,
+			RPCResponseHandler &&callbacks = {},
+			ShiftedDcId dcId = 0,
+			TimeMs msCanWait = 0,
+			mtpRequestId after = 0) {
+		return send(
+			mtpRequestData::serialize(request),
+			std::move(callbacks),
+			dcId,
+			msCanWait,
+			after);
 	}
 
 	template <typename TRequest>
-	mtpRequestId send(const TRequest &request, RPCDoneHandlerPtr onDone, RPCFailHandlerPtr onFail = RPCFailHandlerPtr(), int32 dc = 0, TimeMs msCanWait = 0, mtpRequestId after = 0) {
-		return send(request, RPCResponseHandler(onDone, onFail), dc, msCanWait, after);
+	mtpRequestId send(
+			const TRequest &request,
+			RPCDoneHandlerPtr &&onDone,
+			RPCFailHandlerPtr &&onFail = nullptr,
+			ShiftedDcId dc = 0,
+			TimeMs msCanWait = 0,
+			mtpRequestId after = 0) {
+		return send(
+			request,
+			RPCResponseHandler(std::move(onDone), std::move(onFail)),
+			dc,
+			msCanWait,
+			after);
 	}
 
-	void sendAnything(ShiftedDcId dcId = 0, TimeMs msCanWait = 0) {
-		if (auto session = getSession(dcId)) {
-			session->sendAnything(msCanWait);
-		}
-	}
+	void sendAnything(ShiftedDcId dcId = 0, TimeMs msCanWait = 0);
 
 	void restart();
 	void restart(ShiftedDcId shiftedDcId);
@@ -103,7 +106,7 @@ public:
 	std::shared_ptr<internal::Dcenter> getDcById(ShiftedDcId shiftedDcId);
 	void unpaused();
 
-	void queueQuittingConnection(std::unique_ptr<internal::Connection> connection);
+	void queueQuittingConnection(std::unique_ptr<internal::Connection> &&connection);
 
 	void setUpdatesHandler(RPCDoneHandlerPtr onDone);
 	void setGlobalFailHandler(RPCFailHandlerPtr onFail);
@@ -115,9 +118,11 @@ public:
 	void onSessionReset(ShiftedDcId dcWithShift);
 
 	void registerRequest(mtpRequestId requestId, ShiftedDcId dcWithShift);
-	mtpRequestId storeRequest(mtpRequest &request, const RPCResponseHandler &parser);
+	mtpRequestId storeRequest(
+		mtpRequest &request,
+		RPCResponseHandler &&callbacks);
 	mtpRequest getRequest(mtpRequestId requestId);
-	void clearCallbacksDelayed(const RPCCallbackClears &requestIds);
+	void clearCallbacksDelayed(std::vector<RPCCallbackClear> &&ids);
 
 	void execCallback(mtpRequestId requestId, const mtpPrime *from, const mtpPrime *end);
 	bool hasCallbacks(mtpRequestId requestId);
@@ -147,7 +152,12 @@ private slots:
 	void onKeyDestroyed(qint32 shiftedDcId);
 
 private:
-	internal::Session *getSession(ShiftedDcId shiftedDcId);
+	mtpRequestId send(
+		mtpRequest &&request,
+		RPCResponseHandler &&callbacks,
+		ShiftedDcId dcId,
+		TimeMs msCanWait,
+		mtpRequestId after);
 
 	class Private;
 	const std::unique_ptr<Private> _private;

@@ -1,42 +1,34 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_item.h"
 
 #include "lang/lang_keys.h"
 #include "mainwidget.h"
+#include "history/history_item_components.h"
 #include "history/history_service_layout.h"
 #include "history/history_media_types.h"
+#include "history/history_media_grouped.h"
 #include "history/history_message.h"
 #include "media/media_clip_reader.h"
 #include "styles/style_dialogs.h"
 #include "styles/style_history.h"
 #include "ui/effects/ripple_animation.h"
+#include "ui/text_options.h"
 #include "storage/file_upload.h"
 #include "storage/storage_facade.h"
 #include "storage/storage_shared_media.h"
 #include "auth_session.h"
+#include "apiwrap.h"
 #include "media/media_audio.h"
 #include "messenger.h"
 #include "mainwindow.h"
 #include "window/window_controller.h"
+#include "core/crash_reports.h"
 
 namespace {
 
@@ -45,525 +37,33 @@ constexpr int kAttachMessageToPreviousSecondsDelta = 900;
 
 } // namespace
 
-ReplyMarkupClickHandler::ReplyMarkupClickHandler(const HistoryItem *item, int row, int col)
-: _itemId(item->fullId())
-, _row(row)
-, _col(col) {
+HistoryTextState::HistoryTextState(not_null<const HistoryItem*> item)
+: itemId(item->fullId()) {
 }
 
-// Copy to clipboard support.
-void ReplyMarkupClickHandler::copyToClipboard() const {
-	if (auto button = getButton()) {
-		if (button->type == HistoryMessageReplyMarkup::Button::Type::Url) {
-			auto url = QString::fromUtf8(button->data);
-			if (!url.isEmpty()) {
-				QApplication::clipboard()->setText(url);
-			}
-		}
-	}
+HistoryTextState::HistoryTextState(
+	not_null<const HistoryItem*> item,
+	const Text::StateResult &state)
+: itemId(item->fullId())
+, cursor(state.uponSymbol
+	? HistoryInTextCursorState
+	: HistoryDefaultCursorState)
+, link(state.link)
+, afterSymbol(state.afterSymbol)
+, symbol(state.symbol) {
 }
 
-QString ReplyMarkupClickHandler::copyToClipboardContextItemText() const {
-	if (auto button = getButton()) {
-		if (button->type == HistoryMessageReplyMarkup::Button::Type::Url) {
-			return lang(lng_context_copy_link);
-		}
-	}
-	return QString();
+HistoryTextState::HistoryTextState(
+	not_null<const HistoryItem*> item,
+	ClickHandlerPtr link)
+: itemId(item->fullId())
+, link(link) {
 }
-
-// Finds the corresponding button in the items markup struct.
-// If the button is not found it returns nullptr.
-// Note: it is possible that we will point to the different button
-// than the one was used when constructing the handler, but not a big deal.
-const HistoryMessageReplyMarkup::Button *ReplyMarkupClickHandler::getButton() const {
-	if (auto item = App::histItemById(_itemId)) {
-		if (auto markup = item->Get<HistoryMessageReplyMarkup>()) {
-			if (_row < markup->rows.size()) {
-				auto &row = markup->rows.at(_row);
-				if (_col < row.size()) {
-					return &row.at(_col);
-				}
-			}
-		}
-	}
-	return nullptr;
-}
-
-void ReplyMarkupClickHandler::onClickImpl() const {
-	if (auto item = App::histItemById(_itemId)) {
-		App::activateBotCommand(item, _row, _col);
-	}
-}
-
-// Returns the full text of the corresponding button.
-QString ReplyMarkupClickHandler::buttonText() const {
-	if (auto button = getButton()) {
-		return button->text;
-	}
-	return QString();
-}
-
-ReplyKeyboard::ReplyKeyboard(const HistoryItem *item, StylePtr &&s)
-	: _item(item)
-	, _a_selected(animation(this, &ReplyKeyboard::step_selected))
-	, _st(std::move(s)) {
-	if (auto markup = item->Get<HistoryMessageReplyMarkup>()) {
-		_rows.reserve(markup->rows.size());
-		for (int i = 0, l = markup->rows.size(); i != l; ++i) {
-			auto &row = markup->rows.at(i);
-			int s = row.size();
-			ButtonRow newRow(s, Button());
-			for (int j = 0; j != s; ++j) {
-				auto &button = newRow[j];
-				auto str = row.at(j).text;
-				button.type = row.at(j).type;
-				button.link = MakeShared<ReplyMarkupClickHandler>(item, i, j);
-				button.text.setText(_st->textStyle(), TextUtilities::SingleLine(str), _textPlainOptions);
-				button.characters = str.isEmpty() ? 1 : str.size();
-			}
-			_rows.push_back(newRow);
-		}
-	}
-}
-
-void ReplyKeyboard::updateMessageId() {
-	auto msgId = _item->fullId();
-	for_const (auto &row, _rows) {
-		for_const (auto &button, row) {
-			button.link->setMessageId(msgId);
-		}
-	}
-
-}
-
-void ReplyKeyboard::resize(int width, int height) {
-	_width = width;
-
-	auto markup = _item->Get<HistoryMessageReplyMarkup>();
-	float64 y = 0, buttonHeight = _rows.isEmpty() ? _st->buttonHeight() : (float64(height + _st->buttonSkip()) / _rows.size());
-	for (auto &row : _rows) {
-		int s = row.size();
-
-		int widthForButtons = _width - ((s - 1) * _st->buttonSkip());
-		int widthForText = widthForButtons;
-		int widthOfText = 0;
-		int maxMinButtonWidth = 0;
-		for_const (auto &button, row) {
-			widthOfText += qMax(button.text.maxWidth(), 1);
-			int minButtonWidth = _st->minButtonWidth(button.type);
-			widthForText -= minButtonWidth;
-			accumulate_max(maxMinButtonWidth, minButtonWidth);
-		}
-		bool exact = (widthForText == widthOfText);
-		bool enough = (widthForButtons - s * maxMinButtonWidth) >= widthOfText;
-
-		float64 x = 0;
-		for (Button &button : row) {
-			int buttonw = qMax(button.text.maxWidth(), 1);
-			float64 textw = buttonw, minw = _st->minButtonWidth(button.type);
-			float64 w = textw;
-			if (exact) {
-				w += minw;
-			} else if (enough) {
-				w = (widthForButtons / float64(s));
-				textw = w - minw;
-			} else {
-				textw = (widthForText / float64(s));
-				w = minw + textw;
-				accumulate_max(w, 2 * float64(_st->buttonPadding()));
-			}
-
-			int rectx = static_cast<int>(std::floor(x));
-			int rectw = static_cast<int>(std::floor(x + w)) - rectx;
-			button.rect = QRect(rectx, qRound(y), rectw, qRound(buttonHeight - _st->buttonSkip()));
-			if (rtl()) button.rect.setX(_width - button.rect.x() - button.rect.width());
-			x += w + _st->buttonSkip();
-
-			button.link->setFullDisplayed(textw >= buttonw);
-		}
-		y += buttonHeight;
-	}
-}
-
-bool ReplyKeyboard::isEnoughSpace(int width, const style::BotKeyboardButton &st) const {
-	for_const (auto &row, _rows) {
-		int s = row.size();
-		int widthLeft = width - ((s - 1) * st.margin + s * 2 * st.padding);
-		for_const (auto &button, row) {
-			widthLeft -= qMax(button.text.maxWidth(), 1);
-			if (widthLeft < 0) {
-				if (row.size() > 3) {
-					return false;
-				} else {
-					break;
-				}
-			}
-		}
-	}
-	return true;
-}
-
-void ReplyKeyboard::setStyle(StylePtr &&st) {
-	_st = std::move(st);
-}
-
-int ReplyKeyboard::naturalWidth() const {
-	auto result = 0;
-	for_const (auto &row, _rows) {
-		auto maxMinButtonWidth = 0;
-		for_const (auto &button, row) {
-			accumulate_max(maxMinButtonWidth, _st->minButtonWidth(button.type));
-		}
-		auto rowMaxButtonWidth = 0;
-		for_const (auto &button, row) {
-			accumulate_max(rowMaxButtonWidth, qMax(button.text.maxWidth(), 1) + maxMinButtonWidth);
-		}
-
-		auto rowSize = row.size();
-		accumulate_max(result, rowSize * rowMaxButtonWidth + (rowSize - 1) * _st->buttonSkip());
-	}
-	return result;
-}
-
-int ReplyKeyboard::naturalHeight() const {
-	return (_rows.size() - 1) * _st->buttonSkip() + _rows.size() * _st->buttonHeight();
-}
-
-void ReplyKeyboard::paint(Painter &p, int outerWidth, const QRect &clip, TimeMs ms) const {
-	Assert(_st != nullptr);
-	Assert(_width > 0);
-
-	_st->startPaint(p);
-	for_const (auto &row, _rows) {
-		for_const (auto &button, row) {
-			QRect rect(button.rect);
-			if (rect.y() >= clip.y() + clip.height()) return;
-			if (rect.y() + rect.height() < clip.y()) continue;
-
-			// just ignore the buttons that didn't layout well
-			if (rect.x() + rect.width() > _width) break;
-
-			_st->paintButton(p, outerWidth, button, ms);
-		}
-	}
-}
-
-ClickHandlerPtr ReplyKeyboard::getState(QPoint point) const {
-	Assert(_width > 0);
-
-	for_const (auto &row, _rows) {
-		for_const (auto &button, row) {
-			QRect rect(button.rect);
-
-			// just ignore the buttons that didn't layout well
-			if (rect.x() + rect.width() > _width) break;
-
-			if (rect.contains(point)) {
-				_savedCoords = point;
-				return button.link;
-			}
-		}
-	}
-	return ClickHandlerPtr();
-}
-
-void ReplyKeyboard::clickHandlerActiveChanged(const ClickHandlerPtr &p, bool active) {
-	if (!p) return;
-
-	_savedActive = active ? p : ClickHandlerPtr();
-	auto coords = findButtonCoordsByClickHandler(p);
-	if (coords.i >= 0 && _savedPressed != p) {
-		startAnimation(coords.i, coords.j, active ? 1 : -1);
-	}
-}
-
-ReplyKeyboard::ButtonCoords ReplyKeyboard::findButtonCoordsByClickHandler(const ClickHandlerPtr &p) {
-	for (int i = 0, rows = _rows.size(); i != rows; ++i) {
-		auto &row = _rows[i];
-		for (int j = 0, cols = row.size(); j != cols; ++j) {
-			if (row[j].link == p) {
-				return { i, j };
-			}
-		}
-	}
-	return { -1, -1 };
-}
-
-void ReplyKeyboard::clickHandlerPressedChanged(const ClickHandlerPtr &p, bool pressed) {
-	if (!p) return;
-
-	_savedPressed = pressed ? p : ClickHandlerPtr();
-	auto coords = findButtonCoordsByClickHandler(p);
-	if (coords.i >= 0) {
-		auto &button = _rows[coords.i][coords.j];
-		if (pressed) {
-			if (!button.ripple) {
-				auto mask = Ui::RippleAnimation::roundRectMask(button.rect.size(), _st->buttonRadius());
-				button.ripple = MakeShared<Ui::RippleAnimation>(_st->_st->ripple, std::move(mask), [this] { _st->repaint(_item); });
-			}
-			button.ripple->add(_savedCoords - button.rect.topLeft());
-		} else {
-			if (button.ripple) {
-				button.ripple->lastStop();
-			}
-			if (_savedActive != p) {
-				startAnimation(coords.i, coords.j, -1);
-			}
-		}
-	}
-}
-
-void ReplyKeyboard::startAnimation(int i, int j, int direction) {
-	auto notStarted = _animations.isEmpty();
-
-	int indexForAnimation = (i * MatrixRowShift + j + 1) * direction;
-
-	_animations.remove(-indexForAnimation);
-	if (!_animations.contains(indexForAnimation)) {
-		_animations.insert(indexForAnimation, getms());
-	}
-
-	if (notStarted && !_a_selected.animating()) {
-		_a_selected.start();
-	}
-}
-
-void ReplyKeyboard::step_selected(TimeMs ms, bool timer) {
-	for (Animations::iterator i = _animations.begin(); i != _animations.end();) {
-		int index = qAbs(i.key()) - 1, row = (index / MatrixRowShift), col = index % MatrixRowShift;
-		float64 dt = float64(ms - i.value()) / st::botKbDuration;
-		if (dt >= 1) {
-			_rows[row][col].howMuchOver = (i.key() > 0) ? 1 : 0;
-			i = _animations.erase(i);
-		} else {
-			_rows[row][col].howMuchOver = (i.key() > 0) ? dt : (1 - dt);
-			++i;
-		}
-	}
-	if (timer) _st->repaint(_item);
-	if (_animations.isEmpty()) {
-		_a_selected.stop();
-	}
-}
-
-void ReplyKeyboard::clearSelection() {
-	for (auto i = _animations.cbegin(), e = _animations.cend(); i != e; ++i) {
-		int index = qAbs(i.key()) - 1, row = (index / MatrixRowShift), col = index % MatrixRowShift;
-		_rows[row][col].howMuchOver = 0;
-	}
-	_animations.clear();
-	_a_selected.stop();
-}
-
-int ReplyKeyboard::Style::buttonSkip() const {
-	return _st->margin;
-}
-
-int ReplyKeyboard::Style::buttonPadding() const {
-	return _st->padding;
-}
-
-int ReplyKeyboard::Style::buttonHeight() const {
-	return _st->height;
-}
-
-void ReplyKeyboard::Style::paintButton(Painter &p, int outerWidth, const ReplyKeyboard::Button &button, TimeMs ms) const {
-	const QRect &rect = button.rect;
-	paintButtonBg(p, rect, button.howMuchOver);
-	if (button.ripple) {
-		button.ripple->paint(p, rect.x(), rect.y(), outerWidth, ms);
-		if (button.ripple->empty()) {
-			button.ripple.reset();
-		}
-	}
-	paintButtonIcon(p, rect, outerWidth, button.type);
-	if (button.type == HistoryMessageReplyMarkup::Button::Type::Callback
-		|| button.type == HistoryMessageReplyMarkup::Button::Type::Game) {
-		if (auto data = button.link->getButton()) {
-			if (data->requestId) {
-				paintButtonLoading(p, rect);
-			}
-		}
-	}
-
-	int tx = rect.x(), tw = rect.width();
-	if (tw >= st::botKbStyle.font->elidew + _st->padding * 2) {
-		tx += _st->padding;
-		tw -= _st->padding * 2;
-	} else if (tw > st::botKbStyle.font->elidew) {
-		tx += (tw - st::botKbStyle.font->elidew) / 2;
-		tw = st::botKbStyle.font->elidew;
-	}
-	button.text.drawElided(p, tx, rect.y() + _st->textTop + ((rect.height() - _st->height) / 2), tw, 1, style::al_top);
-}
-
-void HistoryMessageReplyMarkup::createFromButtonRows(const QVector<MTPKeyboardButtonRow> &v) {
-	if (v.isEmpty()) {
-		rows.clear();
-		return;
-	}
-
-	rows.reserve(v.size());
-	for_const (auto &row, v) {
-		switch (row.type()) {
-		case mtpc_keyboardButtonRow: {
-			auto &r = row.c_keyboardButtonRow();
-			auto &b = r.vbuttons.v;
-			if (!b.isEmpty()) {
-				ButtonRow buttonRow;
-				buttonRow.reserve(b.size());
-				for_const (auto &button, b) {
-					switch (button.type()) {
-					case mtpc_keyboardButton: {
-						buttonRow.push_back({ Button::Type::Default, qs(button.c_keyboardButton().vtext), QByteArray(), 0 });
-					} break;
-					case mtpc_keyboardButtonCallback: {
-						auto &buttonData = button.c_keyboardButtonCallback();
-						buttonRow.push_back({ Button::Type::Callback, qs(buttonData.vtext), qba(buttonData.vdata), 0 });
-					} break;
-					case mtpc_keyboardButtonRequestGeoLocation: {
-						buttonRow.push_back({ Button::Type::RequestLocation, qs(button.c_keyboardButtonRequestGeoLocation().vtext), QByteArray(), 0 });
-					} break;
-					case mtpc_keyboardButtonRequestPhone: {
-						buttonRow.push_back({ Button::Type::RequestPhone, qs(button.c_keyboardButtonRequestPhone().vtext), QByteArray(), 0 });
-					} break;
-					case mtpc_keyboardButtonUrl: {
-						auto &buttonData = button.c_keyboardButtonUrl();
-						buttonRow.push_back({ Button::Type::Url, qs(buttonData.vtext), qba(buttonData.vurl), 0 });
-					} break;
-					case mtpc_keyboardButtonSwitchInline: {
-						auto &buttonData = button.c_keyboardButtonSwitchInline();
-						auto buttonType = buttonData.is_same_peer() ? Button::Type::SwitchInlineSame : Button::Type::SwitchInline;
-						buttonRow.push_back({ buttonType, qs(buttonData.vtext), qba(buttonData.vquery), 0 });
-						if (buttonType == Button::Type::SwitchInline) {
-							// Optimization flag.
-							// Fast check on all new messages if there is a switch button to auto-click it.
-							flags |= MTPDreplyKeyboardMarkup_ClientFlag::f_has_switch_inline_button;
-						}
-					} break;
-					case mtpc_keyboardButtonGame: {
-						auto &buttonData = button.c_keyboardButtonGame();
-						buttonRow.push_back({ Button::Type::Game, qs(buttonData.vtext), QByteArray(), 0 });
-					} break;
-					case mtpc_keyboardButtonBuy: {
-						auto &buttonData = button.c_keyboardButtonBuy();
-						buttonRow.push_back({ Button::Type::Buy, qs(buttonData.vtext), QByteArray(), 0 });
-					}
-					}
-				}
-				if (!buttonRow.isEmpty()) rows.push_back(buttonRow);
-			}
-		} break;
-		}
-	}
-}
-
-void HistoryMessageReplyMarkup::create(const MTPReplyMarkup &markup) {
-	flags = 0;
-	rows.clear();
-	inlineKeyboard = nullptr;
-
-	switch (markup.type()) {
-	case mtpc_replyKeyboardMarkup: {
-		auto &d = markup.c_replyKeyboardMarkup();
-		flags = d.vflags.v;
-
-		createFromButtonRows(d.vrows.v);
-	} break;
-
-	case mtpc_replyInlineMarkup: {
-		auto &d = markup.c_replyInlineMarkup();
-		flags = MTPDreplyKeyboardMarkup::Flags(0) | MTPDreplyKeyboardMarkup_ClientFlag::f_inline;
-
-		createFromButtonRows(d.vrows.v);
-	} break;
-
-	case mtpc_replyKeyboardHide: {
-		auto &d = markup.c_replyKeyboardHide();
-		flags = mtpCastFlags(d.vflags) | MTPDreplyKeyboardMarkup_ClientFlag::f_zero;
-	} break;
-
-	case mtpc_replyKeyboardForceReply: {
-		auto &d = markup.c_replyKeyboardForceReply();
-		flags = mtpCastFlags(d.vflags) | MTPDreplyKeyboardMarkup_ClientFlag::f_force_reply;
-	} break;
-	}
-}
-
-void HistoryMessageReplyMarkup::create(const HistoryMessageReplyMarkup &markup) {
-	flags = markup.flags;
-	inlineKeyboard = nullptr;
-
-	rows.clear();
-	for_const (auto &row, markup.rows) {
-		ButtonRow buttonRow;
-		buttonRow.reserve(row.size());
-		for_const (auto &button, row) {
-			buttonRow.push_back({ button.type, button.text, button.data, 0 });
-		}
-		if (!buttonRow.isEmpty()) rows.push_back(buttonRow);
-	}
-}
-
-void HistoryMessageUnreadBar::init(int count) {
-	if (_freezed) return;
-	_text = lng_unread_bar(lt_count, count);
-	_width = st::semiboldFont->width(_text);
-}
-
-int HistoryMessageUnreadBar::height() {
-	return st::historyUnreadBarHeight + st::historyUnreadBarMargin;
-}
-
-int HistoryMessageUnreadBar::marginTop() {
-	return st::lineWidth + st::historyUnreadBarMargin;
-}
-
-void HistoryMessageUnreadBar::paint(Painter &p, int y, int w) const {
-	p.fillRect(0, y + marginTop(), w, height() - marginTop() - st::lineWidth, st::historyUnreadBarBg);
-	p.fillRect(0, y + height() - st::lineWidth, w, st::lineWidth, st::historyUnreadBarBorder);
-	p.setFont(st::historyUnreadBarFont);
-	p.setPen(st::historyUnreadBarFg);
-
-	int left = st::msgServiceMargin.left();
-	int maxwidth = w;
-	if (Adaptive::ChatWide()) {
-		maxwidth = qMin(maxwidth, int32(st::msgMaxWidth + 2 * st::msgPhotoSkip + 2 * st::msgMargin.left()));
-	}
-	w = maxwidth;
-
-	p.drawText((w - _width) / 2, y + marginTop() + (st::historyUnreadBarHeight - 2 * st::lineWidth - st::historyUnreadBarFont->height) / 2 + st::historyUnreadBarFont->ascent, _text);
-}
-
-void HistoryMessageDate::init(const QDateTime &date) {
-	_text = langDayOfMonthFull(date.date());
-	_width = st::msgServiceFont->width(_text);
-}
-
-int HistoryMessageDate::height() const {
-	return st::msgServiceMargin.top() + st::msgServicePadding.top() + st::msgServiceFont->height + st::msgServicePadding.bottom() + st::msgServiceMargin.bottom();
-}
-
-void HistoryMessageDate::paint(Painter &p, int y, int w) const {
-	HistoryLayout::ServiceMessagePainter::paintDate(p, _text, _width, y, w);
-}
-
-HistoryMessageLogEntryOriginal::HistoryMessageLogEntryOriginal() = default;
-
-HistoryMessageLogEntryOriginal::HistoryMessageLogEntryOriginal(HistoryMessageLogEntryOriginal &&other) : _page(std::move(other._page)) {
-}
-
-HistoryMessageLogEntryOriginal &HistoryMessageLogEntryOriginal::operator=(HistoryMessageLogEntryOriginal &&other) {
-	_page = std::move(other._page);
-	return *this;
-}
-
-HistoryMessageLogEntryOriginal::~HistoryMessageLogEntryOriginal() = default;
 
 HistoryMediaPtr::HistoryMediaPtr() = default;
 
-HistoryMediaPtr::HistoryMediaPtr(std::unique_ptr<HistoryMedia> pointer) : _pointer(std::move(pointer)) {
+HistoryMediaPtr::HistoryMediaPtr(std::unique_ptr<HistoryMedia> pointer)
+: _pointer(std::move(pointer)) {
 	if (_pointer) {
 		_pointer->attachToParent();
 	}
@@ -625,13 +125,15 @@ void HistoryItem::finishCreate() {
 
 void HistoryItem::finishEdition(int oldKeyboardTop) {
 	setPendingInitDimensions();
-	if (App::main()) {
-		App::main()->dlgUpdated(history()->peer, id);
-	}
-
-	// invalidate cache for drawInDialog
-	if (history()->textCachedFor == this) {
-		history()->textCachedFor = nullptr;
+	invalidateChatsListEntry();
+	//if (groupId()) {
+	//	history()->fixGroupAfterEdition(this);
+	//}
+	if (isHiddenByGroup()) {
+		// Perhaps caption was changed, we should refresh the group.
+		const auto group = Get<HistoryMessageGroup>();
+		group->leader->setPendingInitDimensions();
+		group->leader->invalidateChatsListEntry();
 	}
 
 	if (oldKeyboardTop >= 0) {
@@ -641,6 +143,33 @@ void HistoryItem::finishEdition(int oldKeyboardTop) {
 	}
 
 	App::historyUpdateDependent(this);
+}
+
+HistoryMessageReplyMarkup *HistoryItem::inlineReplyMarkup() {
+	if (const auto markup = Get<HistoryMessageReplyMarkup>()) {
+		if (markup->flags & MTPDreplyKeyboardMarkup_ClientFlag::f_inline) {
+			return markup;
+		}
+	}
+	return nullptr;
+}
+
+ReplyKeyboard *HistoryItem::inlineReplyKeyboard() {
+	if (const auto markup = inlineReplyMarkup()) {
+		return markup->inlineKeyboard.get();
+	}
+	return nullptr;
+}
+
+void HistoryItem::invalidateChatsListEntry() {
+	if (App::main()) {
+		App::main()->dlgUpdated(history()->peer, id);
+	}
+
+	// invalidate cache for drawInDialog
+	if (history()->textCachedFor == this) {
+		history()->textCachedFor = nullptr;
+	}
 }
 
 void HistoryItem::finishEditionToEmpty() {
@@ -688,6 +217,31 @@ void HistoryItem::markMediaRead() {
 	}
 }
 
+bool HistoryItem::definesReplyKeyboard() const {
+	if (const auto markup = Get<HistoryMessageReplyMarkup>()) {
+		if (markup->flags & MTPDreplyKeyboardMarkup_ClientFlag::f_inline) {
+			return false;
+		}
+		return true;
+	}
+
+	// optimization: don't create markup component for the case
+	// MTPDreplyKeyboardHide with flags = 0, assume it has f_zero flag
+	return (_flags & MTPDmessage::Flag::f_reply_markup);
+}
+
+MTPDreplyKeyboardMarkup::Flags HistoryItem::replyKeyboardFlags() const {
+	Expects(definesReplyKeyboard());
+
+	if (const auto markup = Get<HistoryMessageReplyMarkup>()) {
+		return markup->flags;
+	}
+
+	// optimization: don't create markup component for the case
+	// MTPDreplyKeyboardHide with flags = 0, assume it has f_zero flag
+	return MTPDreplyKeyboardMarkup_ClientFlag::f_zero | 0;
+}
+
 void HistoryItem::clickHandlerActiveChanged(const ClickHandlerPtr &p, bool active) {
 	if (auto markup = Get<HistoryMessageReplyMarkup>()) {
 		if (markup->inlineKeyboard) {
@@ -716,6 +270,13 @@ void HistoryItem::addLogEntryOriginal(WebPageId localId, const QString &label, c
 	original->_page = std::make_unique<HistoryWebPage>(this, webpage);
 }
 
+UserData *HistoryItem::viaBot() const {
+	if (const auto via = Get<HistoryMessageVia>()) {
+		return via->bot;
+	}
+	return nullptr;
+}
+
 void HistoryItem::destroy() {
 	if (isLogEntry()) {
 		Assert(detached());
@@ -723,18 +284,20 @@ void HistoryItem::destroy() {
 		// All this must be done for all items manually in History::clear(false)!
 		eraseFromUnreadMentions();
 		if (IsServerMsgId(id)) {
-			if (auto types = sharedMediaTypes()) {
+			if (const auto types = sharedMediaTypes()) {
 				Auth().storage().remove(Storage::SharedMediaRemoveOne(
 					history()->peer->id,
 					types,
 					id));
 			}
+		} else {
+			Auth().api().cancelLocalItem(this);
 		}
 
 		auto wasAtBottom = history()->loadedAtBottom();
 		_history->removeNotification(this);
 		detach();
-		if (auto channel = history()->peer->asChannel()) {
+		if (const auto channel = history()->peer->asChannel()) {
 			if (channel->pinnedMessageId() == id) {
 				channel->clearPinnedMessage();
 			}
@@ -768,10 +331,29 @@ void HistoryItem::detach() {
 void HistoryItem::detachFast() {
 	_block = nullptr;
 	_indexInBlock = -1;
+
+	validateGroupId();
+	if (groupId()) {
+		makeGroupLeader({});
+	}
 }
 
 Storage::SharedMediaTypesMask HistoryItem::sharedMediaTypes() const {
 	return {};
+}
+
+void HistoryItem::indexAsNewItem() {
+	if (IsServerMsgId(id)) {
+		CrashReports::SetAnnotation("addToUnreadMentions", QString::number(id));
+		addToUnreadMentions(UnreadMentionType::New);
+		CrashReports::ClearAnnotation("addToUnreadMentions");
+		if (const auto types = sharedMediaTypes()) {
+			Auth().storage().add(Storage::SharedMediaAddNew(
+				history()->peer->id,
+				types,
+				id));
+		}
+	}
 }
 
 void HistoryItem::previousItemChanged() {
@@ -848,7 +430,14 @@ void HistoryItem::setId(MsgId newId) {
 	}
 
 	if (_media) {
-		_media->updateMessageId();
+		_media->refreshParentId(this);
+		if (const auto group = Get<HistoryMessageGroup>()) {
+			if (group->leader != this) {
+				if (const auto media = group->leader->getMedia()) {
+					media->refreshParentId(group->leader);
+				}
+			}
+		}
 	}
 }
 
@@ -1028,6 +617,53 @@ QString HistoryItem::directLink() const {
 	return QString();
 }
 
+MsgId HistoryItem::replyToId() const {
+	if (auto reply = Get<HistoryMessageReply>()) {
+		return reply->replyToId();
+	}
+	return 0;
+}
+
+QDateTime HistoryItem::dateOriginal() const {
+	if (const auto forwarded = Get<HistoryMessageForwarded>()) {
+		return forwarded->originalDate;
+	}
+	return date;
+}
+
+PeerData *HistoryItem::senderOriginal() const {
+	if (const auto forwarded = Get<HistoryMessageForwarded>()) {
+		return forwarded->originalSender;
+	}
+	const auto peer = history()->peer;
+	return (peer->isChannel() && !peer->isMegagroup()) ? peer : from();
+}
+
+PeerData *HistoryItem::fromOriginal() const {
+	if (const auto forwarded = Get<HistoryMessageForwarded>()) {
+		if (const auto user = forwarded->originalSender->asUser()) {
+			return user;
+		}
+	}
+	return from();
+}
+
+QString HistoryItem::authorOriginal() const {
+	if (const auto forwarded = Get<HistoryMessageForwarded>()) {
+		return forwarded->originalAuthor;
+	} else if (const auto msgsigned = Get<HistoryMessageSigned>()) {
+		return msgsigned->author;
+	}
+	return QString();
+}
+
+MsgId HistoryItem::idOriginal() const {
+	if (const auto forwarded = Get<HistoryMessageForwarded>()) {
+		return forwarded->originalId;
+	}
+	return id;
+}
+
 bool HistoryItem::hasOutLayout() const {
 	if (history()->peer->isSelf()) {
 		return !Has<HistoryMessageForwarded>();
@@ -1111,9 +747,128 @@ void HistoryItem::setUnreadBarCount(int count) {
 
 void HistoryItem::setUnreadBarFreezed() {
 	Expects(!isLogEntry());
-	if (auto bar = Get<HistoryMessageUnreadBar>()) {
+
+	if (const auto bar = Get<HistoryMessageUnreadBar>()) {
 		bar->_freezed = true;
 	}
+}
+
+MessageGroupId HistoryItem::groupId() const {
+	if (const auto group = Get<HistoryMessageGroup>()) {
+		return group->groupId;
+	}
+	return MessageGroupId::None;
+}
+
+bool HistoryItem::groupIdValidityChanged() {
+	if (Has<HistoryMessageGroup>()) {
+		if (_media && _media->canBeGrouped()) {
+			return false;
+		}
+		RemoveComponents(HistoryMessageGroup::Bit());
+		setPendingInitDimensions();
+		return true;
+	}
+	return false;
+}
+
+void HistoryItem::makeGroupMember(not_null<HistoryItem*> leader) {
+	Expects(leader != this);
+
+	const auto group = Get<HistoryMessageGroup>();
+	Assert(group != nullptr);
+	if (group->leader == this) {
+		if (auto single = _media ? _media->takeLastFromGroup() : nullptr) {
+			_media = std::move(single);
+		}
+		_flags |= MTPDmessage_ClientFlag::f_hidden_by_group;
+		setPendingInitDimensions();
+
+		group->leader = leader;
+		base::take(group->others);
+	} else if (group->leader != leader) {
+		group->leader = leader;
+	}
+
+	Ensures(isHiddenByGroup());
+	Ensures(group->others.empty());
+}
+
+void HistoryItem::makeGroupLeader(
+		std::vector<not_null<HistoryItem*>> &&others) {
+	const auto group = Get<HistoryMessageGroup>();
+	Assert(group != nullptr);
+
+	const auto leaderChanged = (group->leader != this);
+	if (leaderChanged) {
+		group->leader = this;
+		_flags &= ~MTPDmessage_ClientFlag::f_hidden_by_group;
+		setPendingInitDimensions();
+	}
+	group->others = std::move(others);
+	if (!_media || !_media->applyGroup(group->others)) {
+		resetGroupMedia(group->others);
+		invalidateChatsListEntry();
+	}
+
+	Ensures(!isHiddenByGroup());
+}
+
+HistoryMessageGroup *HistoryItem::getFullGroup() {
+	if (const auto group = Get<HistoryMessageGroup>()) {
+		if (group->leader == this) {
+			return group;
+		}
+		return group->leader->Get<HistoryMessageGroup>();
+	}
+	return nullptr;
+}
+
+void HistoryItem::resetGroupMedia(
+		const std::vector<not_null<HistoryItem*>> &others) {
+	if (!others.empty()) {
+		_media = std::make_unique<HistoryGroupedMedia>(this, others);
+	} else if (_media) {
+		_media = _media->takeLastFromGroup();
+	}
+	setPendingInitDimensions();
+}
+
+int HistoryItem::displayedDateHeight() const {
+	if (auto date = Get<HistoryMessageDate>()) {
+		return date->height();
+	}
+	return 0;
+}
+
+int HistoryItem::marginTop() const {
+	auto result = 0;
+	if (!isHiddenByGroup()) {
+		if (isAttachedToPrevious()) {
+			result += st::msgMarginTopAttached;
+		} else {
+			result += st::msgMargin.top();
+		}
+	}
+	result += displayedDateHeight();
+	if (const auto unreadbar = Get<HistoryMessageUnreadBar>()) {
+		result += unreadbar->height();
+	}
+	return result;
+}
+
+bool HistoryItem::displayDate() const {
+	return Has<HistoryMessageDate>();
+}
+
+bool HistoryItem::isEmpty() const {
+	return _text.isEmpty()
+		&& !_media
+		&& !Has<HistoryMessageLogEntryOriginal>();
+}
+
+int HistoryItem::marginBottom() const {
+	return isHiddenByGroup() ? 0 : st::msgMargin.bottom();
 }
 
 void HistoryItem::clipCallback(Media::Clip::Notification notification) {
@@ -1268,7 +1023,7 @@ void HistoryItem::drawInDialog(
 		Text &cache) const {
 	if (cacheFor != this) {
 		cacheFor = this;
-		cache.setText(st::dialogsTextStyle, inDialogsText(way), _textDlgOptions);
+		cache.setText(st::dialogsTextStyle, inDialogsText(way), Ui::DialogTextOptions());
 	}
 	if (r.width()) {
 		p.setTextPalette(active ? st::dialogsTextPaletteActive : (selected ? st::dialogsTextPaletteOver : st::dialogsTextPalette));
@@ -1287,7 +1042,7 @@ HistoryItem::~HistoryItem() {
 }
 
 ClickHandlerPtr goToMessageClickHandler(PeerData *peer, MsgId msgId) {
-	return MakeShared<LambdaClickHandler>([peer, msgId] {
+	return std::make_shared<LambdaClickHandler>([peer, msgId] {
 		if (App::main()) {
 			auto current = App::mousedItem();
 			if (current && current->history()->peer == peer) {

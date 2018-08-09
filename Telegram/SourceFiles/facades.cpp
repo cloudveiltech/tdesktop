@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "facades.h"
 
@@ -24,6 +11,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "core/click_handler_types.h"
 #include "media/media_clip_reader.h"
 #include "window/window_controller.h"
+#include "history/history_item_components.h"
 #include "observer_peer.h"
 #include "mainwindow.h"
 #include "mainwidget.h"
@@ -34,7 +22,6 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "window/layer_widget.h"
 #include "lang/lang_keys.h"
 #include "base/observer.h"
-#include "base/task_queue.h"
 #include "history/history_media.h"
 #include "styles/style_history.h"
 
@@ -69,19 +56,22 @@ bool insertBotCommand(const QString &cmd) {
 	return false;
 }
 
-void activateBotCommand(const HistoryItem *msg, int row, int col) {
-	const HistoryMessageReplyMarkup::Button *button = nullptr;
+void activateBotCommand(
+		not_null<const HistoryItem*> msg,
+		int row,
+		int column) {
+	const HistoryMessageMarkupButton *button = nullptr;
 	if (auto markup = msg->Get<HistoryMessageReplyMarkup>()) {
 		if (row < markup->rows.size()) {
 			auto &buttonRow = markup->rows[row];
-			if (col < buttonRow.size()) {
-				button = &buttonRow.at(col);
+			if (column < buttonRow.size()) {
+				button = &buttonRow[column];
 			}
 		}
 	}
 	if (!button) return;
 
-	using ButtonType = HistoryMessageReplyMarkup::Button::Type;
+	using ButtonType = HistoryMessageMarkupButton::Type;
 	switch (button->type) {
 	case ButtonType::Default: {
 		// Copy string before passing it to the sending method
@@ -93,7 +83,7 @@ void activateBotCommand(const HistoryItem *msg, int row, int col) {
 	case ButtonType::Callback:
 	case ButtonType::Game: {
 		if (auto m = main()) {
-			m->app_sendBotCallback(button, msg, row, col);
+			m->app_sendBotCallback(button, msg, row, column);
 		}
 	} break;
 
@@ -504,20 +494,7 @@ void WorkingDirReady() {
 	}
 }
 
-object_ptr<SingleQueuedInvokation> MainThreadTaskHandler = { nullptr };
-
-void MainThreadTaskAdded() {
-	if (!started()) {
-		return;
-	}
-
-	MainThreadTaskHandler->call();
-}
-
 void start() {
-	MainThreadTaskHandler.create([] {
-		base::TaskQueue::ProcessMainTasks();
-	});
 	SandboxData = std::make_unique<internal::Data>();
 }
 
@@ -527,7 +504,6 @@ bool started() {
 
 void finish() {
 	SandboxData.reset();
-	MainThreadTaskHandler.destroy();
 }
 
 uint64 UserTag() {

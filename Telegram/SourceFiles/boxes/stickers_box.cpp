@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "stickers_box.h"
 
@@ -53,7 +40,7 @@ constexpr auto kHandleMegagroupSetAddressChangeTimeout = TimeMs(1000);
 int stickerPacksCount(bool includeArchivedOfficial) {
 	auto result = 0;
 	auto &order = Auth().data().stickerSetsOrder();
-	auto &sets = Auth().data().stickerSets();
+	auto &sets = Auth().data().stickerSetsFiltered();
 	for (auto i = 0, l = order.size(); i < l; ++i) {
 		auto it = sets.constFind(order.at(i));
 		if (it != sets.cend()) {
@@ -90,11 +77,11 @@ StickersBox::CounterWidget::CounterWidget(QWidget *parent)
 	_st.padding = st::stickersFeaturedBadgePadding;
 	_st.font = st::stickersFeaturedBadgeFont;
 
-	Auth().data().featuredStickerSetsUnreadCountValue()
-		| rpl::start_with_next([this](int count) {
-			setCounter(count);
-			update();
-		}, lifetime());
+	Auth().data().featuredStickerSetsUnreadCountValue(
+	) | rpl::start_with_next([this](int count) {
+		setCounter(count);
+		update();
+	}, lifetime());
 }
 
 void StickersBox::CounterWidget::setCounter(int counter) {
@@ -242,10 +229,10 @@ void StickersBox::prepare() {
 			preloadArchivedSets();
 		}
 		setNoContentMargin(true);
-		_tabs->sectionActivated()
-			| rpl::start_with_next(
-				[this] { switchTab(); },
-				lifetime());
+		_tabs->sectionActivated(
+		) | rpl::start_with_next(
+			[this] { switchTab(); },
+			lifetime());
 		refreshTabs();
 	}
 	if (_installed.widget() && _section != Section::Installed) _installed.widget()->hide();
@@ -277,10 +264,10 @@ void StickersBox::prepare() {
 	setInnerWidget(_tab->takeWidget(), getTopSkip());
 	setDimensions(st::boxWideWidth, st::boxMaxListHeight);
 
-	Auth().data().stickersUpdated()
-		| rpl::start_with_next(
-			[this] { handleStickersUpdated(); },
-			lifetime());
+	Auth().data().stickersUpdated(
+	) | rpl::start_with_next(
+		[this] { handleStickersUpdated(); },
+		lifetime());
 	Auth().api().updateStickers();
 
 	if (_installed.widget()) {
@@ -332,8 +319,8 @@ void StickersBox::loadMoreArchived() {
 	uint64 lastId = 0;
 	for (auto setIt = Auth().data().archivedStickerSetsOrder().cend(), e = Auth().data().archivedStickerSetsOrder().cbegin(); setIt != e;) {
 		--setIt;
-		auto it = Auth().data().stickerSets().constFind(*setIt);
-		if (it != Auth().data().stickerSets().cend()) {
+		auto it = Auth().data().stickerSetsFiltered().constFind(*setIt);
+		if (it != Auth().data().stickerSetsFiltered().cend()) {
 			if (it->flags & MTPDstickerSet::Flag::f_archived) {
 				lastId = it->id;
 				break;
@@ -498,7 +485,7 @@ void StickersBox::requestArchivedSets() {
 		preloadArchivedSets();
 	}
 
-	auto &sets = Auth().data().stickerSets();
+	auto &sets = Auth().data().stickerSetsFiltered();
 	for_const (auto setId, Auth().data().archivedStickerSetsOrder()) {
 		auto it = sets.constFind(setId);
 		if (it != sets.cend()) {
@@ -1293,8 +1280,8 @@ void StickersBox::Inner::handleMegagroupSetAddressChange() {
 	auto text = _megagroupSetField->getLastText().trimmed();
 	if (text.isEmpty()) {
 		if (_megagroupSelectedSet) {
-			auto it = Auth().data().stickerSets().constFind(_megagroupSelectedSet->id);
-			if (it != Auth().data().stickerSets().cend() && !it->shortName.isEmpty()) {
+			auto it = Auth().data().stickerSetsFiltered().constFind(_megagroupSelectedSet->id);
+			if (it != Auth().data().stickerSetsFiltered().cend() && !it->shortName.isEmpty()) {
 				setMegagroupSelectedSet(MTP_inputStickerSetEmpty());
 			}
 		}
@@ -1326,7 +1313,7 @@ void StickersBox::Inner::rebuildMegagroupSet() {
 	}
 	auto &set = _megagroupSetInput.c_inputStickerSetID();
 	auto setId = set.vid.v;
-	auto &sets = Auth().data().stickerSets();
+	auto &sets = Auth().data().stickerSetsFiltered();
 	auto it = sets.find(setId);
 	if (it == sets.cend() || (it->flags & MTPDstickerSet_ClientFlag::f_not_loaded)) {
 		Auth().api().scheduleStickerSetRequest(set.vid.v, set.vaccess_hash.v);
@@ -1386,7 +1373,7 @@ void StickersBox::Inner::rebuild() {
 	_rows.reserve(order.size() + 1);
 	_animStartTimes.reserve(order.size() + 1);
 
-	auto &sets = Auth().data().stickerSets();
+	auto &sets = Auth().data().stickerSetsFiltered();
 	if (_megagroupSet) {
 		auto usingFeatured = Auth().data().stickerSetsOrder().empty();
 		_megagroupSubTitle->setText(lang(usingFeatured
@@ -1436,7 +1423,7 @@ void StickersBox::Inner::updateSize(int newWidth) {
 
 void StickersBox::Inner::updateRows() {
 	int maxNameWidth = countMaxNameWidth();
-	auto &sets = Auth().data().stickerSets();
+	auto &sets = Auth().data().stickerSetsFiltered();
 	for_const (auto &row, _rows) {
 		auto it = sets.constFind(row->id);
 		if (it != sets.cend()) {
@@ -1548,8 +1535,8 @@ void StickersBox::Inner::fillSetCover(const Stickers::Set &set, DocumentData **o
 int StickersBox::Inner::fillSetCount(const Stickers::Set &set) const {
 	int result = set.stickers.isEmpty() ? set.count : set.stickers.size(), added = 0;
 	if (set.id == Stickers::CloudRecentSetId) {
-		auto customIt = Auth().data().stickerSets().constFind(Stickers::CustomSetId);
-		if (customIt != Auth().data().stickerSets().cend()) {
+		auto customIt = Auth().data().stickerSetsFiltered().constFind(Stickers::CustomSetId);
+		if (customIt != Auth().data().stickerSetsFiltered().cend()) {
 			added = customIt->stickers.size();
 			for_const (auto &sticker, Stickers::GetRecentPack()) {
 				if (customIt->stickers.indexOf(sticker.first) < 0) {

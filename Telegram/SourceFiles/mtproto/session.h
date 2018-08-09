@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
@@ -311,16 +298,25 @@ public:
 	void destroyKey();
 	void notifyLayerInited(bool wasInited);
 
-	template <typename TRequest>
-	mtpRequestId send(const TRequest &request, RPCResponseHandler callbacks = RPCResponseHandler(), TimeMs msCanWait = 0, bool needsLayer = false, bool toMainDC = false, mtpRequestId after = 0); // send mtp request
-
 	void ping();
 	void cancel(mtpRequestId requestId, mtpMsgId msgId);
 	int32 requestState(mtpRequestId requestId) const;
 	int32 getState() const;
 	QString transport() const;
 
-	void sendPrepared(const mtpRequest &request, TimeMs msCanWait = 0, bool newRequest = true); // nulls msgId and seqNo in request, if newRequest = true
+	mtpRequestId send(
+		mtpRequest &&request,
+		RPCResponseHandler &&callbacks = {},
+		TimeMs msCanWait = 0,
+		bool needsLayer = false,
+		bool toMainDC = false,
+		mtpRequestId after = 0);
+
+	// Nulls msgId and seqNo in request, if newRequest = true.
+	void sendPrepared(
+		const mtpRequest &request,
+		TimeMs msCanWait = 0,
+		bool newRequest = true);
 
 	~Session();
 
@@ -353,10 +349,11 @@ private:
 	void createDcData();
 
 	void registerRequest(mtpRequestId requestId, ShiftedDcId dcWithShift);
-	mtpRequestId storeRequest(mtpRequest &request, const RPCResponseHandler &parser);
+	mtpRequestId storeRequest(
+		mtpRequest &request,
+		RPCResponseHandler &&callbacks);
 	mtpRequest getRequest(mtpRequestId requestId);
 	bool rpcErrorOccured(mtpRequestId requestId, const RPCFailHandlerPtr &onFail, const RPCError &err);
-	void requestPrepareFailed(const RPCFailHandlerPtr &onFail, Exception &e);
 
 	not_null<Instance*> _instance;
 	std::unique_ptr<Connection> _connection;

@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
@@ -51,14 +38,6 @@ namespace App {
 	void logOut();
 
 	QString formatPhone(QString phone);
-
-	TimeId onlineForSort(UserData *user, TimeId now);
-	int32 onlineWillChangeIn(UserData *user, TimeId now);
-	int32 onlineWillChangeIn(TimeId online, TimeId now);
-	QString onlineText(UserData *user, TimeId now, bool precise = false);
-	QString onlineText(TimeId online, TimeId now, bool precise = false);
-	bool onlineColorUse(UserData *user, TimeId now);
-	bool onlineColorUse(TimeId online, TimeId now);
 
 	UserData *feedUser(const MTPUser &user);
 	UserData *feedUsers(const MTPVector<MTPUser> &users); // returns last user
@@ -141,13 +120,52 @@ namespace App {
 	PeerData *peerByName(const QString &username);
 	QString peerName(const PeerData *peer, bool forDialogs = false);
 	PhotoData *photo(const PhotoId &photo);
-	PhotoData *photoSet(const PhotoId &photo, PhotoData *convert, const uint64 &access, int32 date, const ImagePtr &thumb, const ImagePtr &medium, const ImagePtr &full);
+	PhotoData *photoSet(
+		const PhotoId &photo,
+		PhotoData *convert,
+		const uint64 &access,
+		int32 date,
+		const ImagePtr &thumb,
+		const ImagePtr &medium,
+		const ImagePtr &full);
 	DocumentData *document(const DocumentId &document);
-	DocumentData *documentSet(const DocumentId &document, DocumentData *convert, const uint64 &access, int32 version, int32 date, const QVector<MTPDocumentAttribute> &attributes, const QString &mime, const ImagePtr &thumb, int32 dc, int32 size, const StorageImageLocation &thumbLocation);
+	DocumentData *documentSet(
+		const DocumentId &document,
+		DocumentData *convert,
+		const uint64 &access,
+		int32 version,
+		int32 date,
+		const QVector<MTPDocumentAttribute> &attributes,
+		const QString &mime,
+		const ImagePtr &thumb,
+		int32 dc,
+		int32 size,
+		const StorageImageLocation &thumbLocation);
 	WebPageData *webPage(const WebPageId &webPage);
-	WebPageData *webPageSet(const WebPageId &webPage, WebPageData *convert, const QString &type, const QString &url, const QString &displayUrl, const QString &siteName, const QString &title, const TextWithEntities &description, PhotoData *photo, DocumentData *doc, int32 duration, const QString &author, int32 pendingTill);
+	WebPageData *webPageSet(
+		const WebPageId &webPage,
+		WebPageData *convert,
+		const QString &type,
+		const QString &url,
+		const QString &displayUrl,
+		const QString &siteName,
+		const QString &title,
+		const TextWithEntities &description,
+		PhotoData *photo,
+		DocumentData *document,
+		int duration,
+		const QString &author,
+		int pendingTill);
 	GameData *game(const GameId &game);
-	GameData *gameSet(const GameId &game, GameData *convert, const uint64 &accessHash, const QString &shortName, const QString &title, const QString &description, PhotoData *photo, DocumentData *doc);
+	GameData *gameSet(
+		const GameId &game,
+		GameData *convert,
+		const uint64 &accessHash,
+		const QString &shortName,
+		const QString &title,
+		const QString &description,
+		PhotoData *photo,
+		DocumentData *document);
 	LocationData *location(const LocationCoords &coords);
 	void forgetMedia();
 
@@ -270,8 +288,8 @@ namespace App {
 #endif // !TDESKTOP_DISABLE_NETWORK_PROXY
 	void setProxySettings(QTcpSocket &socket);
 
-	void complexOverlayRect(Painter &p, QRect rect, ImageRoundRadius radius, ImageRoundCorners corners);
-	void complexLocationRect(Painter &p, QRect rect, ImageRoundRadius radius, ImageRoundCorners corners);
+	void complexOverlayRect(Painter &p, QRect rect, ImageRoundRadius radius, RectParts corners);
+	void complexLocationRect(Painter &p, QRect rect, ImageRoundRadius radius, RectParts corners);
 
 	QImage *cornersMask(ImageRoundRadius radius);
 	void roundRect(Painter &p, int32 x, int32 y, int32 w, int32 h, style::color bg, RoundCorners index, const style::color *shadow = nullptr, RectParts parts = RectPart::Full);

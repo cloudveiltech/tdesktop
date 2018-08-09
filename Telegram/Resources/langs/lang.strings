@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 "lng_language_name" = "English";
 "lng_switch_to_this" = "Continue in English";
@@ -27,14 +14,14 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_menu_about" = "About";
 "lng_menu_update" = "Update";
 "lng_menu_back" = "Back";
-"lng_menu_night_mode" = "Night mode";
+"lng_menu_night_mode" = "Night Mode";
 
 "lng_disable_notifications_from_tray" = "Disable notifications";
 "lng_enable_notifications_from_tray" = "Enable notifications";
-"lng_open_from_tray" = "Open Telegram";
+"lng_open_from_tray" = "Open CloudVeil Messenger";
 "lng_minimize_to_tray" = "Minimize to tray";
-"lng_quit_from_tray" = "Quit Telegram";
-"lng_tray_icon_text" = "Telegram is still running here,\nyou can change this from settings page.\nIf this icon disappears from tray menu,\nyou can drag it here from hidden icons.";
+"lng_quit_from_tray" = "Quit CloudVeil Messenger";
+"lng_tray_icon_text" = "CloudVeil Messenger is still running here,\nyou can change this from settings page.\nIf this icon disappears from tray menu,\nyou can drag it here from hidden icons.";
 
 "lng_month1" = "January";
 "lng_month2" = "February";
@@ -125,9 +112,9 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_flood_error" = "Too many tries. Please try again later.";
 "lng_gif_error" = "An error has occurred while reading GIF animation :(";
 "lng_edit_error" = "You cannot edit this message";
-"lng_join_channel_error" = "Sorry, you have joined too many channels and supergroups. Please leave some before joining.";
+"lng_join_channel_error" = "Sorry, you have joined too many channels and supergroups. Please leave some before joining this one.";
 "lng_error_phone_flood" = "Sorry, you have deleted and re-created your account too many times recently. Please wait for a few days before signing up again.";
-"lng_error_start_minimized_passcoded" = "You have set a local passcode, so the app can't be launched minimized. App will ask you to enter the passcode before it can start working.";
+"lng_error_start_minimized_passcoded" = "You have set a local passcode, so CloudVeil Messenger Desktop can't be launched minimised; it will ask you to enter your passcode before it can start working.";
 "lng_error_pinned_max#one" = "Sorry, you can pin no more than {count} chat to the top.";
 "lng_error_pinned_max#other" = "Sorry, you can pin no more than {count} chats to the top.";
 "lng_error_public_groups_denied" = "Unfortunately, you were banned from participating in public groups.\n{more_info}";
@@ -137,8 +124,9 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_error_cant_add_admin_unban" = "Sorry, you can't add this user as an admin because they are in the blacklist and you can't unban them.";
 "lng_error_cant_ban_admin" = "Sorry, you can't ban this user because they are an admin in this group and you are not allowed to demote them.";
 "lng_sure_add_admin_invite" = "This user is not a member of this group. Add them to the group and promote them to admin?";
-"lng_sure_add_admin_unban" = "This user is currently restricted or banned in this group. Are you sure you want to unban and promote them?";
-"lng_sure_ban_admin" = "This user is an admin in this group. Are you sure you want to go ahead and restrict them?";
+"lng_sure_add_admin_invite_channel" = "This user is not a subscriber of this channel. Add them to the channel and promote them to admin?";
+"lng_sure_add_admin_unban" = "This user is currently restricted or banned. Are you sure you want to unban and promote them?";
+"lng_sure_ban_admin" = "This user is an admin. Are you sure you want to go ahead and restrict them?";
 "lng_sure_ban_user_group" = "Ban {user} in the group?";
 "lng_sure_enable_socks" = "Are you sure you want to enable this proxy?\n\nServer: {server}\nPort: {port}\n\nYou can change your proxy server later in the Settings (Connection Type).";
 "lng_sure_enable" = "Enable";
@@ -156,7 +144,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_pinned_unpin" = "Unpin";
 "lng_pinned_notify" = "Notify all members";
 
-"lng_intro_about" = "Welcome to the official Telegram Desktop app.\nIt's fast and secure.";
+"lng_intro_about" = "Welcome to the official CloudVeil Messenger Desktop app.\nIt's fast and secure.";
 "lng_start_msgs" = "START MESSAGING";
 
 "lng_intro_next" = "NEXT";
@@ -166,9 +154,9 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_photo_caption" = "Caption";
 "lng_photos_comment" = "Comment";
 
-"lng_phone_title" = "Your Phone";
-"lng_phone_desc" = "Please confirm your country code and\nenter your phone number.";
-"lng_phone_notreg" = "If you don't have a Telegram account yet,\nplease [b]sign up[/b] with {link_start}Android / iPhone{link_end} or {signup_start}here{signup_end}";
+"lng_phone_title" = "Your Phone Number";
+"lng_phone_desc" = "Please confirm your country code and\nenter your mobile phone number.";
+"lng_phone_notreg" = "If you don't have a CloudVeil Messenger account yet,\nplease [b]sign up[/b] with {link_start}Android / iPhone{link_end} or {signup_start}here{signup_end}";
 "lng_country_code" = "Country Code";
 "lng_bad_country_code" = "Invalid Country Code";
 "lng_country_ph" = "Search";
@@ -177,17 +165,17 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 
 "lng_code_ph" = "Your code";
 "lng_code_desc" = "We have sent you a message with activation\ncode to your phone. Please enter it below.";
-"lng_code_telegram" = "Please enter the code you've just received\nin your previous [b]Telegram[/b] app.";
+"lng_code_telegram" = "Please enter the code you've just received\nin your previous [b]CloudVeil Messenger[/b] app.";
 "lng_code_no_telegram" = "Send code via SMS";
-"lng_code_call" = "Telegram will dial your number in {minutes}:{seconds}";
-"lng_code_calling" = "Requesting a call from Telegram...";
-"lng_code_called" = "Telegram dialed your number";
+"lng_code_call" = "CloudVeil Messenger will call you in {minutes}:{seconds}";
+"lng_code_calling" = "Requesting a call from CloudVeil Messenger...";
+"lng_code_called" = "CloudVeil Messenger dialed your number";
 
 "lng_bad_phone" = "Invalid phone number. Please try again.";
 "lng_bad_phone_noreg" = "Phone number not registered.";
 "lng_bad_code" = "You have entered an invalid code.";
 "lng_bad_name" = "Please enter your first and last name.";
-"lng_bad_photo" = "Bad image selected.";
+"lng_bad_photo" = "Sorry, CloudVeil Messenger can't process that type of image.";
 
 "lng_signin_title" = "Cloud password check";
 "lng_signin_desc" = "Please enter your cloud password.";
@@ -201,8 +189,8 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_signin_bad_password" = "You have entered a wrong password.";
 "lng_signin_wrong_code" = "You have entered an invalid code.";
 "lng_signin_try_password" = "Having trouble accessing your e-mail?";
-"lng_signin_password_removed" = "Your cloud password was disabled.\nYou can set a new one in Settings.";
-"lng_signin_no_email_forgot" = "Since you haven't provided a recovery\ne-mail when setting up your password, your remaining options are either to remember your password or to reset your account.";
+"lng_signin_password_removed" = "Your cloud password was disabled.\nYou can set up a new one in Settings.";
+"lng_signin_no_email_forgot" = "Since you didn't provide a recovery e-mail when setting up your password, your remaining options are either to remember your password or to reset your account.";
 "lng_signin_cant_email_forgot" = "If you can't restore access to the e-mail, your remaining options are either to remember your password or to reset your account.";
 "lng_signin_reset_account" = "Reset your account";
 "lng_signin_sure_reset" = "Warning!\n\nYou will lose all your chats and messages, along with any media and files you shared!\n\nDo you want to reset your account?";
@@ -234,7 +222,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_contacts_loading" = "Loading...";
 "lng_contacts_not_found" = "No contacts found";
 "lng_dlg_search_for_messages" = "Search for messages";
-"lng_update_telegram" = "Update Telegram";
+"lng_update_telegram" = "Update CloudVeil Messenger";
 "lng_dlg_search_in" = "Search messages in";
 "lng_dlg_search_from" = "From: {user}";
 
@@ -246,15 +234,15 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_settings_drop_area_subtitle" = "to set it as your photo";
 
 "lng_username_title" = "Username";
-"lng_username_about" = "You can choose a username on Telegram.\nIf you do, other people will be able to find\nyou by this username and contact you\nwithout knowing your phone number.\n\nYou can use a-z, 0-9 and underscores.\nMinimum length is 5 characters.";
+"lng_username_about" = "You can choose a username on CloudVeil Messenger.\nIf you do, other people will be able to find\nyou by this username and contact you\nwithout knowing your phone number.\n\nYou can use a-z, 0-9 and underscores.\nMinimum length is 5 characters.";
 "lng_username_choose" = "Choose your username.";
 "lng_username_invalid" = "This username is invalid.";
 "lng_username_occupied" = "This username is already occupied.";
 "lng_username_too_short" = "This username is too short.";
-"lng_username_bad_symbols" = "This username has bad symbols.";
+"lng_username_bad_symbols" = "Only a-z, 0-9, and underscores allowed.";
 "lng_username_available" = "This username is available.";
 "lng_username_not_found" = "User @{user} not found.";
-"lng_username_link_willbe" = "Such link will open a chat with you:";
+"lng_username_link_willbe" = "This link will open a chat with you:";
 "lng_username_link" = "This link opens a chat with you:";
 "lng_username_copied" = "Link copied to clipboard.";
 
@@ -287,7 +275,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_settings_section_general" = "General";
 "lng_settings_change_lang" = "Change language";
 "lng_languages" = "Languages";
-"lng_sure_save_language" = "Telegram will restart in order to change language";
+"lng_sure_save_language" = "CloudVeil Messenger will restart in order to change language";
 "lng_settings_update_automatically" = "Update automatically";
 "lng_settings_current_version_label" = "Version {version}:";
 "lng_settings_current_version" = "Version {version}";
@@ -300,9 +288,9 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_settings_update_fail" = "Update check failed :(";
 "lng_settings_workmode_tray" = "Show tray icon";
 "lng_settings_workmode_window" = "Show taskbar icon";
-"lng_settings_auto_start" = "Launch Telegram when system starts";
+"lng_settings_auto_start" = "Launch CloudVeil Messenger when system starts";
 "lng_settings_start_min" = "Launch minimized";
-"lng_settings_add_sendto" = "Place Telegram in \"Send to\" menu";
+"lng_settings_add_sendto" = "Place CloudVeil Messenger in \"Send to\" menu";
 "lng_settings_section_scale" = "Interface Scale";
 "lng_settings_scale_auto" = "Auto ({cur})";
 
@@ -322,9 +310,9 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_settings_adaptive_wide" = "Adaptive layout for wide screens";
 
 "lng_backgrounds_header" = "Choose your new chat background";
-"lng_theme_sure_keep" = "Keep this color theme?";
-"lng_theme_reverting#one" = "Reverting to the old color theme in {count} second.";
-"lng_theme_reverting#other" = "Reverting to the old color theme in {count} seconds.";
+"lng_theme_sure_keep" = "Keep this theme?";
+"lng_theme_reverting#one" = "Reverting to the old theme in {count} second.";
+"lng_theme_reverting#other" = "Reverting to the old theme in {count} seconds.";
 "lng_theme_keep_changes" = "Keep changes";
 "lng_theme_revert" = "Revert";
 
@@ -334,12 +322,12 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_download_path_default" = "default folder";
 "lng_download_path_clear" = "Clear all";
 "lng_download_path_header" = "Choose download path";
-"lng_download_path_default_radio" = "Telegram folder in system «Downloads»";
+"lng_download_path_default_radio" = "CloudVeil Messenger folder in system «Downloads»";
 "lng_download_path_temp_radio" = "Temp folder, cleared on logout or uninstall";
 "lng_download_path_dir_radio" = "Custom folder, cleared only manually";
 "lng_download_path_choose" = "Choose download path";
 "lng_sure_clear_downloads" = "Do you want to remove all downloaded files from temp folder? It is done automatically on logout or program uninstall.";
-"lng_download_path_failed" = "File download could not be started. It could happen because of a bad download location.\n\nYou can change download path in Settings.";
+"lng_download_path_failed" = "File download could not be started.\n\nThis might be because the download location you've selected is invalid. Try changing the \"Download path\" in Settings.";
 "lng_download_path_settings" = "Settings";
 "lng_download_finish_failed" = "File download could not be finished.\n\nWould you like to try again?";
 "lng_download_path_clearing" = "Clearing...";
@@ -379,7 +367,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_passcode_enter_first" = "Enter a passcode";
 "lng_passcode_enter_new" = "Enter new passcode";
 "lng_passcode_confirm_new" = "Re-enter new passcode";
-"lng_passcode_about" = "When a local passcode is set, a lock icon appears at the top of your chats list. Click it to lock the app.\n\nNote: if you forget your local passcode, you'll need to relogin in Telegram Desktop.";
+"lng_passcode_about" = "When a local passcode is set, a lock icon appears at the top of your chats list. Click it to lock the app.\n\nNote: if you forget your local passcode, you'll need to relogin in CloudVeil Messenger Desktop.";
 "lng_passcode_differ" = "Passcodes are different";
 "lng_passcode_wrong" = "Wrong passcode";
 "lng_passcode_is_same" = "Passcode was not changed";
@@ -404,8 +392,8 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_cloud_password_bad" = "Password and hint cannot be the same.";
 "lng_cloud_password_email" = "Enter recovery e-mail";
 "lng_cloud_password_bad_email" = "Incorrect e-mail, please try other.";
-"lng_cloud_password_about" = "This password will be asked when you log in on a new device in addition to the pin code.";
-"lng_cloud_password_about_recover" = "Warning! Are you sure you don't want to\nadd a password recovery e-mail?\n\nIf you forget your password, you will\nlose access to your Telegram account.";
+"lng_cloud_password_about" = "This password will be asked when you log in on a new device in addition to the SMS code.";
+"lng_cloud_password_about_recover" = "Warning! Are you sure you don't want to\nadd a password recovery e-mail?\n\nIf you forget your password, you will\nlose access to your CloudVeil Messenger account.";
 "lng_cloud_password_skip_email" = "Skip e-mail";
 "lng_cloud_password_almost" = "A confirmation link was sent to the\ne-mail you provided. Two-step verification will be enabled as soon as you follow that link.";
 "lng_cloud_password_was_set" = "Two-step verification enabled.";
@@ -445,10 +433,10 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_settings_reset_button" = "Terminate";
 "lng_settings_manage_local_storage" = "Manage local storage";
 "lng_settings_ask_question" = "Ask a Question";
-"lng_settings_ask_sure" = "Please note that Telegram Support is done by volunteers. We try to respond as quickly as possible, but it may take a while.\n\nPlease take a look at the Telegram FAQ: it has important troubleshooting tips and answers to most questions.";
+"lng_settings_ask_sure" = "Please note that CloudVeil Messenger Support is run by volunteers. We try to respond as quickly as possible, but it may take a while.\n\nPlease take a look at the CloudVeil Messenger FAQ: it has important troubleshooting tips and answers to most questions.";
 "lng_settings_faq_button" = "Go to FAQ";
-"lng_settings_ask_ok" = "Ask";
-"lng_settings_faq" = "Telegram FAQ";
+"lng_settings_ask_ok" = "Ask a Volunteer";
+"lng_settings_faq" = "CloudVeil Messenger FAQ";
 "lng_settings_logout" = "Log Out";
 "lng_sure_logout" = "Are you sure you want to log out?";
 
@@ -457,11 +445,11 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 
 "lng_sessions_header" = "Current session";
 "lng_sessions_other_header" = "Active sessions";
-"lng_sessions_other_desc" = "You can log in to Telegram from other mobile, tablet and desktop devices, using the same phone number. All your data will be instantly synchronized.";
+"lng_sessions_other_desc" = "You can log in to CloudVeil Messenger from other mobile, tablet and desktop devices, using the same phone number. All your data will be instantly synchronized.";
 "lng_sessions_terminate_all" = "Terminate all other sessions";
 
 "lng_blocked_list_title" = "Blocked users";
-"lng_blocked_list_unknown_phone" = "unknown phone";
+"lng_blocked_list_unknown_phone" = "unknown phone number";
 "lng_blocked_list_unblock" = "Unblock";
 "lng_blocked_list_add" = "Block user";
 "lng_blocked_list_add_title" = "Select user to block";
@@ -499,7 +487,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_edit_privacy_groups_always_title" = "Always allow";
 "lng_edit_privacy_groups_never_title" = "Never allow";
 
-"lng_edit_privacy_calls_title" = "Phone calls privacy";
+"lng_edit_privacy_calls_title" = "CloudVeil Messenger call privacy";
 "lng_edit_privacy_calls_description" = "You can restrict who can call you:";
 "lng_edit_privacy_calls_always_empty" = "Always allow";
 "lng_edit_privacy_calls_always#one" = "Always allow {count} user";
@@ -519,9 +507,9 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_self_destruct_years#other" = "{count} years";
 
 "lng_change_phone_title" = "Change phone number";
-"lng_change_phone_description" = "You can change your Telegram number\nhere. Your account and all your cloud data\n— messages, media, contacts, etc. will be\nmoved to the new number.\n\n[b]Important[/b]: all your Telegram contacts will\nget your [b]new number[/b] added to their address\nbook, provided they had your old number and\nyou haven't blocked them in Telegram.";
-"lng_change_phone_warning" = "All your Telegram contacts will get your new number added to their address book, provided they had your old number and you haven't blocked them in Telegram.";
-"lng_change_phone_occupied" = "The number {phone} is already connected to a Telegram account. Please delete that account before migrating to the new number.";
+"lng_change_phone_description" = "You can change your CloudVeil Messenger number\nhere. Your account and all your cloud data\n— messages, media, contacts, etc. will be\nmoved to the new number.\n\n[b]Important[/b]: all your CloudVeil Messenger contacts will\nget your [b]new number[/b] added to their address\nbook, provided they had your old number and\nyou haven't blocked them in CloudVeil Messenger.";
+"lng_change_phone_warning" = "All your CloudVeil Messenger contacts will get your new number added to their address book, provided they had your old number and you haven't blocked them in CloudVeil Messenger.";
+"lng_change_phone_occupied" = "The number {phone} is already connected to a CloudVeil Messenger account. Please delete that account before migrating to the new number.";
 "lng_change_phone_button" = "Change number";
 "lng_change_phone_new_title" = "Enter new number";
 "lng_change_phone_new_description" = "We will send an SMS with a confirmation code to your new number.";
@@ -577,6 +565,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_profile_kick" = "Remove";
 "lng_profile_sure_kick" = "Remove {user} from the group?";
 "lng_profile_sure_kick_channel" = "Remove {user} from the channel?";
+"lng_profile_sure_remove_admin" = "Remove {user} from admins?";
 "lng_profile_loading" = "Loading...";
 "lng_profile_photos#one" = "{count} photo";
 "lng_profile_photos#other" = "{count} photos";
@@ -697,6 +686,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_channel_banned_status_restricted_by" = "Restricted by {user}";
 
 "lng_group_blocked_list_about" = "Banned users are removed from the group and can only come back if invited by an admin.\nInvite links don't work for them.";
+"lng_channel_blocked_list_about" = "Banned users are removed from the channel.\nInvite links don't work for them.";
 
 "lng_chat_all_members_admins" = "All Members Are Admins";
 "lng_chat_about_all_admins" = "Group members can add new members, edit name and photo of the group.";
@@ -724,7 +714,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_create_channel_link_invalid" = "This link is invalid";
 "lng_create_channel_link_occupied" = "Sorry, this link is already occupied";
 "lng_create_channel_link_too_short" = "Sorry, this link is too short";
-"lng_create_channel_link_bad_symbols" = "Sorry, this link has bad symbols";
+"lng_create_channel_link_bad_symbols" = "Only 0-9, a-z, and underscores allowed.";
 "lng_create_channel_link_available" = "This link is available";
 "lng_create_channel_link_copied" = "Link copied to clipboard";
 
@@ -735,18 +725,18 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_failed_add_not_mutual" = "Sorry, if a person leaves a group, only a mutual contact can bring them back (they need to have your phone number, and you need theirs).";
 "lng_failed_add_not_mutual_channel" = "Sorry, if a person leaves a channel, only a mutual contact can bring them back (they need to have your phone number, and you need theirs).";
 
-"lng_sure_delete_contact" = "Are you sure, you want to delete {contact} from your contact list?";
-"lng_sure_delete_history" = "Are you sure, you want to delete all message history with {contact}?\n\nThis action cannot be undone.";
+"lng_sure_delete_contact" = "Are you sure you want to delete {contact} from your contact list?";
+"lng_sure_delete_history" = "Are you sure you want to delete all message history with {contact}?\n\nThis action cannot be undone.";
 "lng_sure_delete_group_history" = "Are you sure, you want to delete all message history in «{group}»?\n\nThis action cannot be undone.";
 "lng_sure_delete_and_exit" = "Are you sure, you want to delete all message history and leave «{group}»?\n\nThis action cannot be undone.";
-"lng_sure_leave_channel" = "Are you sure, you want to leave\nthis channel?";
-"lng_sure_delete_channel" = "Are you sure, you want to delete this channel? All members will be removed and all messages will be lost.";
-"lng_sure_leave_group" = "Are you sure, you want to leave\nthis group?";
+"lng_sure_leave_channel" = "Are you sure you want to leave\nthis channel?";
+"lng_sure_delete_channel" = "Are you sure you want to delete this channel? All members will be removed and all messages will be lost.";
+"lng_sure_leave_group" = "Are you sure you want to leave this group?";
 "lng_sure_delete_group" = "Are you sure, you want to delete this group? All members will be removed and all messages will be lost.";
 "lng_sure_delete_saved_messages" = "Are you sure, you want to delete all your saved messages?\n\nThis action cannot be undone.";
 
 "lng_message_empty" = "Empty Message";
-"lng_message_unsupported" = "This message is not supported by your version of Telegram Desktop. Please update to the last version in Settings or install it from {link}";
+"lng_message_unsupported" = "This message is not supported by your version of CloudVeil Messenger Desktop. Please update to the latest version in Settings, or install it from {link}";
 
 "lng_duration_seconds#one" = "{count} second";
 "lng_duration_seconds#other" = "{count} seconds";
@@ -767,7 +757,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_action_user_left" = "{from} left the group";
 "lng_action_user_joined" = "{from} joined the group";
 "lng_action_user_joined_by_link" = "{from} joined the group via invite link";
-"lng_action_user_registered" = "{from} just joined Telegram";
+"lng_action_user_registered" = "{from} just joined CloudVeil Messenger";
 "lng_action_removed_photo" = "{from} removed group photo";
 "lng_action_removed_photo_channel" = "Channel photo removed";
 "lng_action_changed_photo" = "{from} updated group photo";
@@ -813,7 +803,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 
 "lng_profile_migrate_reached#one" = "{count} member limit reached";
 "lng_profile_migrate_reached#other" = "{count} members limit reached";
-"lng_profile_migrate_body" = "To get over this limit, you can upgrade your group to a supergroup.";
+"lng_profile_migrate_body" = "To add more members, you can upgrade your group to a supergroup.";
 "lng_profile_migrate_learn_more" = "Learn more »";
 "lng_profile_migrate_button" = "Upgrade to supergroup";
 "lng_profile_convert_title" = "Convert to supergroup";
@@ -841,8 +831,8 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_group_invite_members#other" = "{count} members, among them:";
 
 "lng_group_invite_create" = "Create an invite link";
-"lng_group_invite_about" = "Telegram users will be able to join\nyour group by following this link.";
-"lng_group_invite_about_channel" = "Telegram users will be able to join\nyour channel by following this link.";
+"lng_group_invite_about" = "CloudVeil Messenger users will be able to join\nyour group by following this link.";
+"lng_group_invite_about_channel" = "CloudVeil Messenger users will be able to join\nyour channel by following this link.";
 "lng_group_invite_create_new" = "Revoke invite link";
 "lng_group_invite_about_new" = "Your previous link will be deactivated and we'll generate a new invite link for you.";
 "lng_group_invite_copied" = "Invite link copied to clipboard.";
@@ -860,12 +850,13 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_edited" = "edited";
 "lng_edited_date" = "Edited: {date}";
 "lng_admin_badge" = "admin";
+"lng_fast_reply" = "Reply";
 "lng_cancel_edit_post_sure" = "Cancel editing?";
 "lng_cancel_edit_post_yes" = "Yes";
 "lng_cancel_edit_post_no" = "No";
 
-"lng_bot_share_location_unavailable" = "Sorry, the location sharing is currently unavailable in Telegram Desktop.";
-"lng_bot_share_phone" = "Share Phone Number?";
+"lng_bot_share_location_unavailable" = "Sorry, location sharing is currently unavailable in CloudVeil Messenger Desktop.";
+"lng_bot_share_phone" = "Do you want to share your phone number with this bot?";
 "lng_bot_share_phone_confirm" = "Share";
 
 "lng_attach_failed" = "Failed";
@@ -900,7 +891,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_faved_stickers_add" = "Add to Favorites";
 "lng_faved_stickers_remove" = "Remove from Favorites";
 "lng_group_stickers" = "Group stickers";
-"lng_group_stickers_description" = "You can choose sticker set which will be available for every member while in the group chat.";
+"lng_group_stickers_description" = "You can choose a sticker set which will be available for every member while in the group chat.";
 "lng_group_stickers_add" = "Choose sticker set";
 
 "lng_switch_stickers" = "Stickers";
@@ -936,6 +927,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_stickers_group_from_featured" = "Choose from trending stickers";
 
 "lng_in_dlg_photo" = "Photo";
+"lng_in_dlg_album" = "Album";
 "lng_in_dlg_video" = "Video";
 "lng_in_dlg_audio_file" = "Audio file";
 "lng_in_dlg_contact" = "Contact";
@@ -989,7 +981,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 
 "lng_open_this_link" = "Open this link?";
 "lng_open_link" = "Open";
-"lng_allow_bot_pass" = "Do you allow {bot_name} to pass your Telegram name and id to the web pages you open via this bot?";
+"lng_allow_bot_pass" = "Allow {bot_name} to pass your CloudVeil Messenger name and ID to the web pages you open via this bot?";
 "lng_allow_bot" = "Allow";
 
 "lng_bot_start" = "Start";
@@ -998,7 +990,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_bot_groups_not_found" = "No groups found";
 "lng_bot_sure_invite" = "Add the bot to «{group}»?";
 "lng_bot_already_in_group" = "The bot is already a member of the group.";
-"lng_bot_choose_chat" = "Select a Chat";
+"lng_bot_choose_chat" = "Select a chat";
 "lng_bot_no_chats" = "You have no chats";
 "lng_bot_chats_not_found" = "No chats found";
 "lng_bot_sure_share_game" = "Share the game with {user}?";
@@ -1091,18 +1083,21 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_context_forward_selected" = "Forward Selected";
 "lng_context_delete_selected" = "Delete Selected";
 "lng_context_clear_selection" = "Clear Selection";
-"lng_send_images_compress#one" = "Compress image";
-"lng_send_images_compress#other" = "Compress images";
 "lng_send_image_empty" = "Could not send an empty file: {name}";
 "lng_send_image_too_large" = "Could not send a file, because it is larger than 1500 MB: {name}";
 "lng_send_images_selected#one" = "{count} image selected";
 "lng_send_images_selected#other" = "{count} images selected";
 "lng_send_photos#one" = "Send {count} photo";
 "lng_send_photos#other" = "Send {count} photos";
+"lng_send_separate_photos" = "Send as separate photos";
+"lng_send_separate_photos_videos" = "Send as separate media";
 "lng_send_files_selected#one" = "{count} file selected";
 "lng_send_files_selected#other" = "{count} files selected";
 "lng_send_files#one" = "Send {count} file";
 "lng_send_files#other" = "Send {count} files";
+"lng_send_album" = "Send as an album";
+"lng_send_photo" = "Send as a photo";
+"lng_send_file" = "Send as a file";
 
 "lng_forward_choose" = "Choose recipient...";
 "lng_forward_cant" = "Sorry, no way to forward here :(";
@@ -1122,7 +1117,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 
 "lng_share_cant" = "Sorry, no way to share here :(";
 "lng_reply_cant" = "Sorry, no way to reply to an old message in supergroup :(";
-"lng_reply_cant_forward" = "Sorry, no way to reply to an old message in supergroup :( Do you wish to forward it and add your comment?";
+"lng_reply_cant_forward" = "Sorry, you can't reply to a message that was sent before the group was upgraded to a supergroup. Do you wish to forward it and add your comment?";
 
 "lng_share_title" = "Share to";
 "lng_share_copy_link" = "Copy share link";
@@ -1131,7 +1126,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_share_game_link_copied" = "Game link copied to clipboard.";
 "lng_share_done" = "Done!";
 
-"lng_contact_phone" = "Phone number";
+"lng_contact_phone" = "Phone Number";
 "lng_enter_contact_data" = "New Contact";
 "lng_edit_contact_title" = "Edit contact name";
 "lng_edit_channel_title" = "Edit channel";
@@ -1145,8 +1140,8 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_add_contact" = "Create";
 "lng_add_contact_button" = "New contact";
 "lng_contacts_header" = "Contacts";
-"lng_contact_not_joined" = "Unfortunately {name} did not join Telegram yet, but you can send your friend an invitation.\n\nWe will notify you about any of your contacts who is joining Telegram.";
-"lng_try_other_contact" = "Try other";
+"lng_contact_not_joined" = "Unfortunately {name} has not joined CloudVeil Messenger yet, but you can send them an invitation.\n\nWe will notify you about any of your contacts who join CloudVeil Messenger.";
+"lng_try_other_contact" = "Try someone else";
 "lng_create_group_link" = "Link";
 "lng_create_group_invite_link" = "Invite link";
 "lng_create_group_description" = "Description (optional)";
@@ -1182,7 +1177,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_about_version" = "version {version}";
 "lng_about_text_1" = "Official free messaging app based on [a href=\"https://core.telegram.org/api\"]Telegram API[/a]\nfor speed and security.";
 "lng_about_text_2" = "This software is licensed under [a href=\"https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE\"]GNU GPL[/a] version 3.\nSource code is available on [a href=\"https://github.com/telegramdesktop/tdesktop\"]GitHub[/a].";
-"lng_about_text_3" = "Visit {faq_open}Telegram FAQ{faq_close} for more info.";
+"lng_about_text_3" = "Visit {faq_open}CloudVeil Messenger FAQ{faq_close} for more info.";
 "lng_about_done" = "Done";
 
 "lng_search_no_results" = "No messages found";
@@ -1216,9 +1211,9 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_theme_preview_invalid" = "Invalid data in this theme file.";
 "lng_theme_preview_apply" = "Apply this theme";
 
-"lng_new_authorization" = "{name},\nWe detected a login into your account from a new device on {day}, {date} at {time}\n\nDevice: {device}\nLocation: {location}\n\nIf this wasn't you, you can go to Settings — Show all sessions and terminate that session.\n\nIf you think that somebody logged in to your account against your will, you can enable two-step verification in Settings.\n\nSincerely,\nThe Telegram Team";
+"lng_new_authorization" = "{name},\nWe detected a login into your account from a new device on {day}, {date} at {time}\n\nDevice: {device}\nLocation: {location}\n\nIf this wasn't you, you can go to Settings — Show all sessions and terminate that session.\n\nIf you think that somebody logged in to your account against your will, you can enable two-step verification in Settings.\n\nSincerely,\nThe CloudVeil Messenger Team";
 
-"lng_new_version_wrap" = "Telegram Desktop was updated to version {version}\n\n{changes}\n\nFull version history is available here:\n{link}";
+"lng_new_version_wrap" = "CloudVeil Messenger Desktop was updated to version {version}\n\n{changes}\n\nFull version history is available here:\n{link}";
 "lng_new_version_minor" = "— Bug fixes and other minor improvements";
 
 "lng_menu_insert_unicode" = "Insert Unicode control character";
@@ -1227,13 +1222,13 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 
 "lng_confirm_phone_link_invalid" = "This link is broken or has expired.";
 "lng_confirm_phone_title" = "Cancel account reset";
-"lng_confirm_phone_about" = "Somebody with access to your phone number {phone} has requested to delete your Telegram account and reset your 2-Step Verification password.\n\nIf this wasn't you, please enter the code we've just sent you via SMS to your number.";
+"lng_confirm_phone_about" = "Somebody with access to your phone number {phone} has requested to delete your CloudVeil Messenger account and reset your 2-Step Verification password.\n\nIf this wasn't you, please enter the code we've just sent you via SMS to your number.";
 "lng_confirm_phone_success" = "Success!\n\nThe deletion process was cancelled for your account {phone}. You may close this window now.";
 "lng_confirm_phone_send" = "Send";
 "lng_confirm_phone_enter_code" = "Please enter the code.";
 
 "lng_theme_editor_no_keys" = "No keys in the palette yet";
-"lng_theme_editor_cant_change_theme" = "You can not apply new themes while you're editing the color palette. Please close the theme editor first.";
+"lng_theme_editor_cant_change_theme" = "You can't apply a new theme while you're editing the colour palette. Please close the theme editor first.";
 "lng_theme_editor_new_keys" = "Not in the palette yet";
 "lng_theme_editor_background_image" = "Background image";
 "lng_theme_editor_saved_to_jpg" = "Saved to JPEG, {size}";
@@ -1248,7 +1243,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_theme_editor_title" = "Edit color palette";
 "lng_theme_editor_export_button" = "Export theme";
 
-"lng_payments_not_supported" = "Sorry, Telegram Desktop doesn't support payments yet. Please use one of our mobile apps to do this.";
+"lng_payments_not_supported" = "Sorry, CloudVeil Messenger Desktop doesn't support payments yet. Please use one of our mobile apps to do this.";
 "lng_payments_receipt_label" = "Receipt";
 "lng_payments_receipt_label_test" = "Test receipt";
 "lng_payments_invoice_label" = "Invoice";
@@ -1274,7 +1269,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_call_bar_hangup" = "End call";
 
 "lng_call_box_title" = "Calls";
-"lng_call_box_about" = "You didn't make any calls yet.";
+"lng_call_box_about" = "You haven't made any CloudVeil Messenger calls yet.";
 "lng_call_box_status_today" = "{time}";
 "lng_call_box_status_yesterday" = "Yesterday at {time}";
 "lng_call_box_status_date" = "{date} at {time}";
@@ -1295,7 +1290,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_player_message_yesterday" = "Yesterday at {time}";
 "lng_player_message_date" = "{date} at {time}";
 
-"lng_rights_edit_admin" = "Edit administrator";
+"lng_rights_edit_admin" = "Manage permissions";
 "lng_rights_edit_admin_header" = "What can this admin do?";
 "lng_rights_about_add_admins_yes" = "This admin will be able to add new admins with the same (or more limited) permissions.";
 "lng_rights_about_add_admins_no" = "This admin will not be able to add new admins.";
@@ -1399,9 +1394,9 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_admin_log_banned" = "banned {user}";
 "lng_admin_log_restricted" = "changed restrictions for {user} {until}";
 "lng_admin_log_promoted" = "changed privileges for {user}";
-"lng_admin_log_changed_stickers_group" = "{from} changed group {sticker_set}";
+"lng_admin_log_changed_stickers_group" = "{from} changed the group's {sticker_set}";
 "lng_admin_log_changed_stickers_set" = "sticker set";
-"lng_admin_log_removed_stickers_group" = "{from} removed group sticker set";
+"lng_admin_log_removed_stickers_group" = "{from} removed the group's sticker set";
 "lng_admin_log_user_with_username" = "{name} ({mention})";
 "lng_admin_log_restricted_forever" = "indefinitely";
 "lng_admin_log_restricted_until" = "until {date}";
@@ -1467,6 +1462,10 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 "lng_mac_menu_add_contact" = "Add Contact";
 "lng_mac_menu_new_group" = "New Group";
 "lng_mac_menu_new_channel" = "New Channel";
-"lng_mac_menu_show" = "Show Telegram";
+"lng_mac_menu_show" = "Show CloudVeil Messenger";
 
+"lng_dialog_forbidden" = "This channel/group/bot is blocked by our server policy. Please contact CloudVeil Support at support@cloudveil.org to request it be unblocked.";
+"lng_feature_forbidden" = "This feature is blocked by our server policy. Please contact CloudVeil Support at support@cloudveil.org to request it be unblocked.";
 // Keys finished
+"lng_blocked_for_protection" = "Content blocked for your protection.";
+"lng_download_click" = "Download";

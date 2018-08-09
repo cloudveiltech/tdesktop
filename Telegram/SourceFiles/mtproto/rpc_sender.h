@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
@@ -87,7 +74,7 @@ public:
 	}
 
 };
-using RPCDoneHandlerPtr = QSharedPointer<RPCAbstractDoneHandler>;
+using RPCDoneHandlerPtr = std::shared_ptr<RPCAbstractDoneHandler>;
 
 class RPCAbstractFailHandler { // abstract fail
 public:
@@ -95,22 +82,19 @@ public:
 	virtual ~RPCAbstractFailHandler() {
 	}
 };
-using RPCFailHandlerPtr = QSharedPointer<RPCAbstractFailHandler>;
+using RPCFailHandlerPtr = std::shared_ptr<RPCAbstractFailHandler>;
 
 struct RPCResponseHandler {
-	RPCResponseHandler() {
-	}
-	RPCResponseHandler(const RPCDoneHandlerPtr &ondone, const RPCFailHandlerPtr &onfail) : onDone(ondone), onFail(onfail) {
+	RPCResponseHandler() = default;
+	RPCResponseHandler(RPCDoneHandlerPtr &&done, RPCFailHandlerPtr &&fail)
+	: onDone(std::move(done))
+	, onFail(std::move(fail)) {
 	}
 
 	RPCDoneHandlerPtr onDone;
 	RPCFailHandlerPtr onFail;
 
 };
-
-inline RPCResponseHandler rpcCb(const RPCDoneHandlerPtr &onDone = RPCDoneHandlerPtr(), const RPCFailHandlerPtr &onFail = RPCFailHandlerPtr()) {
-	return RPCResponseHandler(onDone, onFail);
-}
 
 template <typename TReturn>
 class RPCDoneHandlerBare : public RPCAbstractDoneHandler { // done(from, end)
@@ -273,15 +257,15 @@ private:
 };
 
 struct RPCCallbackClear {
-	RPCCallbackClear(mtpRequestId id = 0, int32 code = RPCError::NoError) : requestId(id), errorCode(code) {
+	RPCCallbackClear(mtpRequestId id , int32 code = RPCError::NoError)
+	: requestId(id)
+	, errorCode(code) {
 	}
 
 	mtpRequestId requestId;
 	int32 errorCode;
 
 };
-
-using RPCCallbackClears = QVector<RPCCallbackClear> ;
 
 template <typename TReturn>
 inline RPCDoneHandlerPtr rpcDone(TReturn (*onDone)(const mtpPrime *, const mtpPrime *)) { // done(from, end)

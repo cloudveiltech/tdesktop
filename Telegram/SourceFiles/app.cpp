@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "app.h"
 
@@ -34,6 +21,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "history/history_service_layout.h"
 #include "history/history_location_manager.h"
 #include "history/history_media_types.h"
+#include "history/history_item_components.h"
 #include "media/media_audio.h"
 #include "inline_bots/inline_bot_layout_item.h"
 #include "messenger.h"
@@ -52,6 +40,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "window/themes/window_theme.h"
 #include "window/notifications_manager.h"
 #include "platform/platform_notifications_manager.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace {
 	App::LaunchState _launchState = App::Launched;
@@ -128,7 +117,8 @@ namespace {
 	LastPhotosList lastPhotos;
 	using LastPhotosMap = QHash<PhotoData*, LastPhotosList::iterator>;
 	LastPhotosMap lastPhotosMap;
-}
+
+} // namespace
 
 namespace App {
 
@@ -219,117 +209,6 @@ namespace {
 		}
 	}
 
-	TimeId onlineForSort(UserData *user, TimeId now) {
-		if (isServiceUser(user->id) || user->botInfo) {
-			return -1;
-		}
-		TimeId online = user->onlineTill;
-		if (online <= 0) {
-			switch (online) {
-			case 0:
-			case -1: return online;
-
-			case -2: {
-				QDate yesterday(date(now).date());
-				return int32(QDateTime(yesterday.addDays(-3)).toTime_t()) + (unixtime() - myunixtime());
-			} break;
-
-			case -3: {
-				QDate weekago(date(now).date());
-				return int32(QDateTime(weekago.addDays(-7)).toTime_t()) + (unixtime() - myunixtime());
-			} break;
-
-			case -4: {
-				QDate monthago(date(now).date());
-				return int32(QDateTime(monthago.addDays(-30)).toTime_t()) + (unixtime() - myunixtime());
-			} break;
-			}
-			return -online;
-		}
-		return online;
-	}
-
-	int32 onlineWillChangeIn(UserData *user, TimeId now) {
-		if (isServiceUser(user->id) || user->botInfo) {
-			return 86400;
-		}
-		return onlineWillChangeIn(user->onlineTill, now);
-	}
-
-	int32 onlineWillChangeIn(TimeId online, TimeId now) {
-		if (online <= 0) {
-			if (-online > now) return std::max(-online - now, 86400);
-            return 86400;
-        }
-		if (online > now) {
-			return std::max(online - now, 86400);
-		}
-		int32 minutes = (now - online) / 60;
-		if (minutes < 60) {
-			return (minutes + 1) * 60 - (now - online);
-		}
-		int32 hours = (now - online) / 3600;
-		if (hours < 12) {
-			return (hours + 1) * 3600 - (now - online);
-		}
-		QDateTime dNow(date(now)), dTomorrow(dNow.date().addDays(1));
-		return std::max(dNow.secsTo(dTomorrow), 86400LL);
-	}
-
-	QString onlineText(UserData *user, TimeId now, bool precise) {
-		if (isNotificationsUser(user->id)) {
-			return lang(lng_status_service_notifications);
-		} else if (user->botInfo) {
-			return lang(lng_status_bot);
-		} else if (isServiceUser(user->id)) {
-			return lang(lng_status_support);
-		}
-		return onlineText(user->onlineTill, now, precise);
-	}
-
-	QString onlineText(TimeId online, TimeId now, bool precise) {
-		if (online <= 0) {
-			switch (online) {
-			case 0:
-            case -1: return lang(lng_status_offline);
-			case -2: return lang(lng_status_recently);
-			case -3: return lang(lng_status_last_week);
-			case -4: return lang(lng_status_last_month);
-			}
-            return (-online > now) ? lang(lng_status_online) : lang(lng_status_recently);
-		}
-		if (online > now) {
-			return lang(lng_status_online);
-		}
-		QString when;
-		if (precise) {
-			QDateTime dOnline(date(online)), dNow(date(now));
-			if (dOnline.date() == dNow.date()) {
-				return lng_status_lastseen_today(lt_time, dOnline.time().toString(cTimeFormat()));
-			} else if (dOnline.date().addDays(1) == dNow.date()) {
-				return lng_status_lastseen_yesterday(lt_time, dOnline.time().toString(cTimeFormat()));
-			}
-			return lng_status_lastseen_date_time(lt_date, dOnline.date().toString(qsl("dd.MM.yy")), lt_time, dOnline.time().toString(cTimeFormat()));
-		}
-		int32 minutes = (now - online) / 60;
-		if (!minutes) {
-			return lang(lng_status_lastseen_now);
-		} else if (minutes < 60) {
-			return lng_status_lastseen_minutes(lt_count, minutes);
-		}
-		int32 hours = (now - online) / 3600;
-		if (hours < 12) {
-			return lng_status_lastseen_hours(lt_count, hours);
-		}
-		QDateTime dOnline(date(online)), dNow(date(now));
-		if (dOnline.date() == dNow.date()) {
-			return lng_status_lastseen_today(lt_time, dOnline.time().toString(cTimeFormat()));
-		} else if (dOnline.date().addDays(1) == dNow.date()) {
-			return lng_status_lastseen_yesterday(lt_time, dOnline.time().toString(cTimeFormat()));
-		}
-		return lng_status_lastseen_date(lt_date, dOnline.date().toString(qsl("dd.MM.yy")));
-	}
-
 	namespace {
 		// we should get a full restriction in "{fulltype}: {reason}" format and we
 		// need to find a "-all" tag in {fulltype}, otherwise ignore this restriction
@@ -352,27 +231,6 @@ namespace {
 			}
 			return QString();
 		}
-	}
-
-	bool onlineColorUse(UserData *user, TimeId now) {
-		if (isServiceUser(user->id) || user->botInfo) {
-			return false;
-		}
-		return onlineColorUse(user->onlineTill, now);
-	}
-
-	bool onlineColorUse(TimeId online, TimeId now) {
-		if (online <= 0) {
-			switch (online) {
-			case 0:
-			case -1:
-			case -2:
-			case -3:
-			case -4: return false;
-			}
-			return (-online > now);
-		}
-		return (online > now);
 	}
 
 	UserData *feedUser(const MTPUser &user) {
@@ -561,7 +419,7 @@ namespace {
 		return result;
 	}
 
-	PeerData *feedChat(const MTPChat &chat) {
+	PeerData *feedChat(const MTPChat &chat) {		
 		PeerData *data = nullptr;
 		bool minimal = false;
 
@@ -611,11 +469,14 @@ namespace {
 							}
 						}
 					}
+
 					Notify::migrateUpdated(channel);
+
 					update.flags |= UpdateFlag::MigrationChanged;
 				}
 				if (updatedTo) {
 					Notify::migrateUpdated(cdata);
+					
 					update.flags |= UpdateFlag::MigrationChanged;
 				}
 			}
@@ -649,26 +510,34 @@ namespace {
 			}
 		} break;
 		case mtpc_channel: {
-			auto &d = chat.c_channel();
+			const auto &d = chat.c_channel();
 
-			auto peerId = peerFromChannel(d.vid.v);
+			const auto peerId = peerFromChannel(d.vid.v);
 			minimal = d.is_min();
 			if (minimal) {
 				data = App::channelLoaded(peerId);
 				if (!data) {
-					return nullptr; // minimal is not loaded, need to make getDifference
+					// Can't apply minimal to a not loaded channel.
+					// Need to make getDifference.
+					return nullptr;
 				}
 			} else {
 				data = App::channel(peerId);
-				data->input = MTP_inputPeerChannel(d.vid, d.has_access_hash() ? d.vaccess_hash : MTP_long(0));
+				const auto accessHash = d.has_access_hash()
+					? d.vaccess_hash
+					: MTP_long(0);
+				data->input = MTP_inputPeerChannel(d.vid, accessHash);
 			}
 
-			auto cdata = data->asChannel();
-			auto wasInChannel = cdata->amIn();
-			auto canViewAdmins = cdata->canViewAdmins();
-			auto canViewMembers = cdata->canViewMembers();
-			auto canAddMembers = cdata->canAddMembers();
+			const auto cdata = data->asChannel();
+			const auto wasInChannel = cdata->amIn();
+			const auto canViewAdmins = cdata->canViewAdmins();
+			const auto canViewMembers = cdata->canViewMembers();
+			const auto canAddMembers = cdata->canAddMembers();
 
+			if (d.has_participants_count()) {
+				cdata->setMembersCount(d.vparticipants_count.v);
+			}
 			if (minimal) {
 				auto mask = 0
 					| MTPDchannel::Flag::f_broadcast
@@ -765,6 +634,7 @@ namespace {
 			update.peer = data;
 			Notify::peerUpdatedDelayed(update);
 		}
+
 		return data;
 	}
 
@@ -1034,26 +904,22 @@ namespace {
 		if (m.has_from_id() && peerId == Auth().userPeerId()) {
 			peerId = peerFromUser(m.vfrom_id);
 		}
-		if (auto existing = App::histItemById(peerToChannel(peerId), m.vid.v)) {
+		if (const auto existing = App::histItemById(peerToChannel(peerId), m.vid.v)) {
 			auto text = qs(m.vmessage);
-			auto entities = m.has_entities() ? TextUtilities::EntitiesFromMTP(m.ventities.v) : EntitiesInText();
+			auto entities = m.has_entities()
+				? TextUtilities::EntitiesFromMTP(m.ventities.v)
+				: EntitiesInText();
 			existing->setText({ text, entities });
 			existing->updateMedia(m.has_media() ? (&m.vmedia) : nullptr);
-			existing->updateReplyMarkup(m.has_reply_markup() ? (&m.vreply_markup) : nullptr);
+			existing->updateReplyMarkup(m.has_reply_markup()
+				? (&m.vreply_markup)
+				: nullptr);
 			existing->setViewsCount(m.has_views() ? m.vviews.v : -1);
-			existing->addToUnreadMentions(AddToUnreadMentionsMethod::New);
-			if (auto sharedMediaTypes = existing->sharedMediaTypes()) {
-				Auth().storage().add(Storage::SharedMediaAddNew(
-					peerId,
-					sharedMediaTypes,
-					existing->id));
-			}
-
+			existing->indexAsNewItem();
 			if (!existing->detached()) {
 				App::checkSavedGif(existing);
 				return true;
 			}
-
 			return false;
 		}
 		return false;
@@ -1105,29 +971,23 @@ namespace {
 	}
 
 	void feedMsgs(const QVector<MTPMessage> &msgs, NewMessageType type) {
-		QMap<uint64, int32> msgsIds;
-		for (int32 i = 0, l = msgs.size(); i < l; ++i) {
-			const auto &msg(msgs.at(i));
-			switch (msg.type()) {
-			case mtpc_message: {
-				const auto &d(msg.c_message());
-				bool needToAdd = true;
+		auto indices = base::flat_map<uint64, int>();
+		for (int i = 0, l = msgs.size(); i != l; ++i) {
+			const auto &msg = msgs[i];
+			if (msg.type() == mtpc_message) {
+				const auto &data = msg.c_message();
 				if (type == NewMessageUnread) { // new message, index my forwarded messages to links overview
-					if (checkEntitiesAndViewsUpdate(d)) { // already in blocks
+					if (checkEntitiesAndViewsUpdate(data)) { // already in blocks
 						LOG(("Skipping message, because it is already in blocks!"));
-						needToAdd = false;
+						continue;
 					}
 				}
-				if (needToAdd) {
-					msgsIds.insert((uint64(uint32(d.vid.v)) << 32) | uint64(i), i);
-				}
-			} break;
-			case mtpc_messageEmpty: msgsIds.insert((uint64(uint32(msg.c_messageEmpty().vid.v)) << 32) | uint64(i), i); break;
-			case mtpc_messageService: msgsIds.insert((uint64(uint32(msg.c_messageService().vid.v)) << 32) | uint64(i), i); break;
 			}
+			const auto msgId = idFromMessage(msg);
+			indices.emplace((uint64(uint32(msgId)) << 32) | uint64(i), i);
 		}
-		for (QMap<uint64, int32>::const_iterator i = msgsIds.cbegin(), e = msgsIds.cend(); i != e; ++i) {
-			histories().addNewMessage(msgs.at(i.value()), type);
+		for (const auto [position, index] : indices) {
+			histories().addNewMessage(msgs[index], type);
 		}
 	}
 
@@ -1193,29 +1053,35 @@ namespace {
 	}
 
 	void feedWereDeleted(ChannelId channelId, const QVector<MTPint> &msgsIds) {
-		MsgsData *data = fetchMsgsData(channelId, false);
+		const auto data = fetchMsgsData(channelId, false);
 		if (!data) return;
 
-		ChannelHistory *channelHistory = (channelId == NoChannel) ? 0 : App::historyLoaded(peerFromChannel(channelId))->asChannelHistory();
+		const auto channelHistory = (channelId != NoChannel)
+			? App::history(peerFromChannel(channelId))->asChannelHistory()
+			: nullptr;
 
-		QMap<History*, bool> historiesToCheck;
-		for (QVector<MTPint>::const_iterator i = msgsIds.cbegin(), e = msgsIds.cend(); i != e; ++i) {
-			MsgsData::const_iterator j = data->constFind(i->v);
+		base::flat_set<not_null<History*>> historiesToCheck;
+		for (const auto msgId : msgsIds) {
+			auto j = data->constFind(msgId.v);
 			if (j != data->cend()) {
-				History *h = (*j)->history();
+				const auto h = (*j)->history();
 				(*j)->destroy();
-				if (!h->lastMsg) historiesToCheck.insert(h, true);
+				if (!h->lastMsg) {
+					historiesToCheck.emplace(h);
+				}
 			} else {
 				if (channelHistory) {
-					if (channelHistory->unreadCount() > 0 && i->v >= channelHistory->inboxReadBefore) {
-						channelHistory->setUnreadCount(channelHistory->unreadCount() - 1);
+					if (channelHistory->unreadCount() > 0
+						&& msgId.v >= channelHistory->inboxReadBefore) {
+						channelHistory->setUnreadCount(
+							channelHistory->unreadCount() - 1);
 					}
 				}
 			}
 		}
 		if (main()) {
-			for (QMap<History*, bool>::const_iterator i = historiesToCheck.cbegin(), e = historiesToCheck.cend(); i != e; ++i) {
-				main()->checkPeerHistory(i.key()->peer);
+			for (const auto history : historiesToCheck) {
+				main()->checkPeerHistory(history->peer);
 			}
 		}
 	}
@@ -1422,7 +1288,23 @@ namespace {
 	}
 
 	WebPageData *feedWebPage(const MTPDwebPagePending &webpage, WebPageData *convert) {
-		return App::webPageSet(webpage.vid.v, convert, QString(), QString(), QString(), QString(), QString(), TextWithEntities(), nullptr, nullptr, 0, QString(), webpage.vdate.v);
+		constexpr auto kDefaultPendingTimeout = 60;
+		return App::webPageSet(
+			webpage.vid.v,
+			convert,
+			QString(),
+			QString(),
+			QString(),
+			QString(),
+			QString(),
+			TextWithEntities(),
+			nullptr,
+			nullptr,
+			0,
+			QString(),
+			webpage.vdate.v
+				? webpage.vdate.v
+				: (unixtime() + kDefaultPendingTimeout));
 	}
 
 	WebPageData *feedWebPage(const MTPWebPage &webpage) {
@@ -1515,22 +1397,29 @@ namespace {
 	}
 
 	PhotoData *photo(const PhotoId &photo) {
-		PhotosData::const_iterator i = ::photosData.constFind(photo);
+		auto i = ::photosData.constFind(photo);
 		if (i == ::photosData.cend()) {
 			i = ::photosData.insert(photo, new PhotoData(photo));
 		}
 		return i.value();
 	}
 
-	PhotoData *photoSet(const PhotoId &photo, PhotoData *convert, const uint64 &access, int32 date, const ImagePtr &thumb, const ImagePtr &medium, const ImagePtr &full) {
+	PhotoData *photoSet(
+			const PhotoId &photo,
+			PhotoData *convert,
+			const uint64 &access,
+			int32 date,
+			const ImagePtr &thumb,
+			const ImagePtr &medium,
+			const ImagePtr &full) {
 		if (convert) {
 			if (convert->id != photo) {
-				PhotosData::iterator i = ::photosData.find(convert->id);
+				const auto i = ::photosData.find(convert->id);
 				if (i != ::photosData.cend() && i.value() == convert) {
 					::photosData.erase(i);
 				}
 				convert->id = photo;
-				convert->uploadingData.reset();
+				convert->uploadingData = nullptr;
 			}
 			if (date) {
 				convert->access = access;
@@ -1540,9 +1429,9 @@ namespace {
 				updateImage(convert->full, full);
 			}
 		}
-		PhotosData::const_iterator i = ::photosData.constFind(photo);
+		const auto i = ::photosData.constFind(photo);
 		PhotoData *result;
-		LastPhotosMap::iterator inLastIter = lastPhotosMap.end();
+		auto inLastIter = lastPhotosMap.end();
 		if (i == ::photosData.cend()) {
 			if (convert) {
 				result = convert;
@@ -1576,27 +1465,39 @@ namespace {
 	}
 
 	DocumentData *document(const DocumentId &document) {
-		DocumentsData::const_iterator i = ::documentsData.constFind(document);
+		auto i = ::documentsData.constFind(document);
 		if (i == ::documentsData.cend()) {
 			i = ::documentsData.insert(document, DocumentData::create(document));
 		}
 		return i.value();
 	}
 
-	DocumentData *documentSet(const DocumentId &document, DocumentData *convert, const uint64 &access, int32 version, int32 date, const QVector<MTPDocumentAttribute> &attributes, const QString &mime, const ImagePtr &thumb, int32 dc, int32 size, const StorageImageLocation &thumbLocation) {
+	DocumentData *documentSet(
+			const DocumentId &document,
+			DocumentData *convert,
+			const uint64 &access,
+			int32 version,
+			int32 date,
+			const QVector<MTPDocumentAttribute> &attributes,
+			const QString &mime,
+			const ImagePtr &thumb,
+			int32 dc,
+			int32 size,
+			const StorageImageLocation &thumbLocation) {
 		bool versionChanged = false;
 		bool sentSticker = false;
 		if (convert) {
-			MediaKey oldKey = convert->mediaKey();
-			bool idChanged = (convert->id != document);
+			const auto oldKey = convert->mediaKey();
+			const auto idChanged = (convert->id != document);
 			if (idChanged) {
-				DocumentsData::iterator i = ::documentsData.find(convert->id);
+				const auto i = ::documentsData.find(convert->id);
 				if (i != ::documentsData.cend() && i.value() == convert) {
 					::documentsData.erase(i);
 				}
 
 				convert->id = document;
 				convert->status = FileReady;
+				convert->uploadingData = nullptr;
 				sentSticker = (convert->sticker() != 0);
 			}
 			if (date) {
@@ -1614,7 +1515,7 @@ namespace {
 					convert->sticker()->loc = thumbLocation;
 				}
 
-				MediaKey newKey = convert->mediaKey();
+				const auto newKey = convert->mediaKey();
 				if (idChanged) {
 					if (convert->isVoiceMessage()) {
 						Local::copyAudio(oldKey, newKey);
@@ -1628,7 +1529,7 @@ namespace {
 				Local::writeSavedGifs();
 			}
 		}
-		DocumentsData::const_iterator i = ::documentsData.constFind(document);
+		const auto i = ::documentsData.constFind(document);
 		DocumentData *result;
 		if (i == ::documentsData.cend()) {
 			if (convert) {
@@ -1705,40 +1606,60 @@ namespace {
 		return i.value();
 	}
 
-	WebPageData *webPageSet(const WebPageId &webPage, WebPageData *convert, const QString &type, const QString &url, const QString &displayUrl, const QString &siteName, const QString &title, const TextWithEntities &description, PhotoData *photo, DocumentData *document, int32 duration, const QString &author, int32 pendingTill) {
+	WebPageData *webPageSet(
+			const WebPageId &webPage,
+			WebPageData *convert,
+			const QString &type,
+			const QString &url,
+			const QString &displayUrl,
+			const QString &siteName,
+			const QString &title,
+			const TextWithEntities &description,
+			PhotoData *photo,
+			DocumentData *document,
+			int duration,
+			const QString &author,
+			int pendingTill) {
 		if (convert) {
 			if (convert->id != webPage) {
-				auto i = webPagesData.find(convert->id);
+				const auto i = webPagesData.find(convert->id);
 				if (i != webPagesData.cend() && i.value() == convert) {
 					webPagesData.erase(i);
 				}
 				convert->id = webPage;
 			}
-			if ((convert->url.isEmpty() && !url.isEmpty()) || (convert->pendingTill && convert->pendingTill != pendingTill && pendingTill >= -1)) {
-				convert->type = toWebPageType(type);
-				convert->url = TextUtilities::Clean(url);
-				convert->displayUrl = TextUtilities::Clean(displayUrl);
-				convert->siteName = TextUtilities::Clean(siteName);
-				convert->title = TextUtilities::SingleLine(title);
-				convert->description = description;
-				convert->photo = photo;
-				convert->document = document;
-				convert->duration = duration;
-				convert->author = TextUtilities::Clean(author);
-				if (convert->pendingTill > 0 && pendingTill <= 0) {
-					Auth().api().clearWebPageRequest(convert);
-				}
-				convert->pendingTill = pendingTill;
-				if (App::main()) App::main()->webPageUpdated(convert);
-			}
+			convert->applyChanges(
+				type,
+				url,
+				displayUrl,
+				siteName,
+				title,
+				description,
+				photo,
+				document,
+				duration,
+				author,
+				pendingTill);
 		}
-		auto i = webPagesData.constFind(webPage);
+		const auto i = webPagesData.constFind(webPage);
 		WebPageData *result;
 		if (i == webPagesData.cend()) {
 			if (convert) {
 				result = convert;
 			} else {
-				result = new WebPageData(webPage, toWebPageType(type), url, displayUrl, siteName, title, description, document, photo, duration, author, (pendingTill >= -1) ? pendingTill : -1);
+				result = new WebPageData(
+					webPage,
+					toWebPageType(type),
+					url,
+					displayUrl,
+					siteName,
+					title,
+					description,
+					document,
+					photo,
+					duration,
+					author,
+					(pendingTill >= -1) ? pendingTill : -1);
 				if (pendingTill > 0) {
 					Auth().api().requestWebPageDelayed(result);
 				}
@@ -1747,23 +1668,18 @@ namespace {
 		} else {
 			result = i.value();
 			if (result != convert) {
-				if ((result->url.isEmpty() && !url.isEmpty()) || (result->pendingTill && result->pendingTill != pendingTill && pendingTill >= -1)) {
-					result->type = toWebPageType(type);
-					result->url = TextUtilities::Clean(url);
-					result->displayUrl = TextUtilities::Clean(displayUrl);
-					result->siteName = TextUtilities::Clean(siteName);
-					result->title = TextUtilities::SingleLine(title);
-					result->description = description;
-					result->photo = photo;
-					result->document = document;
-					result->duration = duration;
-					result->author = TextUtilities::Clean(author);
-					if (result->pendingTill > 0 && pendingTill <= 0) {
-						Auth().api().clearWebPageRequest(result);
-					}
-					result->pendingTill = pendingTill;
-					if (App::main()) App::main()->webPageUpdated(result);
-				}
+				result->applyChanges(
+					type,
+					url,
+					displayUrl,
+					siteName,
+					title,
+					description,
+					photo,
+					document,
+					duration,
+					author,
+					pendingTill);
 			}
 		}
 		return result;
@@ -2123,15 +2039,6 @@ namespace {
 		}
 	}
 
-	int msgRadius() {
-		static int MsgRadius = ([]() {
-			return st::historyMessageRadius;
-			auto minMsgHeight = (st::msgPadding.top() + st::msgFont->height + st::msgPadding.bottom());
-			return minMsgHeight / 2;
-		})();
-		return MsgRadius;
-	}
-
 	void createMaskCorners() {
 		QImage mask[4];
 		prepareCorners(SmallMaskCorners, st::buttonRadius, QColor(255, 255, 255), nullptr, mask);
@@ -2139,7 +2046,7 @@ namespace {
 			::cornersMaskSmall[i] = mask[i].convertToFormat(QImage::Format_ARGB32_Premultiplied);
 			::cornersMaskSmall[i].setDevicePixelRatio(cRetinaFactor());
 		}
-		prepareCorners(LargeMaskCorners, msgRadius(), QColor(255, 255, 255), nullptr, mask);
+		prepareCorners(LargeMaskCorners, st::historyMessageRadius, QColor(255, 255, 255), nullptr, mask);
 		for (int i = 0; i < 4; ++i) {
 			::cornersMaskLarge[i] = mask[i].convertToFormat(QImage::Format_ARGB32_Premultiplied);
 			::cornersMaskLarge[i].setDevicePixelRatio(cRetinaFactor());
@@ -2153,12 +2060,12 @@ namespace {
 		prepareCorners(StickerCorners, st::dateRadius, st::msgServiceBg);
 		prepareCorners(StickerSelectedCorners, st::dateRadius, st::msgServiceBgSelected);
 		prepareCorners(SelectedOverlaySmallCorners, st::buttonRadius, st::msgSelectOverlay);
-		prepareCorners(SelectedOverlayLargeCorners, msgRadius(), st::msgSelectOverlay);
+		prepareCorners(SelectedOverlayLargeCorners, st::historyMessageRadius, st::msgSelectOverlay);
 		prepareCorners(DateCorners, st::dateRadius, st::msgDateImgBg);
 		prepareCorners(DateSelectedCorners, st::dateRadius, st::msgDateImgBgSelected);
-		prepareCorners(InShadowCorners, msgRadius(), st::msgInShadow);
-		prepareCorners(InSelectedShadowCorners, msgRadius(), st::msgInShadowSelected);
-		prepareCorners(ForwardCorners, msgRadius(), st::historyForwardChooseBg);
+		prepareCorners(InShadowCorners, st::historyMessageRadius, st::msgInShadow);
+		prepareCorners(InSelectedShadowCorners, st::historyMessageRadius, st::msgInShadowSelected);
+		prepareCorners(ForwardCorners, st::historyMessageRadius, st::historyForwardChooseBg);
 		prepareCorners(MediaviewSaveCorners, st::mediaviewControllerRadius, st::mediaviewSaveMsgBg);
 		prepareCorners(EmojiHoverCorners, st::buttonRadius, st::emojiPanHover);
 		prepareCorners(StickerHoverCorners, st::buttonRadius, st::emojiPanHover);
@@ -2170,10 +2077,10 @@ namespace {
 		prepareCorners(Doc3Corners, st::buttonRadius, st::msgFile3Bg);
 		prepareCorners(Doc4Corners, st::buttonRadius, st::msgFile4Bg);
 
-		prepareCorners(MessageInCorners, msgRadius(), st::msgInBg, &st::msgInShadow);
-		prepareCorners(MessageInSelectedCorners, msgRadius(), st::msgInBgSelected, &st::msgInShadowSelected);
-		prepareCorners(MessageOutCorners, msgRadius(), st::msgOutBg, &st::msgOutShadow);
-		prepareCorners(MessageOutSelectedCorners, msgRadius(), st::msgOutBgSelected, &st::msgOutShadowSelected);
+		prepareCorners(MessageInCorners, st::historyMessageRadius, st::msgInBg, &st::msgInShadow);
+		prepareCorners(MessageInSelectedCorners, st::historyMessageRadius, st::msgInBgSelected, &st::msgInShadowSelected);
+		prepareCorners(MessageOutCorners, st::historyMessageRadius, st::msgOutBg, &st::msgOutShadow);
+		prepareCorners(MessageOutSelectedCorners, st::historyMessageRadius, st::msgOutBgSelected, &st::msgOutShadowSelected);
 	}
 
 	void createCorners() {
@@ -2648,42 +2555,46 @@ namespace {
 #endif // !TDESKTOP_DISABLE_NETWORK_PROXY
 	}
 
-	void complexAdjustRect(ImageRoundCorners corners, QRect &rect, RectParts &parts) {
-		if (corners & ImageRoundCorner::TopLeft) {
-			if (!(corners & ImageRoundCorner::BottomLeft)) {
-				parts = RectPart::NoTopBottom | RectPart::FullTop;
-				rect.setHeight(rect.height() + msgRadius());
+	void rectWithCorners(Painter &p, QRect rect, const style::color &bg, RoundCorners index, RectParts corners) {
+		auto parts = RectPart::Top
+			| RectPart::NoTopBottom
+			| RectPart::Bottom
+			| corners;
+		roundRect(p, rect, bg, index, nullptr, parts);
+		if ((corners & RectPart::AllCorners) != RectPart::AllCorners) {
+			const auto size = ::corners[index].p[0].width() / cIntRetinaFactor();
+			if (!(corners & RectPart::TopLeft)) {
+				p.fillRect(rect.x(), rect.y(), size, size, bg);
 			}
-		} else if (corners & ImageRoundCorner::BottomLeft) {
-			parts = RectPart::NoTopBottom | RectPart::FullBottom;
-			rect.setTop(rect.y() - msgRadius());
-		} else {
-			parts = RectPart::NoTopBottom;
-			rect.setTop(rect.y() - msgRadius());
-			rect.setHeight(rect.height() + msgRadius());
+			if (!(corners & RectPart::TopRight)) {
+				p.fillRect(rect.x() + rect.width() - size, rect.y(), size, size, bg);
+			}
+			if (!(corners & RectPart::BottomLeft)) {
+				p.fillRect(rect.x(), rect.y() + rect.height() - size, size, size, bg);
+			}
+			if (!(corners & RectPart::BottomRight)) {
+				p.fillRect(rect.x() + rect.width() - size, rect.y() + rect.height() - size, size, size, bg);
+			}
 		}
 	}
 
-	void complexOverlayRect(Painter &p, QRect rect, ImageRoundRadius radius, ImageRoundCorners corners) {
+	void complexOverlayRect(Painter &p, QRect rect, ImageRoundRadius radius, RectParts corners) {
 		if (radius == ImageRoundRadius::Ellipse) {
 			PainterHighQualityEnabler hq(p);
 			p.setPen(Qt::NoPen);
 			p.setBrush(p.textPalette().selectOverlay);
 			p.drawEllipse(rect);
 		} else {
-			auto overlayCorners = (radius == ImageRoundRadius::Small) ? SelectedOverlaySmallCorners : SelectedOverlayLargeCorners;
-			auto overlayParts = RectPart::Full | RectPart::None;
-			if (radius == ImageRoundRadius::Large) {
-				complexAdjustRect(corners, rect, overlayParts);
-			}
-			roundRect(p, rect, p.textPalette().selectOverlay, overlayCorners, nullptr, overlayParts);
+			auto overlayCorners = (radius == ImageRoundRadius::Small)
+				? SelectedOverlaySmallCorners
+				: SelectedOverlayLargeCorners;
+			const auto bg = p.textPalette().selectOverlay;
+			rectWithCorners(p, rect, bg, overlayCorners, corners);
 		}
 	}
 
-	void complexLocationRect(Painter &p, QRect rect, ImageRoundRadius radius, ImageRoundCorners corners) {
-		auto parts = RectPart::Full | RectPart::None;
-		complexAdjustRect(corners, rect, parts);
-		roundRect(p, rect, st::msgInBg, MessageInCorners, nullptr, parts);
+	void complexLocationRect(Painter &p, QRect rect, ImageRoundRadius radius, RectParts corners) {
+		rectWithCorners(p, rect, st::msgInBg, MessageInCorners, corners);
 	}
 
 	QImage *cornersMask(ImageRoundRadius radius) {
@@ -2767,7 +2678,7 @@ namespace {
 			QImage images[4];
 			switch (radius) {
 			case ImageRoundRadius::Small: prepareCorners(SmallMaskCorners, st::buttonRadius, bg, nullptr, images); break;
-			case ImageRoundRadius::Large: prepareCorners(LargeMaskCorners, msgRadius(), bg, nullptr, images); break;
+			case ImageRoundRadius::Large: prepareCorners(LargeMaskCorners, st::historyMessageRadius, bg, nullptr, images); break;
 			default: p.fillRect(x, y, w, h, bg); return;
 			}
 

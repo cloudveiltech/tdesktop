@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "mainwindow.h"
 
@@ -51,7 +38,6 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "window/themes/window_theme.h"
 #include "window/themes/window_theme_warning.h"
 #include "window/window_main_menu.h"
-#include "base/task_queue.h"
 #include "auth_session.h"
 #include "window/window_controller.h"
 
@@ -194,11 +180,11 @@ void MainWindow::clearWidgetsHook() {
 QPixmap MainWindow::grabInner() {
 	QPixmap result;
 	if (_intro) {
-		result = myGrab(_intro);
+		result = Ui::GrabWidget(_intro);
 	} else if (_passcode) {
-		result = myGrab(_passcode);
+		result = Ui::GrabWidget(_passcode);
 	} else if (_main) {
-		result = myGrab(_main);
+		result = Ui::GrabWidget(_main);
 	}
 	return result;
 }
@@ -535,24 +521,23 @@ void MainWindow::themeUpdated(const Window::Theme::BackgroundUpdate &data) {
 			_testingThemeWarning->setGeometry(rect());
 			_testingThemeWarning->setHiddenCallback([this] { _testingThemeWarning.destroyDelayed(); });
 		}
-
-		base::TaskQueue::Main().Put(base::lambda_guarded(this, [this] {
+		crl::on_main(this, [=] {
 			if (_testingThemeWarning) {
 				_testingThemeWarning->showAnimated();
 			}
-		}));
+		});
 	} else if (data.type == Type::RevertingTheme || data.type == Type::ApplyingTheme) {
 		if (_testingThemeWarning) {
 			if (_testingThemeWarning->isHidden()) {
 				_testingThemeWarning.destroy();
 			} else {
-				base::TaskQueue::Main().Put(base::lambda_guarded(this, [this] {
+				crl::on_main(this, [=] {
 					if (_testingThemeWarning) {
 						_testingThemeWarning->hideAnimated();
 						_testingThemeWarning = nullptr;
 					}
 					setInnerFocus();
-				}));
+				});
 			}
 		}
 	}

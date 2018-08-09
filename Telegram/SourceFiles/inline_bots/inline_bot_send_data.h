@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
@@ -41,10 +28,20 @@ public:
 
 	virtual bool isValid() const = 0;
 
-	virtual void addToHistory(const Result *owner, History *history,
-		MTPDmessage::Flags flags, MsgId msgId, UserId fromId, MTPint mtpDate,
-		UserId viaBotId, MsgId replyToId, const QString &postAuthor, const MTPReplyMarkup &markup) const = 0;
-	virtual QString getErrorOnSend(const Result *owner, History *history) const = 0;
+	virtual void addToHistory(
+		const Result *owner,
+		not_null<History*> history,
+		MTPDmessage::Flags flags,
+		MsgId msgId,
+		UserId fromId,
+		MTPint mtpDate,
+		UserId viaBotId,
+		MsgId replyToId,
+		const QString &postAuthor,
+		const MTPReplyMarkup &markup) const = 0;
+	virtual QString getErrorOnSend(
+		const Result *owner,
+		not_null<History*> history) const = 0;
 
 	virtual bool hasLocationCoords() const {
 		return false;
@@ -69,11 +66,21 @@ public:
 	};
 	virtual SentMTPMessageFields getSentMessageFields() const = 0;
 
-	void addToHistory(const Result *owner, History *history,
-		MTPDmessage::Flags flags, MsgId msgId, UserId fromId, MTPint mtpDate,
-		UserId viaBotId, MsgId replyToId, const QString &postAuthor, const MTPReplyMarkup &markup) const override;
+	void addToHistory(
+		const Result *owner,
+		not_null<History*> history,
+		MTPDmessage::Flags flags,
+		MsgId msgId,
+		UserId fromId,
+		MTPint mtpDate,
+		UserId viaBotId,
+		MsgId replyToId,
+		const QString &postAuthor,
+		const MTPReplyMarkup &markup) const override;
 
-	QString getErrorOnSend(const Result *owner, History *history) const override;
+	QString getErrorOnSend(
+		const Result *owner,
+		not_null<History*> history) const override;
 
 };
 
@@ -190,11 +197,21 @@ public:
 		return _photo != nullptr;
 	}
 
-	void addToHistory(const Result *owner, History *history,
-		MTPDmessage::Flags flags, MsgId msgId, UserId fromId, MTPint mtpDate,
-		UserId viaBotId, MsgId replyToId, const QString &postAuthor, const MTPReplyMarkup &markup) const override;
+	void addToHistory(
+		const Result *owner,
+		not_null<History*> history,
+		MTPDmessage::Flags flags,
+		MsgId msgId,
+		UserId fromId,
+		MTPint mtpDate,
+		UserId viaBotId,
+		MsgId replyToId,
+		const QString &postAuthor,
+		const MTPReplyMarkup &markup) const override;
 
-	QString getErrorOnSend(const Result *owner, History *history) const override;
+	QString getErrorOnSend(
+		const Result *owner,
+		not_null<History*> history) const override;
 
 private:
 	PhotoData *_photo;
@@ -214,11 +231,21 @@ public:
 		return _document != nullptr;
 	}
 
-	void addToHistory(const Result *owner, History *history,
-		MTPDmessage::Flags flags, MsgId msgId, UserId fromId, MTPint mtpDate,
-		UserId viaBotId, MsgId replyToId, const QString &postAuthor, const MTPReplyMarkup &markup) const override;
+	void addToHistory(
+		const Result *owner,
+		not_null<History*> history,
+		MTPDmessage::Flags flags,
+		MsgId msgId,
+		UserId fromId,
+		MTPint mtpDate,
+		UserId viaBotId,
+		MsgId replyToId,
+		const QString &postAuthor,
+		const MTPReplyMarkup &markup) const override;
 
-	QString getErrorOnSend(const Result *owner, History *history) const override;
+	QString getErrorOnSend(
+		const Result *owner,
+		not_null<History*> history) const override;
 
 private:
 	DocumentData *_document;
@@ -237,11 +264,21 @@ public:
 		return _game != nullptr;
 	}
 
-	void addToHistory(const Result *owner, History *history,
-		MTPDmessage::Flags flags, MsgId msgId, UserId fromId, MTPint mtpDate,
-		UserId viaBotId, MsgId replyToId, const QString &postAuthor, const MTPReplyMarkup &markup) const override;
+	void addToHistory(
+		const Result *owner,
+		not_null<History*> history,
+		MTPDmessage::Flags flags,
+		MsgId msgId,
+		UserId fromId,
+		MTPint mtpDate,
+		UserId viaBotId,
+		MsgId replyToId,
+		const QString &postAuthor,
+		const MTPReplyMarkup &markup) const override;
 
-	QString getErrorOnSend(const Result *owner, History *history) const override;
+	QString getErrorOnSend(
+		const Result *owner,
+		not_null<History*> history) const override;
 
 private:
 	GameData *_game;

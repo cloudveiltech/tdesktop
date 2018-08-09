@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "storage/localstorage.h"
 
@@ -24,6 +11,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "storage/serialize_common.h"
 #include "chat_helpers/stickers.h"
 #include "data/data_drafts.h"
+#include "boxes/send_files_box.h"
 #include "window/themes/window_theme.h"
 #include "observer_peer.h"
 #include "mainwidget.h"
@@ -44,12 +32,13 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 namespace Local {
 namespace {
 
-constexpr int kThemeFileSizeLimit = 5 * 1024 * 1024;
+constexpr auto kThemeFileSizeLimit = 5 * 1024 * 1024;
+constexpr auto kFileLoaderQueueStopTimeout = TimeMs(5000);
 
 using FileKey = quint64;
 
 constexpr char tdfMagic[] = { 'T', 'D', 'F', '$' };
-constexpr int tdfMagicLen = sizeof(tdfMagic);
+constexpr auto tdfMagicLen = int(sizeof(tdfMagic));
 
 QString toFilePart(FileKey val) {
 	QString result;
@@ -165,9 +154,7 @@ void createLocalKey(const QByteArray &pass, QByteArray *salt, MTP::AuthKeyPtr *r
 }
 
 struct FileReadDescriptor {
-	FileReadDescriptor() : version(0) {
-	}
-	int32 version;
+	int32 version = 0;
 	QByteArray data;
 	QBuffer buffer;
 	QDataStream stream;
@@ -1423,7 +1410,9 @@ bool _readSetting(quint32 blockId, QDataStream &stream, int version, ReadSetting
 		stream >> v;
 		if (!_checkStreamStatus(stream)) return false;
 
-		cSetCompressPastedImage(v == 1);
+		GetStoredAuthSessionCache().setSendFilesWay((v == 1)
+			? SendFilesWay::Album
+			: SendFilesWay::Files);
 	} break;
 
 	case dbiEmojiTabOld: {
@@ -1805,7 +1794,6 @@ void _writeUserSettings() {
 	data.stream << quint32(dbiNotificationsCorner) << qint32(Global::NotificationsCorner());
 	data.stream << quint32(dbiAskDownloadPath) << qint32(Global::AskDownloadPath());
 	data.stream << quint32(dbiDownloadPath) << (Global::AskDownloadPath() ? QString() : Global::DownloadPath()) << (Global::AskDownloadPath() ? QByteArray() : Global::DownloadPathBookmark());
-	data.stream << quint32(dbiCompressPastedImage) << qint32(cCompressPastedImage());
 	data.stream << quint32(dbiDialogLastPath) << cDialogLastPath();
 	data.stream << quint32(dbiSongVolume) << qint32(qRound(Global::SongVolume() * 1e6));
 	data.stream << quint32(dbiVideoVolume) << qint32(qRound(Global::VideoVolume() * 1e6));
@@ -2275,7 +2263,7 @@ void start() {
 	Expects(!_manager);
 
 	_manager = new internal::Manager();
-	_localLoader = new TaskQueue(0, FileLoaderQueueStopTimeout);
+	_localLoader = new TaskQueue(kFileLoaderQueueStopTimeout);
 
 	_basePath = cWorkingDir() + qsl("tdata/");
 	if (!QDir().exists(_basePath)) QDir().mkpath(_basePath);
@@ -2854,7 +2842,8 @@ TaskId startImageLoad(const StorageKey &location, mtpFileLoader *loader) {
 	if (j == _imagesMap.cend() || !_localLoader) {
 		return 0;
 	}
-	return _localLoader->addTask(MakeShared<ImageLoadTask>(j->first, location, loader));
+	return _localLoader->addTask(
+		std::make_unique<ImageLoadTask>(j->first, location, loader));
 }
 
 int32 hasImages() {
@@ -2912,7 +2901,8 @@ TaskId startStickerImageLoad(const StorageKey &location, mtpFileLoader *loader) 
 	if (j == _stickerImagesMap.cend() || !_localLoader) {
 		return 0;
 	}
-	return _localLoader->addTask(MakeShared<StickerImageLoadTask>(j->first, location, loader));
+	return _localLoader->addTask(
+		std::make_unique<StickerImageLoadTask>(j->first, location, loader));
 }
 
 bool willStickerImageLoad(const StorageKey &location) {
@@ -2985,7 +2975,8 @@ TaskId startAudioLoad(const StorageKey &location, mtpFileLoader *loader) {
 	if (j == _audiosMap.cend() || !_localLoader) {
 		return 0;
 	}
-	return _localLoader->addTask(MakeShared<AudioLoadTask>(j->first, location, loader));
+	return _localLoader->addTask(
+		std::make_unique<AudioLoadTask>(j->first, location, loader));
 }
 
 bool copyAudio(const StorageKey &oldLocation, const StorageKey &newLocation) {
@@ -3101,7 +3092,8 @@ TaskId startWebFileLoad(const QString &url, webFileLoader *loader) {
 	if (j == _webFilesMap.cend() || !_localLoader) {
 		return 0;
 	}
-	return _localLoader->addTask(MakeShared<WebFileLoadTask>(j->first, url, loader));
+	return _localLoader->addTask(
+		std::make_unique<WebFileLoadTask>(j->first, url, loader));
 }
 
 int32 hasWebFiles() {
@@ -3177,7 +3169,8 @@ void countVoiceWaveform(DocumentData *document) {
 		if (_localLoader) {
 			voice->waveform.resize(1 + sizeof(TaskId));
 			voice->waveform[0] = -1; // counting
-			TaskId taskId = _localLoader->addTask(MakeShared<CountWaveformTask>(document));
+			TaskId taskId = _localLoader->addTask(
+				std::make_unique<CountWaveformTask>(document));
 			memcpy(voice->waveform.data() + 1, &taskId, sizeof(taskId));
 		}
 	}

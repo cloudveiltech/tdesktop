@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "mtproto/core_types.h"
 
@@ -75,14 +62,18 @@ void MTPstring::write(mtpBuffer &to) const {
 }
 
 uint32 mtpRequest::innerLength() const { // for template MTP requests and MTPBoxed instanciation
-	mtpRequestData *value = data();
-	if (!value || value->size() < 9) return 0;
+	const auto value = get();
+	if (!value || value->size() < 9) {
+		return 0;
+	}
 	return value->at(7);
 }
 
 void mtpRequest::write(mtpBuffer &to) const {
-	mtpRequestData *value = data();
-	if (!value || value->size() < 9) return;
+	const auto value = get();
+	if (!value || value->size() < 9) {
+		return;
+	}
 	uint32 was = to.size(), s = innerLength() / sizeof(mtpPrime);
 	to.resize(was + s);
 	memcpy(to.data() + was, value->constData() + 8, s * sizeof(mtpPrime));

@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "mtproto/session.h"
 
@@ -56,7 +43,7 @@ void SessionData::setKey(const AuthKeyPtr &key) {
 }
 
 void SessionData::clear(Instance *instance) {
-	RPCCallbackClears clearCallbacks;
+	auto clearCallbacks = std::vector<RPCCallbackClear>();
 	{
 		QReadLocker locker1(haveSentMutex()), locker2(toResendMutex()), locker3(haveReceivedMutex()), locker4(wereAckedMutex());
 		auto receivedResponsesEnd = _receivedResponses.cend();
@@ -96,7 +83,7 @@ void SessionData::clear(Instance *instance) {
 		QWriteLocker locker(receivedIdsMutex());
 		_receivedIds.clear();
 	}
-	instance->clearCallbacksDelayed(clearCallbacks);
+	instance->clearCallbacksDelayed(std::move(clearCallbacks));
 }
 
 Session::Session(not_null<Instance*> instance, ShiftedDcId shiftedDcId) : QObject()
@@ -141,8 +128,10 @@ void Session::registerRequest(mtpRequestId requestId, ShiftedDcId dcWithShift) {
 	return _instance->registerRequest(requestId, dcWithShift);
 }
 
-mtpRequestId Session::storeRequest(mtpRequest &request, const RPCResponseHandler &parser) {
-	return _instance->storeRequest(request, parser);
+mtpRequestId Session::storeRequest(
+		mtpRequest &request,
+		RPCResponseHandler &&callbacks) {
+	return _instance->storeRequest(request, std::move(callbacks));
 }
 
 mtpRequest Session::getRequest(mtpRequestId requestId) {
@@ -151,23 +140,6 @@ mtpRequest Session::getRequest(mtpRequestId requestId) {
 
 bool Session::rpcErrorOccured(mtpRequestId requestId, const RPCFailHandlerPtr &onFail, const RPCError &err) { // return true if need to clean request data
 	return _instance->rpcErrorOccured(requestId, onFail, err);
-}
-
-void Session::requestPrepareFailed(
-		const RPCFailHandlerPtr &onFail,
-		Exception &e) {
-	CrashReports::SetAnnotation("RequestException", QString::fromLatin1(e.what()));
-	Unexpected("Exception in Session::send()");
-
-	const auto requestId = 0;
-	const auto error = rpcClientError(
-		"NO_REQUEST_ID",
-		QString(
-			"send() failed to queue request, exception: %1"
-		).arg(
-			e.what()
-		));
-	rpcErrorOccured(requestId, onFail, error);
 }
 
 void Session::restart() {
@@ -255,7 +227,9 @@ void Session::needToResumeAndSend() {
 }
 
 void Session::sendPong(quint64 msgId, quint64 pingId) {
-	send(MTP_pong(MTP_long(msgId), MTP_long(pingId)));
+	send(mtpRequestData::serialize(MTPPong(MTP_pong(
+		MTP_long(msgId),
+		MTP_long(pingId)))));
 }
 
 void Session::sendMsgsStateInfo(quint64 msgId, QByteArray data) {
@@ -267,7 +241,8 @@ void Session::sendMsgsStateInfo(quint64 msgId, QByteArray data) {
 		auto dst = gsl::as_writeable_bytes(gsl::make_span(&info[0], info.size()));
 		base::copy_bytes(dst, src);
 	}
-	send(MTPMsgsStateInfo(MTP_msgs_state_info(MTP_long(msgId), MTP_string(std::move(info)))));
+	send(mtpRequestData::serialize(MTPMsgsStateInfo(
+		MTP_msgs_state_info(MTP_long(msgId), MTP_string(std::move(info))))));
 }
 
 void Session::checkRequestsByTimer() {
@@ -317,12 +292,12 @@ void Session::checkRequestsByTimer() {
 		}
 	}
 	if (!removingIds.isEmpty()) {
-		RPCCallbackClears clearCallbacks;
+		auto clearCallbacks = std::vector<RPCCallbackClear>();
 		{
 			QWriteLocker locker(data.haveSentMutex());
-			mtpRequestMap &haveSent(data.haveSentMap());
+			auto &haveSent = data.haveSentMap();
 			for (uint32 i = 0, l = removingIds.size(); i < l; ++i) {
-				mtpRequestMap::iterator j = haveSent.find(removingIds[i]);
+				auto j = haveSent.find(removingIds[i]);
 				if (j != haveSent.cend()) {
 					if (j.value()->requestId) {
 						clearCallbacks.push_back(j.value()->requestId);
@@ -331,7 +306,7 @@ void Session::checkRequestsByTimer() {
 				}
 			}
 		}
-		_instance->clearCallbacksDelayed(clearCallbacks);
+		_instance->clearCallbacksDelayed(std::move(clearCallbacks));
 	}
 }
 
@@ -425,13 +400,17 @@ mtpRequestId Session::resend(quint64 msgId, qint64 msCanWait, bool forceContaine
 		QWriteLocker locker(data.haveSentMutex());
 		mtpRequestMap &haveSent(data.haveSentMap());
 
-		mtpRequestMap::iterator i = haveSent.find(msgId);
+		auto i = haveSent.find(msgId);
 		if (i == haveSent.end()) {
 			if (sendMsgStateInfo) {
 				char cantResend[2] = {1, 0};
 				DEBUG_LOG(("Message Info: cant resend %1, request not found").arg(msgId));
 
-				return send(MTP_msgs_state_info(MTP_long(msgId), MTP_string(std::string(cantResend, cantResend + 1))));
+				auto info = std::string(cantResend, cantResend + 1);
+				return send(mtpRequestData::serialize(MTPMsgsStateInfo(
+					MTP_msgs_state_info(
+						MTP_long(msgId),
+						MTP_string(std::move(info))))));
 			}
 			return 0;
 		}
@@ -478,6 +457,30 @@ void Session::resendAll() {
 	for (uint32 i = 0, l = toResend.size(); i < l; ++i) {
 		resend(toResend[i], 10, true);
 	}
+}
+
+mtpRequestId Session::send(
+		mtpRequest &&request,
+		RPCResponseHandler &&callbacks,
+		TimeMs msCanWait,
+		bool needsLayer,
+		bool toMainDC,
+		mtpRequestId after) {
+	DEBUG_LOG(("MTP Info: adding request to toSendMap, msCanWait %1").arg(msCanWait));
+
+	request->msDate = getms(true); // > 0 - can send without container
+	request->needsLayer = needsLayer;
+	if (after) {
+		request->after = getRequest(after);
+	}
+	const auto requestId = storeRequest(request, std::move(callbacks));
+	Assert(requestId != 0);
+
+	const auto signedDcId = toMainDC ? -getDcWithShift() : getDcWithShift();
+	sendPrepared(request, msCanWait);
+	registerRequest(requestId, signedDcId);
+
+	return requestId;
 }
 
 void Session::sendPrepared(const mtpRequest &request, TimeMs msCanWait, bool newRequest) { // returns true, if emit of needToSend() is needed

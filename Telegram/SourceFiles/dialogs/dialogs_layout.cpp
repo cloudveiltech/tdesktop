@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/dialogs_layout.h"
 
@@ -26,6 +13,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "styles/style_dialogs.h"
 #include "storage/localstorage.h"
 #include "ui/empty_userpic.h"
+#include "ui/text_options.h"
 #include "lang/lang_keys.h"
 
 namespace Dialogs {
@@ -156,7 +144,7 @@ void paintRow(
 			if (history->cloudDraftTextCache.isEmpty()) {
 				auto draftWrapped = textcmdLink(1, lng_dialogs_text_from_wrapped(lt_from, lang(lng_from_draft)));
 				auto draftText = lng_dialogs_text_with_from(lt_from_part, draftWrapped, lt_message, TextUtilities::Clean(draft->textWithTags.text));
-				history->cloudDraftTextCache.setText(st::dialogsTextStyle, draftText, _textDlgOptions);
+				history->cloudDraftTextCache.setText(st::dialogsTextStyle, draftText, Ui::DialogTextOptions());
 			}
 			p.setPen(active ? st::dialogsTextFgActive : (selected ? st::dialogsTextFgOver : st::dialogsTextFg));
 			p.setTextPalette(active ? st::dialogsTextPaletteDraftActive : (selected ? st::dialogsTextPaletteDraftOver : st::dialogsTextPaletteDraft));
@@ -499,7 +487,7 @@ void RowPainter::paint(
 	auto item = row->item();
 	auto history = item->history();
 	auto cloudDraft = nullptr;
-	auto from = [&] {
+	const auto from = [&] {
 		if (auto searchPeer = row->searchInPeer()) {
 			if (searchPeer->isSelf()) {
 				return item->senderOriginal();
@@ -509,7 +497,7 @@ void RowPainter::paint(
 		}
 		return (history->peer->migrateTo() ? history->peer->migrateTo() : history->peer);
 	}();
-	auto drawInDialogWay = [&] {
+	const auto drawInDialogWay = [&] {
 		if (auto searchPeer = row->searchInPeer()) {
 			if (!searchPeer->isChannel() || searchPeer->isMegagroup()) {
 				return HistoryItem::DrawInDialog::WithoutSender;
@@ -517,7 +505,7 @@ void RowPainter::paint(
 		}
 		return HistoryItem::DrawInDialog::Normal;
 	}();
-	auto paintItemCallback = [&](int nameleft, int namewidth) {
+	const auto paintItemCallback = [&](int nameleft, int namewidth) {
 		auto lastWidth = namewidth;
 		auto texttop = st::dialogsPadding.y() + st::msgNameFont->height + st::dialogsSkip;
 		item->drawInDialog(
@@ -529,11 +517,14 @@ void RowPainter::paint(
 			row->_cacheFor,
 			row->_cache);
 	};
-	auto paintCounterCallback = [] {};
+	const auto paintCounterCallback = [] {};
+	const auto showSavedMessages = history->peer->isSelf()
+		&& !row->searchInPeer();
 	const auto flags = (active ? Flag::Active : Flag(0))
 		| (selected ? Flag::Selected : Flag(0))
 		| (onlyBackground ? Flag::OnlyBackground : Flag(0))
-		| Flag::SearchResult;
+		| Flag::SearchResult
+		| (showSavedMessages ? Flag::SavedMessages : Flag(0));
 	paintRow(
 		p,
 		row,

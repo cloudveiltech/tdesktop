@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
@@ -124,6 +111,9 @@ public:
 	float64 progress() const;
 	int32 loadOffset() const;
 	bool uploading() const;
+
+	void setWaitingForAlbum();
+	bool waitingForAlbum() const;
 
 	QByteArray data() const;
 	const FileLocation &location(bool check = false) const;
@@ -241,7 +231,8 @@ public:
 	int32 size = 0;
 
 	FileStatus status = FileReady;
-	int32 uploadOffset = 0;
+
+	std::unique_ptr<Data::UploadState> uploadingData;
 
 	int32 md5[8];
 
@@ -309,17 +300,20 @@ private:
 VoiceWaveform documentWaveformDecode(const QByteArray &encoded5bit);
 QByteArray documentWaveformEncode5bit(const VoiceWaveform &waveform);
 
-class DocumentClickHandler : public LeftButtonClickHandler {
+class DocumentClickHandler : public FileClickHandler {
 public:
-	DocumentClickHandler(DocumentData *document)
-	: _document(document) {
+	DocumentClickHandler(
+		not_null<DocumentData*> document,
+		FullMsgId context = FullMsgId())
+	: FileClickHandler(context)
+	, _document(document) {
 	}
-	DocumentData *document() const {
+	not_null<DocumentData*> document() const {
 		return _document;
 	}
 
 private:
-	DocumentData *_document;
+	not_null<DocumentData*> _document;
 
 };
 
@@ -327,7 +321,7 @@ class DocumentSaveClickHandler : public DocumentClickHandler {
 public:
 	using DocumentClickHandler::DocumentClickHandler;
 	static void doSave(
-		DocumentData *document,
+		not_null<DocumentData*> document,
 		bool forceSavingAs = false);
 
 protected:
@@ -339,7 +333,7 @@ class DocumentOpenClickHandler : public DocumentClickHandler {
 public:
 	using DocumentClickHandler::DocumentClickHandler;
 	static void doOpen(
-		DocumentData *document,
+		not_null<DocumentData*> document,
 		HistoryItem *context,
 		ActionOnLoad action = ActionOnLoadOpen);
 

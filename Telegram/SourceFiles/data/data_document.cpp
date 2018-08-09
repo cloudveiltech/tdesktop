@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_document.h"
 
@@ -224,7 +211,10 @@ QString documentSaveFilename(const DocumentData *data, bool forceSavingAs = fals
 	return saveFileName(caption, filter, prefix, name, forceSavingAs, dir);
 }
 
-void DocumentOpenClickHandler::doOpen(DocumentData *data, HistoryItem *context, ActionOnLoad action) {
+void DocumentOpenClickHandler::doOpen(
+		not_null<DocumentData*> data,
+		HistoryItem *context,
+		ActionOnLoad action) {
 	if (!data->date) return;
 
 	auto msgId = context ? context->fullId() : FullMsgId();
@@ -329,23 +319,20 @@ void DocumentOpenClickHandler::doOpen(DocumentData *data, HistoryItem *context, 
 }
 
 void DocumentOpenClickHandler::onClickImpl() const {
-	const auto item = App::hoveredLinkItem()
-		? App::hoveredLinkItem()
-		: (App::contextItem() ? App::contextItem() : nullptr);
-	const auto action = document()->isVoiceMessage()
+	const auto data = document();
+	const auto action = data->isVoiceMessage()
 		? ActionOnLoadNone
 		: ActionOnLoadOpen;
-	doOpen(document(), item, action);
+	doOpen(data, getActionItem(), action);
 }
 
 void GifOpenClickHandler::onClickImpl() const {
-	const auto item = App::hoveredLinkItem()
-		? App::hoveredLinkItem()
-		: (App::contextItem() ? App::contextItem() : nullptr);
-	doOpen(document(), item, ActionOnLoadPlayInline);
+	doOpen(document(), getActionItem(), ActionOnLoadPlayInline);
 }
 
-void DocumentSaveClickHandler::doSave(DocumentData *data, bool forceSavingAs) {
+void DocumentSaveClickHandler::doSave(
+		not_null<DocumentData*> data,
+		bool forceSavingAs) {
 	if (!data->date) return;
 
 	auto filepath = data->filepath(DocumentData::FilePathResolveSaveFromDataSilent, forceSavingAs);
@@ -369,17 +356,13 @@ void DocumentSaveClickHandler::onClickImpl() const {
 }
 
 void DocumentCancelClickHandler::onClickImpl() const {
-	auto data = document();
+	const auto data = document();
 	if (!data->date) return;
 
 	if (data->uploading()) {
-		if (auto item = App::hoveredLinkItem() ? App::hoveredLinkItem() : (App::contextItem() ? App::contextItem() : nullptr)) {
-			if (auto media = item->getMedia()) {
-				if (media->getDocument() == data) {
-					App::contextItem(item);
-					App::main()->cancelUploadLayer();
-				}
-			}
+		if (const auto item = App::histItemById(context())) {
+			App::contextItem(item);
+			App::main()->cancelUploadLayer();
 		}
 	} else {
 		data->cancel();
@@ -672,12 +655,19 @@ QString DocumentData::loadingFilePath() const {
 }
 
 bool DocumentData::displayLoading() const {
-	return loading() ? (!_loader->loadingLocal() || !_loader->autoLoading()) : uploading();
+	return loading()
+		? (!_loader->loadingLocal() || !_loader->autoLoading())
+		: (uploading() && !waitingForAlbum());
 }
 
 float64 DocumentData::progress() const {
 	if (uploading()) {
-		return snap((size > 0) ? float64(uploadOffset) / size : 0., 0., 1.);
+		if (uploadingData->size > 0) {
+			const auto result = float64(uploadingData->offset)
+				/ uploadingData->size;
+			return snap(result, 0., 1.);
+		}
+		return 0.;
 	}
 	return loading() ? _loader->currentProgress() : (loaded() ? 1. : 0.);
 }
@@ -687,7 +677,17 @@ int32 DocumentData::loadOffset() const {
 }
 
 bool DocumentData::uploading() const {
-	return status == FileUploading;
+	return (uploadingData != nullptr);
+}
+
+void DocumentData::setWaitingForAlbum() {
+	if (uploading()) {
+		uploadingData->waitingForAlbum = true;
+	}
+}
+
+bool DocumentData::waitingForAlbum() const {
+	return uploading() && uploadingData->waitingForAlbum;
 }
 
 void DocumentData::save(const QString &toFile, ActionOnLoad action, const FullMsgId &actionMsgId, LoadFromCloudSetting fromCloud, bool autoLoading) {

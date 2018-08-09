@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/widgets/labels.h"
 
@@ -171,10 +158,11 @@ FlatLabel::FlatLabel(
 , _st(st)
 , _contextCopyText(lang(lng_context_copy_text)) {
 	textUpdated();
-	std::move(text)
-		| rpl::start_with_next([this](const QString &value) {
-			setText(value);
-		}, lifetime());
+	std::move(
+		text
+	) | rpl::start_with_next([this](const QString &value) {
+		setText(value);
+	}, lifetime());
 }
 
 FlatLabel::FlatLabel(
@@ -186,10 +174,11 @@ FlatLabel::FlatLabel(
 , _st(st)
 , _contextCopyText(lang(lng_context_copy_text)) {
 	textUpdated();
-	std::move(text)
-		| rpl::start_with_next([this](const TextWithEntities &value) {
-			setMarkedText(value);
-		}, lifetime());
+	std::move(
+		text
+	) | rpl::start_with_next([this](const TextWithEntities &value) {
+		setMarkedText(value);
+	}, lifetime());
 }
 
 void FlatLabel::init() {
@@ -353,9 +342,9 @@ Text::StateResult FlatLabel::dragActionFinish(const QPoint &p, Qt::MouseButton b
 	_lastMousePos = p;
 	auto state = dragActionUpdate();
 
-	ClickHandlerPtr activated = ClickHandler::unpressed();
+	auto activated = ClickHandler::unpressed();
 	if (_dragAction == Dragging) {
-		activated.clear();
+		activated = nullptr;
 	} else if (_dragAction == PrepareDrag) {
 		_selection = { 0, 0 };
 		_savedSelection = { 0, 0 };
@@ -638,7 +627,12 @@ void FlatLabel::clickHandlerPressedChanged(const ClickHandlerPtr &action, bool a
 	update();
 }
 
-std::unique_ptr<CrossFadeAnimation> FlatLabel::CrossFade(FlatLabel *from, FlatLabel *to, style::color bg, QPoint fromPosition, QPoint toPosition) {
+std::unique_ptr<CrossFadeAnimation> FlatLabel::CrossFade(
+		not_null<FlatLabel*> from,
+		not_null<FlatLabel*> to,
+		style::color bg,
+		QPoint fromPosition,
+		QPoint toPosition) {
 	auto result = std::make_unique<CrossFadeAnimation>(bg);
 
 	struct Data {
@@ -647,9 +641,9 @@ std::unique_ptr<CrossFadeAnimation> FlatLabel::CrossFade(FlatLabel *from, FlatLa
 		int lineHeight = 0;
 		int lineAddTop = 0;
 	};
-	auto prepareData = [&bg](FlatLabel *label) {
+	auto prepareData = [&bg](not_null<FlatLabel*> label) {
 		auto result = Data();
-		result.full = myGrabImage(label, QRect(), bg->c);
+		result.full = GrabWidgetToImage(label, QRect(), bg->c);
 		auto textWidth = label->width() - label->_st.margin.left() - label->_st.margin.right();
 		label->_text.countLineWidths(textWidth, &result.lineWidths);
 		result.lineHeight = label->_st.style.font->height;

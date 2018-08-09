@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
@@ -46,7 +33,6 @@ struct SubscriptionHandlerHelper<void> {
 template <typename EventType>
 using SubscriptionHandler = typename SubscriptionHandlerHelper<EventType>::type;
 
-// Required because QShared/WeakPointer can't point to void.
 class BaseObservableData {
 };
 
@@ -84,14 +70,17 @@ public:
 
 private:
 	struct Node {
-		Node(const QSharedPointer<internal::BaseObservableData> &observable) : observable(observable) {
+		Node(const std::shared_ptr<internal::BaseObservableData> &observable)
+		: observable(observable) {
 		}
 		Node *next = nullptr;
 		Node *prev = nullptr;
-		QWeakPointer<internal::BaseObservableData> observable;
+		std::weak_ptr<internal::BaseObservableData> observable;
 	};
 	using RemoveAndDestroyMethod = void(*)(Node*);
-	Subscription(Node *node, RemoveAndDestroyMethod removeAndDestroyMethod) : _node(node), _removeAndDestroyMethod(removeAndDestroyMethod) {
+	Subscription(Node *node, RemoveAndDestroyMethod removeAndDestroyMethod)
+	: _node(node)
+	, _removeAndDestroyMethod(removeAndDestroyMethod) {
 	}
 
 	Node *_node = nullptr;
@@ -115,13 +104,13 @@ class CommonObservable {
 public:
 	Subscription add_subscription(Handler &&handler) {
 		if (!_data) {
-			_data = MakeShared<ObservableData<EventType, Handler>>(this);
+			_data = std::make_shared<ObservableData<EventType, Handler>>(this);
 		}
 		return _data->append(std::move(handler));
 	}
 
 private:
-	QSharedPointer<ObservableData<EventType, Handler>> _data;
+	std::shared_ptr<ObservableData<EventType, Handler>> _data;
 
 	friend class CommonObservableData<EventType, Handler>;
 	friend class BaseObservable<EventType, Handler, base::type_traits<EventType>::is_fast_copy_type::value>;
@@ -184,7 +173,11 @@ public:
 
 private:
 	struct Node : public Subscription::Node {
-		Node(const QSharedPointer<BaseObservableData> &observer, Handler &&handler) : Subscription::Node(observer), handler(std::move(handler)) {
+		Node(
+			const std::shared_ptr<BaseObservableData> &observer,
+			Handler &&handler)
+		: Subscription::Node(observer)
+		, handler(std::move(handler)) {
 		}
 		Handler handler;
 	};
@@ -210,8 +203,8 @@ private:
 	}
 
 	static void removeAndDestroyNode(Subscription::Node *node) {
-		if (auto that = node->observable.toStrongRef()) {
-			static_cast<CommonObservableData*>(that.data())->remove(node);
+		if (const auto that = node->observable.lock()) {
+			static_cast<CommonObservableData*>(that.get())->remove(node);
 		}
 		delete static_cast<Node*>(node);
 	}

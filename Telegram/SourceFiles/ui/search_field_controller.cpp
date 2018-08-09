@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/search_field_controller.h"
 
@@ -53,44 +40,43 @@ auto SearchFieldController::createRowView(
 	cancel->addClickHandler([=] {
 		field->setText(QString());
 	});
-	queryValue()
-		| rpl::map([](const QString &value) {
-			return !value.isEmpty();
-		})
-		| rpl::start_with_next([cancel](bool shown) {
-			cancel->toggle(shown, anim::type::normal);
-		}, cancel->lifetime());
+	queryValue(
+	) | rpl::map([](const QString &value) {
+		return !value.isEmpty();
+	}) | rpl::start_with_next([cancel](bool shown) {
+		cancel->toggle(shown, anim::type::normal);
+	}, cancel->lifetime());
 	cancel->finishAnimating();
 
 	auto shadow = CreateChild<Ui::PlainShadow>(wrap);
 	shadow->show();
 
-	wrap->widthValue()
-		| rpl::start_with_next([=, &st](int newWidth) {
-			auto availableWidth = newWidth
-				- st.fieldIconSkip
-				- st.fieldCancelSkip;
-			field->setGeometryToLeft(
-				st.padding.left() + st.fieldIconSkip,
-				st.padding.top(),
-				availableWidth,
-				field->height());
-			cancel->moveToRight(0, 0);
-			shadow->setGeometry(
-				0,
-				st.height - st::lineWidth,
-				newWidth,
-				st::lineWidth);
-		}, wrap->lifetime());
-	wrap->paintRequest()
-		| rpl::start_with_next([=, &st] {
-			Painter p(wrap);
-			st.fieldIcon.paint(
-				p,
-				st.padding.left(),
-				st.padding.top(),
-				wrap->width());
-		}, wrap->lifetime());
+	wrap->widthValue(
+	) | rpl::start_with_next([=, &st](int newWidth) {
+		auto availableWidth = newWidth
+			- st.fieldIconSkip
+			- st.fieldCancelSkip;
+		field->setGeometryToLeft(
+			st.padding.left() + st.fieldIconSkip,
+			st.padding.top(),
+			availableWidth,
+			field->height());
+		cancel->moveToRight(0, 0);
+		shadow->setGeometry(
+			0,
+			st.height - st::lineWidth,
+			newWidth,
+			st::lineWidth);
+	}, wrap->lifetime());
+	wrap->paintRequest(
+	) | rpl::start_with_next([=, &st] {
+		Painter p(wrap);
+		st.fieldIcon.paint(
+			p,
+			st.padding.left(),
+			st.padding.top(),
+			wrap->width());
+	}, wrap->lifetime());
 
 	_view.release();
 	_view.reset(wrap);

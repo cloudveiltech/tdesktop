@@ -1,9 +1,11 @@
-#define MyAppShortName "Telegram"
-#define MyAppName "Telegram Desktop"
-#define MyAppPublisher "Telegram Messenger LLP"
-#define MyAppURL "https://tdesktop.com"
-#define MyAppExeName "Telegram.exe"
-#define MyAppId "53F49750-6209-4FBF-9CA8-7A333C87D1ED"
+#define MyAppShortName "CloudVeil Messenger"
+#define MyAppName "CloudVeil Messenger Desktop"
+#define MyAppPublisher "CloudVeil Messenger"
+#define MyAppURL "https://github.com/cloudveiltech"
+#define MyAppExeName "CloudVeilMessenger.exe"
+#define MyAppId "7BF3C861-C022-41EC-8C16-87EBECBDCE4B"             
+#define MyAppVersion "1.2.8.0"
+#define ReleasePath "..\..\out\Release"
 
 [Setup]
 ; NOTE: The value of AppId uniquely identifies this application.
@@ -20,9 +22,9 @@ DefaultDirName={userappdata}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir={#ReleasePath}
-OutputBaseFilename=tsetup.{#MyAppVersionFull}
+OutputBaseFilename=cloudveil_messenger_setup
 SetupIconFile={#SourcePath}..\Resources\art\icon256.ico
-UninstallDisplayIcon={app}\Telegram.exe
+UninstallDisplayIcon={app}\CloudVeilMessenger.exe
 Compression=lzma
 SolidCompression=yes
 DisableStartupPrompt=yes
@@ -45,8 +47,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; OnlyBelowVersion: 0,6.1
 
 [Files]
-Source: "{#ReleasePath}\Telegram.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#ReleasePath}\Updater.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ReleasePath}\CloudVeilMessenger.exe"; DestDir: "{app}"; Flags: ignoreversion
+; Source: "{#ReleasePath}\Updater.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]

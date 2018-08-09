@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/info_top_bar.h"
 
@@ -158,10 +145,10 @@ Ui::FadeWrap<Ui::RpWidget> *TopBar::pushButton(
 	weak->toggle(
 		!selectionMode() && !_searchModeEnabled,
 		anim::type::instant);
-	weak->widthValue()
-		| rpl::start_with_next([this] {
-			updateControlsGeometry(width());
-		}, lifetime());
+	weak->widthValue(
+	) | rpl::start_with_next([this] {
+		updateControlsGeometry(width());
+	}, lifetime());
 	return weak;
 }
 
@@ -207,9 +194,7 @@ void TopBar::createSearchView(
 			*focusLifetime = field->shownValue()
 				| rpl::filter([](bool shown) { return shown; })
 				| rpl::take(1)
-				| rpl::start_with_next([=] {
-					field->setFocus();
-				});
+				| rpl::start_with_next([=] { field->setFocus(); });
 		} else {
 			focusLifetime->destroy();
 		}
@@ -247,46 +232,47 @@ void TopBar::createSearchView(
 	cancel->addClickHandler(cancelSearch);
 	field->connect(field, &Ui::InputField::cancelled, cancelSearch);
 
-	wrap->widthValue()
-		| rpl::start_with_next([=](int newWidth) {
-			auto availableWidth = newWidth
-				- _st.searchRow.fieldCancelSkip;
-			fieldWrap->resizeToWidth(availableWidth);
-			fieldWrap->moveToLeft(
-				_st.searchRow.padding.left(),
-				_st.searchRow.padding.top());
-			cancel->moveToRight(0, 0);
-		}, wrap->lifetime());
+	wrap->widthValue(
+	) | rpl::start_with_next([=](int newWidth) {
+		auto availableWidth = newWidth
+			- _st.searchRow.fieldCancelSkip;
+		fieldWrap->resizeToWidth(availableWidth);
+		fieldWrap->moveToLeft(
+			_st.searchRow.padding.left(),
+			_st.searchRow.padding.top());
+		cancel->moveToRight(0, 0);
+	}, wrap->lifetime());
 
-	widthValue()
-		| rpl::start_with_next([=](int newWidth) {
-			auto left = _back
-				? _st.back.width
-				: _st.titlePosition.x();
-			wrap->setGeometryToLeft(
-				left,
-				0,
-				newWidth - left,
-				wrap->height(),
-				newWidth);
-		}, wrap->lifetime());
+	widthValue(
+	) | rpl::start_with_next([=](int newWidth) {
+		auto left = _back
+			? _st.back.width
+			: _st.titlePosition.x();
+		wrap->setGeometryToLeft(
+			left,
+			0,
+			newWidth - left,
+			wrap->height(),
+			newWidth);
+	}, wrap->lifetime());
 
-	field->alive()
-		| rpl::start_with_done([=] {
-			field->setParent(nullptr);
-			removeButton(search);
-			clearSearchField();
-		}, _searchView->lifetime());
+	field->alive(
+	) | rpl::start_with_done([=] {
+		field->setParent(nullptr);
+		removeButton(search);
+		clearSearchField();
+	}, _searchView->lifetime());
 
 	_searchModeEnabled = !field->getLastText().isEmpty() || startsFocused;
 	updateControlsVisibility(anim::type::instant);
 
-	std::move(shown)
-		| rpl::start_with_next([=](bool visible) {
-			auto alreadyInSearch = !field->getLastText().isEmpty();
-			_searchModeAvailable = visible || alreadyInSearch;
-			updateControlsVisibility(anim::type::instant);
-		}, wrap->lifetime());
+	std::move(
+		shown
+	) | rpl::start_with_next([=](bool visible) {
+		auto alreadyInSearch = !field->getLastText().isEmpty();
+		_searchModeAvailable = visible || alreadyInSearch;
+		updateControlsVisibility(anim::type::instant);
+	}, wrap->lifetime());
 }
 
 void TopBar::removeButton(not_null<Ui::RpWidget*> button) {
@@ -440,10 +426,10 @@ void TopBar::createSelectionControls() {
 		object_ptr<Ui::IconButton>(this, _st.mediaCancel),
 		st::infoTopBarScale));
 	_cancelSelection->setDuration(st::infoTopBarDuration);
-	_cancelSelection->entity()->clicks()
-		| rpl::start_to_stream(
-			_cancelSelectionClicks,
-			_cancelSelection->lifetime());
+	_cancelSelection->entity()->clicks(
+	) | rpl::start_to_stream(
+		_cancelSelectionClicks,
+		_cancelSelection->lifetime());
 	_selectionText = wrap(Ui::CreateChild<Ui::FadeWrap<Ui::LabelWithNumbers>>(
 		this,
 		object_ptr<Ui::LabelWithNumbers>(

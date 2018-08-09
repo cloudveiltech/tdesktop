@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/media/info_media_inner_widget.h"
 
@@ -44,10 +31,10 @@ InnerWidget::InnerWidget(
 : RpWidget(parent)
 , _controller(controller)
 , _empty(this) {
-	_empty->heightValue()
-		| rpl::start_with_next(
-			[this] { refreshHeight(); },
-			_empty->lifetime());
+	_empty->heightValue(
+	) | rpl::start_with_next(
+		[this] { refreshHeight(); },
+		_empty->lifetime());
 	_list = setupList();
 }
 
@@ -63,11 +50,11 @@ void InnerWidget::setupOtherTypes() {
 	}
 	//rpl::combine(
 	//	_controller->wrapValue(),
-	//	_controller->searchEnabledByContent())
-	//	| rpl::start_with_next([this](Wrap wrap, bool enabled) {
-	//		_searchEnabled = enabled;
-	//		refreshSearchField();
-	//	}, lifetime());
+	//	_controller->searchEnabledByContent()
+	//) | rpl::start_with_next([this](Wrap wrap, bool enabled) {
+	//	_searchEnabled = enabled;
+	//	refreshSearchField();
+	//}, lifetime());
 }
 
 void InnerWidget::createOtherTypes() {
@@ -83,10 +70,10 @@ void InnerWidget::createOtherTypes() {
 	//createTabs();
 
 	_otherTypes->resizeToWidth(width());
-	_otherTypes->heightValue()
-		| rpl::start_with_next(
-			[this] { refreshHeight(); },
-			_otherTypes->lifetime());
+	_otherTypes->heightValue(
+	) | rpl::start_with_next(
+		[this] { refreshHeight(); },
+		_otherTypes->lifetime());
 }
 
 void InnerWidget::createTypeButtons() {
@@ -161,18 +148,19 @@ void InnerWidget::createTypeButtons() {
 //	_otherTabs->setActiveSection(*TypeToTabIndex(type()));
 //	_otherTabs->finishAnimating();
 //
-//	_otherTabs->sectionActivated()
-//		| rpl::map([](int index) { return TabIndexToType(index); })
-//		| rpl::start_with_next(
-//			[this](Type newType) {
-//				if (type() != newType) {
-//					switchToTab(Memento(
-//						_controller->peerId(),
-//						_controller->migratedPeerId(),
-//						newType));
-//				}
-//			},
-//			_otherTabs->lifetime());
+//	_otherTabs->sectionActivated(
+//	) | rpl::map([](int index) {
+//		return TabIndexToType(index);
+//	}) | rpl::start_with_next(
+//		[this](Type newType) {
+//			if (type() != newType) {
+//				switchToTab(Memento(
+//					_controller->peerId(),
+//					_controller->migratedPeerId(),
+//					newType));
+//			}
+//		},
+//		_otherTabs->lifetime());
 //}
 
 Type InnerWidget::type() const {
@@ -233,10 +221,10 @@ bool InnerWidget::showInternal(not_null<Memento*> memento) {
 //			st::infoMediaSearch);
 //		_searchField->resizeToWidth(width());
 //		_searchField->show();
-//		search->queryChanges()
-//			| rpl::start_with_next([this] {
-//				scrollToSearchField();
-//			}, _searchField->lifetime());
+//		search->queryChanges(
+//		) | rpl::start_with_next([this] {
+//			scrollToSearchField();
+//		}, _searchField->lifetime());
 //	} else {
 //		_searchField = nullptr;
 //	}
@@ -254,28 +242,27 @@ object_ptr<ListWidget> InnerWidget::setupList() {
 	auto result = object_ptr<ListWidget>(
 		this,
 		_controller);
-	result->heightValue()
-		| rpl::start_with_next(
-			[this] { refreshHeight(); },
-			result->lifetime());
+	result->heightValue(
+	) | rpl::start_with_next(
+		[this] { refreshHeight(); },
+		result->lifetime());
 	using namespace rpl::mappers;
-	result->scrollToRequests()
-		| rpl::map([widget = result.data()](int to) {
-			return Ui::ScrollToRequest {
-				widget->y() + to,
-				-1
-			};
-		})
-		| rpl::start_to_stream(
-			_scrollToRequests,
-			result->lifetime());
+	result->scrollToRequests(
+	) | rpl::map([widget = result.data()](int to) {
+		return Ui::ScrollToRequest {
+			widget->y() + to,
+			-1
+		};
+	}) | rpl::start_to_stream(
+		_scrollToRequests,
+		result->lifetime());
 	_selectedLists.fire(result->selectedListValue());
 	_listTops.fire(result->topValue());
 	_empty->setType(_controller->section().mediaType());
-	_controller->mediaSourceQueryValue()
-		| rpl::start_with_next([this](const QString &query) {
-			_empty->setSearchQuery(query);
-		}, result->lifetime());
+	_controller->mediaSourceQueryValue(
+	) | rpl::start_with_next([this](const QString &query) {
+		_empty->setSearchQuery(query);
+	}, result->lifetime());
 	return result;
 }
 
@@ -288,8 +275,9 @@ void InnerWidget::restoreState(not_null<Memento*> memento) {
 }
 
 rpl::producer<SelectedItems> InnerWidget::selectedListValue() const {
-	return _selectedLists.events_starting_with(_list->selectedListValue())
-		| rpl::flatten_latest();
+	return _selectedLists.events_starting_with(
+		_list->selectedListValue()
+	) | rpl::flatten_latest();
 }
 
 void InnerWidget::cancelSelection() {
@@ -352,8 +340,9 @@ void InnerWidget::setScrollHeightValue(rpl::producer<int> value) {
 	using namespace rpl::mappers;
 	_empty->setFullHeight(rpl::combine(
 		std::move(value),
-		_listTops.events_starting_with(_list->topValue())
-			| rpl::flatten_latest(),
+		_listTops.events_starting_with(
+			_list->topValue()
+		) | rpl::flatten_latest(),
 		_1 - _2));
 }
 

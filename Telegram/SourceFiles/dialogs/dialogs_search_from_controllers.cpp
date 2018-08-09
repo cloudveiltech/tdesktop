@@ -1,26 +1,14 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/dialogs_search_from_controllers.h"
 
 #include "lang/lang_keys.h"
+#include "data/data_peer_values.h"
 #include "observer_peer.h"
 #include "auth_session.h"
 #include "apiwrap.h"
@@ -94,19 +82,22 @@ void ChatSearchFromController::rebuildRows() {
 	auto wasEmpty = !delegate()->peerListFullRowsCount();
 
 	auto now = unixtime();
-	QMultiMap<int32, UserData*> ordered;
+	const auto byOnline = [&](not_null<UserData*> user) {
+		return Data::SortByOnlineValue(user, now);
+	};
+	auto ordered = QMultiMap<TimeId, not_null<UserData*>>();
 	if (_chat->noParticipantInfo()) {
 		Auth().api().requestFullPeer(_chat);
 	} else if (!_chat->participants.empty()) {
 		for (const auto [user, version] : _chat->participants) {
-			ordered.insertMulti(App::onlineForSort(user, now), user);
+			ordered.insertMulti(byOnline(user), user);
 		}
 	}
 	for_const (auto user, _chat->lastAuthors) {
 		if (user->isInaccessible()) continue;
 		appendRow(user);
 		if (!ordered.isEmpty()) {
-			ordered.remove(App::onlineForSort(user, now), user);
+			ordered.remove(byOnline(user), user);
 		}
 	}
 	if (!ordered.isEmpty()) {

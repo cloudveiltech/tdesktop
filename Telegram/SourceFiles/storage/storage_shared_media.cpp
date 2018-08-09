@@ -1,27 +1,13 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "storage/storage_shared_media.h"
 
 #include <rpl/map.h>
-#include "base/task_queue.h"
 
 namespace Storage {
 
@@ -36,14 +22,13 @@ std::map<PeerId, SharedMedia::Lists>::iterator
 		auto &list = result->second[index];
 		auto type = static_cast<SharedMediaType>(index);
 
-		list.sliceUpdated()
-			| rpl::map([=](const SparseIdsSliceUpdate &update) {
-				return SharedMediaSliceUpdate(
-					peer,
-					type,
-					update);
-			})
-			| rpl::start_to_stream(_sliceUpdated, _lifetime);
+		list.sliceUpdated(
+		) | rpl::map([=](const SparseIdsSliceUpdate &update) {
+			return SharedMediaSliceUpdate(
+				peer,
+				type,
+				update);
+		}) | rpl::start_to_stream(_sliceUpdated, _lifetime);
 	}
 	return result;
 }
@@ -86,9 +71,9 @@ void SharedMedia::remove(SharedMediaRemoveOne &&query) {
 			auto type = static_cast<SharedMediaType>(index);
 			if (query.types.test(type)) {
 				peerIt->second[index].removeOne(query.messageId);
-				_oneRemoved.fire(std::move(query));
 			}
 		}
+		_oneRemoved.fire(std::move(query));
 	}
 }
 

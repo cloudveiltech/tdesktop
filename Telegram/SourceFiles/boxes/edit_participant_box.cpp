@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/edit_participant_box.h"
 
@@ -24,9 +11,11 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/buttons.h"
-#include "styles/style_boxes.h"
+#include "ui/text_options.h"
 #include "ui/special_buttons.h"
 #include "boxes/calendar_box.h"
+#include "data/data_peer_values.h"
+#include "styles/style_boxes.h"
 
 namespace {
 
@@ -127,7 +116,10 @@ EditParticipantBox::Inner::Inner(
 	st::rightsPhotoButton)
 , _hasAdminRights(hasAdminRights) {
 	_userPhoto->setPointerCursor(false);
-	_userName.setText(st::rightsNameStyle, App::peerName(_user), _textNameOptions);
+	_userName.setText(
+		st::rightsNameStyle,
+		App::peerName(_user),
+		Ui::NameTextOptions());
 }
 
 void EditParticipantBox::Inner::removeControl(QPointer<TWidget> widget) {
@@ -176,7 +168,7 @@ void EditParticipantBox::Inner::paintEvent(QPaintEvent *e) {
 			auto seesAllMessages = (_user->botInfo->readsAllHistory || _hasAdminRights);
 			return lang(seesAllMessages ? lng_status_bot_reads_all : lng_status_bot_not_reads_all);
 		}
-		return App::onlineText(_user->onlineTill, unixtime());
+		return Data::OnlineText(_user->onlineTill, unixtime());
 	};
 	p.setFont(st::contactsStatusFont);
 	p.setPen(st::contactsStatusFg);
@@ -477,7 +469,7 @@ void EditRestrictedBox::createUntilVariants() {
 			_untilVariants.back()->setDisabled(true);
 		}
 	};
-	auto addCustomVariant = [this, addVariant](TimeId until, TimeId from, TimeId to) {
+	auto addCustomVariant = [addVariant](TimeId until, TimeId from, TimeId to) {
 		if (!ChannelData::IsRestrictedForever(until) && until > from && until <= to) {
 			addVariant(until, lng_rights_chat_banned_custom_date(lt_date, langDayOfMonthFull(date(until).date())));
 		}

@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/settings_info_widget.h"
 
@@ -29,6 +16,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "boxes/change_phone_box.h"
 #include "observer_peer.h"
 #include "messenger.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace Settings {
 
@@ -75,7 +63,7 @@ void InfoWidget::refreshMobileNumber() {
 		lang(lng_profile_copy_phone));
 	if (auto text = _mobileNumber->entity()->textLabel()) {
 		text->setRichText(textcmdLink(1, phoneText.text));
-		text->setLink(1, MakeShared<LambdaClickHandler>([] {
+		text->setLink(1, std::make_shared<LambdaClickHandler>([] {
 			Ui::show(Box<ChangePhoneBox>());
 		}));
 	}
@@ -129,12 +117,17 @@ void InfoWidget::refreshBio() {
 		bioText,
 		TextWithEntities(),
 		QString());
-	if (auto text = _bio->entity()->textLabel()) {
-		text->setClickHandlerHook([](const ClickHandlerPtr &handler, Qt::MouseButton button) {
-			Ui::show(Box<EditBioBox>(App::self()));
-			return false;
-		});
-	}
+
+		if (auto text = _bio->entity()->textLabel()) {
+			text->setClickHandlerHook([](const ClickHandlerPtr &handler, Qt::MouseButton button) {
+				//CloudVeil start
+				if (!GlobalSecuritySettings::getSettings().disableBioChange) {
+					Ui::show(Box<EditBioBox>(App::self()));
+				}
+				//CloudVeil end
+				return false;
+			});
+		}
 }
 
 void InfoWidget::setLabeledText(

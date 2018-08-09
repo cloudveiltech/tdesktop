@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/profile/info_profile_actions.h"
 
@@ -230,22 +217,23 @@ object_ptr<Ui::RpWidget> DetailsFiller::setupInfo() {
 			UsernameValue(user),
 			lang(lng_context_copy_mention));
 	} else {
-		auto linkText = LinkValue(_peer)
-			| rpl::map([](const QString &link) {
-				auto result = TextWithEntities{ link, {} };
-				if (!link.isEmpty()) {
-					auto remove = qstr("https://");
-					if (result.text.startsWith(remove)) {
-						result.text.remove(0, remove.size());
-					}
-					result.entities.push_back(EntityInText(
-						EntityInTextCustomUrl,
-						0,
-						result.text.size(),
-						link));
+		auto linkText = LinkValue(
+			_peer
+		) | rpl::map([](const QString &link) {
+			auto result = TextWithEntities{ link, {} };
+			if (!link.isEmpty()) {
+				auto remove = qstr("https://");
+				if (result.text.startsWith(remove)) {
+					result.text.remove(0, remove.size());
 				}
-				return result;
-			});
+				result.entities.push_back(EntityInText(
+					EntityInTextCustomUrl,
+					0,
+					result.text.size(),
+					link));
+			}
+			return result;
+		});
 		auto link = addInfoOneLine(
 			lng_info_link_label,
 			std::move(linkText),
@@ -487,10 +475,10 @@ void ActionsFiller::addBotCommandActions(not_null<UserData*> user) {
 	auto hasBotCommandValue = [=](const QString &command) {
 		return Notify::PeerUpdateValue(
 			user,
-			Notify::PeerUpdate::Flag::BotCommandsChanged)
-			| rpl::map([=] {
-				return !findBotCommand(command).isEmpty();
-			});
+			Notify::PeerUpdate::Flag::BotCommandsChanged
+		) | rpl::map([=] {
+			return !findBotCommand(command).isEmpty();
+		});
 	};
 	auto sendBotCommand = [=](const QString &command) {
 		auto original = findBotCommand(command);
@@ -523,27 +511,27 @@ void ActionsFiller::addReportAction() {
 void ActionsFiller::addBlockAction(not_null<UserData*> user) {
 	auto text = Notify::PeerUpdateValue(
 		user,
-		Notify::PeerUpdate::Flag::UserIsBlocked)
-		| rpl::map([user] {
-			switch (user->blockStatus()) {
-			case UserData::BlockStatus::Blocked:
-				return Lang::Viewer(user->botInfo
-					? lng_profile_unblock_bot
-					: lng_profile_unblock_user);
-			case UserData::BlockStatus::NotBlocked:
-			default:
-				return Lang::Viewer(user->botInfo
-					? lng_profile_block_bot
-					: lng_profile_block_user);
-			}
-		})
-		| rpl::flatten_latest()
-		| rpl::start_spawning(_wrap->lifetime());
+		Notify::PeerUpdate::Flag::UserIsBlocked
+	) | rpl::map([user] {
+		switch (user->blockStatus()) {
+		case UserData::BlockStatus::Blocked:
+			return Lang::Viewer(user->botInfo
+				? lng_profile_unblock_bot
+				: lng_profile_unblock_user);
+		case UserData::BlockStatus::NotBlocked:
+		default:
+			return Lang::Viewer(user->botInfo
+				? lng_profile_block_bot
+				: lng_profile_block_user);
+		}
+	}) | rpl::flatten_latest(
+	) | rpl::start_spawning(_wrap->lifetime());
 
-	auto toggleOn = rpl::duplicate(text)
-		| rpl::map([](const QString &text) {
-			return !text.isEmpty();
-		});
+	auto toggleOn = rpl::duplicate(
+		text
+	) | rpl::map([](const QString &text) {
+		return !text.isEmpty();
+	});
 	auto callback = [user] {
 		if (user->isBlocked()) {
 			Auth().api().unblockUser(user);
@@ -690,15 +678,15 @@ void SetupAddChannelMember(
 	add->addClickHandler([channel] {
 		Window::PeerMenuAddChannelMembers(channel);
 	});
-	parent->widthValue()
-		| rpl::start_with_next([add](int newWidth) {
-			auto availableWidth = newWidth
-				- st::infoMembersButtonPosition.x();
-			add->moveToLeft(
-				availableWidth - add->width(),
-				st::infoMembersButtonPosition.y(),
-				newWidth);
-		}, add->lifetime());
+	parent->widthValue(
+	) | rpl::start_with_next([add](int newWidth) {
+		auto availableWidth = newWidth
+			- st::infoMembersButtonPosition.x();
+		add->moveToLeft(
+			availableWidth - add->width(),
+			st::infoMembersButtonPosition.y(),
+			newWidth);
+	}, add->lifetime());
 }
 
 object_ptr<Ui::RpWidget> SetupChannelMembers(
@@ -718,8 +706,9 @@ object_ptr<Ui::RpWidget> SetupChannelMembers(
 			channel,
 			MTPDchannelFull::Flag::f_can_view_participants),
 			(_1 > 0) && _2);
-	auto membersText = MembersCountValue(channel)
-		| rpl::map([](int count) {
+	auto membersText = MembersCountValue(
+		channel
+	) | rpl::map([](int count) {
 		return lng_chat_status_members(lt_count, count);
 	});
 	auto membersCallback = [controller, channel] {

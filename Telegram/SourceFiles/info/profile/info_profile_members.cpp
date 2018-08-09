@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/profile/info_profile_members.h"
 
@@ -65,16 +52,17 @@ Members::Members(
 	setContent(_list.data());
 	_listController->setDelegate(static_cast<PeerListDelegate*>(this));
 
-	_controller->searchFieldController()->queryValue()
-		| rpl::start_with_next([this](QString &&query) {
-			peerListScrollToTop();
-			content()->searchQueryChanged(std::move(query));
-		}, lifetime());
-	MembersCountValue(_peer)
-		| rpl::start_with_next([this](int count) {
-			const auto enabled = (count >= kEnableSearchMembersAfterCount);
-			_controller->setSearchEnabledByContent(enabled);
-		}, lifetime());
+	_controller->searchFieldController()->queryValue(
+	) | rpl::start_with_next([this](QString &&query) {
+		peerListScrollToTop();
+		content()->searchQueryChanged(std::move(query));
+	}, lifetime());
+	MembersCountValue(
+		_peer
+	) | rpl::start_with_next([this](int count) {
+		const auto enabled = (count >= kEnableSearchMembersAfterCount);
+		_controller->setSearchEnabledByContent(enabled);
+	}, lifetime());
 }
 
 int Members::desiredHeight() const {
@@ -159,25 +147,25 @@ void Members::setupHeader() {
 
 	setupButtons();
 
-	//_controller->wrapValue()
-	//	| rpl::start_with_next([this](Wrap wrap) {
-	//		_wrap = wrap;
-	//		updateSearchOverrides();
-	//	}, lifetime());
-	widthValue()
-		| rpl::start_with_next([this](int width) {
-			_header->resizeToWidth(width);
-		}, _header->lifetime());
+	//_controller->wrapValue(
+	//) | rpl::start_with_next([this](Wrap wrap) {
+	//	_wrap = wrap;
+	//	updateSearchOverrides();
+	//}, lifetime());
+	widthValue(
+	) | rpl::start_with_next([this](int width) {
+		_header->resizeToWidth(width);
+	}, _header->lifetime());
 }
 
 object_ptr<Ui::FlatLabel> Members::setupTitle() {
 	auto result = object_ptr<Ui::FlatLabel>(
 		_titleWrap,
-		MembersCountValue(_peer)
-			| rpl::map([](int count) {
-				return lng_chat_status_members(lt_count, count);
-			})
-			| ToUpperValue(),
+		MembersCountValue(
+			_peer
+		) | rpl::map([](int count) {
+			return lng_chat_status_members(lt_count, count);
+		}) | ToUpperValue(),
 		st::infoBlockHeaderLabel);
 	result->setAttribute(Qt::WA_TransparentForMouseEvents);
 	return result;
@@ -214,10 +202,10 @@ void Members::setupButtons() {
 
 	rpl::combine(
 		std::move(addMemberShown),
-		std::move(searchShown))
-		| rpl::start_with_next([this] {
-			updateHeaderControlsGeometry(width());
-		}, lifetime());
+		std::move(searchShown)
+	) | rpl::start_with_next([this] {
+		updateHeaderControlsGeometry(width());
+	}, lifetime());
 }
 
 void Members::setupList() {
@@ -226,31 +214,31 @@ void Members::setupList() {
 		this,
 		_listController.get(),
 		st::infoMembersList);
-	_list->scrollToRequests()
-		| rpl::start_with_next([this](Ui::ScrollToRequest request) {
-			auto addmin = (request.ymin < 0 || !_header)
-				? 0
-				: _header->height();
-			auto addmax = (request.ymax < 0 || !_header)
-				? 0
-				: _header->height();
-			_scrollToRequests.fire({
-				request.ymin + addmin,
-				request.ymax + addmax });
-		}, _list->lifetime());
-	widthValue()
-		| rpl::start_with_next([this](int newWidth) {
-			_list->resizeToWidth(newWidth);
-		}, _list->lifetime());
-	_list->heightValue()
-		| rpl::start_with_next([=](int listHeight) {
-			auto newHeight = (listHeight > st::membersMarginBottom)
-				? (topSkip
-					+ listHeight
-					+ st::membersMarginBottom)
-				: 0;
-			resize(width(), newHeight);
-		}, _list->lifetime());
+	_list->scrollToRequests(
+	) | rpl::start_with_next([this](Ui::ScrollToRequest request) {
+		auto addmin = (request.ymin < 0 || !_header)
+			? 0
+			: _header->height();
+		auto addmax = (request.ymax < 0 || !_header)
+			? 0
+			: _header->height();
+		_scrollToRequests.fire({
+			request.ymin + addmin,
+			request.ymax + addmax });
+	}, _list->lifetime());
+	widthValue(
+	) | rpl::start_with_next([this](int newWidth) {
+		_list->resizeToWidth(newWidth);
+	}, _list->lifetime());
+	_list->heightValue(
+	) | rpl::start_with_next([=](int listHeight) {
+		auto newHeight = (listHeight > st::membersMarginBottom)
+			? (topSkip
+				+ listHeight
+				+ st::membersMarginBottom)
+			: 0;
+		resize(width(), newHeight);
+	}, _list->lifetime());
 	_list->moveToLeft(0, topSkip);
 }
 

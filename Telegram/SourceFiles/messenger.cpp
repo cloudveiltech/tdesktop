@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "messenger.h"
 
@@ -47,6 +34,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "window/themes/window_theme.h"
 #include "history/history_location_manager.h"
 #include "ui/widgets/tooltip.h"
+#include "ui/text_options.h"
 #include "storage/serialize_common.h"
 #include "window/window_controller.h"
 #include "base/qthelp_regex.h"
@@ -115,7 +103,7 @@ Messenger::Messenger(not_null<Core::Launcher*> launcher)
 
 	style::startManager();
 	anim::startManager();
-	HistoryInit();
+	Ui::InitTextOptions();
 	Media::Player::start();
 
 	DEBUG_LOG(("Application Info: inited..."));
@@ -201,9 +189,11 @@ bool Messenger::hideMediaView() {
 	return false;
 }
 
-void Messenger::showPhoto(not_null<const PhotoOpenClickHandler*> link, HistoryItem *item) {
-	return (!item && link->peer())
-		? showPhoto(link->photo(), link->peer())
+void Messenger::showPhoto(not_null<const PhotoOpenClickHandler*> link) {
+	const auto item = App::histItemById(link->context());
+	const auto peer = link->peer();
+	return (!item && peer)
+		? showPhoto(link->photo(), peer)
 		: showPhoto(link->photo(), item);
 }
 
@@ -214,7 +204,9 @@ void Messenger::showPhoto(not_null<PhotoData*> photo, HistoryItem *item) {
 	_mediaView->setFocus();
 }
 
-void Messenger::showPhoto(not_null<PhotoData*> photo, PeerData *peer) {
+void Messenger::showPhoto(
+		not_null<PhotoData*> photo,
+		not_null<PeerData*> peer) {
 	if (_mediaView->isHidden()) Ui::hideLayer(anim::type::instant);
 	_mediaView->showPhoto(photo, peer);
 	_mediaView->activateWindow();
@@ -982,7 +974,6 @@ void Messenger::checkMediaViewActivation() {
 void Messenger::loggedOut() {
 	if (_mediaView) {
 		hideMediaView();
-		_mediaView->rpcClear();
 		_mediaView->clearData();
 	}
 }
@@ -1004,13 +995,13 @@ void Messenger::registerLeaveSubscription(QWidget *widget) {
 	if (auto topLevel = widget->window()) {
 		if (topLevel == _window.get()) {
 			auto weak = make_weak(widget);
-			auto subscription = _window->leaveEvents()
-				| rpl::start_with_next([weak] {
-					if (const auto window = weak.data()) {
-						QEvent ev(QEvent::Leave);
-						QGuiApplication::sendEvent(window, &ev);
-					}
-				});
+			auto subscription = _window->leaveEvents(
+			) | rpl::start_with_next([weak] {
+				if (const auto window = weak.data()) {
+					QEvent ev(QEvent::Leave);
+					QGuiApplication::sendEvent(window, &ev);
+				}
+			});
 			_leaveSubscriptions.emplace_back(weak, std::move(subscription));
 		}
 	}

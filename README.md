@@ -1,8 +1,6 @@
 # CloudVeil Messenger Desktop – Unofficial Telegram Client
 
-This is the complete source code and the build instructions for the alpha version of the official desktop client for CloudVeil Messenger, based on the [Telegram API][telegram_api] and the [MTProto][telegram_proto] secure protocol.
-
-[![Preview of CloudVeil Messenger][preview_image]][preview_image_url]
+This is the complete source code and the build instructions for the alpha version of CloudVeil Messenger which is based on he [Telegram][telegram] messenger, based on the [Telegram API][telegram_api] and the [MTProto][telegram_proto] secure protocol.
 
 The source code is published under GPLv3 with OpenSSL exception, the license is available [here][license].
 
@@ -44,7 +42,6 @@ The source code is published under GPLv3 with OpenSSL exception, the license is 
 
 [//]: # (LINKS)
 [telegram]: https://telegram.org
-[telegram_desktop]: https://desktop.telegram.org
 [telegram_api]: https://core.telegram.org
 [telegram_proto]: https://core.telegram.org/mtproto
 [license]: LICENSE

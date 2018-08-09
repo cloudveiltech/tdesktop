@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/dialogs_inner_widget.h"
 
@@ -28,6 +15,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "styles/style_window.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/popup_menu.h"
+#include "ui/text_options.h"
 #include "data/data_drafts.h"
 #include "lang/lang_keys.h"
 #include "mainwindow.h"
@@ -96,22 +84,22 @@ DialogsInner::DialogsInner(QWidget *parent, not_null<Window::Controller*> contro
 	_cancelSearchFromUser->hide();
 
 	subscribe(Auth().downloaderTaskFinished(), [this] { update(); });
-	Auth().data().itemRemoved()
-		| rpl::start_with_next(
-			[this](auto item) { itemRemoved(item); },
-			lifetime());
-	Auth().data().itemRepaintRequest()
-		| rpl::start_with_next([this](auto item) {
-			if (item->history()->lastMsg == item) {
-				item->history()->updateChatListEntry();
-			}
-		}, lifetime());
+	Auth().data().itemRemoved(
+	) | rpl::start_with_next(
+		[this](auto item) { itemRemoved(item); },
+		lifetime());
+	Auth().data().itemRepaintRequest(
+	) | rpl::start_with_next([](auto item) {
+		if (item->history()->lastMsg == item) {
+			item->history()->updateChatListEntry();
+		}
+	}, lifetime());
 	subscribe(App::histories().sendActionAnimationUpdated(), [this](const Histories::SendActionAnimationUpdate &update) {
 		auto updateRect = Dialogs::Layout::RowPainter::sendActionAnimationRect(update.width, update.height, getFullWidth(), update.textUpdated);
 		updateDialogRow(update.history->peer, MsgId(0), updateRect, UpdateRowSection::Default | UpdateRowSection::Filtered);
 	});
 
-	subscribe(Window::Theme::Background(), [this](const Window::Theme::BackgroundUpdate &data) {
+	subscribe(Window::Theme::Background(), [](const Window::Theme::BackgroundUpdate &data) {
 		if (data.paletteChanged()) {
 			Dialogs::Layout::clearUnreadBadgesCache();
 		}
@@ -136,6 +124,14 @@ DialogsInner::DialogsInner(QWidget *parent, not_null<Window::Controller*> contro
 
 	refresh();
 }
+
+//CloudVeil start
+void DialogsInner::refreshOnUpdate() {
+	InvokeQueued(this, [this] {	
+		refresh();
+	});	
+}
+//CloudVeil end
 
 int DialogsInner::dialogsOffset() const {
 	return _dialogsImportant ? st::dialogsImportantBarHeight : 0;
@@ -191,6 +187,7 @@ void DialogsInner::paintRegion(Painter &p, const QRegion &region, bool paintingO
 		auto otherStart = rows->size() * st::dialogsRowHeight;
 		auto active = App::main()->activePeer();
 		auto selected = _menuPeer ? _menuPeer : (isPressed() ? (_pressed ? _pressed->history()->peer : nullptr) : (_selected ? _selected->history()->peer : nullptr));
+		
 		if (otherStart) {
 			auto reorderingPinned = (_aboveIndex >= 0 && !_pinnedRows.empty());
 			auto &list = rows->all();
@@ -200,6 +197,7 @@ void DialogsInner::paintRegion(Painter &p, const QRegion &region, bool paintingO
 
 			auto i = list.cfind(dialogsClip.top(), st::dialogsRowHeight);
 			if (i != list.cend()) {
+
 				auto lastPaintedPos = (*i)->pos();
 
 				// If we're reordering pinned chats we need to fill this area background first.
@@ -210,6 +208,7 @@ void DialogsInner::paintRegion(Painter &p, const QRegion &region, bool paintingO
 				p.translate(0, lastPaintedPos * st::dialogsRowHeight);
 				for (auto e = list.cend(); i != e; ++i) {
 					auto row = (*i);
+
 					if (lastPaintedPos * st::dialogsRowHeight >= dialogsClip.top() + dialogsClip.height()) {
 						break;
 					}
@@ -1040,7 +1039,7 @@ void DialogsInner::createDialog(History *history) {
 		LOG(("API Error: DialogsInner::createDialog() called for a non loaded peer!"));
 		return;
 	}
-
+	
 	bool creating = !history->inChatList(Dialogs::Mode::All);
 	if (creating) {
 		auto mainRow = history->addToChatList(Dialogs::Mode::All, _dialogs.get());
@@ -1397,7 +1396,7 @@ void DialogsInner::onFilterUpdate(QString newFilter, bool force) {
 								break;
 							}
 						}
-						if (fi == fe) {
+						if (fi == fe) {						
 							_filterResults.push_back(row);
 						}
 					}
@@ -1508,14 +1507,15 @@ void DialogsInner::dialogsReceived(const QVector<MTPDialog> &added) {
 		if (dialog.type() != mtpc_dialog) {
 			continue;
 		}
-
+		
 		auto &d = dialog.c_dialog();
 		auto peerId = peerFromMTP(d.vpeer);
 		if (!peerId) {
 			continue;
 		}
-
+			
 		auto history = App::historyFromDialog(peerId, d.vunread_count.v, d.vread_inbox_max_id.v, d.vread_outbox_max_id.v);
+
 		history->setUnreadMentionsCount(d.vunread_mentions_count.v);
 		auto peer = history->peer;
 		if (auto channel = peer->asChannel()) {
@@ -1581,17 +1581,17 @@ bool DialogsInner::searchReceived(const QVector<MTPMessage> &messages, DialogsSe
 		auto peerId = peerFromMessage(message);
 		auto lastDate = dateFromMessage(message);
 		if (auto peer = App::peerLoaded(peerId)) {
-			if (lastDate) {
-				auto item = App::histories().addNewMessage(message, NewMessageExisting);
-				_searchResults.push_back(std::make_unique<Dialogs::FakeRow>(_searchInPeer, item));
-				lastDateFound = lastDate;
-				if (isGlobalSearch) {
-					_lastSearchDate = lastDateFound;
+				if (lastDate) {
+					auto item = App::histories().addNewMessage(message, NewMessageExisting);
+					_searchResults.push_back(std::make_unique<Dialogs::FakeRow>(_searchInPeer, item));
+					lastDateFound = lastDate;
+					if (isGlobalSearch) {
+						_lastSearchDate = lastDateFound;
+					}
 				}
-			}
-			if (isGlobalSearch) {
-				_lastSearchPeer = peer;
-			}
+				if (isGlobalSearch) {
+					_lastSearchPeer = peer;
+				}
 		} else {
 			LOG(("API Error: a search results with not loaded peer %1").arg(peerId));
 		}
@@ -1625,7 +1625,8 @@ void DialogsInner::peerSearchReceived(const QString &query, const QVector<MTPPee
 			}
 		}
 		if (auto peer = App::peerLoaded(peerId)) {
-			_peerSearchResults.push_back(std::make_unique<PeerSearchResult>(App::peer(peerId)));
+			auto peerData = App::peer(peerId);
+			_peerSearchResults.push_back(std::make_unique<PeerSearchResult>(peerData));
 		} else {
 			LOG(("API Error: user %1 was not loaded in DialogsInner::peopleReceived()").arg(peerId));
 		}
@@ -1797,9 +1798,9 @@ void DialogsInner::searchInPeer(PeerData *peer, UserData *from) {
 		_cancelSearchInPeer->show();
 		if (_searchInPeer->isSelf()) {
 			_searchInSavedText.setText(
-				st::dialogsSearchFromStyle,
+				st::msgNameStyle,
 				lang(lng_saved_messages),
-				_textDlgOptions);
+				Ui::DialogTextOptions());
 		}
 	} else {
 		_cancelSearchInPeer->hide();
@@ -1811,7 +1812,7 @@ void DialogsInner::searchInPeer(PeerData *peer, UserData *from) {
 		_searchFromUserText.setText(
 			st::dialogsSearchFromStyle,
 			fromUserText,
-			_textDlgOptions);
+			Ui::DialogTextOptions());
 		_cancelSearchFromUser->show();
 	} else {
 		_cancelSearchFromUser->hide();
@@ -2144,6 +2145,7 @@ void DialogsInner::destroyData() {
 	_contacts = nullptr;
 	_contactsNoDialogs = nullptr;
 	_dialogs = nullptr;
+	
 	if (_dialogsImportant) {
 		_dialogsImportant = nullptr;
 	}
@@ -2314,3 +2316,7 @@ MsgId DialogsInner::lastSearchMigratedId() const {
 	return _lastSearchMigratedId;
 }
 
+Dialogs::IndexedList *DialogsInner::shownDialogs() const {	
+	Dialogs::IndexedList *res = (Global::DialogsMode() == Dialogs::Mode::Important) ? _dialogsImportant.get() : _dialogs.get();
+	return res;
+}

@@ -1,55 +1,141 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-void HistoryInitMessages();
-base::lambda<void(ChannelData*, MsgId)> HistoryDependentItemCallback(const FullMsgId &msgId);
+#include "history/history_item.h"
+
+struct HistoryMessageEdited;
+
+base::lambda<void(ChannelData*, MsgId)> HistoryDependentItemCallback(
+	const FullMsgId &msgId);
 MTPDmessage::Flags NewMessageFlags(not_null<PeerData*> peer);
 QString GetErrorTextForForward(
 	not_null<PeerData*> peer,
 	const HistoryItemsList &items);
 void FastShareMessage(not_null<HistoryItem*> item);
 
-class HistoryMessage : public HistoryItem, private HistoryItemInstantiated<HistoryMessage> {
+class HistoryMessage
+	: public HistoryItem
+	, private HistoryItemInstantiated<HistoryMessage> {
 public:
-	static not_null<HistoryMessage*> create(not_null<History*> history, const MTPDmessage &msg) {
+	static not_null<HistoryMessage*> create(
+			not_null<History*> history,
+			const MTPDmessage &msg) {
 		return _create(history, msg);
 	}
-	static not_null<HistoryMessage*> create(not_null<History*> history, const MTPDmessageService &msg) {
+	static not_null<HistoryMessage*> create(
+			not_null<History*> history,
+			const MTPDmessageService &msg) {
 		return _create(history, msg);
 	}
-	static not_null<HistoryMessage*> create(not_null<History*> history, MsgId msgId, MTPDmessage::Flags flags, QDateTime date, UserId from, const QString &postAuthor, not_null<HistoryMessage*> fwd) {
+	static not_null<HistoryMessage*> create(
+			not_null<History*> history,
+			MsgId msgId,
+			MTPDmessage::Flags flags,
+			QDateTime date,
+			UserId from,
+			const QString &postAuthor,
+			not_null<HistoryMessage*> fwd) {
 		return _create(history, msgId, flags, date, from, postAuthor, fwd);
 	}
-	static not_null<HistoryMessage*> create(not_null<History*> history, MsgId msgId, MTPDmessage::Flags flags, MsgId replyTo, UserId viaBotId, QDateTime date, UserId from, const QString &postAuthor, const TextWithEntities &textWithEntities) {
-		return _create(history, msgId, flags, replyTo, viaBotId, date, from, postAuthor, textWithEntities);
+	static not_null<HistoryMessage*> create(
+			not_null<History*> history,
+			MsgId msgId,
+			MTPDmessage::Flags flags,
+			MsgId replyTo,
+			UserId viaBotId,
+			QDateTime date,
+			UserId from,
+			const QString &postAuthor,
+			const TextWithEntities &textWithEntities) {
+		return _create(
+			history,
+			msgId,
+			flags,
+			replyTo,
+			viaBotId,
+			date,
+			from,
+			postAuthor,
+			textWithEntities);
 	}
-	static not_null<HistoryMessage*> create(not_null<History*> history, MsgId msgId, MTPDmessage::Flags flags, MsgId replyTo, UserId viaBotId, QDateTime date, UserId from, const QString &postAuthor, DocumentData *doc, const QString &caption, const MTPReplyMarkup &markup) {
-		return _create(history, msgId, flags, replyTo, viaBotId, date, from, postAuthor, doc, caption, markup);
+	static not_null<HistoryMessage*> create(
+			not_null<History*> history,
+			MsgId msgId,
+			MTPDmessage::Flags flags,
+			MsgId replyTo,
+			UserId viaBotId,
+			QDateTime date,
+			UserId from,
+			const QString &postAuthor,
+			not_null<DocumentData*> document,
+			const QString &caption,
+			const MTPReplyMarkup &markup) {
+		return _create(
+			history,
+			msgId,
+			flags,
+			replyTo,
+			viaBotId,
+			date,
+			from,
+			postAuthor,
+			document,
+			caption,
+			markup);
 	}
-	static not_null<HistoryMessage*> create(not_null<History*> history, MsgId msgId, MTPDmessage::Flags flags, MsgId replyTo, UserId viaBotId, QDateTime date, UserId from, const QString &postAuthor, PhotoData *photo, const QString &caption, const MTPReplyMarkup &markup) {
-		return _create(history, msgId, flags, replyTo, viaBotId, date, from, postAuthor, photo, caption, markup);
+	static not_null<HistoryMessage*> create(
+			not_null<History*> history,
+			MsgId msgId,
+			MTPDmessage::Flags flags,
+			MsgId replyTo,
+			UserId viaBotId,
+			QDateTime date,
+			UserId from,
+			const QString &postAuthor,
+			not_null<PhotoData*> photo,
+			const QString &caption,
+			const MTPReplyMarkup &markup) {
+		return _create(
+			history,
+			msgId,
+			flags,
+			replyTo,
+			viaBotId,
+			date,
+			from,
+			postAuthor,
+			photo,
+			caption,
+			markup);
 	}
-	static not_null<HistoryMessage*> create(not_null<History*> history, MsgId msgId, MTPDmessage::Flags flags, MsgId replyTo, UserId viaBotId, QDateTime date, UserId from, const QString &postAuthor, GameData *game, const MTPReplyMarkup &markup) {
-		return _create(history, msgId, flags, replyTo, viaBotId, date, from, postAuthor, game, markup);
+	static not_null<HistoryMessage*> create(
+			not_null<History*> history,
+			MsgId msgId,
+			MTPDmessage::Flags flags,
+			MsgId replyTo,
+			UserId viaBotId,
+			QDateTime date,
+			UserId from,
+			const QString &postAuthor,
+			not_null<GameData*> game,
+			const MTPReplyMarkup &markup) {
+		return _create(
+			history,
+			msgId,
+			flags,
+			replyTo,
+			viaBotId,
+			date,
+			from,
+			postAuthor,
+			game,
+			markup);
 	}
 
 	void initTime();
@@ -70,7 +156,9 @@ public:
 		if (isAttachedToPrevious()) return false;
 		return true;
 	}
-	bool displayEditedBadge(bool hasViaBotOrInlineMarkup) const;
+	bool hasFastReply() const;
+	bool displayFastReply() const;
+	bool displayForwardedFrom() const;
 	bool uploading() const;
 	bool displayRightAction() const override;
 
@@ -107,7 +195,7 @@ public:
 		setReplyMarkup(markup);
 	}
 
-	void addToUnreadMentions(AddToUnreadMentionsMethod method) override;
+	void addToUnreadMentions(UnreadMentionType type) override;
 	void eraseFromUnreadMentions() override;
 	Storage::SharedMediaTypesMask sharedMediaTypes() const override;
 
@@ -116,27 +204,18 @@ public:
 	TextWithEntities originalText() const override;
 	bool textHasLinks() const override;
 
+	bool displayEditedBadge() const override;
+	QDateTime displayedEditDate() const override;
+
 	int infoWidth() const override;
 	int timeLeft() const override;
 	int timeWidth() const override {
 		return _timeWidth;
 	}
 
-	int viewsCount() const override {
-		if (auto views = Get<HistoryMessageViews>()) {
-			return views->_views;
-		}
-		return HistoryItem::viewsCount();
-	}
-
+	int viewsCount() const override;
 	not_null<PeerData*> displayFrom() const;
-
-	bool updateDependencyItem() override {
-		if (auto reply = Get<HistoryMessageReply>()) {
-			return reply->updateData(this, true);
-		}
-		return true;
-	}
+	bool updateDependencyItem() override;
 	MsgId dependencyMsgId() const override {
 		return replyToId();
 	}
@@ -155,14 +234,69 @@ public:
 
 	~HistoryMessage();
 
+protected:
+	void refreshEditedBadge() override;
+
 private:
-	HistoryMessage(not_null<History*> history, const MTPDmessage &msg);
-	HistoryMessage(not_null<History*> history, const MTPDmessageService &msg);
-	HistoryMessage(not_null<History*> history, MsgId msgId, MTPDmessage::Flags flags, QDateTime date, UserId from, const QString &postAuthor, not_null<HistoryMessage*> fwd); // local forwarded
-	HistoryMessage(not_null<History*> history, MsgId msgId, MTPDmessage::Flags flags, MsgId replyTo, UserId viaBotId, QDateTime date, UserId from, const QString &postAuthor, const TextWithEntities &textWithEntities); // local message
-	HistoryMessage(not_null<History*> history, MsgId msgId, MTPDmessage::Flags flags, MsgId replyTo, UserId viaBotId, QDateTime date, UserId from, const QString &postAuthor, DocumentData *doc, const QString &caption, const MTPReplyMarkup &markup); // local document
-	HistoryMessage(not_null<History*> history, MsgId msgId, MTPDmessage::Flags flags, MsgId replyTo, UserId viaBotId, QDateTime date, UserId from, const QString &postAuthor, PhotoData *photo, const QString &caption, const MTPReplyMarkup &markup); // local photo
-	HistoryMessage(not_null<History*> history, MsgId msgId, MTPDmessage::Flags flags, MsgId replyTo, UserId viaBotId, QDateTime date, UserId from, const QString &postAuthor, GameData *game, const MTPReplyMarkup &markup); // local game
+	HistoryMessage(
+		not_null<History*> history,
+		const MTPDmessage &msg);
+	HistoryMessage(
+		not_null<History*> history,
+		const MTPDmessageService &msg);
+	HistoryMessage(
+		not_null<History*> history,
+		MsgId msgId,
+		MTPDmessage::Flags flags,
+		QDateTime date,
+		UserId from,
+		const QString &postAuthor,
+		not_null<HistoryMessage*> fwd); // local forwarded
+	HistoryMessage(
+		not_null<History*> history,
+		MsgId msgId,
+		MTPDmessage::Flags flags,
+		MsgId replyTo,
+		UserId viaBotId,
+		QDateTime date,
+		UserId from,
+		const QString &postAuthor,
+		const TextWithEntities &textWithEntities); // local message
+	HistoryMessage(
+		not_null<History*> history,
+		MsgId msgId,
+		MTPDmessage::Flags flags,
+		MsgId replyTo,
+		UserId viaBotId,
+		QDateTime date,
+		UserId from,
+		const QString &postAuthor,
+		not_null<DocumentData*> document,
+		const QString &caption,
+		const MTPReplyMarkup &markup); // local document
+	HistoryMessage(
+		not_null<History*> history,
+		MsgId msgId,
+		MTPDmessage::Flags flags,
+		MsgId replyTo,
+		UserId viaBotId,
+		QDateTime date,
+		UserId from,
+		const QString &postAuthor,
+		not_null<PhotoData*> photo,
+		const QString &caption,
+		const MTPReplyMarkup &markup); // local photo
+	HistoryMessage(
+		not_null<History*> history,
+		MsgId msgId,
+		MTPDmessage::Flags flags,
+		MsgId replyTo,
+		UserId viaBotId,
+		QDateTime date,
+		UserId from,
+		const QString &postAuthor,
+		not_null<GameData*> game,
+		const MTPReplyMarkup &markup); // local game
 	friend class HistoryItemInstantiated<HistoryMessage>;
 
 	void setEmptyText();
@@ -175,8 +309,10 @@ private:
 	int resizeContentGetHeight() override;
 	int performResizeGetHeight();
 	void applyEditionToEmpty();
+	QDateTime displayedEditDate(bool hasViaBotOrInlineMarkup) const;
+	const HistoryMessageEdited *displayedEditBadge() const;
+	HistoryMessageEdited *displayedEditBadge();
 
-	bool displayForwardedFrom() const;
 	void paintFromName(Painter &p, QRect &trect, bool selected) const;
 	void paintForwardedInfo(Painter &p, QRect &trect, bool selected) const;
 	void paintReplyInfo(Painter &p, QRect &trect, bool selected) const;
@@ -184,11 +320,28 @@ private:
 	void paintViaBotIdInfo(Painter &p, QRect &trect, bool selected) const;
 	void paintText(Painter &p, QRect &trect, TextSelection selection) const;
 
-	bool getStateFromName(QPoint point, QRect &trect, HistoryTextState *outResult) const;
-	bool getStateForwardedInfo(QPoint point, QRect &trect, HistoryTextState *outResult, const HistoryStateRequest &request) const;
-	bool getStateReplyInfo(QPoint point, QRect &trect, HistoryTextState *outResult) const;
-	bool getStateViaBotIdInfo(QPoint point, QRect &trect, HistoryTextState *outResult) const;
-	bool getStateText(QPoint point, QRect &trect, HistoryTextState *outResult, const HistoryStateRequest &request) const;
+	bool getStateFromName(
+		QPoint point,
+		QRect &trect,
+		not_null<HistoryTextState*> outResult) const;
+	bool getStateForwardedInfo(
+		QPoint point,
+		QRect &trect,
+		not_null<HistoryTextState*> outResult,
+		const HistoryStateRequest &request) const;
+	bool getStateReplyInfo(
+		QPoint point,
+		QRect &trect,
+		not_null<HistoryTextState*> outResult) const;
+	bool getStateViaBotIdInfo(
+		QPoint point,
+		QRect &trect,
+		not_null<HistoryTextState*> outResult) const;
+	bool getStateText(
+		QPoint point,
+		QRect &trect,
+		not_null<HistoryTextState*> outResult,
+		const HistoryStateRequest &request) const;
 
 	void setMedia(const MTPMessageMedia *media);
 	void setReplyMarkup(const MTPReplyMarkup *markup);
@@ -196,53 +349,19 @@ private:
 	bool displayFastShare() const;
 	bool displayGoToOriginal() const;
 
+	struct CreateConfig;
+	void createComponentsHelper(MTPDmessage::Flags flags, MsgId replyTo, UserId viaBotId, const QString &postAuthor, const MTPReplyMarkup &markup);
+	void createComponents(const CreateConfig &config);
+
+	void updateMediaInBubbleState();
+	void updateAdminBadgeState();
+	ClickHandlerPtr fastReplyLink() const;
+
 	QString _timeText;
 	int _timeWidth = 0;
 
 	mutable ClickHandlerPtr _rightActionLink;
+	mutable ClickHandlerPtr _fastReplyLink;
 	mutable int32 _fromNameVersion = 0;
-
-	struct CreateConfig {
-		MsgId replyTo = 0;
-		UserId viaBotId = 0;
-		int viewsCount = -1;
-		QString author;
-		PeerId senderOriginal = 0;
-		MsgId originalId = 0;
-		PeerId savedFromPeer = 0;
-		MsgId savedFromMsgId = 0;
-		QString authorOriginal;
-		QDateTime originalDate;
-		QDateTime editDate;
-
-		// For messages created from MTP structs.
-		const MTPReplyMarkup *mtpMarkup = nullptr;
-
-		// For messages created from existing messages (forwarded).
-		const HistoryMessageReplyMarkup *inlineMarkup = nullptr;
-	};
-	void createComponentsHelper(MTPDmessage::Flags flags, MsgId replyTo, UserId viaBotId, const QString &postAuthor, const MTPReplyMarkup &markup);
-	void createComponents(const CreateConfig &config);
-
-	class KeyboardStyle : public ReplyKeyboard::Style {
-	public:
-		using ReplyKeyboard::Style::Style;
-
-		int buttonRadius() const override;
-
-		void startPaint(Painter &p) const override;
-		const style::TextStyle &textStyle() const override;
-		void repaint(not_null<const HistoryItem*> item) const override;
-
-	protected:
-		void paintButtonBg(Painter &p, const QRect &rect, float64 howMuchOver) const override;
-		void paintButtonIcon(Painter &p, const QRect &rect, int outerWidth, HistoryMessageReplyMarkup::Button::Type type) const override;
-		void paintButtonLoading(Painter &p, const QRect &rect) const override;
-		int minButtonWidth(HistoryMessageReplyMarkup::Button::Type type) const override;
-
-	};
-
-	void updateMediaInBubbleState();
-	void updateAdminBadgeState();
 
 };

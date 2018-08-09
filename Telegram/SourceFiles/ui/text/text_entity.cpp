@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/text/text_entity.h"
 
@@ -28,12 +15,12 @@ namespace {
 
 QString ExpressionDomain() {
 	// Matches any domain name, containing at least one '.', including "file.txt".
-	return QString::fromUtf8("(?<![\\w\\$\\-\\_%=\\.])(?:([a-zA-Z]+)://)?((?:[A-Za-z" "\xd0\x90-\xd0\xaf\xd0\x81" "\xd0\xb0-\xd1\x8f\xd1\x91" "0-9\\-\\_]+\\.){1,10}([A-Za-z" "\xd1\x80\xd1\x84" "\\-\\d]{2,22})(\\:\\d+)?)");
+	return QString::fromUtf8("(?<![\\w\\$\\-\\_%=\\.])(?:([a-zA-Z]+)://)?((?:[A-Za-z" "\xD0\x90-\xD0\xAF\xD0\x81" "\xD0\xB0-\xD1\x8F\xD1\x91" "0-9\\-\\_]+\\.){1,10}([A-Za-z" "\xD1\x80\xD1\x84" "\\-\\d]{2,22})(\\:\\d+)?)");
 }
 
 QString ExpressionDomainExplicit() {
 	// Matches any domain name, containing a protocol, including "test://localhost".
-	return QString::fromUtf8("(?<![\\w\\$\\-\\_%=\\.])(?:([a-zA-Z]+)://)((?:[A-Za-z" "\xd0\x90-\xd0\xaf\xd0\x81" "\xd0\xb0-\xd1\x8f\xd1\x91" "0-9\\-\\_]+\\.){0,10}([A-Za-z" "\xd1\x80\xd1\x84" "\\-\\d]{2,22})(\\:\\d+)?)");
+	return QString::fromUtf8("(?<![\\w\\$\\-\\_%=\\.])(?:([a-zA-Z]+)://)((?:[A-Za-z" "\xD0\x90-\xD0\xAF\xD0\x81" "\xD0\xB0-\xD1\x8F\xD1\x91" "0-9\\-\\_]+\\.){0,10}([A-Za-z" "\xD1\x80\xD1\x84" "\\-\\d]{2,22})(\\:\\d+)?)");
 }
 
 QString ExpressionMailNameAtEnd() {
@@ -44,7 +31,9 @@ QString ExpressionMailNameAtEnd() {
 }
 
 QString ExpressionSeparators(const QString &additional) {
-	return qsl("\\s\\.,:;<>|'\"\\[\\]\\{\\}\\~\\!\\?\\%\\^\\(\\)\\-\\+=\\x10") + additional;
+	// UTF8 quotes
+	const auto quotes = QString::fromUtf8("\xC2\xAB\xC2\xBB\xE2\x80\x9C\xE2\x80\x9D\xE2\x80\x98\xE2\x80\x99");
+	return qsl("\\s\\.,:;<>|'\"\\[\\]\\{\\}\\~\\!\\?\\%\\^\\(\\)\\-\\+=\\x10") + quotes + additional;
 }
 
 QString ExpressionHashtag() {
@@ -1646,7 +1635,10 @@ void AdjustMarkdownPrePart(MarkdownPart &result, const TextWithEntities &text, b
 	result.addNewlineAfter = (result.outerEnd < length && !chIsNewline(*(start + result.outerEnd)));
 }
 
-void ParseMarkdown(TextWithEntities &result, bool rich) {
+void ParseMarkdown(
+		TextWithEntities &result,
+		const EntitiesInText &linkEntities,
+		bool rich) {
 	if (result.empty()) {
 		return;
 	}
@@ -1707,7 +1699,13 @@ void ParseMarkdown(TextWithEntities &result, bool rich) {
 		}
 
 		// Check if start sequence intersects a command.
-		auto inCommand = checkTagStartInCommand(start, length, part.outerStart, nextCommandOffset, commandIsLink, inLink);
+		auto inCommand = checkTagStartInCommand(
+			start,
+			length,
+			part.outerStart,
+			nextCommandOffset,
+			commandIsLink,
+			inLink);
 		if (inCommand || inLink) {
 			matchFromOffset = nextCommandOffset;
 			continue;
@@ -1722,6 +1720,19 @@ void ParseMarkdown(TextWithEntities &result, bool rich) {
 				break;
 			}
 		}
+
+		// Check if any of sequence outer edges are inside a link.
+		for_const (auto &entity, linkEntities) {
+			const auto startIntersects = (part.outerStart >= entity.offset())
+				&& (part.outerStart < entity.offset() + entity.length());
+			const auto endIntersects = (part.outerEnd > entity.offset())
+				&& (part.outerEnd <= entity.offset() + entity.length());
+			if (startIntersects || endIntersects) {
+				intersectedEntityEnd = entity.offset() + entity.length();
+				break;
+			}
+		}
+
 		if (intersectedEntityEnd > 0) {
 			matchFromOffset = qMax(part.innerStart, intersectedEntityEnd);
 			continue;
@@ -1772,7 +1783,9 @@ void ParseMarkdown(TextWithEntities &result, bool rich) {
 // Some code is duplicated in flattextarea.cpp!
 void ParseEntities(TextWithEntities &result, int32 flags, bool rich) {
 	if (flags & TextParseMarkdown) { // parse markdown entities (bold, italic, code and pre)
-		ParseMarkdown(result, rich);
+		auto copy = TextWithEntities{ result.text, EntitiesInText() };
+		ParseEntities(copy, TextParseLinks, false);
+		ParseMarkdown(result, copy.entities, rich);
 	}
 
 	auto newEntities = EntitiesInText();

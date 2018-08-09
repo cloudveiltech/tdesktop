@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "mtproto/config_loader.h"
 
@@ -57,7 +44,11 @@ void ConfigLoader::load() {
 }
 
 mtpRequestId ConfigLoader::sendRequest(ShiftedDcId shiftedDcId) {
-	return _instance->send(MTPhelp_GetConfig(), _doneHandler, _failHandler, shiftedDcId);
+	return _instance->send(
+		MTPhelp_GetConfig(),
+		base::duplicate(_doneHandler),
+		base::duplicate(_failHandler),
+		shiftedDcId);
 }
 
 DcId ConfigLoader::specialToRealDcId(DcId specialDcId) {
@@ -146,16 +137,24 @@ void ConfigLoader::sendSpecialRequest() {
 		return;
 	}
 
-	auto weak = base::make_weak(this);
-	auto index = rand_value<uint32>() % uint32(_specialEndpoints.size());
-	auto endpoint = _specialEndpoints.begin() + index;
+	const auto weak = base::make_weak(this);
+	const auto index = rand_value<uint32>() % _specialEndpoints.size();
+	const auto endpoint = _specialEndpoints.begin() + index;
 	_specialEnumCurrent = specialToRealDcId(endpoint->dcId);
-	_instance->dcOptions()->constructAddOne(_specialEnumCurrent, MTPDdcOption::Flag::f_tcpo_only, endpoint->ip, endpoint->port);
-	_specialEnumRequest = _instance->send(MTPhelp_GetConfig(), rpcDone([weak](const MTPConfig &result) {
-		if (const auto strong = weak.get()) {
-			strong->specialConfigLoaded(result);
-		}
-	}), _failHandler, _specialEnumCurrent);
+	_instance->dcOptions()->constructAddOne(
+		_specialEnumCurrent,
+		MTPDdcOption::Flag::f_tcpo_only,
+		endpoint->ip,
+		endpoint->port);
+	_specialEnumRequest = _instance->send(
+		MTPhelp_GetConfig(),
+		rpcDone([weak](const MTPConfig &result) {
+			if (const auto strong = weak.get()) {
+				strong->specialConfigLoaded(result);
+			}
+		}),
+		base::duplicate(_failHandler),
+		_specialEnumCurrent);
 	_triedSpecialEndpoints.push_back(*endpoint);
 	_specialEndpoints.erase(endpoint);
 

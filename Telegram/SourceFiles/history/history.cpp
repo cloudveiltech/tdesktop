@@ -1,28 +1,16 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history.h"
 
 #include "history/history_message.h"
 #include "history/history_media_types.h"
 #include "history/history_service.h"
+#include "history/history_item_components.h"
 #include "dialogs/dialogs_indexed_list.h"
 #include "styles/style_dialogs.h"
 #include "data/data_drafts.h"
@@ -38,6 +26,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "storage/storage_facade.h"
 #include "storage/storage_shared_media.h"
 #include "data/data_channel_admins.h"
+#include "ui/text_options.h"
 #include "core/crash_reports.h"
 
 namespace {
@@ -61,18 +50,13 @@ auto GlobalPinnedIndex = 0;
 
 HistoryItem *createUnsupportedMessage(History *history, MsgId msgId, MTPDmessage::Flags flags, MsgId replyTo, int32 viaBotId, QDateTime date, int32 from) {
 	auto text = TextWithEntities { lng_message_unsupported(lt_link, qsl("https://desktop.telegram.org")) };
-	TextUtilities::ParseEntities(text, _historyTextNoMonoOptions.flags);
+	TextUtilities::ParseEntities(text, Ui::ItemTextNoMonoOptions().flags);
 	text.entities.push_front(EntityInText(EntityInTextItalic, 0, text.text.size()));
 	flags &= ~MTPDmessage::Flag::f_post_author;
 	return HistoryMessage::create(history, msgId, flags, replyTo, viaBotId, date, from, QString(), text);
 }
 
 } // namespace
-
-void HistoryInit() {
-	HistoryInitMessages();
-	HistoryInitMedia();
-}
 
 History::History(const PeerId &peerId)
 : peer(App::peer(peerId))
@@ -363,7 +347,10 @@ bool History::updateSendActionNeedsAnimating(TimeMs ms, bool force) {
 		}
 		if (_sendActionString != newTypingString) {
 			_sendActionString = newTypingString;
-			_sendActionText.setText(st::dialogsTextStyle, _sendActionString, _textNameOptions);
+			_sendActionText.setText(
+				st::dialogsTextStyle,
+				_sendActionString,
+				Ui::NameTextOptions());
 		}
 	}
 	auto result = (!_typing.isEmpty() || !_sendActions.isEmpty());
@@ -543,27 +530,6 @@ const QDateTime &ChannelHistory::maxReadMessageDate() {
 	return _maxReadMessageDate;
 }
 
-HistoryItem *ChannelHistory::addNewChannelMessage(const MTPMessage &msg, NewMessageType type) {
-	if (type == NewMessageExisting) return addToHistory(msg);
-
-	return addNewToBlocks(msg, type);
-}
-
-HistoryItem *ChannelHistory::addNewToBlocks(const MTPMessage &msg, NewMessageType type) {
-	if (!loadedAtBottom()) {
-		HistoryItem *item = addToHistory(msg);
-		if (item) {
-			setLastMessage(item);
-			if (type == NewMessageUnread) {
-				newItemAdded(item);
-			}
-		}
-		return item;
-	}
-
-	return addNewToLastBlock(msg, type);
-}
-
 void ChannelHistory::cleared(bool leaveItems) {
 	_joinedMessage = nullptr;
 }
@@ -679,7 +645,7 @@ void checkForSwitchInlineButton(HistoryItem *item) {
 		if (auto markup = item->Get<HistoryMessageReplyMarkup>()) {
 			for_const (auto &row, markup->rows) {
 				for_const (auto &button, row) {
-					if (button.type == HistoryMessageReplyMarkup::Button::Type::SwitchInline) {
+					if (button.type == HistoryMessageMarkupButton::Type::SwitchInline) {
 						Notify::switchInlineBotButtonReceived(QString::fromUtf8(button.data));
 						return;
 					}
@@ -796,12 +762,7 @@ void Histories::checkSelfDestructItems() {
 }
 
 HistoryItem *History::createItem(const MTPMessage &msg, bool applyServiceAction, bool detachExistingItem) {
-	auto msgId = MsgId(0);
-	switch (msg.type()) {
-	case mtpc_messageEmpty: msgId = msg.c_messageEmpty().vid.v; break;
-	case mtpc_message: msgId = msg.c_message().vid.v; break;
-	case mtpc_messageService: msgId = msg.c_messageService().vid.v; break;
-	}
+	const auto msgId = idFromMessage(msg);
 	if (!msgId) return nullptr;
 
 	auto result = App::histItemById(channelId(), msgId);
@@ -810,7 +771,10 @@ HistoryItem *History::createItem(const MTPMessage &msg, bool applyServiceAction,
 			result->detach();
 		}
 		if (msg.type() == mtpc_message) {
-			result->updateMedia(msg.c_message().has_media() ? (&msg.c_message().vmedia) : 0);
+			const auto media = msg.c_message().has_media()
+				? &msg.c_message().vmedia
+				: nullptr;
+			result->updateMedia(media);
 			if (applyServiceAction) {
 				App::checkSavedGif(result);
 			}
@@ -1094,72 +1058,85 @@ HistoryItem *History::createItem(const MTPMessage &msg, bool applyServiceAction,
 	return result;
 }
 
-HistoryItem *History::createItemForwarded(MsgId id, MTPDmessage::Flags flags, QDateTime date, UserId from, const QString &postAuthor, HistoryMessage *msg) {
+not_null<HistoryItem*> History::createItemForwarded(MsgId id, MTPDmessage::Flags flags, QDateTime date, UserId from, const QString &postAuthor, HistoryMessage *msg) {
 	return HistoryMessage::create(this, id, flags, date, from, postAuthor, msg);
 }
 
-HistoryItem *History::createItemDocument(MsgId id, MTPDmessage::Flags flags, UserId viaBotId, MsgId replyTo, QDateTime date, UserId from, const QString &postAuthor, DocumentData *doc, const QString &caption, const MTPReplyMarkup &markup) {
+not_null<HistoryItem*> History::createItemDocument(MsgId id, MTPDmessage::Flags flags, UserId viaBotId, MsgId replyTo, QDateTime date, UserId from, const QString &postAuthor, DocumentData *doc, const QString &caption, const MTPReplyMarkup &markup) {
 	return HistoryMessage::create(this, id, flags, replyTo, viaBotId, date, from, postAuthor, doc, caption, markup);
 }
 
-HistoryItem *History::createItemPhoto(MsgId id, MTPDmessage::Flags flags, UserId viaBotId, MsgId replyTo, QDateTime date, UserId from, const QString &postAuthor, PhotoData *photo, const QString &caption, const MTPReplyMarkup &markup) {
+not_null<HistoryItem*> History::createItemPhoto(MsgId id, MTPDmessage::Flags flags, UserId viaBotId, MsgId replyTo, QDateTime date, UserId from, const QString &postAuthor, PhotoData *photo, const QString &caption, const MTPReplyMarkup &markup) {
 	return HistoryMessage::create(this, id, flags, replyTo, viaBotId, date, from, postAuthor, photo, caption, markup);
 }
 
-HistoryItem *History::createItemGame(MsgId id, MTPDmessage::Flags flags, UserId viaBotId, MsgId replyTo, QDateTime date, UserId from, const QString &postAuthor, GameData *game, const MTPReplyMarkup &markup) {
+not_null<HistoryItem*> History::createItemGame(MsgId id, MTPDmessage::Flags flags, UserId viaBotId, MsgId replyTo, QDateTime date, UserId from, const QString &postAuthor, GameData *game, const MTPReplyMarkup &markup) {
 	return HistoryMessage::create(this, id, flags, replyTo, viaBotId, date, from, postAuthor, game, markup);
 }
 
-HistoryItem *History::addNewService(MsgId msgId, QDateTime date, const QString &text, MTPDmessage::Flags flags, bool newMsg) {
+not_null<HistoryItem*> History::addNewService(MsgId msgId, QDateTime date, const QString &text, MTPDmessage::Flags flags, bool newMsg) {
 	auto message = HistoryService::PreparedText { text };
 	return addNewItem(HistoryService::create(this, msgId, date, message, flags), newMsg);
 }
 
 HistoryItem *History::addNewMessage(const MTPMessage &msg, NewMessageType type) {
-	if (isChannel()) return asChannelHistory()->addNewChannelMessage(msg, type);
-
-	if (type == NewMessageExisting) return addToHistory(msg);
+	if (type == NewMessageExisting) {
+		return addToHistory(msg);
+	}
 	if (!loadedAtBottom() || peer->migrateTo()) {
-		HistoryItem *item = addToHistory(msg);
-		if (item) {
+		if (const auto item = addToHistory(msg)) {
 			setLastMessage(item);
 			if (type == NewMessageUnread) {
 				newItemAdded(item);
 			}
+			return item;
 		}
-		return item;
+		return nullptr;
 	}
 
 	return addNewToLastBlock(msg, type);
 }
 
 HistoryItem *History::addNewToLastBlock(const MTPMessage &msg, NewMessageType type) {
-	auto applyServiceAction = (type == NewMessageUnread);
-	auto detachExistingItem = (type != NewMessageLast);
-	auto item = createItem(msg, applyServiceAction, detachExistingItem);
+	Expects(type != NewMessageExisting);
+
+	const auto applyServiceAction = (type == NewMessageUnread);
+	const auto detachExistingItem = (type != NewMessageLast);
+	const auto item = createItem(msg, applyServiceAction, detachExistingItem);
 	if (!item || !item->detached()) {
 		return item;
 	}
-	return addNewItem(item, (type == NewMessageUnread));
+	const auto result = addNewItem(item, (type == NewMessageUnread));
+	if (type == NewMessageLast) {
+		// When we add just one last item, like we do while loading dialogs,
+		// we want to remove a single added grouped media, otherwise it will
+		// jump once we open the message history (first we show only that
+		// media, then we load the rest of the group and show the group).
+		//
+		// That way when we open the message history we show nothing until a
+		// whole history part is loaded, it certainly will contain the group.
+		removeOrphanMediaGroupPart();
+	}
+	return result;
 }
 
 HistoryItem *History::addToHistory(const MTPMessage &msg) {
 	return createItem(msg, false, false);
 }
 
-HistoryItem *History::addNewForwarded(MsgId id, MTPDmessage::Flags flags, QDateTime date, UserId from, const QString &postAuthor, HistoryMessage *item) {
+not_null<HistoryItem*> History::addNewForwarded(MsgId id, MTPDmessage::Flags flags, QDateTime date, UserId from, const QString &postAuthor, HistoryMessage *item) {
 	return addNewItem(createItemForwarded(id, flags, date, from, postAuthor, item), true);
 }
 
-HistoryItem *History::addNewDocument(MsgId id, MTPDmessage::Flags flags, UserId viaBotId, MsgId replyTo, QDateTime date, UserId from, const QString &postAuthor, DocumentData *doc, const QString &caption, const MTPReplyMarkup &markup) {
+not_null<HistoryItem*> History::addNewDocument(MsgId id, MTPDmessage::Flags flags, UserId viaBotId, MsgId replyTo, QDateTime date, UserId from, const QString &postAuthor, DocumentData *doc, const QString &caption, const MTPReplyMarkup &markup) {
 	return addNewItem(createItemDocument(id, flags, viaBotId, replyTo, date, from, postAuthor, doc, caption, markup), true);
 }
 
-HistoryItem *History::addNewPhoto(MsgId id, MTPDmessage::Flags flags, UserId viaBotId, MsgId replyTo, QDateTime date, UserId from, const QString &postAuthor, PhotoData *photo, const QString &caption, const MTPReplyMarkup &markup) {
+not_null<HistoryItem*> History::addNewPhoto(MsgId id, MTPDmessage::Flags flags, UserId viaBotId, MsgId replyTo, QDateTime date, UserId from, const QString &postAuthor, PhotoData *photo, const QString &caption, const MTPReplyMarkup &markup) {
 	return addNewItem(createItemPhoto(id, flags, viaBotId, replyTo, date, from, postAuthor, photo, caption, markup), true);
 }
 
-HistoryItem *History::addNewGame(MsgId id, MTPDmessage::Flags flags, UserId viaBotId, MsgId replyTo, QDateTime date, UserId from, const QString &postAuthor, GameData *game, const MTPReplyMarkup &markup) {
+not_null<HistoryItem*> History::addNewGame(MsgId id, MTPDmessage::Flags flags, UserId viaBotId, MsgId replyTo, QDateTime date, UserId from, const QString &postAuthor, GameData *game, const MTPReplyMarkup &markup) {
 	return addNewItem(createItemGame(id, flags, viaBotId, replyTo, date, from, postAuthor, game, markup), true);
 }
 
@@ -1173,15 +1150,17 @@ void History::setUnreadMentionsCount(int count) {
 
 bool History::addToUnreadMentions(
 		MsgId msgId,
-		AddToUnreadMentionsMethod method) {
-	auto allLoaded = _unreadMentionsCount ? (_unreadMentions.size() >= *_unreadMentionsCount) : false;
+		UnreadMentionType type) {
+	auto allLoaded = _unreadMentionsCount
+		? (_unreadMentions.size() >= *_unreadMentionsCount)
+		: false;
 	if (allLoaded) {
-		if (method == AddToUnreadMentionsMethod::New) {
+		if (type == UnreadMentionType::New) {
 			++*_unreadMentionsCount;
 			_unreadMentions.insert(msgId);
 			return true;
 		}
-	} else if (!_unreadMentions.empty() && method != AddToUnreadMentionsMethod::New) {
+	} else if (!_unreadMentions.empty() && type != UnreadMentionType::New) {
 		_unreadMentions.insert(msgId);
 		return true;
 	}
@@ -1251,32 +1230,24 @@ void History::addUnreadMentionsSlice(const MTPmessages_Messages &result) {
 	Notify::peerUpdatedDelayed(peer, Notify::PeerUpdate::Flag::UnreadMentionsChanged);
 }
 
-HistoryItem *History::addNewItem(HistoryItem *adding, bool newMsg) {
+not_null<HistoryItem*> History::addNewItem(not_null<HistoryItem*> adding, bool newMsg) {
 	Expects(!isBuildingFrontBlock());
+
 	addItemToBlock(adding);
 
-	setLastMessage(adding);
-	if (newMsg) {
-		newItemAdded(adding);
+	const auto [groupFrom, groupTill] = recountGroupingFromTill(adding);
+	if (groupFrom != groupTill || groupFrom->groupId()) {
+		recountGrouping(groupFrom, groupTill);
 	}
-
-	adding->addToUnreadMentions(AddToUnreadMentionsMethod::New);
-	if (IsServerMsgId(adding->id)) {
-		if (auto sharedMediaTypes = adding->sharedMediaTypes()) {
-			if (newMsg) {
-				Auth().storage().add(Storage::SharedMediaAddNew(
-					peer->id,
-					sharedMediaTypes,
-					adding->id));
-			} else {
-				auto from = loadedAtTop() ? 0 : minMsgId();
-				auto till = loadedAtBottom() ? ServerMaxMsgId : maxMsgId();
-				Auth().storage().add(Storage::SharedMediaAddExisting(
-					peer->id,
-					sharedMediaTypes,
-					adding->id,
-					{ from, till }));
-			}
+	if (!newMsg && IsServerMsgId(adding->id)) {
+		if (const auto sharedMediaTypes = adding->sharedMediaTypes()) {
+			auto from = loadedAtTop() ? 0 : minMsgId();
+			auto till = loadedAtBottom() ? ServerMaxMsgId : maxMsgId();
+			Auth().storage().add(Storage::SharedMediaAddExisting(
+				peer->id,
+				sharedMediaTypes,
+				adding->id,
+				{ from, till }));
 		}
 	}
 	if (adding->from()->id) {
@@ -1359,6 +1330,11 @@ HistoryItem *History::addNewItem(HistoryItem *adding, bool newMsg) {
 		}
 	}
 
+	setLastMessage(adding);
+	if (newMsg) {
+		newItemAdded(adding);
+	}
+
 	return adding;
 }
 
@@ -1379,8 +1355,9 @@ void History::clearSendAction(not_null<UserData*> from) {
 	}
 }
 
-void History::newItemAdded(HistoryItem *item) {
+void History::newItemAdded(not_null<HistoryItem*> item) {
 	App::checkImageCacheSize();
+	item->indexAsNewItem();
 	if (const auto from = item->from() ? item->from()->asUser() : nullptr) {
 		if (from == item->author()) {
 			clearSendAction(from);
@@ -1389,7 +1366,9 @@ void History::newItemAdded(HistoryItem *item) {
 		from->madeAction(itemServerTime.v);
 	}
 	if (item->out()) {
-		if (unreadBar) unreadBar->destroyUnreadBar();
+		if (unreadBar) {
+			unreadBar->destroyUnreadBar();
+		}
 		if (!item->unread()) {
 			outboxRead(item);
 		}
@@ -1434,8 +1413,7 @@ HistoryBlock *History::prepareBlockForAddingItem() {
 	return result;
 };
 
-void History::addItemToBlock(HistoryItem *item) {
-	Expects(item != nullptr);
+void History::addItemToBlock(not_null<HistoryItem*> item) {
 	Expects(item->detached());
 
 	auto block = prepareBlockForAddingItem();
@@ -1528,6 +1506,9 @@ void History::addOlderSlice(const QVector<MTPMessage> &slice) {
 		return;
 	}
 
+	auto firstAdded = (HistoryItem*)nullptr;
+	auto lastAdded = (HistoryItem*)nullptr;
+
 	auto logged = QStringList();
 	logged.push_back(QString::number(minMsgId()));
 	logged.push_back(QString::number(maxMsgId()));
@@ -1539,8 +1520,11 @@ void History::addOlderSlice(const QVector<MTPMessage> &slice) {
 
 	for (auto i = slice.cend(), e = slice.cbegin(); i != e;) {
 		--i;
-		auto adding = createItem(*i, false, true);
+		const auto adding = createItem(*i, false, true);
 		if (!adding) continue;
+
+		if (!firstAdded) firstAdded = adding;
+		lastAdded = adding;
 
 		if (minAdded < 0 || minAdded > adding->id) {
 			minAdded = adding->id;
@@ -1574,7 +1558,7 @@ void History::addOlderSlice(const QVector<MTPMessage> &slice) {
 		}
 		for (auto i = block->items.size(); i > 0; --i) {
 			auto item = block->items[i - 1];
-			item->addToUnreadMentions(AddToUnreadMentionsMethod::Front);
+			item->addToUnreadMentions(UnreadMentionType::Existing);
 			if (item->from()->id) {
 				if (lastAuthors) { // chats
 					if (auto user = item->from()->asUser()) {
@@ -1638,6 +1622,11 @@ void History::addOlderSlice(const QVector<MTPMessage> &slice) {
 
 	CrashReports::ClearAnnotation("old_minmaxwas_minmaxadd");
 
+	if (lastAdded) {
+		const auto [from, till] = recountGroupingFromTill(lastAdded);
+		recountGrouping(firstAdded, till);
+	}
+
 	if (isChannel()) {
 		asChannelHistory()->checkJoinedMessage();
 		asChannelHistory()->checkMaxReadMessageDate();
@@ -1655,6 +1644,9 @@ void History::addNewerSlice(const QVector<MTPMessage> &slice) {
 		}
 	}
 
+	auto firstAdded = (HistoryItem*)nullptr;
+	auto lastAdded = (HistoryItem*)nullptr;
+
 	Assert(!isBuildingFrontBlock());
 	if (!slice.isEmpty()) {
 		auto logged = QStringList();
@@ -1665,11 +1657,13 @@ void History::addNewerSlice(const QVector<MTPMessage> &slice) {
 		auto maxAdded = -1;
 
 		std::vector<MsgId> medias[Storage::kSharedMediaTypeCount];
-		auto atLeastOneAdded = false;
 		for (auto i = slice.cend(), e = slice.cbegin(); i != e;) {
 			--i;
-			auto adding = createItem(*i, false, true);
+			const auto adding = createItem(*i, false, true);
 			if (!adding) continue;
+
+			if (!firstAdded) firstAdded = adding;
+			lastAdded = adding;
 
 			if (minAdded < 0 || minAdded > adding->id) {
 				minAdded = adding->id;
@@ -1679,7 +1673,6 @@ void History::addNewerSlice(const QVector<MTPMessage> &slice) {
 			}
 
 			addItemToBlock(adding);
-			atLeastOneAdded = true;
 			if (auto types = adding->sharedMediaTypes()) {
 				for (auto i = 0; i != Storage::kSharedMediaTypeCount; ++i) {
 					auto type = static_cast<Storage::SharedMediaType>(i);
@@ -1696,7 +1689,7 @@ void History::addNewerSlice(const QVector<MTPMessage> &slice) {
 		logged.push_back(QString::number(maxAdded));
 		CrashReports::SetAnnotation("new_minmaxwas_minmaxadd", logged.join(";"));
 
-		if (!atLeastOneAdded) {
+		if (!firstAdded) {
 			newLoaded = true;
 			setLastMessage(lastAvailableMessage());
 		}
@@ -1707,6 +1700,11 @@ void History::addNewerSlice(const QVector<MTPMessage> &slice) {
 
 	if (!wasLoadedAtBottom) {
 		checkAddAllToUnreadMentions();
+	}
+
+	if (firstAdded) {
+		const auto [from, till] = recountGroupingFromTill(firstAdded);
+		recountGrouping(from, lastAdded);
 	}
 
 	if (isChannel()) asChannelHistory()->checkJoinedMessage();
@@ -1729,9 +1727,9 @@ void History::checkAddAllToUnreadMentions() {
 		return;
 	}
 
-	for_const (auto block, blocks) {
-		for_const (auto item, block->items) {
-			item->addToUnreadMentions(AddToUnreadMentionsMethod::Back);
+	for (const auto block : blocks) {
+		for (const auto item : block->items) {
+			item->addToUnreadMentions(UnreadMentionType::Existing);
 		}
 	}
 }
@@ -1834,6 +1832,14 @@ HistoryItem *History::lastAvailableMessage() const {
 }
 
 void History::setUnreadCount(int newUnreadCount) {
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getSettings().isDialogAllowed(this)) {
+		App::histories().unreadIncrement(-_unreadCount, mute());
+		Notify::unreadCounterUpdated();
+		return;
+	}
+	//CloudVeil end
+
 	if (_unreadCount != newUnreadCount) {
 		if (newUnreadCount == 1) {
 			if (loadedAtBottom()) showFrom = lastAvailableMessage();
@@ -2007,7 +2013,7 @@ void History::destroyUnreadBar() {
 	}
 }
 
-HistoryItem *History::addNewInTheMiddle(HistoryItem *newItem, int32 blockIndex, int32 itemIndex) {
+not_null<HistoryItem*> History::addNewInTheMiddle(not_null<HistoryItem*> newItem, int32 blockIndex, int32 itemIndex) {
 	Expects(blockIndex >= 0);
 	Expects(blockIndex < blocks.size());
 	Expects(itemIndex >= 0);
@@ -2029,7 +2035,133 @@ HistoryItem *History::addNewInTheMiddle(HistoryItem *newItem, int32 blockIndex, 
 		newItem->nextItemChanged();
 	}
 
+	const auto [groupFrom, groupTill] = recountGroupingFromTill(newItem);
+	if (groupFrom != groupTill || groupFrom->groupId()) {
+		recountGrouping(groupFrom, groupTill);
+	}
+
 	return newItem;
+}
+
+HistoryItem *History::findNextItem(not_null<HistoryItem*> item) const {
+	Expects(!item->detached());
+
+	const auto nextBlockIndex = item->block()->indexInHistory() + 1;
+	const auto nextItemIndex = item->indexInBlock() + 1;
+	if (nextItemIndex < int(item->block()->items.size())) {
+		return item->block()->items[nextItemIndex];
+	} else if (nextBlockIndex < int(blocks.size())) {
+		return blocks[nextBlockIndex]->items.front();
+	}
+	return nullptr;
+}
+
+HistoryItem *History::findPreviousItem(not_null<HistoryItem*> item) const {
+	Expects(!item->detached());
+
+	const auto blockIndex = item->block()->indexInHistory();
+	const auto itemIndex = item->indexInBlock();
+	if (itemIndex > 0) {
+		return item->block()->items[itemIndex - 1];
+	} else if (blockIndex > 0) {
+		return blocks[blockIndex - 1]->items.back();
+	}
+	return nullptr;
+}
+
+not_null<HistoryItem*> History::findGroupFirst(
+		not_null<HistoryItem*> item) const {
+	const auto group = item->Get<HistoryMessageGroup>();
+	Assert(group != nullptr);
+	Assert(group->leader != nullptr);
+
+	const auto leaderGroup = (group->leader == item)
+		? group
+		: group->leader->Get<HistoryMessageGroup>();
+	Assert(leaderGroup != nullptr);
+
+	return leaderGroup->others.empty()
+		? group->leader
+		: leaderGroup->others.front().get();
+}
+
+not_null<HistoryItem*> History::findGroupLast(
+		not_null<HistoryItem*> item) const {
+	const auto group = item->Get<HistoryMessageGroup>();
+	Assert(group != nullptr);
+
+	return group->leader;
+}
+
+void History::recountGroupingAround(not_null<HistoryItem*> item) {
+	Expects(item->history() == this);
+
+	if (!item->detached() && item->groupId()) {
+		const auto [groupFrom, groupTill] = recountGroupingFromTill(item);
+		recountGrouping(groupFrom, groupTill);
+	}
+}
+
+auto History::recountGroupingFromTill(not_null<HistoryItem*> item)
+-> std::pair<not_null<HistoryItem*>, not_null<HistoryItem*>> {
+	const auto recountFromItem = [&] {
+		if (const auto prev = findPreviousItem(item)) {
+			if (prev->groupId()) {
+				return findGroupFirst(prev);
+			}
+		}
+		return item;
+	}();
+	if (recountFromItem == item && !item->groupId()) {
+		return { item, item };
+	}
+	const auto recountTillItem = [&] {
+		if (const auto next = findNextItem(item)) {
+			if (next->groupId()) {
+				return findGroupLast(next);
+			}
+		}
+		return item;
+	}();
+	return { recountFromItem, recountTillItem };
+}
+
+void History::recountGrouping(
+		not_null<HistoryItem*> from,
+		not_null<HistoryItem*> till) {
+	Expects(!from->detached());
+	Expects(!till->detached());
+
+	from->validateGroupId();
+	auto others = std::vector<not_null<HistoryItem*>>();
+	auto currentGroupId = from->groupId();
+	auto prev = from;
+	while (prev != till) {
+		auto item = findNextItem(prev);
+		item->validateGroupId();
+		const auto groupId = item->groupId();
+		if (currentGroupId) {
+			if (groupId == currentGroupId) {
+				others.push_back(prev);
+			} else {
+				for (const auto other : others) {
+					other->makeGroupMember(prev);
+				}
+				prev->makeGroupLeader(base::take(others));
+				currentGroupId = groupId;
+			}
+		} else if (groupId) {
+			currentGroupId = groupId;
+		}
+		prev = item;
+	}
+
+	if (currentGroupId) {
+		for (const auto other : others) {
+			other->makeGroupMember(prev);
+		}
+		till->makeGroupLeader(base::take(others));
+	}
 }
 
 void History::startBuildingFrontBlock(int expectedItemsCount) {
@@ -2252,11 +2384,11 @@ int History::resizeGetHeight(int newWidth) {
 }
 
 ChannelHistory *History::asChannelHistory() {
-	return isChannel() ? static_cast<ChannelHistory*>(this) : 0;
+	return isChannel() ? static_cast<ChannelHistory*>(this) : nullptr;
 }
 
 const ChannelHistory *History::asChannelHistory() const {
-	return isChannel() ? static_cast<const ChannelHistory*>(this) : 0;
+	return isChannel() ? static_cast<const ChannelHistory*>(this) : nullptr;
 }
 
 not_null<History*> History::migrateToOrMe() const {
@@ -2276,6 +2408,25 @@ History *History::migrateFrom() const {
 
 bool History::isDisplayedEmpty() const {
 	return isEmpty() || ((blocks.size() == 1) && blocks.front()->items.size() == 1 && blocks.front()->items.front()->isEmpty());
+}
+
+bool History::hasOrphanMediaGroupPart() const {
+	if (loadedAtTop() || !loadedAtBottom()) {
+		return false;
+	} else if (blocks.size() != 1) {
+		return false;
+	} else if (blocks.front()->items.size() != 1) {
+		return false;
+	}
+	return blocks.front()->items.front()->groupId() != MessageGroupId();
+}
+
+bool History::removeOrphanMediaGroupPart() {
+	if (hasOrphanMediaGroupPart()) {
+		clear(true);
+		return true;
+	}
+	return false;
 }
 
 void History::clear(bool leaveItems) {
@@ -2471,7 +2622,7 @@ void History::setPinnedIndex(int pinnedIndex) {
 void History::changeMsgId(MsgId oldId, MsgId newId) {
 }
 
-void History::removeBlock(HistoryBlock *block) {
+void History::removeBlock(not_null<HistoryBlock*> block) {
 	Expects(block->items.empty());
 
 	if (_buildingFrontBlock && block == _buildingFrontBlock->block) {
@@ -2522,8 +2673,20 @@ void HistoryBlock::clear(bool leaveItems) {
 	}
 }
 
-void HistoryBlock::removeItem(HistoryItem *item) {
+void HistoryBlock::removeItem(not_null<HistoryItem*> item) {
 	Expects(item->block() == this);
+
+	auto [groupFrom, groupTill] = _history->recountGroupingFromTill(item);
+	const auto groupHistory = _history;
+	const auto needGroupRecount = (groupFrom != groupTill);
+	if (needGroupRecount) {
+		if (groupFrom == item) {
+			groupFrom = groupHistory->findNextItem(groupFrom);
+		}
+		if (groupTill == item) {
+			groupTill = groupHistory->findPreviousItem(groupTill);
+		}
+	}
 
 	auto blockIndex = indexInHistory();
 	auto itemIndex = item->indexInBlock();
@@ -2557,5 +2720,9 @@ void HistoryBlock::removeItem(HistoryItem *item) {
 
 	if (items.empty()) {
 		delete this;
+	}
+
+	if (needGroupRecount) {
+		groupHistory->recountGrouping(groupFrom, groupTill);
 	}
 }

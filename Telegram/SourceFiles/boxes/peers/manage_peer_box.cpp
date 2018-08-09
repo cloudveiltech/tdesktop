@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/peers/manage_peer_box.h"
 
@@ -85,13 +72,15 @@ void AddButtonWithCount(
 		std::move(count),
 		st::managePeerButtonLabel);
 	label->setAttribute(Qt::WA_TransparentForMouseEvents);
-	rpl::combine(button->widthValue(), label->widthValue())
-		| rpl::start_with_next([label](int outerWidth, int width) {
-			label->moveToRight(
-				st::managePeerButtonLabelPosition.x(),
-				st::managePeerButtonLabelPosition.y(),
-				outerWidth);
-		}, label->lifetime());
+	rpl::combine(
+		button->widthValue(),
+		label->widthValue()
+	) | rpl::start_with_next([label](int outerWidth, int width) {
+		label->moveToRight(
+			st::managePeerButtonLabelPosition.x(),
+			st::managePeerButtonLabelPosition.y(),
+			outerWidth);
+	}, label->lifetime());
 }
 
 bool HasRecentActions(not_null<ChannelData*> channel) {
@@ -102,7 +91,16 @@ void ShowRecentActions(
 		not_null<Window::Controller*> controller,
 		not_null<ChannelData*> channel) {
 	controller->showSection(AdminLog::SectionMemento(channel));
+}
 
+bool HasEditInfoBox(not_null<ChannelData*> channel) {
+	if (channel->canEditInformation()) {
+		return true;
+	} else if (!channel->isPublic() && channel->canAddMembers()) {
+		// Edit invite link.
+		return true;
+	}
+	return false;
 }
 
 void FillManageBox(
@@ -112,7 +110,7 @@ void FillManageBox(
 	using Profile::ParticipantsBoxController;
 
 	auto isGroup = channel->isMegagroup();
-	if (channel->canEditInformation()) {
+	if (HasEditInfoBox(channel)) {
 		AddButton(
 			content,
 			Lang::Viewer(isGroup
@@ -157,18 +155,20 @@ void FillManageBox(
 			st::infoIconAdministrators);
 	}
 	if (channel->canViewBanned()) {
-		AddButtonWithCount(
-			content,
-			Lang::Viewer(lng_manage_peer_restricted_users),
-			Info::Profile::RestrictedCountValue(channel)
-				| ToPositiveNumberString(),
-			[=] {
-				ParticipantsBoxController::Start(
-					controller,
-					channel,
-					ParticipantsBoxController::Role::Restricted);
-			},
-			st::infoIconRestrictedUsers);
+		if (channel->isMegagroup()) {
+			AddButtonWithCount(
+				content,
+				Lang::Viewer(lng_manage_peer_restricted_users),
+				Info::Profile::RestrictedCountValue(channel)
+					| ToPositiveNumberString(),
+				[=] {
+					ParticipantsBoxController::Start(
+						controller,
+						channel,
+						ParticipantsBoxController::Role::Restricted);
+				},
+				st::infoIconRestrictedUsers);
+		}
 		AddButtonWithCount(
 			content,
 			Lang::Viewer(lng_manage_peer_banned_users),
@@ -219,12 +219,12 @@ void ManagePeerBox::prepare() {
 void ManagePeerBox::setupContent() {
 	auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
 	FillManageBox(controller(), _channel, content);
-	widthValue()
-		| rpl::start_with_next([=](int width) {
-			content->resizeToWidth(width);
-		}, content->lifetime());
-	content->heightValue()
-		| rpl::start_with_next([=](int height) {
-			setDimensions(st::boxWidth, height);
-		}, content->lifetime());
+	widthValue(
+	) | rpl::start_with_next([=](int width) {
+		content->resizeToWidth(width);
+	}, content->lifetime());
+	content->heightValue(
+	) | rpl::start_with_next([=](int height) {
+		setDimensions(st::boxWidth, height);
+	}, content->lifetime());
 }

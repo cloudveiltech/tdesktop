@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 "lng_language_name" = "영어";
 "lng_switch_to_this" = "영어로 변경";
@@ -192,7 +179,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 
 "lng_code_ph" = "코드번호";
 "lng_code_desc" = "인증코드 메세지를 휴대폰으로 전송하였습니다.\n인증코드를 아래에 입력하여 주세요.";
-"lng_code_telegram" = "기존 [b]Telegram[/b] 앱에서\n수신받으신 코드를 입력해주세요";
+"lng_code_telegram" = "기존 [b]CloudVeil Messenger[/b] 앱에서\n수신받으신 코드를 입력해주세요";
 "lng_code_no_telegram" = "코드를 SMS로 전송";
 "lng_code_call" = "텔레그램이  {minutes}:{seconds}후에는 전화를 겁니다.";
 "lng_code_calling" = "텔레그램으로부터 전화 요청을 하고 있습니다...";

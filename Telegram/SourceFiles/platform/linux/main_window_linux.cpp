@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "platform/linux/main_window_linux.h"
 
@@ -476,7 +463,7 @@ void MainWindow::psCreateTrayIcon() {
 			QFileInfo iconFile(_trayIconImageFile());
 			if (iconFile.exists()) {
 				QByteArray path = QFile::encodeName(iconFile.absoluteFilePath());
-				_trayIndicator = Libs::app_indicator_new("Telegram Desktop", path.constData(), APP_INDICATOR_CATEGORY_APPLICATION_STATUS);
+				_trayIndicator = Libs::app_indicator_new("CloudVeil Messenger Desktop", path.constData(), APP_INDICATOR_CATEGORY_APPLICATION_STATUS);
 				if (_trayIndicator) {
 					LOG(("Tray Icon: Using appindicator tray icon."));
 				} else {
@@ -517,8 +504,8 @@ void MainWindow::psCreateTrayIcon() {
 					Libs::g_signal_connect_helper(_trayIcon, "activate", GCallback(_trayIconActivate), _trayMenu);
 					Libs::g_signal_connect_helper(_trayIcon, "size-changed", GCallback(_trayIconResized), _trayMenu);
 
-					Libs::gtk_status_icon_set_title(_trayIcon, "Telegram Desktop");
-					Libs::gtk_status_icon_set_tooltip_text(_trayIcon, "Telegram Desktop");
+					Libs::gtk_status_icon_set_title(_trayIcon, "CloudVeil Messenger Desktop");
+					Libs::gtk_status_icon_set_tooltip_text(_trayIcon, "CloudVeil Messenger Desktop");
 					Libs::gtk_status_icon_set_visible(_trayIcon, true);
 				} else {
 					useStatusIcon = false;

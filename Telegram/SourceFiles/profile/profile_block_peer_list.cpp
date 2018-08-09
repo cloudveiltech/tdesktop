@@ -1,27 +1,15 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "profile/profile_block_peer_list.h"
 
 #include "ui/effects/ripple_animation.h"
 #include "ui/widgets/popup_menu.h"
+#include "ui/text_options.h"
 #include "styles/style_profile.h"
 #include "styles/style_widgets.h"
 #include "auth_session.h"
@@ -100,7 +88,10 @@ void PeerListWidget::paintItem(Painter &p, int x, int y, Item *item, bool select
 	item->peer->paintUserpicLeft(p, x + _st.photoPosition.x(), y + _st.photoPosition.y(), width(), _st.photoSize);
 
 	if (item->name.isEmpty()) {
-		item->name.setText(st::msgNameStyle, App::peerName(item->peer), _textNameOptions);
+		item->name.setText(
+			st::msgNameStyle,
+			App::peerName(item->peer),
+			Ui::NameTextOptions());
 	}
 	int nameLeft = x + _st.namePosition.x();
 	int nameTop = y + _st.namePosition.y();

@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/notifications_manager.h"
 
@@ -24,6 +11,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "window/notifications_manager_default.h"
 #include "media/media_audio_track.h"
 #include "media/media_audio.h"
+#include "history/history_item_components.h"
 #include "lang/lang_keys.h"
 #include "mainwindow.h"
 #include "mainwidget.h"
@@ -235,6 +223,11 @@ void System::showNext() {
 			if (peerAlert || fromAlert) {
 				alert = true;
 			}
+			//CloudVeil start
+			if (!GlobalSecuritySettings::getSettings().isDialogAllowed(peer)) {
+				alert = false;
+			}
+			//CloudVeil end
 			while (!i.value().isEmpty()
 				&& i.value().begin().key() <= ms + kMinimalAlertDelay) {
 				i.value().erase(i.value().begin());
@@ -272,6 +265,14 @@ void System::showNext() {
 		History *notifyHistory = nullptr;
 		for (auto i = _waiters.begin(); i != _waiters.end();) {
 			History *history = i.key();
+			//CloudVeil start
+			if (!GlobalSecuritySettings::getSettings().isDialogAllowed(history)) {
+				history->clearNotifications();
+				i = _waiters.erase(i);
+				continue;
+			}
+			//CloudVeil end
+
 			if (history->currentNotification() && history->currentNotification()->id != i.value().msg) {
 				auto j = _whenMaps.find(history);
 				if (j == _whenMaps.end()) {
@@ -437,7 +438,7 @@ void Manager::notificationReplied(
 void NativeManager::doShowNotification(HistoryItem *item, int forwardedCount) {
 	auto options = getNotificationOptions(item);
 
-	QString title = options.hideNameAndPhoto ? qsl("Telegram Desktop") : item->history()->peer->name;
+	QString title = options.hideNameAndPhoto ? qsl("CloudVeil Messenger Desktop") : item->history()->peer->name;
 	QString subtitle = options.hideNameAndPhoto ? QString() : item->notificationHeader();
 	QString text = options.hideMessageText ? lang(lng_notification_preview) : (forwardedCount < 2 ? item->notificationText() : lng_forward_messages(lt_count, forwardedCount));
 

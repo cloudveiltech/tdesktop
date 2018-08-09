@@ -1,24 +1,13 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
+
+struct HistoryMessageEdited;
 
 namespace base {
 template <typename Enum>
@@ -61,7 +50,9 @@ public:
 	}
 
 	virtual bool isDisplayed() const {
-		return true;
+		return !_parent->isHiddenByGroup();
+	}
+	virtual void updateNeedBubbleState() {
 	}
 	virtual bool isAboveMessage() const {
 		return false;
@@ -73,7 +64,7 @@ public:
 		return false;
 	}
 	virtual void initDimensions() = 0;
-	virtual void updateMessageId() {
+	virtual void refreshParentId(not_null<HistoryItem*> realParent) {
 	}
 	virtual int resizeGetHeight(int width) {
 		_width = qMin(width, _maxw);
@@ -132,9 +123,14 @@ public:
 	virtual bool uploading() const {
 		return false;
 	}
-	virtual std::unique_ptr<HistoryMedia> clone(HistoryItem *newParent) const = 0;
+	virtual std::unique_ptr<HistoryMedia> clone(
+		not_null<HistoryItem*> newParent,
+		not_null<HistoryItem*> realParent) const = 0;
 
-	virtual DocumentData *getDocument() {
+	virtual PhotoData *getPhoto() const {
+		return nullptr;
+	}
+	virtual DocumentData *getDocument() const {
 		return nullptr;
 	}
 	virtual Media::Clip::Reader *getClipReader() {
@@ -155,8 +151,38 @@ public:
 
 	virtual void attachToParent() {
 	}
-
 	virtual void detachFromParent() {
+	}
+
+	virtual bool canBeGrouped() const {
+		return false;
+	}
+	virtual QSize sizeForGrouping() const {
+		Unexpected("Grouping method call.");
+	}
+	virtual void drawGrouped(
+			Painter &p,
+			const QRect &clip,
+			TextSelection selection,
+			TimeMs ms,
+			const QRect &geometry,
+			RectParts corners,
+			not_null<uint64*> cacheKey,
+			not_null<QPixmap*> cache) const {
+		Unexpected("Grouping method call.");
+	}
+	virtual HistoryTextState getStateGrouped(
+			const QRect &geometry,
+			QPoint point,
+			HistoryStateRequest request) const {
+		Unexpected("Grouping method call.");
+	}
+	virtual std::unique_ptr<HistoryMedia> takeLastFromGroup() {
+		return nullptr;
+	}
+	virtual bool applyGroup(
+			const std::vector<not_null<HistoryItem*>> &others) {
+		return others.empty();
 	}
 
 	virtual void updateSentMedia(const MTPMessageMedia &media) {
@@ -188,6 +214,13 @@ public:
 	}
 	virtual bool hideForwardedFrom() const {
 		return false;
+	}
+
+	virtual bool overrideEditedDate() const {
+		return false;
+	}
+	virtual HistoryMessageEdited *displayedEditBadge() const {
+		Unexpected("displayedEditBadge() on non-grouped media.");
 	}
 
 	// An attach media in a web page can provide an

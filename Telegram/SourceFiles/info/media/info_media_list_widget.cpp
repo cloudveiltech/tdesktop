@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/media/info_media_list_widget.h"
 
@@ -554,36 +541,38 @@ ListWidget::ListWidget(
 , _migrated(_controller->migrated())
 , _type(_controller->section().mediaType())
 , _slice(sliceKey(_universalAroundId)) {
-	setAttribute(Qt::WA_MouseTracking);
+	setMouseTracking(true);
 	start();
 }
 
 void ListWidget::start() {
 	_controller->setSearchEnabledByContent(false);
-	ObservableViewer(*Window::Theme::Background())
-		| rpl::start_with_next([this](const auto &update) {
-			if (update.paletteChanged()) {
-				invalidatePaletteCache();
-			}
-		}, lifetime());
-	ObservableViewer(Auth().downloader().taskFinished())
-		| rpl::start_with_next([this] { update(); }, lifetime());
-	Auth().data().itemLayoutChanged()
-		| rpl::start_with_next([this](auto item) {
-			itemLayoutChanged(item);
-		}, lifetime());
-	Auth().data().itemRemoved()
-		| rpl::start_with_next([this](auto item) {
-			itemRemoved(item);
-		}, lifetime());
-	Auth().data().itemRepaintRequest()
-		| rpl::start_with_next([this](auto item) {
-			repaintItem(item);
-		}, lifetime());
-	_controller->mediaSourceQueryValue()
-		| rpl::start_with_next([this]{
-			restart();
-		}, lifetime());
+	ObservableViewer(
+		*Window::Theme::Background()
+	) | rpl::start_with_next([this](const auto &update) {
+		if (update.paletteChanged()) {
+			invalidatePaletteCache();
+		}
+	}, lifetime());
+	ObservableViewer(
+		Auth().downloader().taskFinished()
+	) | rpl::start_with_next([this] { update(); }, lifetime());
+	Auth().data().itemLayoutChanged(
+	) | rpl::start_with_next([this](auto item) {
+		itemLayoutChanged(item);
+	}, lifetime());
+	Auth().data().itemRemoved(
+	) | rpl::start_with_next([this](auto item) {
+		itemRemoved(item);
+	}, lifetime());
+	Auth().data().itemRepaintRequest(
+	) | rpl::start_with_next([this](auto item) {
+		repaintItem(item);
+	}, lifetime());
+	_controller->mediaSourceQueryValue(
+	) | rpl::start_with_next([this]{
+		restart();
+	}, lifetime());
 }
 
 rpl::producer<int> ListWidget::scrollToRequests() const {
@@ -800,19 +789,19 @@ void ListWidget::refreshViewer() {
 	_controller->mediaSource(
 		idForViewer,
 		_idsLimit,
-		_idsLimit)
-		| rpl::start_with_next([=](
-				SparseIdsMergedSlice &&slice) {
-			if (!slice.fullCount()) {
-				// Don't display anything while full count is unknown.
-				return;
-			}
-			_slice = std::move(slice);
-			if (auto nearest = _slice.nearest(idForViewer)) {
-				_universalAroundId = GetUniversalId(*nearest);
-			}
-			refreshRows();
-		}, _viewerLifetime);
+		_idsLimit
+	) | rpl::start_with_next([=](
+			SparseIdsMergedSlice &&slice) {
+		if (!slice.fullCount()) {
+			// Don't display anything while full count is unknown.
+			return;
+		}
+		_slice = std::move(slice);
+		if (auto nearest = _slice.nearest(idForViewer)) {
+			_universalAroundId = GetUniversalId(*nearest);
+		}
+		refreshRows();
+	}, _viewerLifetime);
 }
 
 BaseLayout *ListWidget::getLayout(UniversalMsgId universalId) {
@@ -847,10 +836,8 @@ std::unique_ptr<BaseLayout> ListWidget::createLayout(
 		return nullptr;
 	}
 	auto getPhoto = [&]() -> PhotoData* {
-		if (auto media = item->getMedia()) {
-			if (media->type() == MediaTypePhoto) {
-				return static_cast<HistoryPhoto*>(media)->photo();
-			}
+		if (const auto media = item->getMedia()) {
+			return media->getPhoto();
 		}
 		return nullptr;
 	};
@@ -1235,8 +1222,8 @@ void ListWidget::showContextMenu(
 			}
 		});
 
-	auto photoLink = dynamic_cast<PhotoClickHandler*>(link.data());
-	auto fileLink = dynamic_cast<DocumentClickHandler*>(link.data());
+	auto photoLink = dynamic_cast<PhotoClickHandler*>(link.get());
+	auto fileLink = dynamic_cast<DocumentClickHandler*>(link.get());
 	if (photoLink || fileLink) {
 		auto [isVideo, isVoice, isAudio] = [&] {
 			if (fileLink) {
@@ -1896,7 +1883,7 @@ void ListWidget::performDrag() {
 	}
 	auto pressedHandler = ClickHandler::getPressed();
 
-	if (dynamic_cast<VoiceSeekClickHandler*>(pressedHandler.data())) {
+	if (dynamic_cast<VoiceSeekClickHandler*>(pressedHandler.get())) {
 		return;
 	}
 
@@ -1978,9 +1965,9 @@ void ListWidget::mouseActionFinish(const QPoint &screenPos, Qt::MouseButton butt
 	auto activated = ClickHandler::unpressed();
 	if (_mouseAction == MouseAction::Dragging
 		|| _mouseAction == MouseAction::Selecting) {
-		activated.clear();
+		activated = nullptr;
 	} else if (needSelectionToggle) {
-		activated.clear();
+		activated = nullptr;
 	}
 
 	_wasSelectedText = false;

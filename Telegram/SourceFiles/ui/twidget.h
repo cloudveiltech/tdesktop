@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
@@ -28,6 +15,8 @@ void Start();
 QString GetOverride(const QString &familyName);
 
 } // namespace
+
+class TWidget;
 
 template <typename Object>
 class object_ptr;
@@ -57,6 +46,17 @@ inline ChildWidget *AttachParentChild(
 	return nullptr;
 }
 
+void SendPendingMoveResizeEvents(not_null<QWidget*> target);
+
+QPixmap GrabWidget(
+	not_null<TWidget*> target,
+	QRect rect = QRect(),
+	QColor bg = QColor(255, 255, 255, 0));
+QImage GrabWidgetToImage(
+	not_null<TWidget*> target,
+	QRect rect = QRect(),
+	QColor bg = QColor(255, 255, 255, 0));
+
 } // namespace Ui
 
 enum class RectPart {
@@ -84,8 +84,8 @@ enum class RectPart {
 	NoLeft      = NoLeftRight | FullRight,
 	NoRight     = FullLeft | NoLeftRight,
 
-	CornersMask = TopLeft | TopRight | BottomLeft | BottomRight,
-	SidesMask   = Top | Bottom | Left | Right,
+	AllCorners = TopLeft | TopRight | BottomLeft | BottomRight,
+	AllSides   = Top | Bottom | Left | Right,
 
 	Full        = FullTop | NoTop,
 };
@@ -208,8 +208,6 @@ private:
 	QPainter::RenderHints _hints = 0;
 
 };
-
-class TWidget;
 
 template <typename Base>
 class TWidgetHelper : public Base {
@@ -443,10 +441,6 @@ template <typename Widget>
 QPointer<const Widget> make_weak(const Widget *object) {
 	return QPointer<const Widget>(object);
 }
-
-void myEnsureResized(QWidget *target);
-QPixmap myGrab(TWidget *target, QRect rect = QRect(), QColor bg = QColor(255, 255, 255, 0));
-QImage myGrabImage(TWidget *target, QRect rect = QRect(), QColor bg = QColor(255, 255, 255, 0));
 
 class SingleQueuedInvokation : public QObject {
 public:

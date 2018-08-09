@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
@@ -44,6 +31,9 @@ public:
 	int32 loadOffset() const;
 	bool uploading() const;
 
+	void setWaitingForAlbum();
+	bool waitingForAlbum() const;
+
 	void forget();
 	ImagePtr makeReplyPreview();
 
@@ -57,25 +47,22 @@ public:
 	PeerData *peer = nullptr; // for chat and channel photos connection
 	// geo, caption
 
-	struct UploadingData {
-		UploadingData(int size) : size(size) {
-		}
-		int offset = 0;
-		int size = 0;
-	};
-	std::unique_ptr<UploadingData> uploadingData;
+	std::unique_ptr<Data::UploadState> uploadingData;
 
 private:
 	void notifyLayoutChanged() const;
 
 };
 
-class PhotoClickHandler : public LeftButtonClickHandler {
+class PhotoClickHandler : public FileClickHandler {
 public:
 	PhotoClickHandler(
 		not_null<PhotoData*> photo,
+		FullMsgId context = FullMsgId(),
 		PeerData *peer = nullptr)
-	: _photo(photo), _peer(peer) {
+	: FileClickHandler(context)
+	, _photo(photo)
+	, _peer(peer) {
 	}
 	not_null<PhotoData*> photo() const {
 		return _photo;
@@ -86,7 +73,7 @@ public:
 
 private:
 	not_null<PhotoData*> _photo;
-	PeerData *_peer;
+	PeerData *_peer = nullptr;
 
 };
 

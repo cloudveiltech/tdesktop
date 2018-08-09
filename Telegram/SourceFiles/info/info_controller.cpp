@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/info_controller.h"
 
@@ -93,22 +80,24 @@ void Controller::setupMigrationViewer() {
 	if (!_peer->isChat() && (!_peer->isChannel() || _migrated != nullptr)) {
 		return;
 	}
-	Notify::PeerUpdateValue(_peer, Notify::PeerUpdate::Flag::MigrationChanged)
-		| rpl::start_with_next([this] {
-			if (_peer->migrateTo() || (_peer->migrateFrom() != _migrated)) {
-				auto window = parentController();
-				auto peerId = _peer->id;
-				auto section = _section;
-				InvokeQueued(_widget, [=] {
-					window->showSection(
-						Memento(peerId, section),
-						Window::SectionShow(
-							Window::SectionShow::Way::Backward,
-							anim::type::instant,
-							anim::activation::background));
-				});
-			}
-		}, lifetime());
+	Notify::PeerUpdateValue(
+		_peer,
+		Notify::PeerUpdate::Flag::MigrationChanged
+	) | rpl::start_with_next([this] {
+		if (_peer->migrateTo() || (_peer->migrateFrom() != _migrated)) {
+			auto window = parentController();
+			auto peerId = _peer->id;
+			auto section = _section;
+			InvokeQueued(_widget, [=] {
+				window->showSection(
+					Memento(peerId, section),
+					Window::SectionShow(
+						Window::SectionShow::Way::Backward,
+						anim::type::instant,
+						anim::activation::background));
+			});
+		}
+	}, lifetime());
 }
 
 Wrap Controller::wrap() const {
@@ -160,11 +149,11 @@ void Controller::updateSearchControllers(
 			= std::make_unique<Ui::SearchFieldController>(
 				searchQuery);
 		if (_searchController) {
-			_searchFieldController->queryValue()
-				| rpl::start_with_next([=](QString &&query) {
-					_searchController->setQuery(
-						produceSearchQuery(std::move(query)));
-				}, _searchFieldController->lifetime());
+			_searchFieldController->queryValue(
+			) | rpl::start_with_next([=](QString &&query) {
+				_searchController->setQuery(
+					produceSearchQuery(std::move(query)));
+			}, _searchFieldController->lifetime());
 		}
 		_seachEnabledByContent = memento->searchEnabledByContent();
 		_searchStartsFocused = memento->searchStartsFocused();

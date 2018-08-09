@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "profile/profile_channel_controllers.h"
 
@@ -32,6 +19,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "mainwidget.h"
 #include "observer_peer.h"
 #include "dialogs/dialogs_indexed_list.h"
+#include "data/data_peer_values.h"
 #include "ui/widgets/popup_menu.h"
 #include "window/window_controller.h"
 
@@ -41,6 +29,25 @@ namespace {
 constexpr auto kParticipantsFirstPageCount = 16;
 constexpr auto kParticipantsPerPage = 200;
 constexpr auto kSortByOnlineDelay = TimeMs(1000);
+
+void RemoveAdmin(
+		not_null<ChannelData*> channel,
+		not_null<UserData*> user,
+		const MTPChannelAdminRights &oldRights,
+		base::lambda<void()> onDone) {
+	const auto newRights = MTP_channelAdminRights(MTP_flags(0));
+	auto done = [=](const MTPUpdates &result) {
+		Auth().api().applyUpdates(result);
+		channel->applyEditAdmin(user, oldRights, newRights);
+		onDone();
+	};
+	MTP::send(
+		MTPchannels_EditAdmin(
+			channel->inputChannel,
+			user->inputUser,
+			newRights),
+		rpcDone(std::move(done)));
+}
 
 } // namespace
 
@@ -79,30 +86,32 @@ void ParticipantsBoxController::setupListChangeViewers() {
 	if (!_channel->isMegagroup()) {
 		return;
 	}
-	Auth().data().megagroupParticipantAdded(_channel)
-		| rpl::start_with_next([this](not_null<UserData*> user) {
-			if (delegate()->peerListFullRowsCount() > 0) {
-				if (delegate()->peerListRowAt(0)->peer() == user) {
-					return;
-				}
+	Auth().data().megagroupParticipantAdded(
+		_channel
+	) | rpl::start_with_next([this](not_null<UserData*> user) {
+		if (delegate()->peerListFullRowsCount() > 0) {
+			if (delegate()->peerListRowAt(0)->peer() == user) {
+				return;
 			}
-			if (auto row = delegate()->peerListFindRow(user->id)) {
-				delegate()->peerListPartitionRows([user](const PeerListRow &row) {
-					return (row.peer() == user);
-				});
-			} else {
-				delegate()->peerListPrependRow(createRow(user));
-				delegate()->peerListRefreshRows();
-				sortByOnline();
-			}
-		}, lifetime());
-	Auth().data().megagroupParticipantRemoved(_channel)
-		| rpl::start_with_next([this](not_null<UserData*> user) {
-			if (auto row = delegate()->peerListFindRow(user->id)) {
-				delegate()->peerListRemoveRow(row);
-			}
+		}
+		if (auto row = delegate()->peerListFindRow(user->id)) {
+			delegate()->peerListPartitionRows([user](const PeerListRow &row) {
+				return (row.peer() == user);
+			});
+		} else {
+			delegate()->peerListPrependRow(createRow(user));
 			delegate()->peerListRefreshRows();
-		}, lifetime());
+			sortByOnline();
+		}
+	}, lifetime());
+	Auth().data().megagroupParticipantRemoved(
+		_channel
+	) | rpl::start_with_next([this](not_null<UserData*> user) {
+		if (auto row = delegate()->peerListFindRow(user->id)) {
+			delegate()->peerListRemoveRow(row);
+		}
+		delegate()->peerListRefreshRows();
+	}, lifetime());
 }
 
 void ParticipantsBoxController::sortByOnlineDelayed() {
@@ -122,8 +131,8 @@ void ParticipantsBoxController::sortByOnline() {
 	delegate()->peerListSortRows([now](
 			const PeerListRow &a,
 			const PeerListRow &b) {
-		return App::onlineForSort(a.peer()->asUser(), now) >
-			App::onlineForSort(b.peer()->asUser(), now);
+		return Data::SortByOnlineValue(a.peer()->asUser(), now) >
+			Data::SortByOnlineValue(b.peer()->asUser(), now);
 	});
 	refreshOnlineCount();
 }
@@ -137,7 +146,7 @@ void ParticipantsBoxController::refreshOnlineCount() {
 	while (right > left) {
 		auto middle = (left + right) / 2;
 		auto row = delegate()->peerListRowAt(middle);
-		if (App::onlineColorUse(row->peer()->asUser(), now)) {
+		if (Data::OnlineTextActive(row->peer()->asUser(), now)) {
 			left = middle + 1;
 		} else {
 			right = middle;
@@ -269,32 +278,34 @@ std::unique_ptr<PeerListState> ParticipantsBoxController::saveState() const {
 
 	if (_channel->isMegagroup()) {
 		auto weak = result.get();
-		Auth().data().megagroupParticipantAdded(_channel)
-			| rpl::start_with_next([weak](not_null<UserData*> user) {
-				if (!weak->list.empty()) {
-					if (weak->list[0] == user) {
-						return;
-					}
+		Auth().data().megagroupParticipantAdded(
+			_channel
+		) | rpl::start_with_next([weak](not_null<UserData*> user) {
+			if (!weak->list.empty()) {
+				if (weak->list[0] == user) {
+					return;
 				}
-				auto pos = ranges::find(weak->list, user);
-				if (pos == weak->list.cend()) {
-					weak->list.push_back(user);
-				}
-				ranges::stable_partition(
-					weak->list,
-					[user](auto peer) { return (peer == user); });
-			}, my->lifetime);
-		Auth().data().megagroupParticipantRemoved(_channel)
-			| rpl::start_with_next([weak](not_null<UserData*> user) {
-				weak->list.erase(std::remove(
-					weak->list.begin(),
-					weak->list.end(),
-					user), weak->list.end());
-				weak->filterResults.erase(std::remove(
-					weak->filterResults.begin(),
-					weak->filterResults.end(),
-					user), weak->filterResults.end());
-			}, my->lifetime);
+			}
+			auto pos = ranges::find(weak->list, user);
+			if (pos == weak->list.cend()) {
+				weak->list.push_back(user);
+			}
+			ranges::stable_partition(
+				weak->list,
+				[user](auto peer) { return (peer == user); });
+		}, my->lifetime);
+		Auth().data().megagroupParticipantRemoved(
+			_channel
+		) | rpl::start_with_next([weak](not_null<UserData*> user) {
+			weak->list.erase(std::remove(
+				weak->list.begin(),
+				weak->list.end(),
+				user), weak->list.end());
+			weak->filterResults.erase(std::remove(
+				weak->filterResults.begin(),
+				weak->filterResults.end(),
+				user), weak->filterResults.end());
+		}, my->lifetime);
 	}
 	result->controllerState = std::move(my);
 	return result;
@@ -511,7 +522,9 @@ void ParticipantsBoxController::loadMoreRows() {
 
 void ParticipantsBoxController::setNonEmptyDescription() {
 	setDescriptionText((_role == Role::Kicked)
-		? lang(lng_group_blocked_list_about)
+		? lang(_channel->isMegagroup()
+			? lng_group_blocked_list_about
+			: lng_channel_blocked_list_about)
 		: QString());
 }
 
@@ -596,7 +609,7 @@ void ParticipantsBoxController::rowActionClicked(not_null<PeerListRow*> row) {
 	if (_role == Role::Members || _role == Role::Profile) {
 		kickMember(user);
 	} else if (_role == Role::Admins) {
-		showAdmin(user);
+		removeAdmin(user);
 	} else if (_role == Role::Restricted) {
 		showRestricted(user);
 	} else {
@@ -606,8 +619,10 @@ void ParticipantsBoxController::rowActionClicked(not_null<PeerListRow*> row) {
 
 bool ParticipantsBoxController::canEditAdminByRights(
 		not_null<UserData*> user) const {
-	if (_additional.adminCanEdit.find(user) != _additional.adminCanEdit.cend()) {
-		return true;
+	if (_additional.adminRights.find(user)
+		!= _additional.adminRights.cend()) {
+		return (_additional.adminCanEdit.find(user)
+			!= _additional.adminCanEdit.cend());
 	}
 	return (user != _additional.creator);
 }
@@ -832,7 +847,9 @@ void ParticipantsBoxController::kickMemberSure(not_null<UserData*> user) {
 		_editBox->closeBox();
 	}
 	auto alreadyIt = _additional.restrictedRights.find(user);
-	auto currentRights = (alreadyIt == _additional.restrictedRights.cend()) ? MTP_channelBannedRights(MTP_flags(0), MTP_int(0)) : alreadyIt->second;
+	auto currentRights = (alreadyIt == _additional.restrictedRights.cend())
+		? MTP_channelBannedRights(MTP_flags(0), MTP_int(0))
+		: alreadyIt->second;
 
 	if (auto row = delegate()->peerListFindRow(user->id)) {
 		delegate()->peerListRemoveRow(row);
@@ -841,7 +858,36 @@ void ParticipantsBoxController::kickMemberSure(not_null<UserData*> user) {
 	Auth().api().kickParticipant(_channel, user, currentRights);
 }
 
-void ParticipantsBoxController::removeKicked(not_null<PeerListRow*> row, not_null<UserData*> user) {
+void ParticipantsBoxController::removeAdmin(not_null<UserData*> user) {
+	const auto text = lng_profile_sure_remove_admin(lt_user, user->firstName);
+	const auto weak = base::make_weak(this);
+	_editBox = Ui::show(Box<ConfirmBox>(text, lang(lng_box_remove), [=] {
+		if (const auto strong = weak.get()) {
+			strong->removeAdminSure(user);
+		}
+	}), LayerOption::KeepOther);
+}
+
+void ParticipantsBoxController::removeAdminSure(not_null<UserData*> user) {
+	if (_editBox) {
+		_editBox->closeBox();
+	}
+	const auto oldRightsIt = _additional.adminRights.find(user);
+	if (oldRightsIt == _additional.adminRights.cend()) {
+		return;
+	}
+	const auto weak = base::make_weak(this);
+	RemoveAdmin(_channel, user, oldRightsIt->second, [=] {
+		if (const auto strong = weak.get()) {
+			const auto newRights = MTP_channelAdminRights(MTP_flags(0));
+			strong->editAdminDone(user, newRights);
+		}
+	});
+}
+
+void ParticipantsBoxController::removeKicked(
+		not_null<PeerListRow*> row,
+		not_null<UserData*> user) {
 	delegate()->peerListRemoveRow(row);
 	delegate()->peerListRefreshRows();
 
@@ -902,7 +948,15 @@ std::unique_ptr<PeerListRow> ParticipantsBoxController::createRow(
 	}
 	auto row = std::make_unique<PeerListRowWithLink>(user);
 	refreshCustomStatus(row.get());
-	if (_role == Role::Restricted || (_role == Role::Admins && _additional.adminCanEdit.find(user) != _additional.adminCanEdit.cend())) {
+	if (_role == Role::Admins
+		&& canEditAdminByRights(user)
+		&& _additional.adminRights.find(user)
+			!= _additional.adminRights.cend()) {
+		row->setActionLink(lang(lng_profile_kick));
+	} else if (_role == Role::Restricted
+		|| (_role == Role::Admins
+			&& _additional.adminCanEdit.find(user)
+				!= _additional.adminCanEdit.cend())) {
 //		row->setActionLink(lang(lng_profile_edit_permissions));
 	} else if (_role == Role::Kicked) {
 		row->setActionLink(lang(lng_blocked_list_unblock));
@@ -1309,7 +1363,10 @@ void AddParticipantBoxController::showAdmin(not_null<UserData*> user, bool sure)
 		// The user is not in the group yet.
 		if (_channel->canAddMembers()) {
 			if (!sure) {
-				_editBox = Ui::show(Box<ConfirmBox>(lang(lng_sure_add_admin_invite), [weak, user] {
+				const auto text = lang(_channel->isMegagroup()
+					? lng_sure_add_admin_invite
+					: lng_sure_add_admin_invite_channel);
+				_editBox = Ui::show(Box<ConfirmBox>(text, [weak, user] {
 					if (weak) {
 						weak->showAdmin(user, true);
 					}

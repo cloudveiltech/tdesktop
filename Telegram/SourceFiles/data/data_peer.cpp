@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_peer.h"
 
@@ -36,6 +23,8 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "mainwindow.h"
 #include "window/window_controller.h"
 #include "ui/empty_userpic.h"
+#include "ui/text_options.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace {
 
@@ -100,7 +89,7 @@ void PeerClickHandler::onClick(Qt::MouseButton button) const {
 PeerData::PeerData(const PeerId &id)
 : id(id)
 , _userpicEmpty(createEmptyUserpic()) {
-	nameText.setText(st::msgNameStyle, QString(), _textNameOptions);
+	nameText.setText(st::msgNameStyle, QString(), Ui::NameTextOptions());
 }
 
 void PeerData::updateNameDelayed(
@@ -124,7 +113,7 @@ void PeerData::updateNameDelayed(
 
 	++nameVersion;
 	name = newName;
-	nameText.setText(st::msgNameStyle, name, _textNameOptions);
+	nameText.setText(st::msgNameStyle, name, Ui::NameTextOptions());
 	refreshEmptyUserpic();
 
 	Notify::PeerUpdate update(this);
@@ -164,7 +153,7 @@ void PeerData::refreshEmptyUserpic() const {
 }
 
 ClickHandlerPtr PeerData::createOpenLink() {
-	return MakeShared<PeerClickHandler>(this);
+	return std::make_shared<PeerClickHandler>(this);
 }
 
 void PeerData::setUserpic(
@@ -192,15 +181,19 @@ void PeerData::setUserpicPhoto(const MTPPhoto &data) {
 }
 
 ImagePtr PeerData::currentUserpic() const {
-	if (_userpic) {
-		_userpic->load();
-		if (_userpic->loaded()) {
-			if (!useEmptyUserpic()) {
-				_userpicEmpty = nullptr;
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getSettings().disableProfilePhoto) {
+		if (_userpic) {
+			_userpic->load();
+			if (_userpic->loaded()) {
+				//if (!useEmptyUserpic()) {
+				//	_userpicEmpty = nullptr;
+				//}
+				return _userpic;
 			}
-			return _userpic;
 		}
 	}
+	//CloudVeil end
 	return ImagePtr();
 }
 
@@ -351,7 +344,10 @@ PeerData::~PeerData() = default;
 
 const Text &BotCommand::descriptionText() const {
 	if (_descriptionText.isEmpty() && !_description.isEmpty()) {
-		_descriptionText.setText(st::defaultTextStyle, _description, _textNameOptions);
+		_descriptionText.setText(
+			st::defaultTextStyle,
+			_description,
+			Ui::NameTextOptions());
 	}
 	return _descriptionText;
 }
@@ -491,7 +487,10 @@ void UserData::setBotInfo(const MTPBotInfo &info) {
 void UserData::setNameOrPhone(const QString &newNameOrPhone) {
 	if (nameOrPhone != newNameOrPhone) {
 		nameOrPhone = newNameOrPhone;
-		phoneText.setText(st::msgNameStyle, nameOrPhone, _textNameOptions);
+		phoneText.setText(
+			st::msgNameStyle,
+			nameOrPhone,
+			Ui::NameTextOptions());
 	}
 }
 
@@ -576,16 +575,18 @@ void ChatData::setInviteLink(const QString &newInviteLink) {
 ChannelData::ChannelData(const PeerId &id)
 : PeerData(id)
 , inputChannel(MTP_inputChannel(MTP_int(bareId()), MTP_long(0))) {
-	Data::PeerFlagValue(this, MTPDchannel::Flag::f_megagroup)
-		| rpl::start_with_next([this](bool megagroup) {
-			if (megagroup) {
-				if (!mgInfo) {
-					mgInfo = std::make_unique<MegagroupInfo>();
-				}
-			} else if (mgInfo) {
-				mgInfo = nullptr;
+	Data::PeerFlagValue(
+		this,
+		MTPDchannel::Flag::f_megagroup
+	) | rpl::start_with_next([this](bool megagroup) {
+		if (megagroup) {
+			if (!mgInfo) {
+				mgInfo = std::make_unique<MegagroupInfo>();
 			}
-		}, _lifetime);
+		} else if (mgInfo) {
+			mgInfo = nullptr;
+		}
+	}, _lifetime);
 }
 
 void ChannelData::setPhoto(const MTPChatPhoto &photo) {
@@ -792,9 +793,12 @@ void ChannelData::applyEditBanned(not_null<UserData*> user, const MTPChannelBann
 		}
 		Data::ChannelAdminChanges(this).feed(peerToUser(user->id), false);
 	} else {
-		if (isKicked && membersCount() > 1) {
-			setMembersCount(membersCount() - 1);
-			flags |= Notify::PeerUpdate::Flag::MembersChanged;
+		if (isKicked) {
+			if (membersCount() > 1) {
+				setMembersCount(membersCount() - 1);
+				flags |= Notify::PeerUpdate::Flag::MembersChanged;
+			}
+			setKickedCount(kickedCount() + 1);
 		}
 	}
 	Notify::peerUpdatedDelayed(this, flags);

@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/peer_list_box.h"
 
@@ -34,9 +21,11 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "ui/effects/ripple_animation.h"
 #include "ui/empty_userpic.h"
 #include "ui/wrap/slide_wrap.h"
+#include "ui/text_options.h"
 #include "lang/lang_keys.h"
 #include "observer_peer.h"
 #include "storage/file_download.h"
+#include "data/data_peer_values.h"
 #include "window/themes/window_theme.h"
 
 PeerListBox::PeerListBox(
@@ -53,10 +42,10 @@ void PeerListBox::createMultiSelect() {
 
 	auto entity = object_ptr<Ui::MultiSelect>(this, st::contactsMultiSelect, langFactory(lng_participant_filter));
 	_select.create(this, std::move(entity));
-	_select->heightValue()
-		| rpl::start_with_next(
-			[this] { updateScrollSkips(); },
-			lifetime());
+	_select->heightValue(
+	) | rpl::start_with_next(
+		[this] { updateScrollSkips(); },
+		lifetime());
 	_select->entity()->setSubmittedCallback([this](bool chtrlShiftEnter) { content()->submitted(); });
 	_select->entity()->setQueryChangedCallback([this](const QString &query) { searchQueryChanged(query); });
 	_select->entity()->setItemRemovedCallback([this](uint64 itemId) {
@@ -103,15 +92,15 @@ void PeerListBox::prepare() {
 	setDimensions(st::boxWideWidth, st::boxMaxListHeight);
 	if (_select) {
 		_select->finishAnimating();
-		myEnsureResized(_select);
+		Ui::SendPendingMoveResizeEvents(_select);
 		_scrollBottomFixed = true;
 		onScrollToY(0);
 	}
 
-	content()->scrollToRequests()
-		| rpl::start_with_next([this](Ui::ScrollToRequest request) {
-			onScrollToY(request.ymin, request.ymax);
-		}, lifetime());
+	content()->scrollToRequests(
+	) | rpl::start_with_next([this](Ui::ScrollToRequest request) {
+		onScrollToY(request.ymin, request.ymax);
+	}, lifetime());
 
 	if (_init) {
 		_init(this);
@@ -357,12 +346,12 @@ void PeerListRow::refreshStatus() {
 			setStatusText(lang(lng_saved_forward_here));
 		} else {
 			auto time = unixtime();
-			setStatusText(App::onlineText(user, time));
-			if (App::onlineColorUse(user, time)) {
+			setStatusText(Data::OnlineText(user, time));
+			if (Data::OnlineTextActive(user, time)) {
 				_statusType = StatusType::Online;
 			}
 			_statusValidTill = getms()
-				+ App::onlineWillChangeIn(user, time) * 1000LL;
+				+ Data::OnlineChangeTimeout(user, time);
 		}
 	} else if (auto chat = peer()->asChat()) {
 		if (!chat->amIn()) {
@@ -390,7 +379,7 @@ void PeerListRow::refreshName(const style::PeerListItem &st) {
 	const auto text = _isSavedMessagesChat
 		? lang(lng_saved_messages)
 		: peer()->name;
-	_name.setText(st.nameStyle, text, _textNameOptions);
+	_name.setText(st.nameStyle, text, Ui::NameTextOptions());
 }
 
 PeerListRow::~PeerListRow() = default;
@@ -515,7 +504,7 @@ void PeerListRow::paintDisabledCheckUserpic(
 }
 
 void PeerListRow::setStatusText(const QString &text) {
-	_status.setText(st::defaultTextStyle, text, _textNameOptions);
+	_status.setText(st::defaultTextStyle, text, Ui::NameTextOptions());
 }
 
 float64 PeerListRow::checkedRatio() {

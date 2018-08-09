@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "calls/calls_panel.h"
 
@@ -37,7 +24,6 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "apiwrap.h"
 #include "observer_peer.h"
 #include "platform/platform_specific.h"
-#include "base/task_queue.h"
 #include "window/main_window.h"
 
 namespace Calls {
@@ -365,10 +351,12 @@ void Panel::initLayout() {
 
 	initGeometry();
 
-	Notify::PeerUpdateValue(_user, Notify::PeerUpdate::Flag::PhotoChanged)
-		| rpl::start_with_next(
-			[this] { processUserPhoto(); },
-			lifetime());
+	Notify::PeerUpdateValue(
+		_user,
+		Notify::PeerUpdate::Flag::PhotoChanged
+	) | rpl::start_with_next(
+		[this] { processUserPhoto(); },
+		lifetime());
 	subscribe(Auth().downloaderTaskFinished(), [this] {
 		refreshUserPhoto();
 	});
@@ -386,10 +374,15 @@ void Panel::toggleOpacityAnimation(bool visible) {
 	if (_useTransparency) {
 		if (_animationCache.isNull()) {
 			showControls();
-			_animationCache = myGrab(this);
+			_animationCache = Ui::GrabWidget(this);
 			hideChildren();
 		}
-		_opacityAnimation.start([this] { update(); }, _visible ? 0. : 1., _visible ? 1. : 0., st::callPanelDuration, _visible ? anim::easeOutCirc : anim::easeInCirc);
+		_opacityAnimation.start(
+			[this] { update(); },
+			_visible ? 0. : 1.,
+			_visible ? 1. : 0.,
+			st::callPanelDuration,
+			_visible ? anim::easeOutCirc : anim::easeInCirc);
 	}
 	if (isHidden() && _visible) {
 		show();
@@ -418,10 +411,8 @@ void Panel::showControls() {
 
 void Panel::destroyDelayed() {
 	hide();
-	base::TaskQueue::Main().Put([weak = QPointer<Panel>(this)] {
-		if (weak) {
-			delete weak.data();
-		}
+	crl::on_main(this, [=] {
+		delete this;
 	});
 }
 
@@ -490,7 +481,7 @@ void Panel::createUserpicCache(ImagePtr image) {
 				_user->name
 			).paintSquare(p, 0, 0, st::callWidth, st::callWidth);
 		}
-		Images::prepareRound(filled, ImageRoundRadius::Large, ImageRoundCorner::TopLeft | ImageRoundCorner::TopRight);
+		Images::prepareRound(filled, ImageRoundRadius::Large, RectPart::TopLeft | RectPart::TopRight);
 		_userPhoto = App::pixmapFromImageInPlace(std::move(filled));
 	}
 	refreshCacheImageUserPhoto();

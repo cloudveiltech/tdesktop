@@ -1,26 +1,14 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "chat_helpers/field_autocomplete.h"
 
 #include "data/data_document.h"
+#include "data/data_peer_values.h"
 #include "mainwindow.h"
 #include "apiwrap.h"
 #include "storage/localstorage.h"
@@ -30,6 +18,7 @@ Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
 #include "styles/style_chat_helpers.h"
 #include "auth_session.h"
 #include "chat_helpers/stickers.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 FieldAutocomplete::FieldAutocomplete(QWidget *parent) : TWidget(parent)
 , _scroll(this, st::mentionScroll) {
@@ -185,13 +174,21 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 		if (_addInlineBots) {
 			for_const (auto user, cRecentInlineBots()) {
 				if (user->isInaccessible()) continue;
+				//CloudVeil start
+				if (!GlobalSecuritySettings::getSettings().isDialogAllowed(user)) {
+					continue;
+				}
+				//CloudVeil end
 				if (!listAllSuggestions && filterNotPassedByUsername(user)) continue;
 				mrows.push_back(user);
 				++recentInlineBots;
 			}
 		}
 		if (_chat) {
-			QMultiMap<int32, UserData*> ordered;
+			auto ordered = QMultiMap<TimeId, not_null<UserData*>>();
+			const auto byOnline = [&](not_null<UserData*> user) {
+				return Data::SortByOnlineValue(user, now);
+			};
 			mrows.reserve(mrows.size() + (_chat->participants.empty() ? _chat->lastAuthors.size() : _chat->participants.size()));
 			if (_chat->noParticipantInfo()) {
 				Auth().api().requestFullPeer(_chat);
@@ -200,7 +197,7 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 					if (user->isInaccessible()) continue;
 					if (!listAllSuggestions && filterNotPassedByName(user)) continue;
 					if (indexOfInFirstN(mrows, user, recentInlineBots) >= 0) continue;
-					ordered.insertMulti(App::onlineForSort(user, now), user);
+					ordered.insertMulti(byOnline(user), user);
 				}
 			}
 			for (const auto user : _chat->lastAuthors) {
@@ -209,7 +206,7 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 				if (indexOfInFirstN(mrows, user, recentInlineBots) >= 0) continue;
 				mrows.push_back(user);
 				if (!ordered.isEmpty()) {
-					ordered.remove(App::onlineForSort(user, now), user);
+					ordered.remove(byOnline(user), user);
 				}
 			}
 			if (!ordered.isEmpty()) {
@@ -404,7 +401,7 @@ void FieldAutocomplete::hideAnimated() {
 
 	if (_cache.isNull()) {
 		_scroll->show();
-		_cache = myGrab(this);
+		_cache = Ui::GrabWidget(this);
 	}
 	_scroll->hide();
 	_hiding = true;
@@ -425,7 +422,7 @@ void FieldAutocomplete::showAnimated() {
 	}
 	if (_cache.isNull()) {
 		_scroll->show();
-		_cache = myGrab(this);
+		_cache = Ui::GrabWidget(this);
 	}
 	_scroll->hide();
 	_hiding = false;

@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/peer_list_controllers.h"
 
@@ -724,7 +711,7 @@ void EditChatAdminsBoxController::Start(not_null<ChatData*> chat) {
 }
 
 void AddBotToGroupBoxController::Start(not_null<UserData*> bot) {
-	auto initBox = [bot](not_null<PeerListBox*> box) {
+	auto initBox = [](not_null<PeerListBox*> box) {
 		box->addButton(langFactory(lng_cancel), [box] { box->closeBox(); });
 	};
 	Ui::show(Box<PeerListBox>(std::make_unique<AddBotToGroupBoxController>(bot), std::move(initBox)));
@@ -750,23 +737,24 @@ void AddBotToGroupBoxController::shareBotGame(not_null<PeerData*> chat) {
 		if (!weak) {
 			return;
 		}
-		auto history = App::historyLoaded(chat);
-		auto afterRequestId = history ? history->sendRequestId : 0;
-		auto randomId = rand_value<uint64>();
-		auto gameShortName = bot->botInfo->shareGameShortName;
-		auto inputGame = MTP_inputGameShortName(
-			bot->inputUser,
-			MTP_string(gameShortName));
-		auto request = MTPmessages_SendMedia(
-			MTP_flags(0),
-			chat->input,
-			MTP_int(0),
-			MTP_inputMediaGame(inputGame),
-			MTP_long(randomId),
-			MTPnullMarkup);
-		auto done = App::main()->rpcDone(&MainWidget::sentUpdatesReceived);
-		auto fail = App::main()->rpcFail(&MainWidget::sendMessageFail);
-		auto requestId = MTP::send(request, done, fail, 0, 0, afterRequestId);
+		const auto history = App::historyLoaded(chat);
+		const auto randomId = rand_value<uint64>();
+		const auto requestId = MTP::send(
+			MTPmessages_SendMedia(
+				MTP_flags(0),
+				chat->input,
+				MTP_int(0),
+				MTP_inputMediaGame(
+					MTP_inputGameShortName(
+						bot->inputUser,
+						MTP_string(bot->botInfo->shareGameShortName))),
+				MTP_long(randomId),
+				MTPnullMarkup),
+			App::main()->rpcDone(&MainWidget::sentUpdatesReceived),
+			App::main()->rpcFail(&MainWidget::sendMessageFail),
+			0,
+			0,
+			history ? history->sendRequestId : 0);
 		if (history) {
 			history->sendRequestId = requestId;
 		}
@@ -778,9 +766,9 @@ void AddBotToGroupBoxController::shareBotGame(not_null<PeerData*> chat) {
 			return lng_bot_sure_share_game(lt_user, App::peerName(chat));
 		}
 		return lng_bot_sure_share_game_group(lt_group, chat->name);
-	};
+	}();
 	Ui::show(
-		Box<ConfirmBox>(confirmText(), send),
+		Box<ConfirmBox>(confirmText, std::move(send)),
 		LayerOption::KeepOther);
 }
 
@@ -799,17 +787,16 @@ void AddBotToGroupBoxController::addBotToGroup(not_null<PeerData*> chat) {
 		}
 		if (auto &info = bot->botInfo) {
 			if (!info->startGroupToken.isEmpty()) {
-				auto request = MTPmessages_StartBot(
-					bot->inputUser,
-					chat->input,
-					MTP_long(rand_value<uint64>()),
-					MTP_string(info->startGroupToken));
-				auto done = App::main()->rpcDone(
-					&MainWidget::sentUpdatesReceived);
-				auto fail = App::main()->rpcFail(
-					&MainWidget::addParticipantFail,
-					{ bot, chat });
-				MTP::send(request, done, fail);
+				MTP::send(
+					MTPmessages_StartBot(
+						bot->inputUser,
+						chat->input,
+						MTP_long(rand_value<uint64>()),
+						MTP_string(info->startGroupToken)),
+					App::main()->rpcDone(&MainWidget::sentUpdatesReceived),
+					App::main()->rpcFail(
+						&MainWidget::addParticipantFail,
+						{ bot, chat }));
 			} else {
 				App::main()->addParticipants(
 					chat,

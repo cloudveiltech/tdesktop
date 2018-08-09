@@ -1,22 +1,9 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/images.h"
 
@@ -58,6 +45,13 @@ const QPixmap &circleMask(int width, int height) {
 }
 
 } // namespace
+
+QPixmap PixmapFast(QImage &&image) {
+	Expects(image.format() == QImage::Format_ARGB32_Premultiplied
+		|| image.format() == QImage::Format_RGB32);
+
+	return QPixmap::fromImage(std::move(image), Qt::NoFormatConversion);
+}
 
 QImage prepareBlur(QImage img) {
 	auto ratio = img.devicePixelRatio();
@@ -191,24 +185,16 @@ void prepareCircle(QImage &img) {
 	p.drawPixmap(0, 0, mask);
 }
 
-void prepareRound(QImage &image, ImageRoundRadius radius, ImageRoundCorners corners) {
-	if (!static_cast<int>(corners)) {
-		return;
-	} else if (radius == ImageRoundRadius::Ellipse) {
-		Assert(corners == ImageRoundCorners(ImageRoundCorner::All));
-		prepareCircle(image);
+void prepareRound(
+		QImage &image,
+		QImage *cornerMasks,
+		RectParts corners,
+		QRect target) {
+	if (target.isNull()) {
+		target = QRect(QPoint(), image.size());
+	} else {
+		Assert(QRect(QPoint(), image.size()).contains(target));
 	}
-	Assert(!image.isNull());
-
-	image.setDevicePixelRatio(cRetinaFactor());
-	image = std::move(image).convertToFormat(QImage::Format_ARGB32_Premultiplied);
-	Assert(!image.isNull());
-
-	auto masks = App::cornersMask(radius);
-	prepareRound(image, masks, corners);
-}
-
-void prepareRound(QImage &image, QImage *cornerMasks, ImageRoundCorners corners) {
 	auto cornerWidth = cornerMasks[0].width();
 	auto cornerHeight = cornerMasks[0].height();
 	auto imageWidth = image.width();
@@ -222,11 +208,11 @@ void prepareRound(QImage &image, QImage *cornerMasks, ImageRoundCorners corners)
 	Assert(image.bytesPerLine() == (imageIntsPerLine << 2));
 
 	auto ints = reinterpret_cast<uint32*>(image.bits());
-	auto intsTopLeft = ints;
-	auto intsTopRight = ints + imageWidth - cornerWidth;
-	auto intsBottomLeft = ints + (imageHeight - cornerHeight) * imageWidth;
-	auto intsBottomRight = ints + (imageHeight - cornerHeight + 1) * imageWidth - cornerWidth;
-	auto maskCorner = [imageWidth, imageHeight, imageIntsPerPixel, imageIntsPerLine](uint32 *imageInts, const QImage &mask) {
+	auto intsTopLeft = ints + target.x() + target.y() * imageWidth;
+	auto intsTopRight = ints + target.x() + target.width() - cornerWidth + target.y() * imageWidth;
+	auto intsBottomLeft = ints + target.x() + (target.y() + target.height() - cornerHeight) * imageWidth;
+	auto intsBottomRight = ints + target.x() + target.width() - cornerWidth + (target.y() + target.height() - cornerHeight) * imageWidth;
+	auto maskCorner = [imageIntsPerLine, imageIntsPerPixel](uint32 *imageInts, const QImage &mask) {
 		auto maskWidth = mask.width();
 		auto maskHeight = mask.height();
 		auto maskBytesPerPixel = (mask.depth() >> 3);
@@ -248,10 +234,32 @@ void prepareRound(QImage &image, QImage *cornerMasks, ImageRoundCorners corners)
 			imageInts += imageIntsAdded;
 		}
 	};
-	if (corners & ImageRoundCorner::TopLeft) maskCorner(intsTopLeft, cornerMasks[0]);
-	if (corners & ImageRoundCorner::TopRight) maskCorner(intsTopRight, cornerMasks[1]);
-	if (corners & ImageRoundCorner::BottomLeft) maskCorner(intsBottomLeft, cornerMasks[2]);
-	if (corners & ImageRoundCorner::BottomRight) maskCorner(intsBottomRight, cornerMasks[3]);
+	if (corners & RectPart::TopLeft) maskCorner(intsTopLeft, cornerMasks[0]);
+	if (corners & RectPart::TopRight) maskCorner(intsTopRight, cornerMasks[1]);
+	if (corners & RectPart::BottomLeft) maskCorner(intsBottomLeft, cornerMasks[2]);
+	if (corners & RectPart::BottomRight) maskCorner(intsBottomRight, cornerMasks[3]);
+}
+
+void prepareRound(
+		QImage &image,
+		ImageRoundRadius radius,
+		RectParts corners,
+		QRect target) {
+	if (!static_cast<int>(corners)) {
+		return;
+	} else if (radius == ImageRoundRadius::Ellipse) {
+		Assert((corners & RectPart::AllCorners) == RectPart::AllCorners);
+		Assert(target.isNull());
+		prepareCircle(image);
+	}
+	Assert(!image.isNull());
+
+	image.setDevicePixelRatio(cRetinaFactor());
+	image = std::move(image).convertToFormat(QImage::Format_ARGB32_Premultiplied);
+	Assert(!image.isNull());
+
+	auto masks = App::cornersMask(radius);
+	prepareRound(image, masks, corners, target);
 }
 
 QImage prepareColored(style::color add, QImage image) {
@@ -329,10 +337,10 @@ QImage prepare(QImage img, int w, int h, Images::Options options, int outerw, in
 		}
 	}
 	auto corners = [](Images::Options options) {
-		return ((options & Images::Option::RoundedTopLeft) ? ImageRoundCorner::TopLeft : ImageRoundCorner::None)
-			| ((options & Images::Option::RoundedTopRight) ? ImageRoundCorner::TopRight : ImageRoundCorner::None)
-			| ((options & Images::Option::RoundedBottomLeft) ? ImageRoundCorner::BottomLeft : ImageRoundCorner::None)
-			| ((options & Images::Option::RoundedBottomRight) ? ImageRoundCorner::BottomRight : ImageRoundCorner::None);
+		return ((options & Images::Option::RoundedTopLeft) ? RectPart::TopLeft : RectPart::None)
+			| ((options & Images::Option::RoundedTopRight) ? RectPart::TopRight : RectPart::None)
+			| ((options & Images::Option::RoundedBottomLeft) ? RectPart::BottomLeft : RectPart::None)
+			| ((options & Images::Option::RoundedBottomRight) ? RectPart::BottomRight : RectPart::None);
 	};
 	if (options & Images::Option::Circled) {
 		prepareCircle(img);
@@ -461,7 +469,7 @@ const QPixmap &Image::pix(int32 w, int32 h) const {
 	return i.value();
 }
 
-const QPixmap &Image::pixRounded(int32 w, int32 h, ImageRoundRadius radius, ImageRoundCorners corners) const {
+const QPixmap &Image::pixRounded(int32 w, int32 h, ImageRoundRadius radius, RectParts corners) const {
 	checkload();
 
 	if (w <= 0 || !width() || !height()) {
@@ -471,11 +479,11 @@ const QPixmap &Image::pixRounded(int32 w, int32 h, ImageRoundRadius radius, Imag
 		h *= cIntRetinaFactor();
 	}
 	auto options = Images::Option::Smooth | Images::Option::None;
-	auto cornerOptions = [](ImageRoundCorners corners) {
-		return (corners & ImageRoundCorner::TopLeft ? Images::Option::RoundedTopLeft : Images::Option::None)
-			| (corners & ImageRoundCorner::TopRight ? Images::Option::RoundedTopRight : Images::Option::None)
-			| (corners & ImageRoundCorner::BottomLeft ? Images::Option::RoundedBottomLeft : Images::Option::None)
-			| (corners & ImageRoundCorner::BottomRight ? Images::Option::RoundedBottomRight : Images::Option::None);
+	auto cornerOptions = [](RectParts corners) {
+		return (corners & RectPart::TopLeft ? Images::Option::RoundedTopLeft : Images::Option::None)
+			| (corners & RectPart::TopRight ? Images::Option::RoundedTopRight : Images::Option::None)
+			| (corners & RectPart::BottomLeft ? Images::Option::RoundedBottomLeft : Images::Option::None)
+			| (corners & RectPart::BottomRight ? Images::Option::RoundedBottomRight : Images::Option::None);
 	};
 	if (radius == ImageRoundRadius::Large) {
 		options |= Images::Option::RoundedLarge | cornerOptions(corners);
@@ -612,7 +620,7 @@ const QPixmap &Image::pixBlurredColored(style::color add, int32 w, int32 h) cons
 	return i.value();
 }
 
-const QPixmap &Image::pixSingle(int32 w, int32 h, int32 outerw, int32 outerh, ImageRoundRadius radius, ImageRoundCorners corners, const style::color *colored) const {
+const QPixmap &Image::pixSingle(int32 w, int32 h, int32 outerw, int32 outerh, ImageRoundRadius radius, RectParts corners, const style::color *colored) const {
 	checkload();
 
 	if (w <= 0 || !width() || !height()) {
@@ -623,11 +631,11 @@ const QPixmap &Image::pixSingle(int32 w, int32 h, int32 outerw, int32 outerh, Im
 	}
 
 	auto options = Images::Option::Smooth | Images::Option::None;
-	auto cornerOptions = [](ImageRoundCorners corners) {
-		return (corners & ImageRoundCorner::TopLeft ? Images::Option::RoundedTopLeft : Images::Option::None)
-			| (corners & ImageRoundCorner::TopRight ? Images::Option::RoundedTopRight : Images::Option::None)
-			| (corners & ImageRoundCorner::BottomLeft ? Images::Option::RoundedBottomLeft : Images::Option::None)
-			| (corners & ImageRoundCorner::BottomRight ? Images::Option::RoundedBottomRight : Images::Option::None);
+	auto cornerOptions = [](RectParts corners) {
+		return (corners & RectPart::TopLeft ? Images::Option::RoundedTopLeft : Images::Option::None)
+			| (corners & RectPart::TopRight ? Images::Option::RoundedTopRight : Images::Option::None)
+			| (corners & RectPart::BottomLeft ? Images::Option::RoundedBottomLeft : Images::Option::None)
+			| (corners & RectPart::BottomRight ? Images::Option::RoundedBottomRight : Images::Option::None);
 	};
 	if (radius == ImageRoundRadius::Large) {
 		options |= Images::Option::RoundedLarge | cornerOptions(corners);
@@ -656,7 +664,7 @@ const QPixmap &Image::pixSingle(int32 w, int32 h, int32 outerw, int32 outerh, Im
 	return i.value();
 }
 
-const QPixmap &Image::pixBlurredSingle(int w, int h, int32 outerw, int32 outerh, ImageRoundRadius radius, ImageRoundCorners corners) const {
+const QPixmap &Image::pixBlurredSingle(int w, int h, int32 outerw, int32 outerh, ImageRoundRadius radius, RectParts corners) const {
 	checkload();
 
 	if (w <= 0 || !width() || !height()) {
@@ -667,11 +675,11 @@ const QPixmap &Image::pixBlurredSingle(int w, int h, int32 outerw, int32 outerh,
 	}
 
 	auto options = Images::Option::Smooth | Images::Option::Blurred;
-	auto cornerOptions = [](ImageRoundCorners corners) {
-		return (corners & ImageRoundCorner::TopLeft ? Images::Option::RoundedTopLeft : Images::Option::None)
-			| (corners & ImageRoundCorner::TopRight ? Images::Option::RoundedTopRight : Images::Option::None)
-			| (corners & ImageRoundCorner::BottomLeft ? Images::Option::RoundedBottomLeft : Images::Option::None)
-			| (corners & ImageRoundCorner::BottomRight ? Images::Option::RoundedBottomRight : Images::Option::None);
+	auto cornerOptions = [](RectParts corners) {
+		return (corners & RectPart::TopLeft ? Images::Option::RoundedTopLeft : Images::Option::None)
+			| (corners & RectPart::TopRight ? Images::Option::RoundedTopRight : Images::Option::None)
+			| (corners & RectPart::BottomLeft ? Images::Option::RoundedBottomLeft : Images::Option::None)
+			| (corners & RectPart::BottomRight ? Images::Option::RoundedBottomRight : Images::Option::None);
 	};
 	if (radius == ImageRoundRadius::Large) {
 		options |= Images::Option::RoundedLarge | cornerOptions(corners);
@@ -729,10 +737,10 @@ QPixmap Image::pixNoCache(int w, int h, Images::Options options, int outerw, int
 		}
 
 		auto corners = [](Images::Options options) {
-			return ((options & Images::Option::RoundedTopLeft) ? ImageRoundCorner::TopLeft : ImageRoundCorner::None)
-				| ((options & Images::Option::RoundedTopRight) ? ImageRoundCorner::TopRight : ImageRoundCorner::None)
-				| ((options & Images::Option::RoundedBottomLeft) ? ImageRoundCorner::BottomLeft : ImageRoundCorner::None)
-				| ((options & Images::Option::RoundedBottomRight) ? ImageRoundCorner::BottomRight : ImageRoundCorner::None);
+			return ((options & Images::Option::RoundedTopLeft) ? RectPart::TopLeft : RectPart::None)
+				| ((options & Images::Option::RoundedTopRight) ? RectPart::TopRight : RectPart::None)
+				| ((options & Images::Option::RoundedBottomLeft) ? RectPart::BottomLeft : RectPart::None)
+				| ((options & Images::Option::RoundedBottomRight) ? RectPart::BottomRight : RectPart::None);
 		};
 		if (options & Images::Option::Circled) {
 			Images::prepareCircle(result);
@@ -1257,10 +1265,15 @@ WebFileImage *getImage(const WebFileImageLocation &location, int32 size) {
 
 } // namespace internal
 
-ReadAccessEnabler::ReadAccessEnabler(const PsFileBookmark *bookmark) : _bookmark(bookmark), _failed(_bookmark ? !_bookmark->enable() : false) {
+ReadAccessEnabler::ReadAccessEnabler(const PsFileBookmark *bookmark)
+: _bookmark(bookmark)
+, _failed(_bookmark ? !_bookmark->enable() : false) {
 }
 
-ReadAccessEnabler::ReadAccessEnabler(const QSharedPointer<PsFileBookmark> &bookmark) : _bookmark(bookmark.data()), _failed(_bookmark ? !_bookmark->enable() : false) {
+ReadAccessEnabler::ReadAccessEnabler(
+	const std::shared_ptr<PsFileBookmark> &bookmark)
+: _bookmark(bookmark.get())
+, _failed(_bookmark ? !_bookmark->enable() : false) {
 }
 
 ReadAccessEnabler::~ReadAccessEnabler() {
@@ -1278,7 +1291,7 @@ FileLocation::FileLocation(const QString &name) : fname(name) {
 			qint64 s = f.size();
 			if (s > INT_MAX) {
 				fname = QString();
-				_bookmark.clear();
+				_bookmark = nullptr;
 				size = 0;
 			} else {
 				modified = f.lastModified();
@@ -1286,7 +1299,7 @@ FileLocation::FileLocation(const QString &name) : fname(name) {
 			}
 		} else {
 			fname = QString();
-			_bookmark.clear();
+			_bookmark = nullptr;
 			size = 0;
 		}
 	}
@@ -1297,7 +1310,7 @@ bool FileLocation::check() const {
 
 	ReadAccessEnabler enabler(_bookmark);
 	if (enabler.failed()) {
-		const_cast<FileLocation*>(this)->_bookmark.clear();
+		const_cast<FileLocation*>(this)->_bookmark = nullptr;
 	}
 
 	QFileInfo f(name());

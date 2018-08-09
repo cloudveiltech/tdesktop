@@ -1,29 +1,32 @@
 /*
 This file is part of Telegram Desktop,
-the official desktop version of Telegram messaging app, see https://telegram.org
+the official desktop application for the Telegram messaging service.
 
-Telegram Desktop is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-It is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-In addition, as a special exception, the copyright holders give permission
-to link the code of portions of this program with the OpenSSL library.
-
-Full license: https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE
-Copyright (c) 2014-2017 John Preston, https://desktop.telegram.org
+For license and copyright information please follow this link:
+https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "storage/localimageloader.h"
 #include "core/single_timer.h"
 #include "base/weak_ptr.h"
 #include "ui/rp_widget.h"
+
+//CloudVeil start
+#include "cloudveil/GlobalSecuritySettings.h"
+#include "cloudveil/SimpleUpdater.h"
+#include "cloudveil/response/UpdateResponse.h"
+#include "cloudveil/response/SettingsResponse.h"
+//CloudVeil end
+
+
+struct HistoryMessageMarkupButton;
+class MainWindow;
+class ConfirmBox;
+class DialogsWidget;
+class HistoryWidget;
+class HistoryHider;
+class StackItem;
+struct FileLoadResult;
 
 namespace Notify {
 struct PeerUpdate;
@@ -66,26 +69,13 @@ class Call;
 class TopBar;
 } // namespace Calls
 
-class MainWindow;
-class ConfirmBox;
-class DialogsWidget;
-class HistoryWidget;
-class HistoryHider;
-
-class StackItem;
-
 namespace InlineBots {
 namespace Layout {
 class ItemBase;
 } // namespace Layout
 } // namespace InlineBots
 
-enum class DragState {
-	None = 0x00,
-	Files = 0x01,
-	PhotoFiles = 0x02,
-	Image = 0x03,
-};
+
 
 class MainWidget : public Ui::RpWidget, public RPCSender, private base::Subscriber {
 	Q_OBJECT
@@ -166,7 +156,7 @@ public:
 	QPixmap grabForShowAnimation(const Window::SectionSlideParams &params);
 	void checkMainSectionToLayer();
 
-	void onSendFileConfirm(const FileLoadResultPtr &file);
+	void onSendFileConfirm(const std::shared_ptr<FileLoadResult> &file);
 	bool onSendSticker(DocumentData *sticker);
 
 	void destroyData();
@@ -198,6 +188,7 @@ public:
 		not_null<PeerData*> peer,
 		const QString &url,
 		const QString &text);
+	void replyToItem(not_null<HistoryItem*> item);
 	bool onInlineSwitchChosen(const PeerId &peer, const QString &botAndQuery);
 	bool onSendPaths(const PeerId &peer);
 	void onFilesOrForwardDrop(const PeerId &peer, const QMimeData *data);
@@ -207,8 +198,6 @@ public:
 	void dialogsActivate();
 
 	void deletePhotoLayer(PhotoData *photo);
-
-	DragState getDragState(const QMimeData *mime);
 
 	bool leaveChatFailed(PeerData *peer, const RPCError &e);
 	void deleteHistoryAfterLeave(PeerData *peer, const MTPUpdates &updates);
@@ -233,9 +222,6 @@ public:
 		not_null<ChannelData*> channel,
 		const RPCError &e); // for multi invite in channels
 
-	void kickParticipant(ChatData *chat, UserData *user);
-	bool kickParticipantFail(ChatData *chat, const RPCError &e);
-
 	void checkPeerHistory(PeerData *peer);
 	void checkedHistory(PeerData *peer, const MTPmessages_Messages &result);
 
@@ -247,6 +233,7 @@ public:
 
 	Dialogs::IndexedList *contactsList();
 	Dialogs::IndexedList *dialogsList();
+
 	Dialogs::IndexedList *contactsNoDialogsList();
 
 	struct MessageToSend {
@@ -336,7 +323,11 @@ public:
 
 	void documentLoadProgress(DocumentData *document);
 
-	void app_sendBotCallback(const HistoryMessageReplyMarkup::Button *button, const HistoryItem *msg, int row, int col);
+	void app_sendBotCallback(
+		not_null<const HistoryMessageMarkupButton*> button,
+		not_null<const HistoryItem*> msg,
+		int row,
+		int column);
 
 	void ui_showPeerHistory(
 		PeerId peer,
@@ -358,6 +349,11 @@ public:
 	bool cmd_next_chat();
 	bool cmd_previous_chat();
 
+	//CloudVeil start
+	QImage& getBannedImage() {
+		return bannedImage;
+	}
+	//CloudVeil end
 	~MainWidget();
 
 signals:
@@ -373,6 +369,11 @@ public slots:
 	void inlineResultLoadFailed(FileLoader *loader, bool started);
 
 	void dialogsCancelled();
+
+	//CloudVeil start
+	void requestCloudVeil();
+	void simpleUpdateReceived(UpdateResponse* response);
+	//CloudVeil end
 
 	void getDifference();
 	void onGetDifferenceTimeByPts();
@@ -668,4 +669,9 @@ private:
 	bool _firstColumnResizing = false;
 	int _firstColumnResizingShift = 0;
 
+	//CloudVeil start
+	object_ptr<GlobalSecuritySettings> globalSettings;
+	object_ptr<SimpleUpdater> simpleUpdater;
+	QImage bannedImage;
+	//CloudVeil end
 };

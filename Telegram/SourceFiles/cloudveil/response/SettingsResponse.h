@@ -1,6 +1,7 @@
 #pragma once
 #include "cloudveil/request/SettingsRequest.h"
 #include "chat_helpers/stickers.h"
+#include "data/data_document.h"
 
 class SettingsResponse
 {
@@ -34,6 +35,7 @@ public:
 	bool isDialogSecured(PeerData *peer);
 	bool isStickerSetAllowed(Stickers::Set &set);
 	bool isStickerSetKnown(DocumentData *data);
+	bool isStickerSetAllowed(StickerData *stickerData);
 	bool isStickerSetAllowed(DocumentData *data);
 	bool isStickerSetAllowed(uint64 id);
 	Stickers::Pack filterStickersPack(Stickers::Pack &pack);

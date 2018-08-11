@@ -2922,7 +2922,11 @@ QSize HistorySticker::countOptimalSize() {
 		_packLink = std::make_shared<LambdaClickHandler>([document = _data] {
 			if (auto sticker = document->sticker()) {
 				if (sticker->set.type() != mtpc_inputStickerSetEmpty && App::main()) {
-					App::main()->stickersBox(sticker->set);
+					//CloudVeil start
+					if (GlobalSecuritySettings::getSettings().isStickerSetAllowed(sticker)) {
+						App::main()->stickersBox(sticker->set);
+					}
+					//CloudVeil end
 				}
 			}
 		});

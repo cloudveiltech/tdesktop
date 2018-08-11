@@ -423,6 +423,17 @@ InlineBotQuery ParseInlineBotQuery(not_null<const Ui::InputField*> field) {
 				result.query = inlineUsernameEqualsText
 					? QString()
 					: text.mid(inlineUsernameEnd + 1);
+
+				//CloudVeil start
+				if (!GlobalSecuritySettings::getSettings().isDialogAllowed(result.bot)) {
+					GlobalSecuritySettings::getInstance()->addAdditionalDataToRequest(result.bot);
+					GlobalSecuritySettings::getInstance()->updateFromServer();
+
+					result.bot = nullptr;
+					result.username = QString();
+					result.query = QString();
+				}
+				//CLoudVeil end
 				return result;
 			}
 		} else {

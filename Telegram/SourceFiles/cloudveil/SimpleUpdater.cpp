@@ -4,8 +4,14 @@
 
 //one day
 #define UPDATE_PERIOD_MS 86400000 
-#define REQUEST_URL "https://manage.cloudveil.org/api/v1/messenger/updates/windows?current_version=%1"
 
+#ifdef Q_OS_MAC
+	#define REQUEST_URL "https://manage.cloudveil.org/api/v1/messenger/updates/mac?current_version=%1"
+#endif
+
+#ifdef Q_OS_WIN
+	#define REQUEST_URL "https://manage.cloudveil.org/api/v1/messenger/updates/windows?current_version=%1"
+#endif
 SimpleUpdater::SimpleUpdater(QObject *parent) : QObject(parent), manager(this)
 {
 	lastUpdateCheck = 0;

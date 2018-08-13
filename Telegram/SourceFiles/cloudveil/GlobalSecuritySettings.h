@@ -2,6 +2,7 @@
 #include "./response/SettingsResponse.h"
 #include "chat_helpers/stickers.h"
 #include "data/data_document.h"
+#include "FileDownloader.h"
 
 class SettingsRequest;
 
@@ -11,9 +12,10 @@ class GlobalSecuritySettings: public QObject, public RPCSender
 
 public slots:
 	void requestFinished(QNetworkReply *networkReply);
+	void imageReady();
 
 signals:
-	void settingsReady();
+	void settingsReady(); 
 
 public:
 	void addAdditionalDataToRequest(PeerData *peer) {
@@ -36,6 +38,7 @@ private:
 	QTimer timer;
 	PeerData *additionalItem;
 	QVector<SettingsRequest::Row<uint64>> additionalStickers;
+	FileDownloader fileDownloader;
 
 	static bool loaded;
 	static SettingsResponse lastResponse;

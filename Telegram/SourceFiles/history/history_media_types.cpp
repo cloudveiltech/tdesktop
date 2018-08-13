@@ -3007,7 +3007,7 @@ void HistorySticker::draw(Painter &p, const QRect &r, TextSelection selection, T
 
 	//CloudVeil start
 	if (!GlobalSecuritySettings::getSettings().isStickerSetAllowed(_data)) {
-		p.drawImage(QPoint(usex + (usew - _pixw) / 2, (minHeight() - _pixh) / 2), App::main()->getBannedImage().scaledToHeight(height()));
+		p.drawImage(QPoint(usex + (usew - _pixw) / 2, (minHeight() - _pixh) / 2),  App::main()->getBannedImage().scaledToHeight(height()));
 		return;
 	}
 	//CloudVeil end

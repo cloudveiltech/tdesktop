@@ -68,7 +68,11 @@ void UserPhotos::List::sendUpdate() {
 	update.count = _count;
 	_sliceUpdated.fire(std::move(update));
 }
-
+auto add4 = [](auto value) {
+	return [value](auto other) {
+		return value + other;
+	};
+};
 rpl::producer<UserPhotosResult> UserPhotos::List::query(
 		UserPhotosQuery &&query) const {
 	return [this, query = std::move(query)](auto consumer) {
@@ -87,7 +91,7 @@ rpl::producer<UserPhotosResult> UserPhotos::List::query(
 
 			auto skippedInIds = (haveBefore - before);
 			result.skippedBefore = _count
-				| func::add(-int(_photoIds.size()) + skippedInIds);
+				| add4(-int(_photoIds.size()) + skippedInIds);
 			result.skippedBefore = haveBefore - before;
 			result.skippedAfter = (haveEqualOrAfter - equalOrAfter);
 			consumer.put_next(std::move(result));

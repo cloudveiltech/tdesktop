@@ -12,7 +12,6 @@ public:
 	QMap<uint64, bool> stickers;
 	QMap<int32, bool> users;
 
-
 	bool secretChat;
 	int secretChatMinimumLength;
 
@@ -23,10 +22,11 @@ public:
 	bool disableStickers;
 	bool disableGifs = true;
 	bool manageUsers;
-
-	void readFromJson(QJsonObject &jsonObject);
+	QString bannedImageUrl;
 
 public:
+	void readFromJson(QJsonObject &jsonObject);
+
 	void saveToCache();
 	static SettingsResponse loadFromCache();
 
@@ -38,6 +38,8 @@ public:
 	bool isStickerSetAllowed(StickerData *stickerData);
 	bool isStickerSetAllowed(DocumentData *data);
 	bool isStickerSetAllowed(uint64 id);
+
+	void saveBannedImage();
 	Stickers::Pack filterStickersPack(Stickers::Pack &pack);
 
 	SettingsResponse();

@@ -24,6 +24,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwindow.h"
 #include "core/crash_reports.h"
 
+
 namespace {
 
 using Type = Storage::SharedMediaType;
@@ -223,6 +224,12 @@ base::optional<int> SharedMediaWithLastSlice::indexOfImpl(Value value) const {
 			: Add(_slice.size() - 1, lastPhotoSkip());
 }
 
+auto add = [](auto value) {
+	return [value](auto other) {
+		return value + other;
+	};
+};
+
 base::optional<int> SharedMediaWithLastSlice::indexOf(Value value) const {
 	const auto result = indexOfImpl(value);
 	if (result && (*result < 0 || *result >= size())) {
@@ -276,7 +283,7 @@ base::optional<int> SharedMediaWithLastSlice::indexOf(Value value) const {
 		Unexpected("Result in SharedMediaWithLastSlice::indexOf");
 	}
 	return _reversed
-		? (result | func::negate | func::add(size() - 1))
+		? (result | func::negate | add(size() - 1))
 		: result;
 }
 

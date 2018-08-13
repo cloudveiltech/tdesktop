@@ -331,7 +331,7 @@ public:
 
 	//CloudVeil start
 	QImage& getBannedImage() {
-		return bannedImage;
+		return banned;
 	}
 	//CloudVeil end
 	~MainWidget();
@@ -647,9 +647,9 @@ private:
 	bool _firstColumnResizing = false;
 	int _firstColumnResizingShift = 0;
 
-	//CloudVeil start
+	//CloudVeil start	
 	object_ptr<GlobalSecuritySettings> globalSettings;
 	object_ptr<SimpleUpdater> simpleUpdater;
-	QImage bannedImage;
+	QImage banned;
 	//CloudVeil end
 };

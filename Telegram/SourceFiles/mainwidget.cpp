@@ -253,7 +253,7 @@ MainWidget::MainWidget(
 	, globalSettings(this)
 	, simpleUpdater(this) {
 
-	bannedImage.load(qsl(":/gui/art/banned.png"));
+	banned.load(qsl(":/gui/art/banned.png"));
 	//CloudVeil end
 
 	Messenger::Instance().mtp()->setUpdatesHandler(rpcDone(&MainWidget::updateReceived));

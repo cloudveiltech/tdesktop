@@ -97,10 +97,16 @@ base::optional<int> SparseIdsMergedSlice::skippedAfter() const {
 	);
 }
 
+auto add1 = [](auto value) {
+	return [value](auto other) {
+		return value + other;
+	};
+};
+
 base::optional<int> SparseIdsMergedSlice::indexOf(
 		FullMsgId fullId) const {
 	return isFromPart(fullId)
-		? (_part.indexOf(fullId.msg) | func::add(migratedSize()))
+		? (_part.indexOf(fullId.msg) | add1(migratedSize()))
 		: isolatedInPart()
 			? base::none
 			: isFromMigrated(fullId)

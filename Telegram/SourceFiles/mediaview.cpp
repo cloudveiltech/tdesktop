@@ -36,6 +36,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_mediaview.h"
 #include "styles/style_history.h"
 
+namespace base {
+	namespace functors {
+		auto add = [](auto value) {
+			return [value](auto other) {
+				return value + other;
+			};
+		};
+	}
+}
+
 namespace {
 
 constexpr auto kPreloadCount = 4;

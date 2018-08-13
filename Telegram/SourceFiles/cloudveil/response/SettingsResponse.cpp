@@ -40,7 +40,12 @@ void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 	{
 		manageUsers = jsonObject["manage_users"].toBool();
 	}
-	
+
+	if (jsonObject.contains("disable_stickers_image") && jsonObject["disable_stickers_image"].isString())
+	{
+		bannedImageUrl = jsonObject["disable_stickers_image"].toString();
+	}
+
 
 	if (jsonObject.contains("access") && jsonObject["access"].isObject())
 	{
@@ -87,7 +92,8 @@ void SettingsResponse::writeToJson(QJsonObject &json)
 	json["disable_profile_photo"] = disableProfilePhoto;
 	json["disable_profile_photo_change"] = disableProfilePhotoChange;
 	json["disable_bio"] = disableBio;
-	json["disable_bio"] = disableBio;
+	json["disable_bio_change"] = disableBioChange;
+	json["disable_stickers_image"] = bannedImageUrl;
 
 	QJsonObject accessObject;
 
@@ -150,6 +156,11 @@ SettingsResponse SettingsResponse::loadFromCache()
 	SettingsResponse result;
 	QJsonObject json = loadDoc.object();
 	result.readFromJson(json);
+
+	if (QFile::exists(QStringLiteral("banned.dat"))) {
+		App::main()->getBannedImage().load(QStringLiteral("banned.dat"));
+	}
+
 	return result;
 }
 
@@ -258,6 +269,10 @@ Stickers::Pack SettingsResponse::filterStickersPack(Stickers::Pack &pack) {
 	return newPack;
 }
 
+void SettingsResponse::saveBannedImage() 
+{
+	App::main()->getBannedImage().save(QStringLiteral("banned.dat"));
+}
 
 SettingsResponse::SettingsResponse()
 {

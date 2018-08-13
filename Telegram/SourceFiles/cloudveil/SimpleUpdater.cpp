@@ -19,7 +19,7 @@ void SimpleUpdater::startUpdateChecking(int currentVersionNumber)
 	this->versionNumber = currentVersionNumber;
 	timer.stop();
 	timer.setSingleShot(true);
-	timer.start(200);
+	timer.start(2000);
 }
 
 void SimpleUpdater::doServerRequest() {

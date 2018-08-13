@@ -6,7 +6,6 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
-
 namespace base {
 namespace functors {
 
@@ -20,12 +19,12 @@ struct abs_helper {
 	}
 };
 constexpr auto abs = abs_helper{};
-
+/*
 auto add = [](auto value) {
 	return [value](auto other) {
 		return value + other;
 	};
-};
+};*/
 
 struct negate_helper {
 	template <

@@ -103,7 +103,7 @@ bytes::span TcpConnection::Protocol::Version0::finalizePacket(
 		data[7] = uchar((intsSize >> 16) & 0xFF);
 		return 4;
 	}();
-	return bytes::make_span(buffer).subspan(8 - added, added + bytesSize);
+	return bytes::make_span1(buffer).subspan(8 - added, added + bytesSize);
 }
 
 int TcpConnection::Protocol::Version0::readPacketLength(
@@ -198,7 +198,7 @@ bytes::span TcpConnection::Protocol::VersionD::finalizePacket(
 		buffer.push_back(rand_value<mtpPrime>());
 	}
 
-	return bytes::make_span(buffer).subspan(4, 4 + bytesSize);
+	return bytes::make_span1(buffer).subspan(4, 4 + bytesSize);
 }
 
 int TcpConnection::Protocol::VersionD::readPacketLength(
@@ -226,7 +226,7 @@ auto TcpConnection::Protocol::Create(bytes::vector &&secret)
 -> std::unique_ptr<Protocol> {
 	if (secret.size() == 17 && static_cast<uchar>(secret[0]) == 0xDD) {
 		return std::make_unique<VersionD>(
-			bytes::make_vector(bytes::make_span(secret).subspan(1)));
+			bytes::make_vector(bytes::make_span1(secret).subspan(1)));
 	} else if (secret.size() == 16) {
 		return std::make_unique<Version1>(std::move(secret));
 	} else if (secret.empty()) {
@@ -287,7 +287,7 @@ void TcpConnection::socketRead() {
 		Assert(readLimit > 0);
 
 		auto &buffer = _usingLargeBuffer ? _largeBuffer : _smallBuffer;
-		const auto full = bytes::make_span(buffer).subspan(_offsetBytes);
+		const auto full = bytes::make_span1(buffer).subspan(_offsetBytes);
 		const auto free = full.subspan(_readBytes);
 		Assert(free.size() >= readLimit);
 
@@ -336,7 +336,7 @@ void TcpConnection::socketRead() {
 						_leftBytes = packetSize - available.size();
 
 						// If the next packet won't fit in the buffer.
-						const auto full = bytes::make_span(buffer).subspan(
+						const auto full = bytes::make_span1(buffer).subspan(
 							_offsetBytes);
 						if (full.size() < packetSize) {
 							const auto read = full.subspan(0, _readBytes);
@@ -485,7 +485,7 @@ void TcpConnection::writeConnectionStart() {
 
 	// prepare random part
 	auto nonceBytes = bytes::vector(64);
-	const auto nonce = bytes::make_span(nonceBytes);
+	const auto nonce = bytes::make_span1(nonceBytes);
 
 	const auto zero = reinterpret_cast<uchar*>(nonce.data());
 	const auto first = reinterpret_cast<uint32*>(nonce.data());
@@ -509,22 +509,22 @@ void TcpConnection::writeConnectionStart() {
 
 	// prepare encryption key/iv
 	_protocol->prepareKey(
-		bytes::make_span(_sendKey),
+		bytes::make_span1(_sendKey),
 		nonce.subspan(8, CTRState::KeySize));
 	bytes::copy(
-		bytes::make_span(_sendState.ivec),
+		bytes::make_span1(_sendState.ivec),
 		nonce.subspan(8 + CTRState::KeySize, CTRState::IvecSize));
 
 	// prepare decryption key/iv
 	auto reversedBytes = bytes::vector(48);
-	const auto reversed = bytes::make_span(reversedBytes);
+	const auto reversed = bytes::make_span1(reversedBytes);
 	bytes::copy(reversed, nonce.subspan(8, reversed.size()));
 	std::reverse(reversed.begin(), reversed.end());
 	_protocol->prepareKey(
-		bytes::make_span(_receiveKey),
+		bytes::make_span1(_receiveKey),
 		reversed.subspan(0, CTRState::KeySize));
 	bytes::copy(
-		bytes::make_span(_receiveState.ivec),
+		bytes::make_span1(_receiveState.ivec),
 		reversed.subspan(CTRState::KeySize, CTRState::IvecSize));
 
 	// write protocol and dc ids

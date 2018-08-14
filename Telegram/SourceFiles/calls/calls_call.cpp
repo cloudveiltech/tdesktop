@@ -535,8 +535,8 @@ void Call::createAndStartController(const MTPDphoneCall &call) {
 		auto callLogFolder = cWorkingDir() + qsl("DebugLogs");
 		auto callLogPath = callLogFolder + qsl("/last_call_log.txt");
 		auto callLogNative = QFile::encodeName(QDir::toNativeSeparators(callLogPath));
-		auto callLogBytesSrc = bytes::make_span(callLogNative);
-		auto callLogBytesDst = bytes::make_span(config.logFilePath);
+		auto callLogBytesSrc = bytes::make_span1(callLogNative);
+		auto callLogBytesDst = bytes::make_span1(config.logFilePath);
 		if (callLogBytesSrc.size() + 1 <= callLogBytesDst.size()) { // +1 - zero-terminator
 			QFile(callLogPath).remove();
 			QDir().mkpath(callLogFolder);

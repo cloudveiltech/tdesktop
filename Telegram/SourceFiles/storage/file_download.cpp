@@ -567,13 +567,13 @@ void mtpFileLoader::cdnPartLoaded(const MTPupload_CdnFile &result, mtpRequestId 
 	}
 	Expects(result.type() == mtpc_upload_cdnFile);
 
-	auto key = bytes::make_span(_cdnEncryptionKey);
-	auto iv = bytes::make_span(_cdnEncryptionIV);
+	auto key = bytes::make_span1(_cdnEncryptionKey);
+	auto iv = bytes::make_span1(_cdnEncryptionIV);
 	Expects(key.size() == MTP::CTRState::KeySize);
 	Expects(iv.size() == MTP::CTRState::IvecSize);
 
 	auto state = MTP::CTRState();
-	auto ivec = bytes::make_span(state.ivec);
+	auto ivec = bytes::make_span1(state.ivec);
 	std::copy(iv.begin(), iv.end(), ivec.begin());
 
 	auto counterOffset = static_cast<uint32>(offset) >> 4;
@@ -583,7 +583,7 @@ void mtpFileLoader::cdnPartLoaded(const MTPupload_CdnFile &result, mtpRequestId 
 	state.ivec[12] = static_cast<uchar>((counterOffset >> 24) & 0xFF);
 
 	auto decryptInPlace = result.c_upload_cdnFile().vbytes.v;
-	auto buffer = bytes::make_span(decryptInPlace);
+	auto buffer = bytes::make_span1(decryptInPlace);
 	MTP::aesCtrEncrypt(buffer, key.data(), &state);
 
 	switch (checkCdnFileHash(offset, buffer)) {
@@ -608,7 +608,7 @@ mtpFileLoader::CheckCdnHashResult mtpFileLoader::checkCdnFileHash(int offset, by
 		return CheckCdnHashResult::NoHash;
 	}
 	auto realHash = openssl::Sha256(buffer);
-	if (bytes::compare(realHash, bytes::make_span(cdnFileHashIt->second.hash))) {
+	if (bytes::compare(realHash, bytes::make_span1(cdnFileHashIt->second.hash))) {
 		return CheckCdnHashResult::Invalid;
 	}
 	return CheckCdnHashResult::Good;
@@ -631,7 +631,7 @@ void mtpFileLoader::getCdnFileHashesDone(const MTPVector<MTPFileHash> &result, m
 	auto someMoreChecked = false;
 	for (auto i = _cdnUncheckedParts.begin(); i != _cdnUncheckedParts.cend();) {
 		const auto uncheckedOffset = i->first;
-		const auto uncheckedBytes = bytes::make_span(i->second);
+		const auto uncheckedBytes = bytes::make_span1(i->second);
 
 		switch (checkCdnFileHash(uncheckedOffset, uncheckedBytes)) {
 		case CheckCdnHashResult::NoHash: {
@@ -732,7 +732,7 @@ bool mtpFileLoader::feedPart(int offset, bytes::const_span buffer) {
 				if (int64(offset + buffer.size()) > _data.size()) {
 					_data.resize(offset + buffer.size());
 				}
-				auto dst = bytes::make_span(_data).subspan(offset, buffer.size());
+				auto dst = bytes::make_span1(_data).subspan(offset, buffer.size());
 				bytes::copy(dst, buffer);
 			}
 		}

@@ -19,7 +19,7 @@ using vector = std::vector<gsl::byte>;
 template <
 	typename Container,
 	typename = std::enable_if_t<!std::is_const_v<Container>>>
-inline span make_span(Container &container) {
+inline span make_span1(Container &container) {
 	return gsl::as_writeable_bytes(gsl::make_span(container));
 }
 
@@ -114,7 +114,7 @@ template <
 vector concatenate(Args &&...args) {
 	const auto size = details::spansLength(args...);
 	auto result = vector(size);
-	details::spansAppend(make_span(result), args...);
+	details::spansAppend(make_span1(result), args...);
 	return result;
 }
 
@@ -126,7 +126,7 @@ vector concatenate(SpanRange args) {
 		size += bytes::make_span(arg).size();
 	}
 	auto result = vector(size);
-	auto buffer = make_span(result);
+	auto buffer = make_span1(result);
 	for (const auto &arg : args) {
 		const auto part = bytes::make_span(arg);
 		bytes::copy(buffer, part);

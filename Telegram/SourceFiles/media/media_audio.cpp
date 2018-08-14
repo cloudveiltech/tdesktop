@@ -1562,7 +1562,7 @@ public:
 				continue;
 			}
 
-			auto sampleBytes = bytes::make_span(buffer);
+			auto sampleBytes = bytes::make_span1(buffer);
 			if (fmt == AL_FORMAT_MONO8 || fmt == AL_FORMAT_STEREO8) {
 				Media::Audio::IterateSamples<uchar>(sampleBytes, callback);
 			} else if (fmt == AL_FORMAT_MONO16 || fmt == AL_FORMAT_STEREO16) {

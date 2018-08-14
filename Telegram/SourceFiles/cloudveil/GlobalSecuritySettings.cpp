@@ -18,7 +18,7 @@ GlobalSecuritySettings* GlobalSecuritySettings::instance;
 bool GlobalSecuritySettings::loaded = false;
 
 
-GlobalSecuritySettings::GlobalSecuritySettings(QObject *parent) : QObject(parent), fileDownloader(this), manager(this), timer(this) {
+GlobalSecuritySettings::GlobalSecuritySettings(QObject *parent) : QObject(parent), manager(this), timer(this), fileDownloader(this) {
 	lastResponse = SettingsResponse::loadFromCache();	
 
 	instance = this;

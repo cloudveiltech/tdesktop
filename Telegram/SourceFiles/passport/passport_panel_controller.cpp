@@ -478,13 +478,13 @@ void PanelController::setupPassword() {
 		settings.newSalt.size());
 	newPasswordSalt.resize(newPasswordSalt.size() + kRandomPart);
 	bytes::set_random(
-		bytes::make_span(newPasswordSalt).subspan(settings.newSalt.size()));
+		bytes::make_span1(newPasswordSalt).subspan(settings.newSalt.size()));
 	auto newSecureSecretSalt = QByteArray(
 		reinterpret_cast<const char*>(settings.newSecureSalt.data()),
 		settings.newSecureSalt.size());
 	newSecureSecretSalt.resize(newSecureSecretSalt.size() + kRandomPart);
 	bytes::set_random(
-		bytes::make_span(
+		bytes::make_span1(
 			newSecureSecretSalt).subspan(settings.newSecureSalt.size()));
 	const auto currentSalt = QByteArray();
 	const auto hasRecovery = false;

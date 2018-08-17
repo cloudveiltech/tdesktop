@@ -6,7 +6,7 @@
 #define UPDATE_PERIOD_MS 86400000 
 
 #ifdef Q_OS_MAC
-	#define REQUEST_URL "https://manage.cloudveil.org/api/v1/messenger/updates/mac?current_version=%1"
+	#define REQUEST_URL "https://manage.cloudveil.org/api/v1/messenger/updates/macos?current_version=%1"
 #endif
 
 #ifdef Q_OS_WIN
@@ -22,7 +22,7 @@ SimpleUpdater::SimpleUpdater(QObject *parent) : QObject(parent), manager(this)
 
 void SimpleUpdater::startUpdateChecking(int currentVersionNumber)
 {
-	this->versionNumber = currentVersionNumber;
+    this->versionNumber = currentVersionNumber;
 	timer.stop();
 	timer.setSingleShot(true);
 	timer.start(2000);

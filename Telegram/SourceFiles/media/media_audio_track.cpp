@@ -81,7 +81,7 @@ void Track::fillFromData(bytes::vector &&data) {
 		auto samplesAdded = int64(0);
 		auto result = loader.readMore(buffer, samplesAdded);
 		if (samplesAdded > 0) {
-			auto sampleBytes = bytes::make_span(buffer);
+			auto sampleBytes = bytes::make_span1(buffer);
 			_samplesCount += samplesAdded;
 			_samples.insert(_samples.end(), sampleBytes.data(), sampleBytes.data() + sampleBytes.size());
 			if (peaksCount) {

@@ -1549,7 +1549,7 @@ void MtpLoader::gotPart(int offset, const MTPupload_File &result) {
 
 	i->bytes = data.vbytes.v;
 	while (!_requests.empty() && !_requests.front().bytes.isEmpty()) {
-		writeChunk(bytes::make_span(_requests.front().bytes), _size);
+		writeChunk(bytes::make_span1(_requests.front().bytes), _size);
 		_requests.pop_front();
 	}
 	sendRequest();

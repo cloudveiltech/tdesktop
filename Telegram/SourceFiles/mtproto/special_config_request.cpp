@@ -286,7 +286,7 @@ bool SpecialConfigRequest::decryptSimpleConfig(const QByteArray &bytes) {
 	auto publicKey = internal::RSAPublicKey(bytes::make_span(
 		kPublicKey.c_str(),
 		kPublicKey.size()));
-	auto decrypted = publicKey.decrypt(bytes::make_span(decodedBytes));
+	auto decrypted = publicKey.decrypt(bytes::make_span1(decodedBytes));
 	auto decryptedBytes = gsl::make_span(decrypted);
 
 	auto aesEncryptedBytes = decryptedBytes.subspan(CTRState::KeySize);
@@ -306,7 +306,7 @@ bool SpecialConfigRequest::decryptSimpleConfig(const QByteArray &bytes) {
 
 	mtpBuffer buffer;
 	buffer.resize(data.size() / sizeof(mtpPrime));
-	bytes::copy(bytes::make_span(buffer), data);
+	bytes::copy(bytes::make_span1(buffer), data);
 	auto from = &*buffer.cbegin();
 	auto end = from + buffer.size();
 	auto realLength = *from++;

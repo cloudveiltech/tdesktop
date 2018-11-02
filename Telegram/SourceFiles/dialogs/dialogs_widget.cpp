@@ -232,7 +232,10 @@ void DialogsWidget::repaintDialogRow(
 }
 
 void DialogsWidget::dialogsToUp() {
-	if (_filter->getLastText().trimmed().isEmpty()) {
+	if (Auth().supportMode()) {
+		return;
+	}
+	if (_filter->getLastText().trimmed().isEmpty() && !_searchInChat) {
 		_scroll->scrollToY(0);
 	}
 }

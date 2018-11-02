@@ -105,7 +105,7 @@ public:
 
 	void showAnimated(const QPixmap &bgAnimCache, bool back = false);
 
-	void start(const MTPUser *self = nullptr);
+	void start();
 
 	void openPeerByName(
 		const QString &name,
@@ -249,10 +249,6 @@ public:
 	void itemEdited(not_null<HistoryItem*> item);
 
 	void checkLastUpdate(bool afterSleep);
-
-	void insertCheckedServiceNotification(const TextWithEntities &message, const MTPMessageMedia &media, int32 date);
-	void serviceHistoryDone(const MTPmessages_Messages &msgs);
-	bool serviceHistoryFail(const RPCError &error);
 
 	bool isIdle() const;
 
@@ -463,8 +459,6 @@ private:
 	Window::SectionSlideParams prepareMainSectionAnimation(Window::SectionWidget *section);
 	Window::SectionSlideParams prepareHistoryAnimation(PeerId historyPeerId);
 	Window::SectionSlideParams prepareDialogsAnimation();
-
-	void startWithSelf(const MTPUserFull &user);
 
 	void saveSectionInStack();
 

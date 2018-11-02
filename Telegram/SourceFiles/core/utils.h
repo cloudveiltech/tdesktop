@@ -8,7 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "logs.h"
-#include "core/basic_types.h"
+#include "base/basic_types.h"
 #include "base/flags.h"
 #include "base/algorithm.h"
 #include "base/assertion.h"
@@ -21,23 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <cmath>
 #include <set>
 
-// Define specializations for QByteArray for Qt 5.3.2, because
-// QByteArray in Qt 5.3.2 doesn't declare "pointer" subtype.
-#ifdef OS_MAC_OLD
-namespace gsl {
-
-template <>
-inline span<char> make_span<QByteArray>(QByteArray &cont) {
-	return span<char>(cont.data(), cont.size());
-}
-
-template <>
-inline span<const char> make_span(const QByteArray &cont) {
-	return span<const char>(cont.constData(), cont.size());
-}
-
-} // namespace gsl
-#endif // OS_MAC_OLD
+#define qsl(s) QStringLiteral(s)
 
 namespace base {
 
@@ -183,12 +167,6 @@ inline QByteArray str_const_toByteArray(const str_const &str) {
 	return QByteArray::fromRawData(str.c_str(), str.size());
 }
 
-template <typename T>
-inline void accumulate_max(T &a, const T &b) { if (a < b) a = b; }
-
-template <typename T>
-inline void accumulate_min(T &a, const T &b) { if (a > b) a = b; }
-
 void unixtimeInit();
 void unixtimeSet(TimeId serverTime, bool force = false);
 TimeId unixtime();
@@ -196,6 +174,7 @@ uint64 msgid();
 int GetNextRequestId();
 
 QDateTime ParseDateTime(TimeId serverTime);
+TimeId ServerTimeFromParsed(const QDateTime &date);
 
 inline void mylocaltime(struct tm * _Tm, const time_t * _Time) {
 #ifdef Q_OS_WIN
@@ -364,11 +343,6 @@ protected:
 
 QString translitRusEng(const QString &rus);
 QString rusKeyboardLayoutSwitch(const QString &from);
-
-enum DBISendKey {
-	dbiskEnter = 0,
-	dbiskCtrlEnter = 1,
-};
 
 enum DBINotifyView {
 	dbinvShowPreview = 0,

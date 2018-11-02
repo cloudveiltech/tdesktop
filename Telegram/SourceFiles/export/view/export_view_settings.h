@@ -30,6 +30,10 @@ public:
 	rpl::producer<> startClicks() const;
 	rpl::producer<> cancelClicks() const;
 
+	void setShowBoxCallback(Fn<void(object_ptr<BoxContent>)> callback) {
+		_showBoxCallback = std::move(callback);
+	}
+
 private:
 	using Type = Settings::Type;
 	using Types = Settings::Types;
@@ -42,7 +46,9 @@ private:
 		not_null<Ui::ScrollArea*> scroll,
 		not_null<Ui::RpWidget*> wrap);
 	void setupOptions(not_null<Ui::VerticalLayout*> container);
+	void setupFullExportOptions(not_null<Ui::VerticalLayout*> container);
 	void setupMediaOptions(not_null<Ui::VerticalLayout*> container);
+	void setupOtherOptions(not_null<Ui::VerticalLayout*> container);
 	void setupPathAndFormat(not_null<Ui::VerticalLayout*> container);
 	void addHeader(
 		not_null<Ui::VerticalLayout*> container,
@@ -60,6 +66,7 @@ private:
 		not_null<Ui::VerticalLayout*> container,
 		LangKey key,
 		Types types);
+	void addMediaOptions(not_null<Ui::VerticalLayout*> container);
 	void addMediaOption(
 		not_null<Ui::VerticalLayout*> container,
 		LangKey key,
@@ -67,14 +74,26 @@ private:
 	void addSizeSlider(not_null<Ui::VerticalLayout*> container);
 	void addLocationLabel(
 		not_null<Ui::VerticalLayout*> container);
+	void addLimitsLabel(
+		not_null<Ui::VerticalLayout*> container);
 	void chooseFolder();
 	void refreshButtons(
 		not_null<Ui::RpWidget*> container,
 		bool canStart);
 
+	void editDateLimit(
+		TimeId current,
+		TimeId min,
+		TimeId max,
+		LangKey resetLabel,
+		Fn<void(TimeId)> done);
+
 	const Settings &readData() const;
 	template <typename Callback>
 	void changeData(Callback &&callback);
+
+	PeerId _singlePeerId = 0;
+	Fn<void(object_ptr<BoxContent>)> _showBoxCallback;
 
 	// Use through readData / changeData wrappers.
 	Settings _internal_data;

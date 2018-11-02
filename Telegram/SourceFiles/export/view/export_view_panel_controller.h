@@ -27,6 +27,8 @@ namespace View {
 Environment PrepareEnvironment();
 QPointer<BoxContent> SuggestStart();
 void ClearSuggestStart();
+bool IsDefaultPath(const QString &path);
+void ResolveSettings(Settings &settings);
 
 class Panel;
 
@@ -50,6 +52,7 @@ public:
 	~PanelController();
 
 private:
+	void fillParams(const PasswordCheckState &state);
 	void stopExport();
 	void createPanel();
 	void updateState(State &&state);

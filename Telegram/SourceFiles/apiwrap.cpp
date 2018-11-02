@@ -18,6 +18,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "dialogs/dialogs_key.h"
 #include "core/tl_help.h"
+#include "core/core_cloud_password.h"
+#include "base/openssl_help.h"
 #include "base/overload.h"
 #include "observer_peer.h"
 #include "lang/lang_keys.h"
@@ -42,6 +44,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/stickers.h"
 #include "ui/text_options.h"
 #include "storage/localimageloader.h"
+#include "storage/file_download.h"
+#include "storage/file_upload.h"
 #include "storage/storage_facade.h"
 #include "storage/storage_shared_media.h"
 #include "storage/storage_user_photos.h"
@@ -66,6 +70,11 @@ constexpr auto kFileLoaderQueueStopTimeout = TimeMs(5000);
 constexpr auto kFeedReadTimeout = TimeMs(1000);
 constexpr auto kStickersByEmojiInvalidateTimeout = TimeMs(60 * 60 * 1000);
 constexpr auto kNotifySettingSaveTimeout = TimeMs(1000);
+
+using SimpleFileLocationId = Data::SimpleFileLocationId;
+using DocumentFileLocationId = Data::DocumentFileLocationId;
+using FileLocationId = Data::FileLocationId;
+using UpdatedFileReferences = Data::UpdatedFileReferences;
 
 bool IsSilentPost(not_null<HistoryItem*> item, bool silent) {
 	const auto history = item->history();
@@ -138,6 +147,16 @@ ApiWrap::MessageToSend::MessageToSend(not_null<History*> history)
 : history(history) {
 }
 
+MTPInputPrivacyKey ApiWrap::Privacy::Input(Key key) {
+	switch (key) {
+	case Privacy::Key::Calls: return MTP_inputPrivacyKeyPhoneCall();
+	case Privacy::Key::Invites: return MTP_inputPrivacyKeyChatInvite();
+	case Privacy::Key::LastSeen:
+		return MTP_inputPrivacyKeyStatusTimestamp();
+	}
+	Unexpected("Key in ApiWrap::Privacy::Input.");
+}
+
 ApiWrap::ApiWrap(not_null<AuthSession*> session)
 : _session(session)
 , _messageDataResolveDelayed([=] { resolveMessageDatas(); })
@@ -148,6 +167,12 @@ ApiWrap::ApiWrap(not_null<AuthSession*> session)
 , _feedReadTimer([=] { readFeeds(); })
 , _proxyPromotionTimer([=] { refreshProxyPromotion(); })
 , _updateNotifySettingsTimer([=] { sendNotifySettingsUpdates(); }) {
+	crl::on_main([=] {
+		_session->uploader().photoReady(
+		) | rpl::start_with_next([=](const Storage::UploadedPhoto &data) {
+			photoUploadReady(data.fullId, data.file);
+		}, _session->lifetime());
+	});
 }
 
 void ApiWrap::requestChangelog(
@@ -532,8 +557,8 @@ void ApiWrap::requestContacts() {
 			if (contact.type() != mtpc_contact) continue;
 
 			const auto userId = contact.c_contact().vuser_id.v;
-			if (userId == _session->userId() && App::self()) {
-				App::self()->setContactStatus(
+			if (userId == _session->userId()) {
+				Auth().user()->setContactStatus(
 					UserData::ContactStatus::Contact);
 			}
 		}
@@ -585,11 +610,23 @@ void ApiWrap::requestDialogEntry(not_null<Data::Feed*> feed) {
 //	}).send();
 //}
 
-void ApiWrap::requestDialogEntry(not_null<History*> history) {
-	if (_dialogRequests.contains(history)) {
+void ApiWrap::requestDialogEntry(
+		not_null<History*> history,
+		Fn<void()> callback) {
+	const auto[i, ok] = _dialogRequests.try_emplace(history);
+	if (callback) {
+		i->second.push_back(std::move(callback));
+	}
+	if (!ok) {
 		return;
 	}
-	_dialogRequests.emplace(history);
+	const auto finalize = [=] {
+		if (const auto callbacks = _dialogRequests.take(history)) {
+			for (const auto callback : *callbacks) {
+				callback();
+			}
+		}
+	};
 	auto peers = QVector<MTPInputDialogPeer>(
 		1,
 		MTP_inputDialogPeer(history->peer->input));
@@ -598,9 +635,46 @@ void ApiWrap::requestDialogEntry(not_null<History*> history) {
 	)).done([=](const MTPmessages_PeerDialogs &result) {
 		applyPeerDialogs(result);
 		historyDialogEntryApplied(history);
-		_dialogRequests.remove(history);
+		finalize();
 	}).fail([=](const RPCError &error) {
-		_dialogRequests.remove(history);
+		finalize();
+	}).send();
+}
+
+void ApiWrap::requestDialogEntries(
+		std::vector<not_null<History*>> histories) {
+	const auto already = [&](not_null<History*> history) {
+		const auto [i, ok] = _dialogRequests.try_emplace(history);
+		return !ok;
+	};
+	histories.erase(ranges::remove_if(histories, already), end(histories));
+	if (histories.empty()) {
+		return;
+	}
+	auto peers = QVector<MTPInputDialogPeer>();
+	peers.reserve(histories.size());
+	for (const auto history : histories) {
+		peers.push_back(MTP_inputDialogPeer(history->peer->input));
+	}
+	const auto finalize = [=](std::vector<not_null<History*>> histories) {
+		for (const auto history : histories) {
+			if (const auto callbacks = _dialogRequests.take(history)) {
+				for (const auto callback : *callbacks) {
+					callback();
+				}
+			}
+		}
+	};
+	request(MTPmessages_GetPeerDialogs(
+		MTP_vector(std::move(peers))
+	)).done([=](const MTPmessages_PeerDialogs &result) {
+		applyPeerDialogs(result);
+		for (const auto history : histories) {
+			historyDialogEntryApplied(history);
+		}
+		finalize(histories);
+	}).fail([=](const RPCError &error) {
+		finalize(histories);
 	}).send();
 }
 
@@ -636,7 +710,7 @@ void ApiWrap::historyDialogEntryApplied(not_null<History*> history) {
 			if (!chat->haveLeft()) {
 				Local::addSavedPeer(
 					history->peer,
-					history->chatsListDate());
+					ParseDateTime(history->chatsListTimeId()));
 			}
 		} else if (const auto channel = history->peer->asChannel()) {
 			const auto inviter = channel->inviter;
@@ -653,12 +727,11 @@ void ApiWrap::historyDialogEntryApplied(not_null<History*> history) {
 		return;
 	}
 
-	if (!history->chatsListDate().isNull()
-		&& history->loadedAtBottom()) {
+	if (history->chatsListTimeId() != 0 && history->loadedAtBottom()) {
 		if (const auto channel = history->peer->asChannel()) {
 			const auto inviter = channel->inviter;
 			if (inviter != 0
-				&& history->chatsListDate() <= ParseDateTime(channel->inviteDate)
+				&& history->chatsListTimeId() <= channel->inviteDate
 				&& channel->amIn()) {
 				if (const auto from = App::userLoaded(inviter)) {
 					history->insertJoinedMessage(true);
@@ -739,7 +812,9 @@ void ApiWrap::requestFullPeer(PeerData *peer) {
 			_fullPeerRequests.remove(peer);
 		};
 		if (auto user = peer->asUser()) {
-			return request(MTPusers_GetFullUser(user->inputUser)).done([this, user](const MTPUserFull &result, mtpRequestId requestId) {
+			return request(MTPusers_GetFullUser(
+				user->inputUser
+			)).done([this, user](const MTPUserFull &result, mtpRequestId requestId) {
 				gotUserFull(user, result, requestId);
 			}).fail(failHandler).send();
 		} else if (auto chat = peer->asChat()) {
@@ -922,6 +997,13 @@ void ApiWrap::gotChatFull(PeerData *peer, const MTPmessages_ChatFull &result, mt
 void ApiWrap::gotUserFull(UserData *user, const MTPUserFull &result, mtpRequestId req) {
 	auto &d = result.c_userFull();
 
+	if (user == _session->user() && !_session->validateSelf(d.vuser)) {
+		constexpr auto kRequestUserAgainTimeout = TimeMs(10000);
+		App::CallDelayed(kRequestUserAgainTimeout, _session, [=] {
+			requestFullPeer(user);
+		});
+		return;
+	}
 	App::feedUsers(MTP_vector<MTPUser>(1, d.vuser));
 	if (d.has_profile_photo()) {
 		_session->data().photo(d.vprofile_photo);
@@ -1370,7 +1452,7 @@ void ApiWrap::requestSelfParticipant(ChannelData *channel) {
 			channel->inviter = _session->userId();
 			channel->inviteDate = channel->date;
 			if (channel->mgInfo) {
-				channel->mgInfo->creator = App::self();
+				channel->mgInfo->creator = Auth().user();
 			}
 		} break;
 		case mtpc_channelParticipantAdmin: {
@@ -1866,118 +1948,150 @@ void ApiWrap::saveDraftToCloudDelayed(not_null<History*> history) {
 }
 
 void ApiWrap::savePrivacy(const MTPInputPrivacyKey &key, QVector<MTPInputPrivacyRule> &&rules) {
-	auto keyTypeId = key.type();
-	auto it = _privacySaveRequests.find(keyTypeId);
+	const auto keyTypeId = key.type();
+	const auto it = _privacySaveRequests.find(keyTypeId);
 	if (it != _privacySaveRequests.cend()) {
 		request(it->second).cancel();
 		_privacySaveRequests.erase(it);
 	}
 
-	auto requestId = request(MTPaccount_SetPrivacy(key, MTP_vector<MTPInputPrivacyRule>(std::move(rules)))).done([this, keyTypeId](const MTPaccount_PrivacyRules &result) {
+	const auto requestId = request(MTPaccount_SetPrivacy(
+		key,
+		MTP_vector<MTPInputPrivacyRule>(std::move(rules))
+	)).done([=](const MTPaccount_PrivacyRules &result) {
 		Expects(result.type() == mtpc_account_privacyRules);
 
 		auto &rules = result.c_account_privacyRules();
 		App::feedUsers(rules.vusers);
 		_privacySaveRequests.remove(keyTypeId);
 		handlePrivacyChange(keyTypeId, rules.vrules);
-	}).fail([this, keyTypeId](const RPCError &error) {
+	}).fail([=](const RPCError &error) {
 		_privacySaveRequests.remove(keyTypeId);
 	}).send();
 
 	_privacySaveRequests.emplace(keyTypeId, requestId);
 }
 
-void ApiWrap::handlePrivacyChange(mtpTypeId keyTypeId, const MTPVector<MTPPrivacyRule> &rules) {
-	if (keyTypeId == mtpc_privacyKeyStatusTimestamp) {
-		enum class Rule {
-			Unknown,
-			Allow,
-			Disallow,
-		};
-		auto userRules = QMap<UserId, Rule>();
-		auto contactsRule = Rule::Unknown;
-		auto everyoneRule = Rule::Unknown;
-		for (auto &rule : rules.v) {
-			auto type = rule.type();
-			if (type != mtpc_privacyValueAllowAll && type != mtpc_privacyValueDisallowAll && contactsRule != Rule::Unknown) {
-				// This is simplified: we ignore per-user rules that come after a contacts rule.
-				// But none of the official apps provide such complicated rule sets, so its fine.
-				continue;
-			}
-
-			switch (type) {
-			case mtpc_privacyValueAllowAll: everyoneRule = Rule::Allow; break;
-			case mtpc_privacyValueDisallowAll: everyoneRule = Rule::Disallow; break;
-			case mtpc_privacyValueAllowContacts: contactsRule = Rule::Allow; break;
-			case mtpc_privacyValueDisallowContacts: contactsRule = Rule::Disallow; break;
-			case mtpc_privacyValueAllowUsers: {
-				for_const (auto &userId, rule.c_privacyValueAllowUsers().vusers.v) {
-					if (!userRules.contains(userId.v)) {
-						userRules.insert(userId.v, Rule::Allow);
-					}
-				}
-			} break;
-			case mtpc_privacyValueDisallowUsers: {
-				for_const (auto &userId, rule.c_privacyValueDisallowUsers().vusers.v) {
-					if (!userRules.contains(userId.v)) {
-						userRules.insert(userId.v, Rule::Disallow);
-					}
-				}
-			} break;
-			}
-			if (everyoneRule != Rule::Unknown) {
-				break;
-			}
+void ApiWrap::handlePrivacyChange(
+		mtpTypeId keyTypeId,
+		const MTPVector<MTPPrivacyRule> &rules) {
+	using Key = Privacy::Key;
+	const auto key = [&]() -> std::optional<Key> {
+		switch (keyTypeId) {
+		case mtpc_privacyKeyStatusTimestamp:
+		case mtpc_inputPrivacyKeyStatusTimestamp: return Key::LastSeen;
+		case mtpc_privacyKeyChatInvite:
+		case mtpc_inputPrivacyKeyChatInvite: return Key::Invites;
+		case mtpc_privacyKeyPhoneCall:
+		case mtpc_inputPrivacyKeyPhoneCall: return Key::Calls;
 		}
-
-		auto now = unixtime();
-		App::enumerateUsers([&](UserData *user) {
-			if (user->isSelf() || user->loadedStatus != PeerData::FullLoaded) {
-				return;
-			}
-			if (user->onlineTill <= 0) {
-				return;
-			}
-
-			if (user->onlineTill + 3 * 86400 >= now) {
-				user->onlineTill = -2; // recently
-			} else if (user->onlineTill + 7 * 86400 >= now) {
-				user->onlineTill = -3; // last week
-			} else if (user->onlineTill + 30 * 86400 >= now) {
-				user->onlineTill = -4; // last month
-			} else {
-				user->onlineTill = 0;
-			}
-			Notify::peerUpdatedDelayed(user, Notify::PeerUpdate::Flag::UserOnlineChanged);
-		});
-
-		if (_contactsStatusesRequestId) {
-			request(_contactsStatusesRequestId).cancel();
-		}
-		_contactsStatusesRequestId = request(MTPcontacts_GetStatuses()).done([this](const MTPVector<MTPContactStatus> &result) {
-			_contactsStatusesRequestId = 0;
-			for_const (auto &item, result.v) {
-				Assert(item.type() == mtpc_contactStatus);
-				auto &data = item.c_contactStatus();
-				if (auto user = App::userLoaded(data.vuser_id.v)) {
-					auto oldOnlineTill = user->onlineTill;
-					auto newOnlineTill = onlineTillFromStatus(data.vstatus, oldOnlineTill);
-					if (oldOnlineTill != newOnlineTill) {
-						user->onlineTill = newOnlineTill;
-						Notify::peerUpdatedDelayed(user, Notify::PeerUpdate::Flag::UserOnlineChanged);
-					}
-				}
-			}
-		}).fail([this](const RPCError &error) {
-			_contactsStatusesRequestId = 0;
-		}).send();
+		return std::nullopt;
+	}();
+	if (!key) {
+		return;
+	}
+	pushPrivacy(*key, rules.v);
+	if (*key == Key::LastSeen) {
+		updatePrivacyLastSeens(rules.v);
 	}
 }
 
-int ApiWrap::onlineTillFromStatus(const MTPUserStatus &status, int currentOnlineTill) {
+void ApiWrap::updatePrivacyLastSeens(const QVector<MTPPrivacyRule> &rules) {
+	enum class Rule {
+		Unknown,
+		Allow,
+		Disallow,
+	};
+	auto userRules = QMap<UserId, Rule>();
+	auto contactsRule = Rule::Unknown;
+	auto everyoneRule = Rule::Unknown;
+	for (auto &rule : rules) {
+		auto type = rule.type();
+		if (type != mtpc_privacyValueAllowAll
+			&& type != mtpc_privacyValueDisallowAll
+			&& contactsRule != Rule::Unknown) {
+			// This is simplified: we ignore per-user rules that come after a contacts rule.
+			// But none of the official apps provide such complicated rule sets, so its fine.
+			continue;
+		}
+
+		switch (type) {
+		case mtpc_privacyValueAllowAll: everyoneRule = Rule::Allow; break;
+		case mtpc_privacyValueDisallowAll: everyoneRule = Rule::Disallow; break;
+		case mtpc_privacyValueAllowContacts: contactsRule = Rule::Allow; break;
+		case mtpc_privacyValueDisallowContacts: contactsRule = Rule::Disallow; break;
+		case mtpc_privacyValueAllowUsers: {
+			for_const (auto &userId, rule.c_privacyValueAllowUsers().vusers.v) {
+				if (!userRules.contains(userId.v)) {
+					userRules.insert(userId.v, Rule::Allow);
+				}
+			}
+		} break;
+		case mtpc_privacyValueDisallowUsers: {
+			for_const (auto &userId, rule.c_privacyValueDisallowUsers().vusers.v) {
+				if (!userRules.contains(userId.v)) {
+					userRules.insert(userId.v, Rule::Disallow);
+				}
+			}
+		} break;
+		}
+		if (everyoneRule != Rule::Unknown) {
+			break;
+		}
+	}
+
+	auto now = unixtime();
+	App::enumerateUsers([&](UserData *user) {
+		if (user->isSelf() || user->loadedStatus != PeerData::FullLoaded) {
+			return;
+		}
+		if (user->onlineTill <= 0) {
+			return;
+		}
+
+		if (user->onlineTill + 3 * 86400 >= now) {
+			user->onlineTill = -2; // recently
+		} else if (user->onlineTill + 7 * 86400 >= now) {
+			user->onlineTill = -3; // last week
+		} else if (user->onlineTill + 30 * 86400 >= now) {
+			user->onlineTill = -4; // last month
+		} else {
+			user->onlineTill = 0;
+		}
+		Notify::peerUpdatedDelayed(user, Notify::PeerUpdate::Flag::UserOnlineChanged);
+	});
+
+	if (_contactsStatusesRequestId) {
+		request(_contactsStatusesRequestId).cancel();
+	}
+	_contactsStatusesRequestId = request(MTPcontacts_GetStatuses(
+	)).done([=](const MTPVector<MTPContactStatus> &result) {
+		_contactsStatusesRequestId = 0;
+		for_const (auto &item, result.v) {
+			Assert(item.type() == mtpc_contactStatus);
+			auto &data = item.c_contactStatus();
+			if (auto user = App::userLoaded(data.vuser_id.v)) {
+				auto oldOnlineTill = user->onlineTill;
+				auto newOnlineTill = OnlineTillFromStatus(data.vstatus, oldOnlineTill);
+				if (oldOnlineTill != newOnlineTill) {
+					user->onlineTill = newOnlineTill;
+					Notify::peerUpdatedDelayed(user, Notify::PeerUpdate::Flag::UserOnlineChanged);
+				}
+			}
+		}
+	}).fail([this](const RPCError &error) {
+		_contactsStatusesRequestId = 0;
+	}).send();
+}
+
+int ApiWrap::OnlineTillFromStatus(
+		const MTPUserStatus &status,
+		int currentOnlineTill) {
 	switch (status.type()) {
 	case mtpc_userStatusEmpty: return 0;
-	case mtpc_userStatusRecently: return (currentOnlineTill > -10) ? -2 : currentOnlineTill; // don't modify pseudo-online
+	case mtpc_userStatusRecently:
+		// Don't modify pseudo-online.
+		return (currentOnlineTill > -10) ? -2 : currentOnlineTill;
 	case mtpc_userStatusLastWeek: return -3;
 	case mtpc_userStatusLastMonth: return -4;
 	case mtpc_userStatusOffline: return status.c_userStatusOffline().vwas_online.v;
@@ -2369,6 +2483,161 @@ void ApiWrap::channelRangeDifferenceDone(
 	}
 }
 
+template <typename Request>
+void ApiWrap::requestFileReference(
+		Data::FileOrigin origin,
+		FileReferencesHandler &&handler,
+		Request &&data) {
+	const auto i = _fileReferenceHandlers.find(origin);
+	if (i != end(_fileReferenceHandlers)) {
+		i->second.push_back(std::move(handler));
+		return;
+	}
+	auto handlers = std::vector<FileReferencesHandler>();
+	handlers.push_back(std::move(handler));
+	_fileReferenceHandlers.emplace(origin, std::move(handlers));
+
+	request(std::move(data)).done([=](const auto &result) {
+		const auto parsed = Data::GetFileReferences(result);
+		for (const auto &p : parsed) {
+			// Unpack here the parsed pair by hand to workaround a GCC bug.
+			// See https://gcc.gnu.org/bugzilla/show_bug.cgi?id=87122
+			const auto &origin = p.first;
+			const auto &reference = p.second;
+			const auto documentId = base::get_if<DocumentFileLocationId>(
+				&origin);
+			if (documentId) {
+				_session->data().document(
+					*documentId
+				)->refreshFileReference(reference);
+			}
+		}
+		const auto i = _fileReferenceHandlers.find(origin);
+		Assert(i != end(_fileReferenceHandlers));
+		auto handlers = std::move(i->second);
+		_fileReferenceHandlers.erase(i);
+		for (auto &handler : handlers) {
+			handler(parsed);
+		}
+	}).fail([=](const RPCError &error) {
+		const auto i = _fileReferenceHandlers.find(origin);
+		Assert(i != end(_fileReferenceHandlers));
+		auto handlers = std::move(i->second);
+		_fileReferenceHandlers.erase(i);
+		for (auto &handler : handlers) {
+			handler(Data::UpdatedFileReferences());
+		}
+	}).send();
+}
+
+void ApiWrap::refreshFileReference(
+		Data::FileOrigin origin,
+		not_null<mtpFileLoader*> loader,
+		int requestId,
+		const QByteArray &current) {
+	return refreshFileReference(origin, crl::guard(loader, [=](
+			const Data::UpdatedFileReferences &data) {
+		loader->refreshFileReferenceFrom(data, requestId, current);
+	}));
+}
+
+void ApiWrap::refreshFileReference(
+		Data::FileOrigin origin,
+		FileReferencesHandler &&handler) {
+	const auto request = [&](
+			auto &&data,
+			Fn<void()> &&additional = nullptr) {
+		requestFileReference(
+			origin,
+			std::move(handler),
+			std::move(data));
+		if (additional) {
+			const auto i = _fileReferenceHandlers.find(origin);
+			Assert(i != end(_fileReferenceHandlers));
+			if (i->second.size() == 1) {
+				i->second.push_back([=](auto&&) {
+					additional();
+				});
+			}
+		}
+	};
+	const auto fail = [&] {
+		handler(Data::UpdatedFileReferences());
+	};
+	origin.match([&](Data::FileOriginMessage data) {
+		if (const auto item = App::histItemById(data)) {
+			if (const auto channel = item->history()->peer->asChannel()) {
+				request(MTPchannels_GetMessages(
+					channel->inputChannel,
+					MTP_vector<MTPInputMessage>(
+						1,
+						MTP_inputMessageID(MTP_int(item->id)))));
+			} else {
+				request(MTPmessages_GetMessages(
+					MTP_vector<MTPInputMessage>(
+						1,
+						MTP_inputMessageID(MTP_int(item->id)))));
+			}
+		} else {
+			fail();
+		}
+	}, [&](Data::FileOriginUserPhoto data) {
+		if (const auto user = App::user(data.userId)) {
+			request(MTPphotos_GetUserPhotos(
+				user->inputUser,
+				MTP_int(-1),
+				MTP_long(data.photoId),
+				MTP_int(1)));
+		} else {
+			fail();
+		}
+	}, [&](Data::FileOriginPeerPhoto data) {
+		if (const auto peer = App::peer(data.peerId)) {
+			if (const auto user = peer->asUser()) {
+				request(MTPusers_GetUsers(
+					MTP_vector<MTPInputUser>(1, user->inputUser)));
+			} else if (const auto chat = peer->asChat()) {
+				request(MTPmessages_GetChats(
+					MTP_vector<MTPint>(1, chat->inputChat)));
+			} else if (const auto channel = peer->asChannel()) {
+				request(MTPchannels_GetChannels(
+					MTP_vector<MTPInputChannel>(1, channel->inputChannel)));
+			} else {
+				fail();
+			}
+		} else {
+			fail();
+		}
+	}, [&](Data::FileOriginStickerSet data) {
+		if (data.setId == Stickers::CloudRecentSetId
+			|| data.setId == Stickers::RecentSetId) {
+			request(MTPmessages_GetRecentStickers(
+				MTP_flags(0),
+				MTP_int(0)),
+				[] { crl::on_main([] { Local::writeRecentStickers(); }); });
+		} else if (data.setId == Stickers::FavedSetId) {
+			request(MTPmessages_GetFavedStickers(MTP_int(0)),
+				[] { crl::on_main([] { Local::writeFavedStickers(); }); });
+		} else {
+			request(MTPmessages_GetStickerSet(
+				MTP_inputStickerSetID(
+					MTP_long(data.setId),
+					MTP_long(data.accessHash))),
+				[] { crl::on_main([] {
+					Local::writeInstalledStickers();
+					Local::writeRecentStickers();
+					Local::writeFavedStickers();
+				}); });
+		}
+	}, [&](Data::FileOriginSavedGifs data) {
+		request(
+			MTPmessages_GetSavedGifs(MTP_int(0)),
+			[] { crl::on_main([] { Local::writeSavedGifs(); }); });
+	}, [&](std::nullopt_t) {
+		fail();
+	});
+}
+
 void ApiWrap::gotWebPages(ChannelData *channel, const MTPmessages_Messages &msgs, mtpRequestId req) {
 	const QVector<MTPMessage> *v = 0;
 	switch (msgs.type()) {
@@ -2518,6 +2787,80 @@ std::vector<not_null<DocumentData*>> *ApiWrap::stickersByEmoji(
 		return &it->second.list;
 	}
 	return nullptr;
+}
+
+void ApiWrap::toggleFavedSticker(
+		not_null<DocumentData*> document,
+		Data::FileOrigin origin,
+		bool faved) {
+	if (faved && !document->sticker()) {
+		return;
+	}
+
+	auto failHandler = std::make_shared<Fn<void(const RPCError&)>>();
+	auto performRequest = [=] {
+		request(MTPmessages_FaveSticker(
+			document->mtpInput(),
+			MTP_bool(!faved)
+		)).done([=](const MTPBool &result) {
+			if (mtpIsTrue(result)) {
+				Stickers::SetFaved(document, faved);
+			}
+		}).fail(
+			base::duplicate(*failHandler)
+		).send();
+	};
+	*failHandler = [=](const RPCError &error) {
+		if (error.code() == 400
+			&& error.type().startsWith(qstr("FILE_REFERENCE_"))) {
+			const auto current = document->fileReference();
+			auto refreshed = [=](const Data::UpdatedFileReferences &data) {
+				if (document->fileReference() != current) {
+					performRequest();
+				}
+			};
+			refreshFileReference(origin, std::move(refreshed));
+		}
+	};
+	performRequest();
+}
+
+void ApiWrap::toggleSavedGif(
+		not_null<DocumentData*> document,
+		Data::FileOrigin origin,
+		bool saved) {
+	if (saved && !document->isGifv()) {
+		return;
+	}
+
+	auto failHandler = std::make_shared<Fn<void(const RPCError&)>>();
+	auto performRequest = [=] {
+		request(MTPmessages_SaveGif(
+			document->mtpInput(),
+			MTP_bool(!saved)
+		)).done([=](const MTPBool &result) {
+			if (mtpIsTrue(result)) {
+				if (saved) {
+					App::addSavedGif(document);
+				}
+			}
+		}).fail(
+			base::duplicate(*failHandler)
+		).send();
+	};
+	*failHandler = [=](const RPCError &error) {
+		if (error.code() == 400
+			&& error.type().startsWith(qstr("FILE_REFERENCE_"))) {
+			const auto current = document->fileReference();
+			auto refreshed = [=](const Data::UpdatedFileReferences &data) {
+				if (document->fileReference() != current) {
+					performRequest();
+				}
+			};
+			refreshFileReference(origin, std::move(refreshed));
+		}
+	};
+	performRequest();
 }
 
 void ApiWrap::requestStickers(TimeId now) {
@@ -3944,7 +4287,7 @@ void ApiWrap::sendUploadedPhoto(
 void ApiWrap::sendUploadedDocument(
 		FullMsgId localId,
 		const MTPInputFile &file,
-		const base::optional<MTPInputFile> &thumb,
+		const std::optional<MTPInputFile> &thumb,
 		bool silent) {
 	if (const auto item = App::histItemById(localId)) {
 		auto media = item->media();
@@ -3992,6 +4335,7 @@ void ApiWrap::sendMessage(MessageToSend &&message) {
 	options.replyTo = message.replyTo;
 	options.generateLocal = true;
 	options.webPageId = message.webPageId;
+	options.handleSupportSwitch = message.handleSupportSwitch;
 	sendAction(options);
 
 	if (!peer->canWrite()) {
@@ -4113,7 +4457,7 @@ void ApiWrap::sendInlineResult(
 		not_null<UserData*> bot,
 		not_null<InlineBots::Result*> data,
 		const SendOptions &options) {
-	Auth().api().sendAction(options);
+	sendAction(options);
 
 	const auto history = options.history;
 	const auto peer = history->peer;
@@ -4144,9 +4488,9 @@ void ApiWrap::sendInlineResult(
 		flags |= MTPDmessage::Flag::f_via_bot_id;
 	}
 
-	auto messageFromId = channelPost ? 0 : Auth().userId();
+	auto messageFromId = channelPost ? 0 : _session->userId();
 	auto messagePostAuthor = channelPost
-		? App::peerName(Auth().user())
+		? App::peerName(_session->user())
 		: QString();
 	MTPint messageDate = MTP_int(unixtime());
 	UserId messageViaBotId = bot ? peerToUser(bot->id) : 0;
@@ -4185,6 +4529,115 @@ void ApiWrap::sendInlineResult(
 
 	if (const auto main = App::main()) {
 		main->finishForwarding(history);
+	}
+}
+
+void ApiWrap::sendExistingDocument(
+		not_null<DocumentData*> document,
+		Data::FileOrigin origin,
+		TextWithEntities caption,
+		const SendOptions &options) {
+	sendAction(options);
+
+	const auto history = options.history;
+	const auto peer = history->peer;
+	const auto newId = FullMsgId(peerToChannel(peer->id), clientMsgId());
+	const auto randomId = rand_value<uint64>();
+
+	auto flags = NewMessageFlags(peer) | MTPDmessage::Flag::f_media;
+	auto sendFlags = MTPmessages_SendMedia::Flags(0);
+	if (options.replyTo) {
+		flags |= MTPDmessage::Flag::f_reply_to_msg_id;
+		sendFlags |= MTPmessages_SendMedia::Flag::f_reply_to_msg_id;
+	}
+	bool channelPost = peer->isChannel() && !peer->isMegagroup();
+	bool silentPost = channelPost
+		&& _session->data().notifySilentPosts(peer);
+	if (channelPost) {
+		flags |= MTPDmessage::Flag::f_views;
+		flags |= MTPDmessage::Flag::f_post;
+	}
+	if (!channelPost) {
+		flags |= MTPDmessage::Flag::f_from_id;
+	} else if (peer->asChannel()->addsSignature()) {
+		flags |= MTPDmessage::Flag::f_post_author;
+	}
+	if (silentPost) {
+		sendFlags |= MTPmessages_SendMedia::Flag::f_silent;
+	}
+	auto messageFromId = channelPost ? 0 : _session->userId();
+	auto messagePostAuthor = channelPost
+		? App::peerName(_session->user())
+		: QString();
+
+	TextUtilities::Trim(caption);
+	auto sentEntities = TextUtilities::EntitiesToMTP(
+		caption.entities,
+		TextUtilities::ConvertOption::SkipLocal);
+	if (!sentEntities.v.isEmpty()) {
+		sendFlags |= MTPmessages_SendMedia::Flag::f_entities;
+	}
+	const auto replyTo = options.replyTo;
+	const auto captionText = caption.text;
+
+	App::historyRegRandom(randomId, newId);
+
+	history->addNewDocument(
+		newId.msg,
+		flags,
+		0,
+		replyTo,
+		unixtime(),
+		messageFromId,
+		messagePostAuthor,
+		document,
+		caption,
+		MTPnullMarkup);
+
+	auto failHandler = std::make_shared<Fn<void(const RPCError&)>>();
+	auto performRequest = [=] {
+		history->sendRequestId = request(MTPmessages_SendMedia(
+			MTP_flags(sendFlags),
+			peer->input,
+			MTP_int(replyTo),
+			MTP_inputMediaDocument(
+				MTP_flags(0),
+				document->mtpInput(),
+				MTPint()),
+			MTP_string(captionText),
+			MTP_long(randomId),
+			MTPnullMarkup,
+			sentEntities
+		)).done([=](const MTPUpdates &result) {
+			applyUpdates(result, randomId);
+		}).fail(
+			base::duplicate(*failHandler)
+		).afterRequest(history->sendRequestId
+		).send();
+	};
+	*failHandler = [=](const RPCError &error) {
+		if (error.code() == 400
+			&& error.type().startsWith(qstr("FILE_REFERENCE_"))) {
+			const auto current = document->fileReference();
+			auto refreshed = [=](const Data::UpdatedFileReferences &data) {
+				if (document->fileReference() != current) {
+					performRequest();
+				} else {
+					sendMessageFail(error);
+				}
+			};
+			refreshFileReference(origin, std::move(refreshed));
+		} else {
+			sendMessageFail(error);
+		}
+	};
+	performRequest();
+
+	if (const auto main = App::main()) {
+		main->finishForwarding(history);
+		if (document->sticker()) {
+			main->incrementSticker(document);
+		}
 	}
 }
 
@@ -4227,7 +4680,10 @@ void ApiWrap::uploadAlbumMedia(
 					: MTPDinputMediaPhoto::Flag(0));
 			const auto media = MTP_inputMediaPhoto(
 				MTP_flags(flags),
-				MTP_inputPhoto(photo.vid, photo.vaccess_hash),
+				MTP_inputPhoto(
+					photo.vid,
+					photo.vaccess_hash,
+					photo.vfile_reference),
 				data.has_ttl_seconds() ? data.vttl_seconds : MTPint());
 			sendAlbumWithUploaded(item, groupId, media);
 		} break;
@@ -4245,7 +4701,10 @@ void ApiWrap::uploadAlbumMedia(
 					: MTPDinputMediaDocument::Flag(0));
 			const auto media = MTP_inputMediaDocument(
 				MTP_flags(flags),
-				MTP_inputDocument(document.vid, document.vaccess_hash),
+				MTP_inputDocument(
+					document.vid,
+					document.vaccess_hash,
+					document.vfile_reference),
 				data.has_ttl_seconds() ? data.vttl_seconds : MTPint());
 			sendAlbumWithUploaded(item, groupId, media);
 		} break;
@@ -4429,6 +4888,320 @@ FileLoadTo ApiWrap::fileLoadTaskOptions(const SendOptions &options) const {
 		peer->id,
 		_session->data().notifySilentPosts(peer),
 		options.replyTo);
+}
+
+void ApiWrap::requestSupportContact(FnMut<void(const MTPUser &)> callback) {
+	_supportContactCallbacks.push_back(std::move(callback));
+	if (_supportContactCallbacks.size() > 1) {
+		return;
+	}
+	request(MTPhelp_GetSupport(
+	)).done([=](const MTPhelp_Support &result) {
+		result.match([&](const MTPDhelp_support &data) {
+			for (auto &handler : base::take(_supportContactCallbacks)) {
+				handler(data.vuser);
+			}
+		});
+	}).fail([=](const RPCError &error) {
+		_supportContactCallbacks.clear();
+	}).send();
+}
+
+void ApiWrap::uploadPeerPhoto(not_null<PeerData*> peer, QImage &&image) {
+	const auto ready = PreparePeerPhoto(peer->id, std::move(image));
+
+	const auto fakeId = FullMsgId(peerToChannel(peer->id), clientMsgId());
+	const auto already = ranges::find(
+		_peerPhotoUploads,
+		peer,
+		[](const auto &pair) { return pair.second; });
+	if (already != end(_peerPhotoUploads)) {
+		_session->uploader().cancel(already->first);
+		_peerPhotoUploads.erase(already);
+	}
+	_peerPhotoUploads.emplace(fakeId, peer);
+	_session->uploader().uploadMedia(fakeId, ready);
+}
+
+void ApiWrap::photoUploadReady(
+		const FullMsgId &msgId,
+		const MTPInputFile &file) {
+	if (const auto maybePeer = _peerPhotoUploads.take(msgId)) {
+		const auto peer = *maybePeer;
+		const auto applier = [=](const MTPUpdates &result) {
+			applyUpdates(result);
+		};
+		if (peer->isSelf()) {
+			request(MTPphotos_UploadProfilePhoto(
+				file
+			)).done([=](const MTPphotos_Photo &result) {
+				result.match([&](const MTPDphotos_photo &data) {
+					_session->data().photo(data.vphoto);
+					App::feedUsers(data.vusers);
+				});
+			}).send();
+		} else if (const auto chat = peer->asChat()) {
+			const auto history = App::history(chat);
+			history->sendRequestId = request(MTPmessages_EditChatPhoto(
+				chat->inputChat,
+				MTP_inputChatUploadedPhoto(file)
+			)).done(applier).afterRequest(history->sendRequestId).send();
+		} else if (const auto channel = peer->asChannel()) {
+			const auto history = App::history(channel);
+			history->sendRequestId = request(MTPchannels_EditPhoto(
+				channel->inputChannel,
+				MTP_inputChatUploadedPhoto(file)
+			)).done(applier).afterRequest(history->sendRequestId).send();
+		}
+	}
+
+}
+
+void ApiWrap::clearPeerPhoto(not_null<PhotoData*> photo) {
+	const auto self = Auth().user();
+	if (self->userpicPhotoId() == photo->id) {
+		request(MTPphotos_UpdateProfilePhoto(
+			MTP_inputPhotoEmpty()
+		)).done([=](const MTPUserProfilePhoto &result) {
+			self->setPhoto(result);
+		}).send();
+	} else if (photo->peer && photo->peer->userpicPhotoId() == photo->id) {
+		const auto applier = [=](const MTPUpdates &result) {
+			applyUpdates(result);
+		};
+		if (const auto chat = photo->peer->asChat()) {
+			request(MTPmessages_EditChatPhoto(
+				chat->inputChat,
+				MTP_inputChatPhotoEmpty()
+			)).done(applier).send();
+		} else if (const auto channel = photo->peer->asChannel()) {
+			request(MTPchannels_EditPhoto(
+				channel->inputChannel,
+				MTP_inputChatPhotoEmpty()
+			)).done(applier).send();
+		}
+	} else {
+		request(MTPphotos_DeletePhotos(
+			MTP_vector<MTPInputPhoto>(1, photo->mtpInput())
+		)).send();
+		_session->storage().remove(Storage::UserPhotosRemoveOne(
+			self->bareId(),
+			photo->id));
+	}
+}
+
+void ApiWrap::reloadPasswordState() {
+	if (_passwordRequestId) {
+		return;
+	}
+	_passwordRequestId = request(MTPaccount_GetPassword(
+	)).done([=](const MTPaccount_Password &result) {
+		_passwordRequestId = 0;
+		result.match([&](const MTPDaccount_password &data) {
+			openssl::AddRandomSeed(bytes::make_span(data.vsecure_random.v));
+			if (_passwordState) {
+				*_passwordState = Core::ParseCloudPasswordState(data);
+			} else {
+				_passwordState = std::make_unique<Core::CloudPasswordState>(
+					Core::ParseCloudPasswordState(data));
+			}
+			_passwordStateChanges.fire_copy(*_passwordState);
+		});
+	}).fail([=](const RPCError &error) {
+		_passwordRequestId = 0;
+	}).send();
+}
+
+void ApiWrap::clearUnconfirmedPassword() {
+	_passwordRequestId = request(MTPaccount_UpdatePasswordSettings(
+		MTP_inputCheckPasswordEmpty(),
+		MTP_account_passwordInputSettings(
+			MTP_flags(
+				MTPDaccount_passwordInputSettings::Flag::f_email),
+			MTP_passwordKdfAlgoUnknown(), // new_algo
+			MTP_bytes(QByteArray()), // new_password_hash
+			MTP_string(QString()), // hint
+			MTP_string(QString()), // email
+			MTPSecureSecretSettings())
+	)).done([=](const MTPBool &result) {
+		_passwordRequestId = 0;
+		reloadPasswordState();
+	}).fail([=](const RPCError &error) {
+		_passwordRequestId = 0;
+		reloadPasswordState();
+	}).send();
+}
+
+rpl::producer<Core::CloudPasswordState> ApiWrap::passwordState() const {
+	return _passwordState
+		? _passwordStateChanges.events_starting_with_copy(*_passwordState)
+		: (_passwordStateChanges.events() | rpl::type_erased());
+}
+
+auto ApiWrap::passwordStateCurrent() const
+->std::optional<Core::CloudPasswordState> {
+	return _passwordState
+		? base::make_optional(*_passwordState)
+		: std::nullopt;
+}
+
+void ApiWrap::saveSelfBio(const QString &text, FnMut<void()> done) {
+	if (_saveBioRequestId) {
+		if (text != _saveBioText) {
+			request(_saveBioRequestId).cancel();
+		} else {
+			if (done) {
+				_saveBioDone = std::move(done);
+			}
+			return;
+		}
+	}
+	_saveBioText = text;
+	_saveBioDone = std::move(done);
+	_saveBioRequestId = request(MTPaccount_UpdateProfile(
+		MTP_flags(MTPaccount_UpdateProfile::Flag::f_about),
+		MTPstring(),
+		MTPstring(),
+		MTP_string(text)
+	)).done([=](const MTPUser &result) {
+		_saveBioRequestId = 0;
+
+		App::feedUsers(MTP_vector<MTPUser>(1, result));
+		Auth().user()->setAbout(_saveBioText);
+		if (_saveBioDone) {
+			_saveBioDone();
+		}
+	}).fail([=](const RPCError &error) {
+		_saveBioRequestId = 0;
+	}).send();
+}
+
+void ApiWrap::reloadPrivacy(Privacy::Key key) {
+	if (_privacyRequestIds.contains(key)) {
+		return;
+	}
+	const auto requestId = request(MTPaccount_GetPrivacy(
+		Privacy::Input(key)
+	)).done([=](const MTPaccount_PrivacyRules &result) {
+		_privacyRequestIds.erase(key);
+		result.match([&](const MTPDaccount_privacyRules &data) {
+			App::feedUsers(data.vusers);
+			pushPrivacy(key, data.vrules.v);
+		});
+	}).fail([=](const RPCError &error) {
+		_privacyRequestIds.erase(key);
+	}).send();
+	_privacyRequestIds.emplace(key, requestId);
+}
+
+auto ApiWrap::parsePrivacy(const QVector<MTPPrivacyRule> &rules)
+-> Privacy {
+	using Option = Privacy::Option;
+
+	// This is simplified version of privacy rules interpretation.
+	// But it should be fine for all the apps
+	// that use the same subset of features.
+	auto result = Privacy();
+	auto optionSet = false;
+	const auto SetOption = [&](Option option) {
+		if (optionSet) return;
+		optionSet = true;
+		result.option = option;
+	};
+	auto &always = result.always;
+	auto &never = result.never;
+	const auto Feed = [&](const MTPPrivacyRule &rule) {
+		rule.match([&](const MTPDprivacyValueAllowAll &) {
+			SetOption(Option::Everyone);
+		}, [&](const MTPDprivacyValueAllowContacts &) {
+			SetOption(Option::Contacts);
+		}, [&](const MTPDprivacyValueAllowUsers &data) {
+			const auto &users = data.vusers.v;
+			always.reserve(always.size() + users.size());
+			for (const auto userId : users) {
+				const auto user = App::user(UserId(userId.v));
+				if (!base::contains(never, user)
+					&& !base::contains(always, user)) {
+					always.push_back(user);
+				}
+			}
+		}, [&](const MTPDprivacyValueDisallowContacts &) {
+			// not supported
+		}, [&](const MTPDprivacyValueDisallowAll &) {
+			SetOption(Option::Nobody);
+		}, [&](const MTPDprivacyValueDisallowUsers &data) {
+			const auto &users = data.vusers.v;
+			never.reserve(never.size() + users.size());
+			for (const auto userId : users) {
+				const auto user = App::user(UserId(userId.v));
+				if (!base::contains(always, user)
+					&& !base::contains(never, user)) {
+					never.push_back(user);
+				}
+			}
+		});
+	};
+	for (const auto &rule : rules) {
+		Feed(rule);
+	}
+	Feed(MTP_privacyValueDisallowAll()); // disallow by default.
+	return result;
+}
+
+void ApiWrap::pushPrivacy(
+		Privacy::Key key,
+		const QVector<MTPPrivacyRule> &rules) {
+	const auto &saved = (_privacyValues[key] = parsePrivacy(rules));
+	const auto i = _privacyChanges.find(key);
+	if (i != end(_privacyChanges)) {
+		i->second.fire_copy(saved);
+	}
+}
+
+auto ApiWrap::privacyValue(Privacy::Key key) -> rpl::producer<Privacy> {
+	if (const auto i = _privacyValues.find(key); i != end(_privacyValues)) {
+		return _privacyChanges[key].events_starting_with_copy(i->second);
+	} else {
+		return _privacyChanges[key].events();
+	}
+}
+
+void ApiWrap::reloadSelfDestruct() {
+	if (_selfDestructRequestId) {
+		return;
+	}
+	_selfDestructRequestId = request(MTPaccount_GetAccountTTL(
+	)).done([=](const MTPAccountDaysTTL &result) {
+		_selfDestructRequestId = 0;
+		result.match([&](const MTPDaccountDaysTTL &data) {
+			setSelfDestructDays(data.vdays.v);
+		});
+	}).fail([=](const RPCError &error) {
+		_selfDestructRequestId = 0;
+	}).send();
+}
+
+rpl::producer<int> ApiWrap::selfDestructValue() const {
+	return _selfDestructDays
+		? _selfDestructChanges.events_starting_with_copy(*_selfDestructDays)
+		: (_selfDestructChanges.events() | rpl::type_erased());
+}
+
+void ApiWrap::saveSelfDestruct(int days) {
+	request(_selfDestructRequestId).cancel();
+	_selfDestructRequestId = request(MTPaccount_SetAccountTTL(
+		MTP_accountDaysTTL(MTP_int(days))
+	)).done([=](const MTPBool &result) {
+		_selfDestructRequestId = 0;
+	}).fail([=](const RPCError &result) {
+		_selfDestructRequestId = 0;
+	}).send();
+	setSelfDestructDays(days);
+}
+
+void ApiWrap::setSelfDestructDays(int days) {
+	_selfDestructDays = days;
+	_selfDestructChanges.fire_copy(days);
 }
 
 void ApiWrap::readServerHistory(not_null<History*> history) {

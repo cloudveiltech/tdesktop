@@ -22,6 +22,66 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 using Storage::ValidateThumbDimensions;
 
+SendMediaReady PreparePeerPhoto(PeerId peerId, QImage &&image) {
+	PreparedPhotoThumbs photoThumbs;
+	QVector<MTPPhotoSize> photoSizes;
+
+	QByteArray jpeg;
+	QBuffer jpegBuffer(&jpeg);
+	image.save(&jpegBuffer, "JPG", 87);
+
+	const auto scaled = [&](int size) {
+		return App::pixmapFromImageInPlace(image.scaled(
+			size,
+			size,
+			Qt::KeepAspectRatio,
+			Qt::SmoothTransformation));
+	};
+	const auto push = [&](const char *type, QPixmap &&pixmap) {
+		photoSizes.push_back(MTP_photoSize(
+			MTP_string(type),
+			MTP_fileLocationUnavailable(
+				MTP_long(0),
+				MTP_int(0),
+				MTP_long(0)),
+			MTP_int(pixmap.width()),
+			MTP_int(pixmap.height()), MTP_int(0)));
+		photoThumbs.insert(type[0], std::move(pixmap));
+	};
+	push("a", scaled(160));
+	push("b", scaled(320));
+	push("c", App::pixmapFromImageInPlace(std::move(image)));
+
+	const auto id = rand_value<PhotoId>();
+	const auto photo = MTP_photo(
+		MTP_flags(0),
+		MTP_long(id),
+		MTP_long(0),
+		MTP_bytes(QByteArray()),
+		MTP_int(unixtime()),
+		MTP_vector<MTPPhotoSize>(photoSizes));
+
+	QString file, filename;
+	int32 filesize = 0;
+	QByteArray data;
+
+	return SendMediaReady(
+		SendMediaType::Photo,
+		file,
+		filename,
+		filesize,
+		data,
+		id,
+		id,
+		qsl("jpg"),
+		peerId,
+		photo,
+		photoThumbs,
+		MTP_documentEmpty(MTP_long(0)),
+		jpeg,
+		0);
+}
+
 TaskQueue::TaskQueue(TimeMs stopTimeoutMs) {
 	if (stopTimeoutMs > 0) {
 		_stopTimer = new QTimer(this);
@@ -560,7 +620,13 @@ void FileLoadTask::process() {
 					full.save(&buffer, "JPG", 87);
 				}
 
-				photo = MTP_photo(MTP_flags(0), MTP_long(_id), MTP_long(0), MTP_int(unixtime()), MTP_vector<MTPPhotoSize>(photoSizes));
+				photo = MTP_photo(
+					MTP_flags(0),
+					MTP_long(_id),
+					MTP_long(0),
+					MTP_bytes(QByteArray()),
+					MTP_int(unixtime()),
+					MTP_vector<MTPPhotoSize>(photoSizes));
 
 				if (filesize < 0) {
 					filesize = _result->filesize = filedata.size();
@@ -603,9 +669,27 @@ void FileLoadTask::process() {
 		auto flags = MTPDdocumentAttributeAudio::Flag::f_voice | MTPDdocumentAttributeAudio::Flag::f_waveform;
 		attributes[0] = MTP_documentAttributeAudio(MTP_flags(flags), MTP_int(_duration), MTPstring(), MTPstring(), MTP_bytes(documentWaveformEncode5bit(_waveform)));
 		attributes.resize(1);
-		document = MTP_document(MTP_long(_id), MTP_long(0), MTP_int(unixtime()), MTP_string(filemime), MTP_int(filesize), thumbSize, MTP_int(MTP::maindc()), MTP_int(0), MTP_vector<MTPDocumentAttribute>(attributes));
+		document = MTP_document(
+			MTP_long(_id),
+			MTP_long(0),
+			MTP_bytes(QByteArray()),
+			MTP_int(unixtime()),
+			MTP_string(filemime),
+			MTP_int(filesize),
+			thumbSize,
+			MTP_int(MTP::maindc()),
+			MTP_vector<MTPDocumentAttribute>(attributes));
 	} else if (_type != SendMediaType::Photo) {
-		document = MTP_document(MTP_long(_id), MTP_long(0), MTP_int(unixtime()), MTP_string(filemime), MTP_int(filesize), thumbSize, MTP_int(MTP::maindc()), MTP_int(0), MTP_vector<MTPDocumentAttribute>(attributes));
+		document = MTP_document(
+			MTP_long(_id),
+			MTP_long(0),
+			MTP_bytes(QByteArray()),
+			MTP_int(unixtime()),
+			MTP_string(filemime),
+			MTP_int(filesize),
+			thumbSize,
+			MTP_int(MTP::maindc()),
+			MTP_vector<MTPDocumentAttribute>(attributes));
 		_type = SendMediaType::File;
 	}
 

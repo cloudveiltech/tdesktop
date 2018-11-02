@@ -16,86 +16,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Core {
 namespace {
 
-std::map<int, const char*> AlphaLogs() {
+std::map<int, const char*> BetaLogs() {
 	return {
-	{
-		1002002,
-		"\xE2\x80\x94 Grouped photos and videos are displayed as albums."
-	},
-	{
-		1002004,
-		"\xE2\x80\x94 Group media into an album "
-		"when sharing multiple photos and videos.\n"
-
-		"\xE2\x80\x94 Bug fixes and other minor improvements."
-	},
-	{
-		1002005,
-		"\xE2\x80\x94 When viewing a photo from an album, "
-		"you'll see other pictures from the same group "
-		"as thumbnails in the lower part of the screen.\n"
-
-		"\xE2\x80\x94 When composing an album paste "
-		"additional media from the clipboard.\n"
-
-		"\xE2\x80\x94 Bug fixes and other minor improvements."
-	},
-	{
-		1002007,
-		"\xE2\x80\x94 Use fast reply button in group chats.\n"
-
-		"\xE2\x80\x94 Select a message you want to reply to by "
-		"pressing Ctrl+Up and Ctrl+Down."
-	},
-	{
-		1002009,
-		"\xE2\x80\x94 Quick Reply. "
-		"Double click next to any message for a quick reply.\n"
-
-		"\xE2\x80\x94 Search for Stickers. "
-		"Click on the new search icon to access "
-		"your sticker sets or find new ones."
-	},
-	{
-		1002019,
-		"\xE2\x80\x94 Enable proxy for calls in Settings.\n"
-
-		"\xE2\x80\x94 Bug fixes and other minor improvements."
-	},
-	{
-		1002020,
-		"\xE2\x80\x94 Emoji and text replacements are done "
-		"while you type the message.\n"
-
-		"\xE2\x80\x94 Revert emoji and text replacements "
-		"by pressing backspace.\n"
-
-		"\xE2\x80\x94 Disable emoji replacements or suggestions "
-		"in Settings.\n"
-
-		"\xE2\x80\x94 Some critical bug fixes."
-	},
-	{
-		1002022,
-		"\xE2\x80\x94 Use markdown in media captions "
-		"(**bold**, __italic__, `tag` and ```code```).\n"
-
-		"\xE2\x80\x94 Use emoji replacement in media captions, "
-		"group and channel titles and descriptions (:like: etc.)\n"
-
-		"\xE2\x80\x94 Markdown replacement now happens immediately "
-		"after typing (instead of after sending) and can be "
-		"rolled back using Backspace or Ctrl/Cmd + Z. "
-		"Replacement no longer happens when pasting text."
-	},
-	{
-		1002023,
-		"\xE2\x80\x94 Apply formatting from input field context menu.\n"
-
-		"\xE2\x80\x94 Apply formatting by hotkeys.\n"
-
-		"\xE2\x80\x94 Bug fixes and other minor improvements."
-	},
 	{
 		1002024,
 		"\xE2\x80\x94 Add links with custom text from context menu "
@@ -111,7 +33,32 @@ std::map<int, const char*> AlphaLogs() {
 		"\xE2\x80\x94 Telegram Desktop can update itself through MTProto.\n"
 
 		"\xE2\x80\x94 Bug fixes and other minor improvements."
-	}
+	},
+	{
+		1003011,
+		"\xE2\x80\x94 Added a new night theme.\n"
+
+		"\xE2\x80\x94 You can now assign custom themes "
+		"as night and day themes to quickly switch between them."
+	},
+	{
+		1003015,
+		"\xE2\x80\x94 Improved local caching "
+		"for images and GIF animations.\n"
+
+		"\xE2\x80\x94 Control how much disk space is used by the cache "
+		"and for how long the cached files are stored."
+	},
+	{
+		1003017,
+		"\xE2\x80\x94 Fully redisigned Settings section.\n"
+
+		"\xE2\x80\x94 New theme selector in Chat Settings.\n"
+		"\xE2\x80\x94 New settings: Peer-to-Peer settings for calls, "
+		"disable animations for low performance computers.\n"
+
+		"\xE2\x80\x94 Various other improvements."
+	},
 	};
 }
 
@@ -181,8 +128,8 @@ void Changelogs::requestCloudLogs() {
 }
 
 void Changelogs::addLocalLogs() {
-	if (cAlphaVersion() || cBetaVersion()) {
-		addAlphaLogs();
+	if (AppBetaVersion || cAlphaVersion()) {
+		addBetaLogs();
 	}
 	if (!_addedSomeLocal) {
 		const auto text = lng_new_version_wrap(
@@ -199,20 +146,19 @@ void Changelogs::addLocalLogs() {
 void Changelogs::addLocalLog(const QString &text) {
 	auto textWithEntities = TextWithEntities{ text };
 	TextUtilities::ParseEntities(textWithEntities, TextParseLinks);
-	App::wnd()->serviceNotification(
+	_session->data().serviceNotification(
 		textWithEntities,
-		MTP_messageMediaEmpty(),
-		unixtime());
+		MTP_messageMediaEmpty());
 	_addedSomeLocal = true;
 };
 
-void Changelogs::addAlphaLogs() {
-	for (const auto[version, changes] : AlphaLogs()) {
-		addAlphaLog(version, changes);
+void Changelogs::addBetaLogs() {
+	for (const auto[version, changes] : BetaLogs()) {
+		addBetaLog(version, changes);
 	}
 }
 
-void Changelogs::addAlphaLog(int changeVersion, const char *changes) {
+void Changelogs::addBetaLog(int changeVersion, const char *changes) {
 	if (_oldVersion >= changeVersion) {
 		return;
 	}

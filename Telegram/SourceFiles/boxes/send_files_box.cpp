@@ -136,7 +136,7 @@ private:
 	void drawSimpleFrame(Painter &p, QRect to, QSize size) const;
 
 	Ui::GroupMediaLayout _layout;
-	base::optional<QRect> _animateFromGeometry;
+	std::optional<QRect> _animateFromGeometry;
 	const QImage _fullPreview;
 	const int _shrinkSize = 0;
 	QPixmap _albumImage;
@@ -229,7 +229,7 @@ AlbumThumb::AlbumThumb(
 }
 
 void AlbumThumb::resetLayoutAnimation() {
-	_animateFromGeometry = base::none;
+	_animateFromGeometry = std::nullopt;
 }
 
 void AlbumThumb::animateLayoutToInitial() {
@@ -993,7 +993,7 @@ auto SendFilesBox::AlbumPreview::generateOrderedLayout() const
 	auto sizes = ranges::view::all(
 		_order
 	) | ranges::view::transform([&](int index) {
-		return _list.files[index].preview.size() / cIntRetinaFactor();
+		return _list.files[index].shownDimensions;
 	}) | ranges::to_vector;
 
 	auto layout = Ui::LayoutMediaGroup(

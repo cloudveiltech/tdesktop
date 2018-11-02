@@ -332,7 +332,7 @@ QByteArray SerializeMessage(
 		} else if (!list.empty()) {
 			push("Values", JoinList(", ", list));
 		}
-	}, [](const base::none_type &) {});
+	}, [](std::nullopt_t) {});
 
 	if (!message.action.content) {
 		pushFrom();
@@ -435,7 +435,7 @@ QByteArray SerializeMessage(
 		}));
 	}, [](const UnsupportedMedia &data) {
 		Unexpected("Unsupported message.");
-	}, [](const base::none_type &) {});
+	}, [](std::nullopt_t) {});
 
 	auto value = JoinList(QByteArray(), ranges::view::all(
 		message.text
@@ -830,14 +830,20 @@ Result TextWriter::writeDialogSlice(const Data::MessagesSlice &data) {
 	Expects(_chat != nullptr);
 	Expects(!data.list.empty());
 
-	_messagesCount += data.list.size();
 	auto list = std::vector<QByteArray>();
 	list.reserve(data.list.size());
 	for (const auto &message : data.list) {
+		if (Data::SkipMessageByDate(message, _settings)) {
+			continue;
+		}
 		list.push_back(SerializeMessage(
 			message,
 			data.peers,
 			_environment.internalLinksDomain));
+		++_messagesCount;
+	}
+	if (list.empty()) {
+		return Result::Success();
 	}
 	const auto full = _chat->empty()
 		? JoinList(kLineBreak, list)

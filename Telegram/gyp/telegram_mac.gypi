@@ -37,9 +37,13 @@
       },
     },
   }], [ 'build_macold', {
+    'defines': [
+      'OS_MAC_OLD',
+    ],
     'xcode_settings': {
       'OTHER_CPLUSPLUSFLAGS': [ '-nostdinc++' ],
       'OTHER_LDFLAGS': [
+        '-isysroot', '/',
         '-lbase',
         '-lcrashpad_client',
         '-lcrashpad_util',
@@ -55,14 +59,11 @@
         '/usr/local/macold/lib/libexif.a',
         '/usr/local/macold/lib/libc++.a',
         '/usr/local/macold/lib/libc++abi.a',
-        '<(libs_loc)/macold/openssl/libssl.a',
-        '<(libs_loc)/macold/openssl/libcrypto.a',
       ],
     },
     'include_dirs': [
       '/usr/local/macold',
       '/usr/local/macold/include/c++/v1',
-      '<(libs_loc)/macold/openssl/include',
       '<(libs_loc)/macold/libexif-0.6.20',
       '<(libs_loc)/macold/crashpad',
       '<(libs_loc)/macold/crashpad/third_party/mini_chromium/mini_chromium',
@@ -122,14 +123,11 @@
         '/usr/local/lib/libavutil.a',
         '/usr/local/lib/libswscale.a',
         '/usr/local/lib/libswresample.a',
-        '<(libs_loc)/openssl/libssl.a',
-        '<(libs_loc)/openssl/libcrypto.a',
       ],
     },
     'include_dirs': [
       '<(libs_loc)/crashpad',
       '<(libs_loc)/crashpad/third_party/mini_chromium/mini_chromium',
-      '<(libs_loc)/openssl/include'
     ],
     'configurations': {
       'Debug': {
@@ -198,12 +196,6 @@
         '<(libs_loc)/breakpad/src/client/mac/build/Release',
       ],
     },
-    'mac_sandbox': 1,
-    'mac_sandbox_development_team': '6N38VWS5BX',
-    'product_name': 'Telegram Desktop',
-    'sources': [
-      '../Telegram/Telegram Desktop.entitlements',
-    ],
     'defines': [
       'TDESKTOP_DISABLE_AUTOUPDATE',
       'OS_MAC_STORE',

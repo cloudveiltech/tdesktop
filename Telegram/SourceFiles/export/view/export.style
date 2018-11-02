@@ -21,16 +21,8 @@ exportHeaderLabel: FlatLabel(boxTitle) {
 	}
 }
 exportHeaderPadding: margins(22px, 20px, 22px, 9px);
-exportFileSizeSlider: MediaSlider {
-	width: 3px;
-	activeFg: mediaPlayerActiveFg;
-	inactiveFg: mediaPlayerInactiveFg;
-	activeFgOver: mediaPlayerActiveFg;
-	inactiveFgOver: mediaPlayerInactiveFg;
-	activeFgDisabled: mediaPlayerInactiveFg;
-	inactiveFgDisabled: windowBg;
+exportFileSizeSlider: MediaSlider(defaultContinuousSlider) {
 	seekSize: size(15px, 15px);
-	duration: 150;
 }
 exportFileSizeLabel: LabelSimple(defaultLabelSimple) {
 	font: boxTextFont;
@@ -42,6 +34,7 @@ exportLocationLabel: FlatLabel(boxLabel) {
 	maxHeight: 21px;
 }
 exportLocationPadding: margins(22px, 8px, 22px, 8px);
+exportLimitsPadding: margins(22px, 0px, 22px, 0px);
 
 exportAboutOptionLabel: FlatLabel(defaultFlatLabel) {
 	textFg: windowSubTextFg;
@@ -100,4 +93,11 @@ exportTopBarLabel: FlatLabel(defaultFlatLabel) {
 	palette: TextPalette(defaultTextPalette) {
 		linkFg: windowSubTextFg;
 	}
+}
+exportCalendarSizes: CalendarSizes(defaultCalendarSizes) {
+	width: 320px;
+	daysHeight: 32px;
+	cellSize: size(42px, 38px);
+	cellInner: 32px;
+	padding: margins(14px, 15px, 14px, 10px);
 }

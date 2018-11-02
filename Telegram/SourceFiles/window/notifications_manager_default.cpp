@@ -360,7 +360,11 @@ Widget::Widget(Manager *manager, QPoint startPosition, int shift, Direction shif
 , _a_shift(animation(this, &Widget::step_shift)) {
 	setWindowOpacity(0.);
 
-	setWindowFlags(Qt::WindowFlags(Qt::FramelessWindowHint) | Qt::WindowStaysOnTopHint | Qt::BypassWindowManagerHint | Qt::NoDropShadowWindowHint | Qt::Tool);
+	setWindowFlags(Qt::WindowFlags(Qt::FramelessWindowHint)
+		| Qt::WindowStaysOnTopHint
+		| Qt::BypassWindowManagerHint
+		| Qt::NoDropShadowWindowHint
+		| Qt::Tool);
 	setAttribute(Qt::WA_MacAlwaysShowToolWindow);
 	setAttribute(Qt::WA_OpaquePaintEvent);
 
@@ -389,6 +393,9 @@ void Widget::opacityAnimationCallback() {
 }
 
 void Widget::step_shift(float64 ms, bool timer) {
+	if (anim::Disabled()) {
+		ms += st::notifyFastAnim;
+	}
 	float64 dt = ms / float64(st::notifyFastAnim);
 	if (dt >= 1) {
 		a_shift.finish();
@@ -399,7 +406,18 @@ void Widget::step_shift(float64 ms, bool timer) {
 }
 
 void Widget::hideSlow() {
-	hideAnimated(st::notifySlowHide, anim::easeInCirc);
+	if (anim::Disabled()) {
+		_hiding = true;
+		auto [left, right] = base::make_binary_guard();
+		_hidingDelayed = std::move(left);
+		App::CallDelayed(st::notifySlowHide, this, [=, guard = std::move(right)] {
+			if (guard.alive() && _hiding) {
+				hideFast();
+			}
+		});
+	} else {
+		hideAnimated(st::notifySlowHide, anim::easeInCirc);
+	}
 }
 
 void Widget::hideFast() {
@@ -409,6 +427,7 @@ void Widget::hideFast() {
 void Widget::hideStop() {
 	if (_hiding) {
 		_hiding = false;
+		_hidingDelayed = {};
 		_a_opacity.start([this] { opacityAnimationCallback(); }, 0., 1., st::notifyFastAnim);
 	}
 }

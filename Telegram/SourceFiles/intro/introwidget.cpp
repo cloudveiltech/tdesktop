@@ -42,6 +42,19 @@ namespace {
 
 constexpr str_const kDefaultCountry = "US";
 
+void PrepareSupportMode() {
+	anim::SetDisabled(true);
+	Local::writeSettings();
+
+	Global::SetDesktopNotify(false);
+	Global::SetSoundNotify(false);
+	cSetAutoDownloadAudio(dbiadNoPrivate | dbiadNoGroups);
+	cSetAutoDownloadGif(dbiadNoPrivate | dbiadNoGroups);
+	cSetAutoDownloadPhoto(dbiadNoPrivate | dbiadNoGroups);
+	cSetAutoPlayGif(false);
+	Local::writeUserSettings();
+}
+
 } // namespace
 
 Widget::Widget(QWidget *parent) : RpWidget(parent)
@@ -136,6 +149,7 @@ void Widget::createLanguageLink() {
 		createLink(Lang::GetOriginalValue(lng_switch_to_this), defaultId);
 	} else if (!suggestedId.isEmpty() && suggestedId != currentId) {
 		request(MTPlangpack_GetStrings(
+			MTP_string(Lang::CloudLangPackName()),
 			MTP_string(suggestedId),
 			MTP_vector<MTPstring>(1, MTP_string("lng_switch_to_this"))
 		)).done([=](const MTPVector<MTPLangPackString> &result) {
@@ -572,11 +586,13 @@ void Widget::updateControlsGeometry() {
 void Widget::keyPressEvent(QKeyEvent *e) {
 	if (_a_show.animating() || getStep()->animating()) return;
 
-	if (e->key() == Qt::Key_Escape) {
+	if (e->key() == Qt::Key_Escape || e->key() == Qt::Key_Back) {
 		if (getStep()->hasBack()) {
 			historyMove(Direction::Back);
 		}
-	} else if (e->key() == Qt::Key_Enter || e->key() == Qt::Key_Return || e->key() == Qt::Key_Space) {
+	} else if (e->key() == Qt::Key_Enter
+		|| e->key() == Qt::Key_Return
+		|| e->key() == Qt::Key_Space) {
 		getStep()->submit();
 	}
 }
@@ -593,7 +609,9 @@ QString Widget::Step::nextButtonText() const {
 }
 
 void Widget::Step::finish(const MTPUser &user, QImage &&photo) {
-	if (user.type() != mtpc_user || !user.c_user().is_self()) {
+	if (user.type() != mtpc_user
+		|| !user.c_user().is_self()
+		|| !user.c_user().vid.v) {
 		// No idea what to do here.
 		// We could've reset intro and MTP, but this really should not happen.
 		Ui::show(Box<InformBox>("Internal error: bad user.is_self() after sign in."));
@@ -609,18 +627,18 @@ void Widget::Step::finish(const MTPUser &user, QImage &&photo) {
 		Local::writeLangPack();
 	}
 
-	Messenger::Instance().authSessionCreate(user.c_user().vid.v);
+	Messenger::Instance().authSessionCreate(user);
 	Local::writeMtpData();
-	App::wnd()->setupMain(&user);
+	App::wnd()->setupMain();
 
 	// "this" is already deleted here by creating the main widget.
-	if (auto user = App::self()) {
-		Auth().api().requestFullPeer(user);
-	}
-	if (!photo.isNull()) {
-		Messenger::Instance().uploadProfilePhoto(
-			std::move(photo),
-			Auth().userId());
+	if (AuthSession::Exists()) {
+		if (!photo.isNull()) {
+			Auth().api().uploadPeerPhoto(Auth().user(), std::move(photo));
+		}
+		if (Auth().supportMode()) {
+			PrepareSupportMode();
+		}
 	}
 }
 

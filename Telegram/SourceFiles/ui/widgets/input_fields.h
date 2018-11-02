@@ -33,6 +33,13 @@ struct InstantReplaces {
 
 };
 
+enum class InputSubmitSettings {
+	Enter,
+	CtrlEnter,
+	Both,
+	None,
+};
+
 class FlatInput : public TWidgetHelper<QLineEdit>, private base::Subscriber {
 	Q_OBJECT
 
@@ -221,7 +228,7 @@ public:
 		int from,
 		int till,
 		const QString &with,
-		base::optional<QString> checkOriginal = base::none);
+		std::optional<QString> checkOriginal = std::nullopt);
 	bool commitMarkdownReplacement(
 		int from,
 		int till,
@@ -258,13 +265,11 @@ public:
 	bool isUndoAvailable() const;
 	bool isRedoAvailable() const;
 
-	enum class SubmitSettings {
-		None,
-		Enter,
-		CtrlEnter,
-		Both,
-	};
+	using SubmitSettings = InputSubmitSettings;
 	void setSubmitSettings(SubmitSettings settings);
+	static bool ShouldSubmit(
+		SubmitSettings settings,
+		Qt::KeyboardModifiers modifiers);
 	void customUpDown(bool isCustom);
 	void customTab(bool isCustom);
 	int borderAnimationStart() const;
@@ -296,6 +301,8 @@ public:
 	const rpl::variable<int> &scrollTop() const;
 	int scrollTopMax() const;
 	void scrollTo(int top);
+
+	~InputField();
 
 private slots:
 	void onTouchTimer();
@@ -413,7 +420,7 @@ private:
 	bool _forcePlaceholderHidden = false;
 	bool _reverseMarkdownReplacement = false;
 
-	object_ptr<Inner> _inner;
+	const std::unique_ptr<Inner> _inner;
 
 	TextWithTags _lastTextWithTags;
 	std::vector<MarkdownTag> _lastMarkdownTags;

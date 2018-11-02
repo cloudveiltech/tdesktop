@@ -34,16 +34,27 @@ namespace {
 
 constexpr auto kMaxGroupChannelTitle = 255; // See also edit_peer_info_box.
 constexpr auto kMaxChannelDescription = 255; // See also edit_peer_info_box.
-constexpr auto kMaxBioLength = 70;
 constexpr auto kMinUsernameLength = 5;
 
-style::InputField CreateBioFieldStyle() {
-	auto result = st::newGroupDescription;
-	result.textMargins.setRight(st::boxTextFont->spacew + st::boxTextFont->width(QString::number(kMaxBioLength)));
-	return result;
+bool IsValidPhone(QString phone) {
+	phone = phone.replace(QRegularExpression(qsl("[^\\d]")), QString());
+	return (phone.length() >= 8)
+		|| (phone == qsl("333"))
+		|| (phone.startsWith(qsl("42"))
+			&& (phone.length() == 2
+				|| phone.length() == 5
+				|| phone == qsl("4242")));
 }
 
 } // namespace
+
+style::InputField CreateBioFieldStyle() {
+	auto result = st::newGroupDescription;
+	result.textMargins.setRight(
+		st::boxTextFont->spacew
+		+ st::boxTextFont->width(QString::number(kMaxBioLength)));
+	return result;
+}
 
 QString PeerFloodErrorText(PeerFloodType type) {
 	auto link = textcmdLink(
@@ -148,8 +159,16 @@ void AddContactBox::paintEvent(QPaintEvent *e) {
 		auto textHeight = height() - st::contactPadding.top() - st::contactPadding.bottom() - st::boxPadding.bottom();
 		p.drawText(QRect(st::boxPadding.left(), st::contactPadding.top(), width() - st::boxPadding.left() - st::boxPadding.right(), textHeight), lng_contact_not_joined(lt_name, _sentName), style::al_topleft);
 	} else {
-		st::contactUserIcon.paint(p, st::boxPadding.left(), _first->y() + st::contactIconTop, width());
-		st::contactPhoneIcon.paint(p, st::boxPadding.left(), _phone->y() + st::contactIconTop, width());
+		st::contactUserIcon.paint(
+			p,
+			st::boxPadding.left() + st::contactIconPosition.x(),
+			_first->y() + st::contactIconPosition.y(),
+			width());
+		st::contactPhoneIcon.paint(
+			p,
+			st::boxPadding.left() + st::contactIconPosition.x(),
+			_phone->y() + st::contactIconPosition.y(),
+			width());
 	}
 }
 
@@ -199,7 +218,7 @@ void AddContactBox::save() {
 			_first->showError();
 		}
 		return;
-	} else if (!_user && !App::isValidPhone(phone)) {
+	} else if (!_user && !IsValidPhone(phone)) {
 		_phone->setFocus();
 		_phone->showError();
 		return;
@@ -405,7 +424,7 @@ void GroupInfoBox::createGroup(not_null<PeerListBox*> selectUsersBox, const QStr
 		App::main()->sentUpdatesReceived(result);
 
 		auto success = base::make_optional(&result)
-			| [](auto updates) -> base::optional<const QVector<MTPChat>*> {
+			| [](auto updates) -> std::optional<const QVector<MTPChat>*> {
 				switch (updates->type()) {
 				case mtpc_updates:
 					return &updates->c_updates().vchats.v;
@@ -413,12 +432,12 @@ void GroupInfoBox::createGroup(not_null<PeerListBox*> selectUsersBox, const QStr
 					return &updates->c_updatesCombined().vchats.v;
 				}
 				LOG(("API Error: unexpected update cons %1 (GroupInfoBox::creationDone)").arg(updates->type()));
-				return base::none;
+				return std::nullopt;
 			}
 			| [](auto chats) {
 				return (!chats->empty() && chats->front().type() == mtpc_chat)
 					? base::make_optional(chats)
-					: base::none;
+					: std::nullopt;
 			}
 			| [](auto chats) {
 				return App::chat(chats->front().c_chat().vid.v);
@@ -426,9 +445,7 @@ void GroupInfoBox::createGroup(not_null<PeerListBox*> selectUsersBox, const QStr
 			| [this](not_null<ChatData*> chat) {
 				auto image = _photo->takeResultImage();
 				if (!image.isNull()) {
-					Messenger::Instance().uploadProfilePhoto(
-						std::move(image),
-						chat->id);
+					Auth().api().uploadPeerPhoto(chat, std::move(image));
 				}
 				Ui::showPeerHistory(chat, ShowAtUnreadMsgId);
 			};
@@ -510,7 +527,7 @@ void GroupInfoBox::createChannel(const QString &title, const QString &descriptio
 		App::main()->sentUpdatesReceived(result);
 
 		auto success = base::make_optional(&result)
-			| [](auto updates) -> base::optional<const QVector<MTPChat>*> {
+			| [](auto updates) -> std::optional<const QVector<MTPChat>*> {
 				switch (updates->type()) {
 				case mtpc_updates:
 					return &updates->c_updates().vchats.v;
@@ -518,12 +535,12 @@ void GroupInfoBox::createChannel(const QString &title, const QString &descriptio
 					return &updates->c_updatesCombined().vchats.v;
 				}
 				LOG(("API Error: unexpected update cons %1 (GroupInfoBox::createChannel)").arg(updates->type()));
-				return base::none;
+				return std::nullopt;
 			}
 			| [](auto chats) {
 				return (!chats->empty() && chats->front().type() == mtpc_channel)
 					? base::make_optional(chats)
-					: base::none;
+					: std::nullopt;
 			}
 			| [](auto chats) {
 				return App::channel(chats->front().c_channel().vid.v);
@@ -531,9 +548,7 @@ void GroupInfoBox::createChannel(const QString &title, const QString &descriptio
 			| [this](not_null<ChannelData*> channel) {
 				auto image = _photo->takeResultImage();
 				if (!image.isNull()) {
-					Messenger::Instance().uploadProfilePhoto(
-						std::move(image),
-						channel->id);
+					Auth().api().uploadPeerPhoto(channel, std::move(image));
 				}
 				_createdChannel = channel;
 				_creationRequestId = request(

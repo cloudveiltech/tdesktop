@@ -228,7 +228,9 @@ void DialogsInner::paintRegion(Painter &p, const QRegion &region, bool paintingO
 	auto fullWidth = getFullWidth();
 	auto ms = getms();
 	if (_state == State::Default) {
+		if (_a_pinnedShifting.animating()) {
 		_a_pinnedShifting.step(ms, false);
+		}
 
 		auto rows = shownDialogs();
 		auto dialogsClip = r;
@@ -460,9 +462,12 @@ void DialogsInner::paintRegion(Painter &p, const QRegion &region, bool paintingO
 			}
 		}
 
+		const auto showUnreadInSearchResults = uniqueSearchResults();
 		if (!_waitingForSearch || !_searchResults.empty()) {
 			const auto text = _searchResults.empty()
 				? lang(lng_search_no_results)
+				: showUnreadInSearchResults
+				? qsl("Search results")
 				: lng_search_found_results(
 					lt_count,
 					_searchedMigratedCount + _searchedCount);
@@ -498,7 +503,8 @@ void DialogsInner::paintRegion(Painter &p, const QRegion &region, bool paintingO
 						active,
 						selected,
 						paintingOther,
-						ms);
+						ms,
+						showUnreadInSearchResults);
 					p.translate(0, st::dialogsRowHeight);
 				}
 			}
@@ -688,7 +694,6 @@ void DialogsInner::paintSearchInFeed(
 	paintSearchInFilter(p, paintUserpic, top, fullWidth, icon, text);
 }
 
-
 void DialogsInner::activate() {
 }
 
@@ -858,6 +863,10 @@ void DialogsInner::mousePressEvent(QMouseEvent *e) {
 			rtlupdate(0, searchedOffset() + index * st::dialogsRowHeight, getFullWidth(), st::dialogsRowHeight);
 		});
 	}
+	if (anim::Disabled()
+		&& (!_pressed || !_pressed->entry()->isPinnedDialog())) {
+		mousePressReleased(e->button());
+}
 }
 
 void DialogsInner::checkReorderPinnedStart(QPoint localPosition) {
@@ -1029,12 +1038,18 @@ bool DialogsInner::updateReorderPinned(QPoint localPosition) {
 }
 
 void DialogsInner::step_pinnedShifting(TimeMs ms, bool timer) {
+	if (anim::Disabled()) {
+		ms += st::stickersRowDuration;
+	}
+
+	auto wasAnimating = false;
 	auto animating = false;
 	auto updateMin = -1;
 	auto updateMax = 0;
 	for (auto i = 0, l = static_cast<int>(_pinnedRows.size()); i != l; ++i) {
 		auto start = _pinnedRows[i].animStartTime;
 		if (start) {
+			wasAnimating = true;
 			if (updateMin < 0) updateMin = i;
 			updateMax = i;
 			if (start + st::stickersRowDuration > ms && ms >= start) {
@@ -1047,7 +1062,7 @@ void DialogsInner::step_pinnedShifting(TimeMs ms, bool timer) {
 			}
 		}
 	}
-	if (timer) {
+	if (timer || (wasAnimating && !animating)) {
 		updateReorderIndexGetCount();
 		if (_draggingIndex >= 0) {
 			if (updateMin < 0 || updateMin > _draggingIndex) {
@@ -1564,7 +1579,7 @@ void DialogsInner::contextMenuEvent(QContextMenuEvent *e) {
 		mousePressReleased(_pressButton);
 	}
 
-	_menu = base::make_unique_q<Ui::PopupMenu>(nullptr);
+	_menu = base::make_unique_q<Ui::PopupMenu>(this);
 	if (const auto history = key.history()) {
 		Window::FillPeerMenu(
 			_controller,
@@ -1841,9 +1856,9 @@ void DialogsInner::applyDialog(const MTPDdialog &dialog) {
 	history->applyDialog(dialog);
 
 	if (!history->useProxyPromotion() && !history->isPinnedDialog()) {
-		const auto date = history->chatsListDate();
-		if (!date.isNull()) {
-			addSavedPeersAfter(date);
+		const auto date = history->chatsListTimeId();
+		if (date != 0) {
+			addSavedPeersAfter(ParseDateTime(date));
 		}
 	}
 	_contactsNoDialogs->del(history);
@@ -1876,7 +1891,7 @@ void DialogsInner::addSavedPeersAfter(const QDateTime &date) {
 	auto &saved = cRefSavedPeersByTime();
 	while (!saved.isEmpty() && (date.isNull() || date < saved.lastKey())) {
 		const auto history = App::history(saved.last()->id);
-		history->setChatsListDate(saved.lastKey());
+		history->setChatsListTimeId(ServerTimeFromParsed(saved.lastKey()));
 		_contactsNoDialogs->del(history);
 		saved.remove(saved.lastKey(), saved.last());
 	}
@@ -1886,28 +1901,53 @@ void DialogsInner::addAllSavedPeers() {
 	addSavedPeersAfter(QDateTime());
 }
 
+bool DialogsInner::uniqueSearchResults() const {
+	return Auth().supportMode()
+		&& _filter.startsWith('#')
+		&& !_searchInChat;
+}
+
+bool DialogsInner::hasHistoryInSearchResults(not_null<History*> history) const {
+	using Result = std::unique_ptr<Dialogs::FakeRow>;
+	return ranges::find(
+		_searchResults,
+		history,
+		[](const Result &result) { return result->item()->history(); }
+	) != end(_searchResults);
+}
+
 bool DialogsInner::searchReceived(
 	const QVector<MTPMessage> &messages,
 	DialogsSearchRequestType type,
 	int fullCount) {
+	const auto uniquePeers = uniqueSearchResults();
 	if (type == DialogsSearchFromStart || type == DialogsSearchPeerFromStart) {
 		clearSearchResults(false);
 	}
 	auto isGlobalSearch = (type == DialogsSearchFromStart || type == DialogsSearchFromOffset);
 	auto isMigratedSearch = (type == DialogsSearchMigratedFromStart || type == DialogsSearchMigratedFromOffset);
 
+	auto unknownUnreadCounts = std::vector<not_null<History*>>();
 	TimeId lastDateFound = 0;
 	for_const(auto message, messages) {
 		auto msgId = idFromMessage(message);
 		auto peerId = peerFromMessage(message);
 		auto lastDate = dateFromMessage(message);
-		if (auto peer = App::peerLoaded(peerId)) {
+		if (const auto peer = App::peerLoaded(peerId)) {
 			if (lastDate) {
-				auto item = App::histories().addNewMessage(message, NewMessageExisting);
+				const auto item = App::histories().addNewMessage(
+					message,
+					NewMessageExisting);
+				const auto history = item->history();
+				if (!uniquePeers || !hasHistoryInSearchResults(history)) {
 				_searchResults.push_back(
 					std::make_unique<Dialogs::FakeRow>(
 						_searchInChat,
 						item));
+					if (uniquePeers && !history->unreadCountKnown()) {
+						unknownUnreadCounts.push_back(history);
+					}
+				}
 				lastDateFound = lastDate;
 				if (isGlobalSearch) {
 					_lastSearchDate = lastDateFound;
@@ -1940,7 +1980,12 @@ bool DialogsInner::searchReceived(
 			|| type == DialogsSearchMigratedFromOffset)) {
 		_waitingForSearch = false;
 	}
+
 	refresh();
+
+	if (!unknownUnreadCounts.empty()) {
+		Auth().api().requestDialogEntries(std::move(unknownUnreadCounts));
+	}
 	return lastDateFound != 0;
 }
 
@@ -2572,7 +2617,9 @@ bool DialogsInner::chooseRow() {
 		if (const auto history = chosen.key.history()) {
 			App::main()->choosePeer(
 				history->peer->id,
-				chosen.message.fullId.msg);
+				(uniqueSearchResults()
+					? ShowAtUnreadMsgId
+					: chosen.message.fullId.msg));
 		}
 		else if (const auto feed = chosen.key.feed()) {
 			_controller->showSection(

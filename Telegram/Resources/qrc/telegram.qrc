@@ -39,6 +39,7 @@
     <file alias="images/section_sessions@2x.png">../export_html/images/section_sessions@2x.png</file>
     <file alias="images/section_web.png">../export_html/images/section_web.png</file>
     <file alias="images/section_web@2x.png">../export_html/images/section_web@2x.png</file>
+    <file alias="js/script.js">../export_html/js/script.js</file>
   </qresource>
   <qresource prefix="/gui">
     <file alias="fonts/OpenSans-Regular.ttf">../fonts/OpenSans-Regular.ttf</file>
@@ -50,7 +51,9 @@
     <file alias="art/logo_256_no_margin.png">../art/logo_256_no_margin.png</file>
     <file alias="art/sunrise.jpg">../art/sunrise.jpg</file>
     <file alias="art/banned.png">../art/banned.png</file>
+    <file alias="day-blue.tdesktop-theme">../day-blue.tdesktop-theme</file>
     <file alias="night.tdesktop-theme">../night.tdesktop-theme</file>
+    <file alias="night-green.tdesktop-theme">../night-green.tdesktop-theme</file>
   </qresource>
   <qresource prefix="/sounds">
     <file alias="msg_incoming.mp3">../sounds/msg_incoming.mp3</file>

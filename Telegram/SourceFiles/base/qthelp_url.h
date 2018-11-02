@@ -9,6 +9,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace qthelp {
 
+const QRegularExpression &RegExpDomain();
+const QRegularExpression &RegExpDomainExplicit();
+QRegularExpression RegExpProtocol();
+
 inline QString url_encode(const QString &part) {
 	return QString::fromLatin1(QUrl::toPercentEncoding(part));
 }
@@ -29,5 +33,7 @@ QMap<QString, QString> url_parse_params(
 QString url_append_query_or_hash(const QString &url, const QString &add);
 
 bool is_ipv6(const QString &ip);
+
+QString validate_url(const QString &value);
 
 } // namespace qthelp

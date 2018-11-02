@@ -526,10 +526,10 @@ void Message::paintFromName(
 		if (item->isPost()) {
 			p.setPen(selected ? st::msgInServiceFgSelected : st::msgInServiceFg);
 		} else {
-			p.setPen(FromNameFg(item->author(), selected));
+			p.setPen(FromNameFg(item->displayFrom(), selected));
 		}
 		item->displayFrom()->nameText.drawElided(p, availableLeft, trect.top(), availableWidth);
-		auto skipWidth = item->author()->nameText.maxWidth() + st::msgServiceFont->spacew;
+		auto skipWidth = item->displayFrom()->nameText.maxWidth() + st::msgServiceFont->spacew;
 		availableLeft += skipWidth;
 		availableWidth -= skipWidth;
 
@@ -691,6 +691,8 @@ bool Message::hasFromPhoto() const {
 		}
 		return !item->out() && !item->history()->peer->isUser();
 	} break;
+	case Context::ContactPreview:
+		return false;
 	}
 	Unexpected("Context in Message::hasFromPhoto.");
 }
@@ -861,7 +863,7 @@ bool Message::getStateFromName(
 			auto via = item->Get<HistoryMessageVia>();
 			if (via
 				&& !displayForwardedFrom()
-				&& point.x() >= availableLeft + item->author()->nameText.maxWidth() + st::msgServiceFont->spacew
+				&& point.x() >= availableLeft + item->displayFrom()->nameText.maxWidth() + st::msgServiceFont->spacew
 				&& point.x() < availableLeft + availableWidth
 				&& point.x() < availableLeft + user->nameText.maxWidth() + st::msgServiceFont->spacew + via->width) {
 				outResult->link = via->link;
@@ -1283,6 +1285,8 @@ bool Message::hasFromName() const {
 			&& (!item->history()->peer->isUser()
 				|| item->history()->peer->isSelf());
 	} break;
+	case Context::ContactPreview:
+		return false;
 	}
 	Unexpected("Context in Message::hasFromPhoto.");
 }
@@ -1514,7 +1518,7 @@ void Message::fromNameUpdated(int width) const {
 			via->resize(width
 				- st::msgPadding.left()
 				- st::msgPadding.right()
-				- item->author()->nameText.maxWidth()
+				- item->displayFrom()->nameText.maxWidth()
 				- st::msgServiceFont->spacew);
 		}
 	}

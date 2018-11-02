@@ -98,8 +98,10 @@ void showBox(
 
 } // namespace internal
 
-void showMediaPreview(DocumentData *document);
-void showMediaPreview(PhotoData *photo);
+void showMediaPreview(
+	Data::FileOrigin origin,
+	not_null<DocumentData*> document);
+void showMediaPreview(Data::FileOrigin origin, not_null<PhotoData*> photo);
 void hideMediaPreview();
 
 template <typename BoxType>
@@ -183,8 +185,10 @@ inline bool IsTopCorner(ScreenCorner corner) {
 
 namespace Sandbox {
 
-bool CheckBetaVersionDir();
+bool CheckPortableVersionDir();
 void WorkingDirReady();
+void WriteInstallBetaVersionsSetting();
+void WriteDebugModeSetting();
 
 void MainThreadTaskAdded();
 
@@ -289,8 +293,6 @@ DeclareVar(HiddenPinnedMessagesMap, HiddenPinnedMessages);
 
 typedef QMap<uint64, QPixmap> CircleMasksMap;
 DeclareRefVar(CircleMasksMap, CircleMasks);
-
-DeclareRefVar(base::Observable<void>, SelfChanged);
 
 DeclareVar(bool, AskDownloadPath);
 DeclareVar(QString, DownloadPath);

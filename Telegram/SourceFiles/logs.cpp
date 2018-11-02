@@ -322,7 +322,7 @@ bool DebugEnabled() {
 void start(not_null<Core::Launcher*> launcher) {
 	Assert(LogsData == 0);
 
-	if (!Sandbox::CheckBetaVersionDir()) {
+	if (!Sandbox::CheckPortableVersionDir()) {
 		return;
 	}
 
@@ -330,21 +330,22 @@ void start(not_null<Core::Launcher*> launcher) {
 	auto moveOldDataFrom = QString();
 	auto workingDirChosen = false;
 
-	if (cBetaVersion()) {
-		SetDebugEnabled(true);
+	if (cAlphaVersion()) {
 		workingDirChosen = true;
+
 #if defined Q_OS_MAC || defined Q_OS_LINUX
 	} else {
-#ifdef _DEBUG
-		cForceWorkingDir(cExeDir());
-#else // _DEBUG
 		if (!cWorkingDir().isEmpty()) {
-			// This value must come only from the "-workdir" argument.
+			// This value must come from TelegramForcePortable
+			// or from the "-workdir" command line argument.
 			cForceWorkingDir(cWorkingDir());
 		} else {
+#ifdef _DEBUG
+			cForceWorkingDir(cExeDir());
+#else // _DEBUG
 			cForceWorkingDir(psAppDataPath());
-		}
 #endif // !_DEBUG
+		}
 		workingDirChosen = true;
 
 #if defined Q_OS_LINUX && !defined _DEBUG // fix first version
@@ -355,6 +356,7 @@ void start(not_null<Core::Launcher*> launcher) {
 	} else {
 		cForceWorkingDir(psAppDataPath());
 		workingDirChosen = true;
+
 #elif defined OS_WIN_STORE // Q_OS_MAC || Q_OS_LINUX || Q_OS_WINRT
 #ifdef _DEBUG
 		cForceWorkingDir(cExeDir());
@@ -362,13 +364,16 @@ void start(not_null<Core::Launcher*> launcher) {
 		cForceWorkingDir(psAppDataPath());
 #endif // !_DEBUG
 		workingDirChosen = true;
+
 #elif defined Q_OS_WIN
 	} else {
 		if (!cWorkingDir().isEmpty()) {
-			// This value must come only from the "-workdir" argument.
+			// This value must come from TelegramForcePortable
+			// or from the "-workdir" command line argument.
 			cForceWorkingDir(cWorkingDir());
 			workingDirChosen = true;
 		}
+
 #endif // Q_OS_MAC || Q_OS_LINUX || Q_OS_WINRT || OS_WIN_STORE
 	}
 
@@ -397,14 +402,24 @@ void start(not_null<Core::Launcher*> launcher) {
 		LogsData = 0;
 	}
 
-	LOG(("Launched version: %1, alpha: %2, beta: %3, debug mode: %4, test dc: %5").arg(AppVersion).arg(Logs::b(cAlphaVersion())).arg(cBetaVersion()).arg(Logs::b(DebugEnabled())).arg(Logs::b(cTestMode())));
+	LOG(("Launched version: %1, "
+		"install beta: %2, "
+		"alpha: %3, "
+		"debug mode: %4, "
+		"test dc: %5"
+		).arg(AppVersion
+		).arg(Logs::b(cInstallBetaVersion())
+		).arg(cAlphaVersion()
+		).arg(Logs::b(DebugEnabled())
+		).arg(Logs::b(cTestMode())));
 	LOG(("Executable dir: %1, name: %2").arg(cExeDir()).arg(cExeName()));
 	LOG(("Initial working dir: %1").arg(initialWorkingDir));
 	LOG(("Working dir: %1").arg(cWorkingDir()));
 	LOG(("Command line: %1").arg(launcher->argumentsString()));
 
 	if (!LogsData) {
-		LOG(("FATAL: Could not open '%1' for writing log!").arg(_logsFilePath(LogDataMain, qsl("_startXX"))));
+		LOG(("FATAL: Could not open '%1' for writing log!"
+			).arg(_logsFilePath(LogDataMain, qsl("_startXX"))));
 		return;
 	}
 

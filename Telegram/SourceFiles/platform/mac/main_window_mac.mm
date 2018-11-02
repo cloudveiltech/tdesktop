@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwidget.h"
 #include "application.h"
 #include "messenger.h"
+#include "auth_session.h"
 #include "history/history.h"
 #include "history/history_widget.h"
 #include "history/history_inner_widget.h"
@@ -605,7 +606,7 @@ void MainWindow::createGlobalMenu() {
 	connect(psContacts, &QAction::triggered, psContacts, [] {
 		if (App::wnd() && App::wnd()->isHidden()) App::wnd()->showFromTray();
 
-		if (!App::self()) return;
+		if (!AuthSession::Exists()) return;
 		Ui::show(Box<PeerListBox>(std::make_unique<ContactsBoxController>(), [](not_null<PeerListBox*> box) {
 			box->addButton(langFactory(lng_close), [box] { box->closeBox(); });
 			box->addLeftButton(langFactory(lng_profile_add_contact), [] { App::wnd()->onShowAddContact(); });
@@ -695,9 +696,10 @@ void MainWindow::updateGlobalMenuHook() {
 		canDelete = list->canDeleteSelected();
 	}
 	App::wnd()->updateIsActive(0);
-	const auto logged = !!App::self();
+	const auto logged = AuthSession::Exists();
 	const auto locked = !Messenger::Instance().locked();
 	const auto inactive = !logged || locked;
+	const auto support = logged && Auth().supportMode();
 	_forceDisabled(psLogout, !logged && !locked);
 	_forceDisabled(psUndo, !canUndo);
 	_forceDisabled(psRedo, !canRedo);
@@ -706,10 +708,10 @@ void MainWindow::updateGlobalMenuHook() {
 	_forceDisabled(psPaste, !canPaste);
 	_forceDisabled(psDelete, !canDelete);
 	_forceDisabled(psSelectAll, !canSelectAll);
-	_forceDisabled(psContacts, inactive);
+	_forceDisabled(psContacts, inactive || support);
 	_forceDisabled(psAddContact, inactive);
-	_forceDisabled(psNewGroup, inactive);
-	_forceDisabled(psNewChannel, inactive);
+	_forceDisabled(psNewGroup, inactive || support);
+	_forceDisabled(psNewChannel, inactive || support);
 	_forceDisabled(psShowTelegram, App::wnd()->isActive());
 }
 

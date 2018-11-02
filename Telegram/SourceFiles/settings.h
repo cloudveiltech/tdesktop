@@ -28,10 +28,10 @@ inline bool rtl() {
 	return cRtl();
 }
 
-DeclareSetting(bool, AlphaVersion);
-DeclareSetting(uint64, BetaVersion);
-DeclareSetting(uint64, RealBetaVersion);
-DeclareSetting(QByteArray, BetaPrivateKey);
+DeclareSetting(bool, InstallBetaVersion);
+DeclareSetting(uint64, AlphaVersion);
+DeclareSetting(uint64, RealAlphaVersion);
+DeclareSetting(QByteArray, AlphaPrivateKey);
 
 DeclareSetting(bool, TestMode);
 DeclareSetting(QString, LoggedPhoneNumber);
@@ -64,7 +64,6 @@ DeclareSetting(QString, DialogHelperPath);
 inline const QString &cDialogHelperPathFinal() {
 	return cDialogHelperPath().isEmpty() ? cExeDir() : cDialogHelperPath();
 }
-DeclareSetting(bool, CtrlEnter);
 
 DeclareSetting(bool, AutoUpdate);
 

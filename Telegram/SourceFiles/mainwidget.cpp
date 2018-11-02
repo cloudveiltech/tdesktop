@@ -156,7 +156,7 @@ public:
 	virtual ~StackItem() = default;
 
 private:
-	PeerData * _peer = nullptr;
+	PeerData *_peer = nullptr;
 	QPointer<Window::SectionWidget> _thirdSectionWeak;
 	std::unique_ptr<Window::SectionMemento> _thirdSectionMemento;
 
@@ -248,14 +248,13 @@ MainWidget::MainWidget(
 		this,
 		_controller,
 		Media::Player::Panel::Layout::OnlyPlaylist)
-	, _playerPanel(this, _controller, Media::Player::Panel::Layout::Full)
+	, _playerPanel(this, _controller, Media::Player::Panel::Layout::Full) 
 	//CloudVeil start
 	, globalSettings(this)
 	, simpleUpdater(this) {
 
 	banned.load(qsl(":/gui/art/banned.png"));
 	//CloudVeil end
-
 	Messenger::Instance().mtp()->setUpdatesHandler(rpcDone(&MainWidget::updateReceived));
 	Messenger::Instance().mtp()->setGlobalFailHandler(rpcFail(&MainWidget::updateFail));
 
@@ -265,6 +264,7 @@ MainWidget::MainWidget(
 
 	connect(_dialogs, SIGNAL(cancelled()), this, SLOT(dialogsCancelled()));
 	connect(this, SIGNAL(dialogsUpdated()), _dialogs, SLOT(onListScroll()));
+	connect(_history, SIGNAL(cancelled()), _dialogs, SLOT(activate()));
 
 	//CloudVeil start
 	connect(this, SIGNAL(dialogsUpdated()), this, SLOT(requestCloudVeil()));
@@ -273,7 +273,6 @@ MainWidget::MainWidget(
 	connect(globalSettings, SIGNAL(settingsReady()), _history, SLOT(onSettingsUpdate()));
 	//CloudVeil end
 
-	connect(_history, SIGNAL(cancelled()), _dialogs, SLOT(activate()));
 	connect(&noUpdatesTimer, SIGNAL(timeout()), this, SLOT(mtpPing()));
 	connect(&_onlineTimer, SIGNAL(timeout()), this, SLOT(updateOnline()));
 	connect(&_idleFinishTimer, SIGNAL(timeout()), this, SLOT(checkIdleFinish()));
@@ -311,6 +310,7 @@ MainWidget::MainWidget(
 		checkFloatPlayerVisibility();
 	});
 
+	// MSVC BUG + REGRESSION rpl::mappers::tuple :(
 	using namespace rpl::mappers;
 	_controller->activeChatValue(
 	) | rpl::map([](Dialogs::Key key) {
@@ -318,7 +318,11 @@ MainWidget::MainWidget(
 		auto canWrite = peer
 			? Data::CanWriteValue(peer)
 			: rpl::single(false);
-		return std::move(canWrite) | rpl::map(tuple(key, _1));
+		return std::move(
+			canWrite
+		) | rpl::map([=](bool can) {
+			return std::make_tuple(key, can);
+		});
 	}) | rpl::flatten_latest(
 	) | rpl::start_with_next([this](Dialogs::Key key, bool canWrite) {
 		updateThirdColumnToCurrentChat(key, canWrite);
@@ -1014,21 +1018,8 @@ void MainWidget::cancelUploadLayer(not_null<HistoryItem*> item) {
 void MainWidget::deletePhotoLayer(PhotoData *photo) {
 	if (!photo) return;
 	Ui::show(Box<ConfirmBox>(lang(lng_delete_photo_sure), lang(lng_box_delete), crl::guard(this, [=] {
+		Auth().api().clearPeerPhoto(photo);
 		Ui::hideLayer();
-
-		auto me = App::self();
-		if (!me) return;
-
-		if (me->userpicPhotoId() == photo->id) {
-			Messenger::Instance().peerClearPhoto(me->id);
-		}
-		else if (photo->peer && !photo->peer->isUser() && photo->peer->userpicPhotoId() == photo->id) {
-			Messenger::Instance().peerClearPhoto(photo->peer->id);
-		}
-		else {
-			MTP::send(MTPphotos_DeletePhotos(MTP_vector<MTPInputPhoto>(1, MTP_inputPhoto(MTP_long(photo->id), MTP_long(photo->access)))));
-			Auth().storage().remove(Storage::UserPhotosRemoveOne(me->bareId(), photo->id));
-		}
 	})));
 }
 
@@ -1181,7 +1172,12 @@ void MainWidget::deleteConversation(
 
 void MainWidget::deleteAndExit(ChatData *chat) {
 	PeerData *peer = chat;
-	MTP::send(MTPmessages_DeleteChatUser(chat->inputChat, App::self()->inputUser), rpcDone(&MainWidget::deleteHistoryAfterLeave, peer), rpcFail(&MainWidget::leaveChatFailed, peer));
+	MTP::send(
+		MTPmessages_DeleteChatUser(
+			chat->inputChat,
+			Auth().user()->inputUser),
+		rpcDone(&MainWidget::deleteHistoryAfterLeave, peer),
+		rpcFail(&MainWidget::leaveChatFailed, peer));
 }
 
 void MainWidget::addParticipants(
@@ -1645,12 +1641,6 @@ void MainWidget::createExportTopBar(Export::View::Content &&data) {
 	_exportTopBar.create(
 		this,
 		object_ptr<Export::View::TopBar>(this, std::move(data)));
-	rpl::merge(
-		_exportTopBar->heightValue() | rpl::map([] { return true; }),
-		_exportTopBar->shownValue()
-	) | rpl::start_with_next([=] {
-		exportTopBarHeightUpdated();
-	}, _exportTopBar->lifetime());
 	_exportTopBar->entity()->clicks(
 	) | rpl::start_with_next([=] {
 		if (_currentExportView) {
@@ -1668,6 +1658,12 @@ void MainWidget::createExportTopBar(Export::View::Content &&data) {
 		_exportTopBarHeight = _contentScrollAddToY = _exportTopBar->contentHeight();
 		updateControlsGeometry();
 	}
+	rpl::merge(
+		_exportTopBar->heightValue() | rpl::map([] { return true; }),
+		_exportTopBar->shownValue()
+	) | rpl::start_with_next([=] {
+		exportTopBarHeightUpdated();
+	}, _exportTopBar->lifetime());
 }
 
 void MainWidget::destroyExportTopBar() {
@@ -1717,19 +1713,25 @@ void MainWidget::documentLoadFailed(FileLoader *loader, bool started) {
 
 	auto document = Auth().data().document(documentId);
 	if (started) {
-		auto failedFileName = loader->fileName();
+		const auto origin = loader->fileOrigin();
+		const auto failedFileName = loader->fileName();
 		Ui::show(Box<ConfirmBox>(lang(lng_download_finish_failed), crl::guard(this, [=] {
 			Ui::hideLayer();
-			if (document) document->save(failedFileName);
+			if (document) {
+				document->save(origin, failedFileName);
+			}
 		})));
 	}
 	else {
-		Ui::show(Box<ConfirmBox>(lang(lng_download_path_failed), lang(lng_download_path_settings), crl::guard(this, [=] {
-			Global::SetDownloadPath(QString());
-			Global::SetDownloadPathBookmark(QByteArray());
-			Ui::show(Box<DownloadPathBox>());
-			Global::RefDownloadPathChanged().notify();
-		})));
+		// Sometimes we have LOCATION_INVALID error in documents / stickers.
+		// Sometimes FILE_REFERENCE_EXPIRED could not be handled.
+		//
+		//Ui::show(Box<ConfirmBox>(lang(lng_download_path_failed), lang(lng_download_path_settings), crl::guard(this, [=] {
+		//	Global::SetDownloadPath(QString());
+		//	Global::SetDownloadPathBookmark(QByteArray());
+		//	Ui::show(Box<DownloadPathBox>());
+		//	Global::RefDownloadPathChanged().notify();
+		//})));
 	}
 
 	if (document) {
@@ -1762,7 +1764,7 @@ void MainWidget::onSendFileConfirm(
 }
 
 bool MainWidget::onSendSticker(DocumentData *document) {
-	return _history->onStickerSend(document);
+	return _history->onStickerOrGifSend(document);
 }
 
 void MainWidget::dialogsCancelled() {
@@ -1771,71 +1773,6 @@ void MainWidget::dialogsCancelled() {
 		noHider(_hider);
 	}
 	_history->activate();
-}
-
-void MainWidget::insertCheckedServiceNotification(const TextWithEntities &message, const MTPMessageMedia &media, int32 date) {
-	auto flags = MTPDmessage::Flag::f_entities | MTPDmessage::Flag::f_from_id | MTPDmessage_ClientFlag::f_clientside_unread;
-	auto sending = TextWithEntities(), left = message;
-	HistoryItem *item = nullptr;
-	while (TextUtilities::CutPart(sending, left, MaxMessageSize)) {
-		auto localEntities = TextUtilities::EntitiesToMTP(sending.entities);
-		item = App::histories().addNewMessage(
-			MTP_message(
-				MTP_flags(flags),
-				MTP_int(clientMsgId()),
-				MTP_int(ServiceUserId),
-				MTP_peerUser(MTP_int(Auth().userId())),
-				MTPnullFwdHeader,
-				MTPint(),
-				MTPint(),
-				MTP_int(date),
-				MTP_string(sending.text),
-				media,
-				MTPnullMarkup,
-				localEntities,
-				MTPint(),
-				MTPint(),
-				MTPstring(),
-				MTPlong()),
-			NewMessageUnread);
-	}
-	Auth().data().sendHistoryChangeNotifications();
-}
-
-void MainWidget::serviceHistoryDone(const MTPmessages_Messages &msgs) {
-	auto handleResult = [&](auto &&result) {
-		App::feedUsers(result.vusers);
-		App::feedChats(result.vchats);
-		App::feedMsgs(result.vmessages, NewMessageLast);
-	};
-
-	switch (msgs.type()) {
-	case mtpc_messages_messages:
-		handleResult(msgs.c_messages_messages());
-		break;
-
-	case mtpc_messages_messagesSlice:
-		handleResult(msgs.c_messages_messagesSlice());
-		break;
-
-	case mtpc_messages_channelMessages:
-		LOG(("API Error: received messages.channelMessages! (MainWidget::serviceHistoryDone)"));
-		handleResult(msgs.c_messages_channelMessages());
-		break;
-
-	case mtpc_messages_messagesNotModified:
-		LOG(("API Error: received messages.messagesNotModified! (MainWidget::serviceHistoryDone)"));
-		break;
-	}
-
-	App::wnd()->showDelayedServiceMsgs();
-}
-
-bool MainWidget::serviceHistoryFail(const RPCError &error) {
-	if (MTP::isDefaultHandledError(error)) return false;
-
-	App::wnd()->showDelayedServiceMsgs();
-	return false;
 }
 
 bool MainWidget::isIdle() const {
@@ -1867,7 +1804,7 @@ void MainWidget::updateScrollColors() {
 
 void MainWidget::setChatBackground(const App::WallPaper &wp) {
 	_background = std::make_unique<App::WallPaper>(wp);
-	_background->full->loadEvenCancelled();
+	_background->full->loadEvenCancelled(Data::FileOrigin());
 	checkChatBackground();
 }
 
@@ -1894,7 +1831,7 @@ void MainWidget::checkChatBackground() {
 				Window::Theme::Background()->setImage(_background->id);
 			}
 			else {
-				Window::Theme::Background()->setImage(_background->id, _background->full->pix().toImage());
+				Window::Theme::Background()->setImage(_background->id, _background->full->pix(Data::FileOrigin()).toImage());
 			}
 			_background = nullptr;
 			QTimer::singleShot(0, this, SLOT(update()));
@@ -2353,8 +2290,15 @@ Window::SectionSlideParams MainWidget::prepareShowAnimation(
 	else if (_mainSection) {
 		result.oldContentCache = _mainSection->grabForShowAnimation(result);
 	}
-	else {
+	else if (!Adaptive::OneColumn() || !_history->isHidden()) {
 		result.oldContentCache = _history->grabForShowAnimation(result);
+	}
+	else {
+		result.oldContentCache = Ui::GrabWidget(this, QRect(
+			0,
+			sectionTop,
+			_dialogsWidth,
+			height() - sectionTop));
 	}
 
 	if (playerVolumeVisible) {
@@ -2504,6 +2448,9 @@ void MainWidget::showNewSection(
 		auto direction = (back || settingSection->forceAnimateBack())
 			? Window::SlideDirection::FromLeft
 			: Window::SlideDirection::FromRight;
+		if (Adaptive::OneColumn()) {
+			_controller->removeLayerBlackout();
+		}
 		settingSection->showAnimated(direction, animationParams);
 	}
 	else {
@@ -3791,33 +3738,18 @@ void MainWidget::mtpPing() {
 	MTP::ping();
 }
 
-void MainWidget::start(const MTPUser *self) {
+void MainWidget::start() {
 	Auth().api().requestNotifySettings(MTP_inputNotifyUsers());
 	Auth().api().requestNotifySettings(MTP_inputNotifyChats());
 
-	if (!self) {
-		MTP::send(MTPusers_GetFullUser(MTP_inputUserSelf()), rpcDone(&MainWidget::startWithSelf));
-		return;
-	}
-	else if (!Auth().validateSelf(*self)) {
-		constexpr auto kRequestUserAgainTimeout = TimeMs(10000);
-		App::CallDelayed(kRequestUserAgainTimeout, this, [=] {
-			MTP::send(MTPusers_GetFullUser(MTP_inputUserSelf()), rpcDone(&MainWidget::startWithSelf));
-		});
-		return;
-	}
-
 	Local::readSavedPeers();
 	cSetOtherOnline(0);
-	if (const auto user = App::feedUsers(MTP_vector<MTPUser>(1, *self))) {
-		user->loadUserpic();
-	}
+	Auth().user()->loadUserpic();
 
 	MTP::send(MTPupdates_GetState(), rpcDone(&MainWidget::gotState));
 	update();
 
 	_started = true;
-	App::wnd()->sendServiceHistoryRequest();
 	Local::readInstalledStickers();
 	Local::readFeaturedStickers();
 	Local::readRecentStickers();
@@ -4096,15 +4028,6 @@ bool MainWidget::inviteImportFail(const RPCError &error) {
 	return true;
 }
 
-void MainWidget::startWithSelf(const MTPUserFull &result) {
-	Expects(result.type() == mtpc_userFull);
-	auto &d = result.c_userFull();
-	start(&d.vuser);
-	if (auto user = App::self()) {
-		Auth().api().processFullPeer(user, result);
-	}
-}
-
 void MainWidget::incrementSticker(DocumentData *sticker) {
 	if (!sticker || !sticker->sticker()) return;
 	if (sticker->sticker()->set.type() == mtpc_inputStickerSetEmpty) return;
@@ -4251,7 +4174,10 @@ bool MainWidget::isActive() const {
 }
 
 bool MainWidget::doWeReadServerHistory() const {
-	return isActive() && !_mainSection && _history->doWeReadServerHistory();
+	return isActive()
+		&& !Auth().supportMode()
+		&& !_mainSection
+		&& _history->doWeReadServerHistory();
 }
 
 bool MainWidget::doWeReadMentions() const {
@@ -4312,12 +4238,11 @@ void MainWidget::updateOnline(bool gotOtherOffline) {
 		_lastSetOnline = ms;
 		_onlineRequest = MTP::send(MTPaccount_UpdateStatus(MTP_bool(!isOnline)));
 
-		if (App::self()) {
-			App::self()->onlineTill = unixtime() + (isOnline ? (Global::OnlineUpdatePeriod() / 1000) : -1);
-			Notify::peerUpdatedDelayed(
-				App::self(),
-				Notify::PeerUpdate::Flag::UserOnlineChanged);
-		}
+		const auto self = Auth().user();
+		self->onlineTill = unixtime() + (isOnline ? (Global::OnlineUpdatePeriod() / 1000) : -1);
+		Notify::peerUpdatedDelayed(
+			self,
+			Notify::PeerUpdate::Flag::UserOnlineChanged);
 		if (!isOnline) { // Went offline, so we need to save message draft to the cloud.
 			saveDraftToCloud();
 		}
@@ -5112,7 +5037,7 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 			Ui::show(Box<InformBox>(text));
 		}
 		else {
-			App::wnd()->serviceNotification(text, d.vmedia);
+			Auth().data().serviceNotification(text, d.vmedia);
 			emit App::wnd()->checkNewAuthorization();
 		}
 	} break;

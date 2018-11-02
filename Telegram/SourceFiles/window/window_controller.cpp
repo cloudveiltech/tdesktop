@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "window/main_window.h"
 #include "info/info_memento.h"
+#include "info/info_controller.h"
 #include "history/history.h"
 #include "history/history_item.h"
 #include "history/view/history_view_element.h"
@@ -334,14 +335,14 @@ void Controller::showJumpToDate(Dialogs::Key chat, QDate requestedDate) {
 						return history->blocks.front()->messages.front()->dateTime().date();
 					}
 				}
-			} else if (!history->chatsListDate().isNull()) {
-				return history->chatsListDate().date();
+			} else if (history->chatsListTimeId() != 0) {
+				return ParseDateTime(history->chatsListTimeId()).date();
 			}
 		} else if (const auto feed = chat.feed()) {
 			/*if (chatScrollPosition(feed)) { // #TODO feeds save position
 
-			} else */if (!feed->chatsListDate().isNull()) {
-				return feed->chatsListDate().date();
+			} else */if (feed->chatsListTimeId() != 0) {
+				return ParseDateTime(feed->chatsListTimeId()).date();
 			}
 		}
 		return QDate::currentDate();
@@ -351,12 +352,12 @@ void Controller::showJumpToDate(Dialogs::Key chat, QDate requestedDate) {
 			if (const auto channel = history->peer->migrateTo()) {
 				history = App::historyLoaded(channel);
 			}
-			if (history && !history->chatsListDate().isNull()) {
-				return history->chatsListDate().date();
+			if (history && history->chatsListTimeId() != 0) {
+				return ParseDateTime(history->chatsListTimeId()).date();
 			}
 		} else if (const auto feed = chat.feed()) {
-			if (!feed->chatsListDate().isNull()) {
-				return feed->chatsListDate().date();
+			if (feed->chatsListTimeId() != 0) {
+				return ParseDateTime(feed->chatsListTimeId()).date();
 			}
 		}
 		return QDate::currentDate();
@@ -473,6 +474,20 @@ void Navigation::showPeerInfo(
 	showPeerInfo(history->peer->id, params);
 }
 
+void Navigation::showSettings(
+		Settings::Type type,
+		const SectionShow &params) {
+	showSection(
+		Info::Memento(
+			Info::Settings::Tag{ Auth().user() },
+			Info::Section(type)),
+		params);
+}
+
+void Navigation::showSettings(const SectionShow &params) {
+	showSettings(Settings::Type::Main, params);
+}
+
 void Controller::showSection(
 		SectionMemento &&memento,
 		const SectionShow &params) {
@@ -492,6 +507,10 @@ void Controller::showSpecialLayer(
 		object_ptr<LayerWidget> &&layer,
 		anim::type animated) {
 	App::wnd()->showSpecialLayer(std::move(layer), animated);
+}
+
+void Controller::removeLayerBlackout() {
+	App::wnd()->ui_removeLayerBlackout();
 }
 
 not_null<MainWidget*> Controller::chats() const {

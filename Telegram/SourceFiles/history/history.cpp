@@ -299,7 +299,7 @@ void History::setHasPendingResizedItems() {
 void History::itemRemoved(not_null<HistoryItem*> item) {
 	item->removeMainView();
 	if (lastMessage() == item) {
-		_lastMessage = base::none;
+		_lastMessage = std::nullopt;
 		if (loadedAtBottom()) {
 			if (const auto last = lastAvailableMessage()) {
 				setLastMessage(last);
@@ -432,7 +432,7 @@ void History::setSentDraftText(const QString &text) {
 
 void History::clearSentDraftText(const QString &text) {
 	if (_lastSentDraftText && *_lastSentDraftText == text) {
-		_lastSentDraftText = base::none;
+		_lastSentDraftText = std::nullopt;
 	}
 	accumulate_max(_lastSentDraftTime, unixtime());
 }
@@ -654,7 +654,7 @@ bool History::updateSendActionNeedsAnimating(TimeMs ms, bool force) {
 		}
 	}
 	auto result = (!_typing.isEmpty() || !_sendActions.isEmpty());
-	if (changed || result) {
+	if (changed || (result && !anim::Disabled())) {
 		App::histories().sendActionAnimationUpdated().notify({
 			this,
 			_sendActionAnimation.width(),
@@ -1770,6 +1770,9 @@ void History::setUnreadCount(int newUnreadCount) {
 }
 
 void History::setUnreadMark(bool unread) {
+	if (clearUnreadOnClientSide()) {
+		unread = false;
+	}
 	if (_unreadMark != unread) {
 		_unreadMark = unread;
 		if (!_unreadCount || !*_unreadCount) {
@@ -1884,16 +1887,13 @@ std::shared_ptr<AdminLog::LocalIdManager> History::adminLogIdManager() {
 	return result;
 }
 
-QDateTime History::adjustChatListDate() const {
-	const auto result = chatsListDate();
+TimeId History::adjustChatListTimeId() const {
+	const auto result = chatsListTimeId();
 	if (const auto draft = cloudDraft()) {
 		if (!Data::draftIsNull(draft)) {
-			const auto draftResult = ParseDateTime(draft->date);
-			if (draftResult > result) {
-				return draftResult;
+			return std::max(result, draft->date);
 			}
 		}
-	}
 	return result;
 }
 
@@ -2203,7 +2203,11 @@ void History::getReadyFor(MsgId msgId) {
 	}
 	if (!isReadyFor(msgId)) {
 		unloadBlocks();
-
+		if (const auto migratePeer = peer->migrateFrom()) {
+			if (const auto migrated = App::historyLoaded(migratePeer)) {
+				migrated->unloadBlocks();
+			}
+		}
 		if (msgId == ShowAtTheEndMsgId) {
 			_loadedAtBottom = true;
 		}
@@ -2240,14 +2244,19 @@ void History::markFullyLoaded() {
 
 void History::setLastMessage(HistoryItem *item) {
 	if (item) {
-		if (_lastMessage && !*_lastMessage) {
+		if (_lastMessage) {
+			if (!*_lastMessage) {
 			Local::removeSavedPeer(peer);
+			} else if (!IsServerMsgId((*_lastMessage)->id)
+				&& (*_lastMessage)->date() > item->date()) {
+				return;
+		}
 		}
 		_lastMessage = item;
 		if (const auto feed = peer->feed()) {
 			feed->updateLastMessage(item);
 		}
-		setChatsListDate(ItemDateTime(item));
+		setChatsListTimeId(item->date());
 	}
 	else if (!_lastMessage || *_lastMessage) {
 		_lastMessage = nullptr;
@@ -2349,12 +2358,42 @@ void History::applyDialog(const MTPDdialog &data) {
 	}
 }
 
+bool History::clearUnreadOnClientSide() const {
+	if (!Auth().supportMode()) {
+		return false;
+	}
+	if (const auto user = peer->asUser()) {
+		if (user->flags() & MTPDuser::Flag::f_deleted) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool History::skipUnreadUpdateForClientSideUnread() const {
+	if (peer->id != peerFromUser(ServiceUserId)) {
+		return false;
+	} else if (!_unreadCount || !*_unreadCount) {
+		return false;
+	} else if (!_lastMessage || IsServerMsgId((*_lastMessage)->id)) {
+		return false;
+	}
+	return true;
+}
+
+bool History::skipUnreadUpdate() const {
+	return skipUnreadUpdateForClientSideUnread()
+		|| clearUnreadOnClientSide();
+}
+
 void History::applyDialogFields(
 	int unreadCount,
 	MsgId maxInboxRead,
 	MsgId maxOutboxRead) {
+	if (!skipUnreadUpdate()) {
 	setUnreadCount(unreadCount);
 	setInboxReadTill(maxInboxRead);
+	}
 	setOutboxReadTill(maxOutboxRead);
 }
 
@@ -2372,6 +2411,12 @@ void History::applyDialogTopMessage(MsgId topMessageId) {
 	}
 	else {
 		setLastMessage(nullptr);
+	}
+	if (clearUnreadOnClientSide()) {
+		setUnreadCount(0);
+		if (const auto last = lastMessage()) {
+			setInboxReadTill(last->id);
+}
 	}
 }
 
@@ -2435,6 +2480,7 @@ HistoryItem *History::lastSentMessage() const {
 		for (const auto &message : base::reversed(block->messages)) {
 			const auto item = message->data();
 			if (IsServerMsgId(item->id)
+				&& !item->serviceMsg()
 				&& (item->out() || peer->isSelf())) {
 				return item;
 			}
@@ -2574,8 +2620,8 @@ HistoryService *History::insertJoinedMessage(bool unread) {
 					inviter,
 					flags);
 				addNewInTheMiddle(_joinedMessage, blockIndex, itemIndex);
-				const auto lastDate = chatsListDate();
-				if (lastDate.isNull() || ParseDateTime(inviteDate) >= lastDate) {
+				const auto lastDate = chatsListTimeId();
+				if (!lastDate || inviteDate >= lastDate) {
 					setLastMessage(_joinedMessage);
 					if (unread) {
 						newItemAdded(_joinedMessage);

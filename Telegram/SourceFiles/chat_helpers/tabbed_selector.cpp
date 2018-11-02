@@ -311,7 +311,7 @@ namespace ChatHelpers {
 		connect(stickers(), SIGNAL(scrollUpdated()), this, SLOT(onScroll()));
 		connect(_scroll, SIGNAL(scrolled()), this, SLOT(onScroll()));
 		connect(emoji(), SIGNAL(selected(EmojiPtr)), this, SIGNAL(emojiSelected(EmojiPtr)));
-		connect(stickers(), SIGNAL(selected(DocumentData*)), this, SIGNAL(stickerSelected(DocumentData*)));
+	connect(stickers(), SIGNAL(selected(not_null<DocumentData*>)), this, SIGNAL(stickerOrGifSelected(not_null<DocumentData*>)));
 		connect(stickers(), SIGNAL(checkForHide()), this, SIGNAL(checkForHide()));
 
 		//CloudVeil start

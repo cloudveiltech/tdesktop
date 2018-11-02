@@ -50,8 +50,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace {
 	App::LaunchState _launchState = App::Launched;
 
-	UserData *self = nullptr;
-
 	std::unordered_map<PeerId, std::unique_ptr<PeerData>> peersData;
 
 	using LocationsData = QHash<LocationCoords, LocationData*>;
@@ -310,10 +308,6 @@ namespace App {
 					: data->phone().isEmpty()
 					? UserData::ContactStatus::PhoneUnknown
 					: UserData::ContactStatus::CanAdd);
-				if (d.is_self() && ::self != data) {
-					::self = data;
-					Global::RefSelfChanged().notify();
-				}
 			}
 
 			if (canShareThisContact != data->canShareThisContactFast()) {
@@ -330,13 +324,16 @@ namespace App {
 			if (data->loadedStatus == PeerData::NotLoaded) {
 				data->loadedStatus = PeerData::MinimalLoaded;
 			}
-		} else if (data->loadedStatus != PeerData::FullLoaded) {
+		} else if (data->loadedStatus != PeerData::FullLoaded
+			&& (!data->isSelf() || !data->phone().isEmpty())) {
 			data->loadedStatus = PeerData::FullLoaded;
 		}
 
 		if (status && !minimal) {
-			auto oldOnlineTill = data->onlineTill;
-			auto newOnlineTill = Auth().api().onlineTillFromStatus(*status, oldOnlineTill);
+			const auto oldOnlineTill = data->onlineTill;
+			const auto newOnlineTill = ApiWrap::OnlineTillFromStatus(
+				*status,
+				oldOnlineTill);
 			if (oldOnlineTill != newOnlineTill) {
 				data->onlineTill = newOnlineTill;
 				update.flags |= UpdateFlag::UserOnlineChanged;
@@ -345,7 +342,7 @@ namespace App {
 
 		if (data->contactStatus() == UserData::ContactStatus::PhoneUnknown
 			&& !data->phone().isEmpty()
-			&& data->id != Auth().userPeerId()) {
+			&& !data->isSelf()) {
 			data->setContactStatus(UserData::ContactStatus::CanAdd);
 		}
 		if (App::main()) {
@@ -923,7 +920,7 @@ namespace App {
 	}
 
 	void checkSavedGif(HistoryItem *item) {
-		if (!item->Has<HistoryMessageForwarded>() && (item->out() || item->history()->peer == App::self())) {
+		if (!item->Has<HistoryMessageForwarded>() && (item->out() || item->history()->peer == Auth().user())) {
 			if (const auto media = item->media()) {
 				if (const auto document = media->document()) {
 					if (document->isGifv()) {
@@ -965,7 +962,16 @@ namespace App {
 			auto &d = size.c_photoSize();
 			if (d.vlocation.type() == mtpc_fileLocation) {
 				auto &l = d.vlocation.c_fileLocation();
-				return ImagePtr(StorageImageLocation(d.vw.v, d.vh.v, l.vdc_id.v, l.vvolume_id.v, l.vlocal_id.v, l.vsecret.v), d.vsize.v);
+				return ImagePtr(
+					StorageImageLocation(
+						d.vw.v,
+						d.vh.v,
+						l.vdc_id.v,
+						l.vvolume_id.v,
+						l.vlocal_id.v,
+						l.vsecret.v,
+						l.vfile_reference.v),
+					d.vsize.v);
 			}
 		} break;
 		case mtpc_photoCachedSize: {
@@ -973,10 +979,28 @@ namespace App {
 			if (d.vlocation.type() == mtpc_fileLocation) {
 				auto &l = d.vlocation.c_fileLocation();
 				auto bytes = qba(d.vbytes);
-				return ImagePtr(StorageImageLocation(d.vw.v, d.vh.v, l.vdc_id.v, l.vvolume_id.v, l.vlocal_id.v, l.vsecret.v), bytes);
+				return ImagePtr(
+					StorageImageLocation(
+						d.vw.v,
+						d.vh.v,
+						l.vdc_id.v,
+						l.vvolume_id.v,
+						l.vlocal_id.v,
+						l.vsecret.v,
+						l.vfile_reference.v),
+					bytes);
 			} else if (d.vlocation.type() == mtpc_fileLocationUnavailable) {
 				auto bytes = qba(d.vbytes);
-				return ImagePtr(StorageImageLocation(d.vw.v, d.vh.v, 0, 0, 0, 0), bytes);
+				return ImagePtr(
+					StorageImageLocation(
+						d.vw.v,
+						d.vh.v,
+						0,
+						0,
+						0,
+						0,
+						{}),
+					bytes);
 			}
 		} break;
 		}
@@ -1131,10 +1155,6 @@ namespace App {
 		}
 	}
 
-	UserData *self() {
-		return ::self;
-	}
-
 	PeerData *peerByName(const QString &username) {
 		const auto uname = username.trimmed();
 		for (const auto &[peerId, peer] : peersData) {
@@ -1157,19 +1177,6 @@ namespace App {
 		for_const (auto location, ::locationsData) {
 			location->thumb->forget();
 		}
-	}
-
-	MTPPhoto photoFromUserPhoto(MTPint userId, MTPint date, const MTPUserProfilePhoto &photo) {
-		if (photo.type() == mtpc_userProfilePhoto) {
-			const auto &uphoto(photo.c_userProfilePhoto());
-
-			QVector<MTPPhotoSize> photoSizes;
-			photoSizes.push_back(MTP_photoSize(MTP_string("a"), uphoto.vphoto_small, MTP_int(160), MTP_int(160), MTP_int(0)));
-			photoSizes.push_back(MTP_photoSize(MTP_string("c"), uphoto.vphoto_big, MTP_int(640), MTP_int(640), MTP_int(0)));
-
-			return MTP_photo(MTP_flags(0), uphoto.vphoto_id, MTP_long(0), date, MTP_vector<MTPPhotoSize>(photoSizes));
-		}
-		return MTP_photoEmpty(MTP_long(0));
 	}
 
 	QString peerName(const PeerData *peer, bool forDialogs) {
@@ -1253,7 +1260,6 @@ namespace App {
 
 	void historyClearMsgs() {
 		::dependentItems.clear();
-
 		const auto oldData = base::take(msgsData);
 		const auto oldChannelData = base::take(channelMsgsData);
 		for (const auto item : oldData) {
@@ -1263,6 +1269,9 @@ namespace App {
 			for (const auto item : data) {
 				delete item;
 			}
+		}
+		for (const auto data : base::take(::locationsData)) {
+			delete data;
 		}
 
 		clearMousedItems();
@@ -1285,8 +1294,6 @@ namespace App {
 		cSetAutoDownloadPhoto(0);
 		cSetAutoDownloadAudio(0);
 		cSetAutoDownloadGif(0);
-		::self = nullptr;
-		Global::RefSelfChanged().notify(true);
 	}
 
 	void historyRegDependency(HistoryItem *dependent, HistoryItem *dependency) {
@@ -1587,11 +1594,6 @@ namespace App {
 			Auth().data().forgetMedia();
 			serviceImageCacheSize = imageCacheSize();
 		}
-	}
-
-	bool isValidPhone(QString phone) {
-		phone = phone.replace(QRegularExpression(qsl("[^\\d]")), QString());
-		return phone.length() >= 8 || phone == qsl("777") || phone == qsl("333") || phone == qsl("111") || (phone.startsWith(qsl("42")) && (phone.length() == 2 || phone.length() == 5 || phone == qsl("4242")));
 	}
 
 	void quit() {

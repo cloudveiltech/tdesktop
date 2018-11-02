@@ -14,6 +14,8 @@ namespace Platform {
 inline void SetWatchingMediaKeys(bool watching) {
 }
 
+bool IsApplicationActive();
+
 inline bool TranslucentWindowsSupported(QPoint globalPosition) {
 	return true;
 }
@@ -51,7 +53,6 @@ inline void psCheckLocalSocket(const QString &) {
 
 void psWriteDump();
 void psWriteStackTrace();
-QString psPrepareCrashDump(const QByteArray &crashdump, QString dumpfile);
 
 void psDeleteDir(const QString &dir);
 

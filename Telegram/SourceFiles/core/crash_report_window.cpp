@@ -19,8 +19,7 @@ PreLaunchWindow *PreLaunchWindowInstance = nullptr;
 PreLaunchWindow::PreLaunchWindow(QString title) {
 	Fonts::Start();
 
-	auto icon = Window::CreateIcon();
-	setWindowIcon(icon);
+	setWindowIcon(Window::CreateIcon());
 	setWindowFlags(Qt::Dialog | Qt::CustomizeWindowHint | Qt::WindowTitleHint | Qt::WindowCloseButtonHint);
 
 	setWindowTitle(title.isEmpty() ? qsl("Telegram") : title);
@@ -228,7 +227,7 @@ LastCrashedWindow::LastCrashedWindow()
 	: std::make_unique<UpdaterData>(this)) {
 	excludeReportUsername();
 
-	if (!cAlphaVersion() && !cBetaVersion()) { // currently accept crash reports only from testers
+	if (!cInstallBetaVersion() && !cAlphaVersion()) { // currently accept crash reports only from testers
 		_sendingState = SendingNoReport;
 	}
 	if (_sendingState != SendingNoReport) {
@@ -281,7 +280,7 @@ LastCrashedWindow::LastCrashedWindow()
 	}
 	if (_sendingState != SendingNoReport) {
 		QString version = getReportField(qstr("version"), qstr("Version:"));
-		QString current = cBetaVersion() ? qsl("-%1").arg(cBetaVersion()) : QString::number(AppVersion);
+		QString current = cAlphaVersion() ? qsl("-%1").arg(cAlphaVersion()) : QString::number(AppVersion);
 		if (version != current) { // currently don't accept crash reports from not current app version
 			_sendingState = SendingNoReport;
 		}
@@ -418,7 +417,7 @@ QString LastCrashedWindow::getReportField(const QLatin1String &name, const QLati
 			QString data = lines.at(i).trimmed().mid(prefix.size()).trimmed();
 
 			if (name == qstr("version")) {
-				if (data.endsWith(qstr(" beta"))) {
+				if (data.endsWith(qstr(" alpha"))) {
 					data = QString::number(-data.replace(QRegularExpression(qsl("[^\\d]")), "").toLongLong());
 				} else {
 					data = QString::number(data.replace(QRegularExpression(qsl("[^\\d]")), "").toLongLong());

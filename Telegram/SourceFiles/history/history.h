@@ -445,7 +445,7 @@ private:
 		not_null<Element*> view);
 	void removeNotification(not_null<HistoryItem*> item);
 
-	QDateTime adjustChatListDate() const override;
+	TimeId adjustChatListTimeId() const override;
 	void changedInChatListHook(Dialogs::Mode list, bool added) override;
 	void changedChatListPinHook() override;
 
@@ -471,6 +471,9 @@ private:
 
 	void addItemsToLists(const std::vector<not_null<HistoryItem*>> &items);
 	void clearSendAction(not_null<UserData*> from);
+	bool clearUnreadOnClientSide() const;
+	bool skipUnreadUpdate() const;
+	bool skipUnreadUpdateForClientSideUnread() const;
 
 	HistoryItem *lastAvailableMessage() const;
 	void getNextFirstUnreadMessage();
@@ -491,12 +494,12 @@ private:
 	bool _loadedAtTop = false;
 	bool _loadedAtBottom = true;
 
-	base::optional<MsgId> _inboxReadBefore;
-	base::optional<MsgId> _outboxReadBefore;
-	base::optional<int> _unreadCount;
-	base::optional<int> _unreadMentionsCount;
+	std::optional<MsgId> _inboxReadBefore;
+	std::optional<MsgId> _outboxReadBefore;
+	std::optional<int> _unreadCount;
+	std::optional<int> _unreadMentionsCount;
 	base::flat_set<MsgId> _unreadMentions;
-	base::optional<HistoryItem*> _lastMessage;
+	std::optional<HistoryItem*> _lastMessage;
 	bool _unreadMark = false;
 
 	// A pointer to the block that is currently being built.
@@ -510,7 +513,7 @@ private:
 
 	std::unique_ptr<Data::Draft> _localDraft, _cloudDraft;
 	std::unique_ptr<Data::Draft> _editDraft;
-	base::optional<QString> _lastSentDraftText;
+	std::optional<QString> _lastSentDraftText;
 	TimeId _lastSentDraftTime = 0;
 	MessageIdsList _forwardDraft;
 

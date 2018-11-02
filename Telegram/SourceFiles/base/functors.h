@@ -6,35 +6,36 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
+
 namespace base {
-namespace functors {
+	namespace functors {
 
-struct abs_helper {
-	template <
-		typename Type,
-		typename = decltype(0 < std::declval<Type>()),
-		typename = decltype(-std::declval<Type>())>
-	constexpr Type operator()(Type value) const {
-		return (0 < value) ? value : (-value);
-	}
-};
-constexpr auto abs = abs_helper{};
-/*
-auto add = [](auto value) {
-	return [value](auto other) {
-		return value + other;
-	};
-};*/
+		struct abs_helper {
+			template <
+				typename Type,
+				typename = decltype(0 < std::declval<Type>()),
+				typename = decltype(-std::declval<Type>())>
+				constexpr Type operator()(Type value) const {
+				return (0 < value) ? value : (-value);
+			}
+		};
+		constexpr auto abs = abs_helper{};
 
-struct negate_helper {
-	template <
-		typename Type,
-		typename = decltype(-std::declval<Type>())>
-	constexpr Type operator()(Type value) const {
-		return -value;
-	}
-};
-constexpr auto negate = negate_helper{};
+		constexpr auto add = [](auto value) {
+			return [value](auto other) {
+				return value + other;
+			};
+		};
 
-} // namespace functors
+		struct negate_helper {
+			template <
+				typename Type,
+				typename = decltype(-std::declval<Type>())>
+				constexpr Type operator()(Type value) const {
+				return -value;
+			}
+		};
+		constexpr auto negate = negate_helper{};
+
+	} // namespace functors
 } // namespace base

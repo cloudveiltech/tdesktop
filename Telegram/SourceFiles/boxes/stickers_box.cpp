@@ -568,7 +568,22 @@ void StickersBox::setInnerFocus() {
 
 StickersBox::~StickersBox() = default;
 
-StickersBox::Inner::Row::Row(uint64 id, DocumentData *sticker, int32 count, const QString &title, int titleWidth, bool installed, bool official, bool unread, bool archived, bool removed, int32 pixw, int32 pixh) : id(id)
+StickersBox::Inner::Row::Row(
+	uint64 id,
+	uint64 accessHash,
+	DocumentData *sticker,
+	int32 count,
+	const QString &title,
+	int titleWidth,
+	bool installed,
+	bool official,
+	bool unread,
+	bool archived,
+	bool removed,
+	int32 pixw,
+	int32 pixh)
+: id(id)
+, accessHash(accessHash)
 , sticker(sticker)
 , count(count)
 , title(title)
@@ -644,7 +659,9 @@ void StickersBox::Inner::setInnerFocus() {
 void StickersBox::Inner::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
-	_a_shifting.step();
+	if (_a_shifting.animating()) {
+		_a_shifting.step();
+	}
 
 	auto clip = e->rect();
 	auto ms = getms();
@@ -782,8 +799,11 @@ void StickersBox::Inner::paintRow(Painter &p, Row *set, int index, TimeMs ms) {
 	}
 
 	if (set->sticker) {
-		set->sticker->thumb->load();
-		auto pix = set->sticker->thumb->pix(set->pixw, set->pixh);
+		const auto origin = Data::FileOriginStickerSet(
+			set->id,
+			set->accessHash);
+		set->sticker->thumb->load(origin);
+		auto pix = set->sticker->thumb->pix(origin, set->pixw, set->pixh);
 		p.drawPixmapLeft(stickerx + (st::contactsPhotoSize - set->pixw) / 2, st::contactsPadding.top() + (st::contactsPhotoSize - set->pixh) / 2, width(), pix);
 	}
 
@@ -1186,6 +1206,9 @@ void StickersBox::Inner::leaveToChildEvent(QEvent *e, QWidget *child) {
 }
 
 void StickersBox::Inner::step_shifting(TimeMs ms, bool timer) {
+	if (anim::Disabled()) {
+		ms += st::stickersRowDuration;
+	}
 	auto animating = false;
 	auto updateMin = -1;
 	auto updateMax = 0;
@@ -1342,7 +1365,20 @@ void StickersBox::Inner::rebuildMegagroupSet() {
 		_megagroupSetField->setText(it->shortName);
 		_megagroupSetField->finishAnimating();
 	}
-	_megagroupSelectedSet = std::make_unique<Row>(it->id, sticker, count, title, titleWidth, installed, official, unread, archived, removed, pixw, pixh);
+	_megagroupSelectedSet = std::make_unique<Row>(
+		it->id,
+		it->access,
+		sticker,
+		count,
+		title,
+		titleWidth,
+		installed,
+		official,
+		unread,
+		archived,
+		removed,
+		pixw,
+		pixh);
 	_itemsTop += st::lineWidth + _rowHeight;
 
 	if (!_megagroupSelectedRemove) {
@@ -1512,7 +1548,20 @@ void StickersBox::Inner::rebuildAppendSet(const Stickers::Set &set, int maxNameW
 	QString title = fillSetTitle(set, maxNameWidth, &titleWidth);
 	int count = fillSetCount(set);
 
-	_rows.push_back(std::make_unique<Row>(set.id, sticker, count, title, titleWidth, installed, official, unread, archived, removed, pixw, pixh));
+	_rows.push_back(std::make_unique<Row>(
+		set.id,
+		set.access,
+		sticker,
+		count,
+		title,
+		titleWidth,
+		installed,
+		official,
+		unread,
+		archived,
+		removed,
+		pixw,
+		pixh));
 	_animStartTimes.push_back(0);
 }
 

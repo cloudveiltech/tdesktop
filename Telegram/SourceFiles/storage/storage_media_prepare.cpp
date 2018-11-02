@@ -41,6 +41,16 @@ bool ValidVideoForAlbum(const FileMediaInformation::Video &video) {
 	return ValidateThumbDimensions(width, height);
 }
 
+QSize PrepareShownDimensions(const QImage &preview) {
+	constexpr auto kMaxWidth = 1280;
+	constexpr auto kMaxHeight = 1280;
+
+	const auto result = preview.size();
+	return (result.width() > kMaxWidth || result.height() > kMaxHeight)
+		? result.scaled(kMaxWidth, kMaxHeight, Qt::KeepAspectRatio)
+		: result;
+}
+
 bool PrepareAlbumMediaIsWaiting(
 		QSemaphore &semaphore,
 		PreparedFile &file,
@@ -69,10 +79,12 @@ bool PrepareAlbumMediaIsWaiting(
 		if (const auto image = base::get_if<Image>(
 				&file.information->media)) {
 			if (ValidPhotoForAlbum(*image)) {
+				file.shownDimensions = PrepareShownDimensions(image->data);
 				file.preview = Images::prepareOpaque(image->data.scaledToWidth(
 					std::min(previewWidth, convertScale(image->data.width()))
 						* cIntRetinaFactor(),
 					Qt::SmoothTransformation));
+				Assert(!file.preview.isNull());
 				file.preview.setDevicePixelRatio(cRetinaFactor());
 				file.type = PreparedFile::AlbumType::Photo;
 			}
@@ -80,9 +92,11 @@ bool PrepareAlbumMediaIsWaiting(
 				&file.information->media)) {
 			if (ValidVideoForAlbum(*video)) {
 				auto blurred = Images::prepareBlur(Images::prepareOpaque(video->thumbnail));
+				file.shownDimensions = PrepareShownDimensions(video->thumbnail);
 				file.preview = std::move(blurred).scaledToWidth(
 					previewWidth * cIntRetinaFactor(),
 					Qt::SmoothTransformation);
+				Assert(!file.preview.isNull());
 				file.preview.setDevicePixelRatio(cRetinaFactor());
 				file.type = PreparedFile::AlbumType::Video;
 			}

@@ -1,3 +1,64 @@
+1.4.3 (13.10.18)
+
+- Bug fixes and other minor improvements.
+
+1.4.2 (10.10.18)
+
+- Crash fix.
+
+1.4.1 (09.10.18)
+
+- Reduce crashes due to the out of memory exceptions.
+- Load map previews through mtproto.
+- Bug fixes and other minor improvements.
+
+1.4 (28.09.18)
+
+- Fully redesigned Settings section.
+- New theme selector in Chat Settings.
+- New local storage settings: Control how much disk space is used by the cache and for how long the cached files are stored.
+- Improved local caching for images and GIF animations.
+- New settings: Peer-to-Peer settings for calls, disable animations for low performance computers.
+- Various other improvements.
+
+1.3.17 beta (26.09.18)
+
+- Fully redisigned Settings section.
+- New theme selector in Chat Settings.
+- New settings: Peer-to-Peer settings for calls, disable animations for low performance computers.
+- Various other improvements.
+
+1.3.16 alpha (04.09.18)
+
+- Update libtgvoip, fix crash in calls.
+- Fix crash in local cache database.
+- Clear old local cache asynchronously.
+
+1.3.15 alpha (01.09.18)
+
+- Improved local caching for images and GIF animations.
+- Control how much disk space is used by the cache and for how long the cached files are stored.
+
+1.3.14 (27.08.18)
+
+- Fix a crash in calls.
+
+1.3.13 (25.08.18)
+
+- Export data from individual chats using the '...' menu.
+- Added a new night theme.
+- You can now assign custom themes as night and day themes to quickly switch between them.
+- Support for Telegram Passport 1.1 and improved password hashing algorithm to better protect Telegram Passport data.
+
+1.3.12 alpha (04.08.18)
+
+- Bug fixes and other minor improvements.
+
+1.3.11 alpha (01.08.18)
+
+- Added a new night theme. 
+- You can now assign custom themes as night and day themes to quickly switch between them.  
+
 1.3.10 (13.07.18)
 
 - Bug fixes and other minor improvements.

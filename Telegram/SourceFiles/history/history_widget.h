@@ -36,6 +36,11 @@ namespace Data {
 	struct Draft;
 } // namespace Data
 
+namespace Support {
+class Autocomplete;
+struct Contact;
+} // namespace Support
+
 namespace Ui {
 	class AbstractButton;
 	class InnerDropdown;
@@ -289,7 +294,6 @@ public:
 	void stopRecording(bool send);
 
 	void onListEscapePressed();
-	void onListEnterPressed();
 
 	void sendBotCommand(PeerData *peer, UserData *bot, const QString &cmd, MsgId replyTo);
 	void hideSingleUseKeyboard(PeerData *peer, MsgId replyTo);
@@ -321,8 +325,6 @@ public:
 	void setInnerFocus();
 
 	void updateNotifyControls();
-
-	void saveGif(DocumentData *doc);
 
 	bool contentOverlapped(const QRect &globalRect);
 
@@ -394,9 +396,11 @@ public slots:
 	void onTextChange();
 
 	void onFieldTabbed();
-	bool onStickerSend(DocumentData *sticker);
-	void onPhotoSend(PhotoData *photo);
-	void onInlineResultSend(InlineBots::Result *result, UserData *bot);
+	bool onStickerOrGifSend(not_null<DocumentData*> document);
+	void onPhotoSend(not_null<PhotoData*> photo);
+	void onInlineResultSend(
+		not_null<InlineBots::Result*> result,
+		not_null<UserData*> bot);
 
 	void onWindowVisibleChanged();
 
@@ -438,7 +442,7 @@ private:
 	using TabbedSelector = ChatHelpers::TabbedSelector;
 	using DragState = Storage::MimeDataState;
 
-	void send();
+	void send(Qt::KeyboardModifiers modifiers = Qt::KeyboardModifiers());
 	void handlePendingHistoryUpdate();
 	void fullPeerUpdated(PeerData *peer);
 	void toggleTabbedSelectorMode();
@@ -449,10 +453,13 @@ private:
 	void showNextUnreadMention();
 	void handlePeerUpdate();
 	void setMembersShowAreaActive(bool active);
-	void forwardItems(MessageIdsList &&items);
 	void handleHistoryChange(not_null<const History*> history);
 	void refreshAboutProxyPromotion();
 	void unreadCountUpdated();
+
+	void supportInitAutocomplete();
+	void supportInsertText(const QString &text);
+	void supportShareContact(Support::Contact contact);
 
 	void highlightMessage(MsgId universalMessageId);
 	void adjustHighlightedMessageToMigrated();
@@ -565,6 +572,7 @@ private:
 	bool editingMessage() const {
 		return _editMsgId != 0;
 	}
+	bool jumpToDialogRow(const Dialogs::RowDescriptor &to);
 
 	MsgId _replyToId = 0;
 	Text _replyToName;
@@ -600,8 +608,13 @@ private:
 	void destroyPinnedBar();
 	void unpinDone(const MTPUpdates &updates);
 
-	bool sendExistingDocument(DocumentData *doc, TextWithEntities caption);
-	void sendExistingPhoto(PhotoData *photo, TextWithEntities caption);
+	bool sendExistingDocument(
+		not_null<DocumentData*> document,
+		Data::FileOrigin origin,
+		TextWithEntities caption);
+	void sendExistingPhoto(
+		not_null<PhotoData*> photo,
+		TextWithEntities caption);
 
 	void drawField(Painter &p, const QRect &rect);
 	void paintEditHeader(Painter &p, const QRect &rect, int left, int top) const;
@@ -683,7 +696,7 @@ private:
 
 	// Counts scrollTop for placing the scroll right at the unread
 	// messages bar, choosing from _history and _migrated unreadBar.
-	base::optional<int> unreadBarTop() const;
+	std::optional<int> unreadBarTop() const;
 	int itemTopForHighlight(not_null<HistoryView::Element*> view) const;
 	void scrollToCurrentVoiceMessage(FullMsgId fromId, FullMsgId toId);
 	HistoryView::Element *firstUnreadMessage() const;
@@ -692,8 +705,6 @@ private:
 	// Used to distinguish between user scrolls and syntetic scrolls.
 	// This one is syntetic.
 	void synteticScrollToY(int y);
-
-	void saveGifDone(DocumentData *doc, const MTPBool &result);
 
 	void reportSpamDone(PeerData *peer, const MTPBool &result, mtpRequestId request);
 	bool reportSpamFail(const RPCError &error, mtpRequestId request);
@@ -739,6 +750,8 @@ private:
 	bool readyToForward() const;
 	bool hasSilentToggle() const;
 
+	void handleSupportSwitch(not_null<History*> updated);
+
 	PeerData *_peer = nullptr;
 
 	ChannelId _channel = NoChannel;
@@ -780,6 +793,7 @@ private:
 	object_ptr<Ui::HistoryDownButton> _unreadMentions;
 
 	object_ptr<FieldAutocomplete> _fieldAutocomplete;
+	object_ptr<Support::Autocomplete> _supportAutocomplete;
 	std::unique_ptr<MessageLinksParser> _fieldLinksParser;
 
 	UserData *_inlineBot = nullptr;

@@ -85,9 +85,13 @@ inline int dateTimeSize() {
 	return (sizeof(qint64) + sizeof(quint32) + sizeof(qint8));
 }
 
-void writeStorageImageLocation(QDataStream &stream, const StorageImageLocation &loc);
-StorageImageLocation readStorageImageLocation(QDataStream &stream);
-int storageImageLocationSize();
+void writeStorageImageLocation(
+	QDataStream &stream,
+	const StorageImageLocation &location);
+StorageImageLocation readStorageImageLocation(
+	int streamAppVersion,
+	QDataStream &stream);
+int storageImageLocationSize(const StorageImageLocation &location);
 
 template <typename T>
 inline T read(QDataStream &stream) {
@@ -102,5 +106,10 @@ inline MTP::AuthKey::Data read<MTP::AuthKey::Data>(QDataStream &stream) {
 	stream.readRawData(reinterpret_cast<char*>(result.data()), result.size());
 	return result;
 }
+
+uint32 peerSize(not_null<PeerData*> peer);
+void writePeer(QDataStream &stream, PeerData *peer);
+PeerData *readPeer(int streamAppVersion, QDataStream &stream);
+QString peekUserPhone(int streamAppVersion, QDataStream &stream);
 
 } // namespace Serialize

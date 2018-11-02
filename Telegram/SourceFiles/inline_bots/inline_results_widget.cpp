@@ -593,6 +593,10 @@ bool Inner::inlineItemVisible(const ItemBase *layout) {
 	return (top < _visibleBottom) && (top + _rows[row].items[col]->height() > _visibleTop);
 }
 
+Data::FileOrigin Inner::inlineItemFileOrigin() {
+	return Data::FileOrigin();
+}
+
 void Inner::updateSelected() {
 	if (_pressed >= 0 && !_previewShown) {
 		return;
@@ -662,10 +666,12 @@ void Inner::updateSelected() {
 			_pressed = _selected;
 			if (row >= 0 && col >= 0) {
 				auto layout = _rows.at(row).items.at(col);
-				if (auto previewDocument = layout->getPreviewDocument()) {
-					Ui::showMediaPreview(previewDocument);
+				if (const auto previewDocument = layout->getPreviewDocument()) {
+					Ui::showMediaPreview(
+						Data::FileOrigin(),
+						previewDocument);
 				} else if (auto previewPhoto = layout->getPreviewPhoto()) {
-					Ui::showMediaPreview(previewPhoto);
+					Ui::showMediaPreview(Data::FileOrigin(), previewPhoto);
 				}
 			}
 		}
@@ -681,11 +687,11 @@ void Inner::onPreview() {
 	int row = _pressed / MatrixRowShift, col = _pressed % MatrixRowShift;
 	if (row < _rows.size() && col < _rows.at(row).items.size()) {
 		auto layout = _rows.at(row).items.at(col);
-		if (auto previewDocument = layout->getPreviewDocument()) {
-			Ui::showMediaPreview(previewDocument);
+		if (const auto previewDocument = layout->getPreviewDocument()) {
+			Ui::showMediaPreview(Data::FileOrigin(), previewDocument);
 			_previewShown = true;
-		} else if (auto previewPhoto = layout->getPreviewPhoto()) {
-			Ui::showMediaPreview(previewPhoto);
+		} else if (const auto previewPhoto = layout->getPreviewPhoto()) {
+			Ui::showMediaPreview(Data::FileOrigin(), previewPhoto);
 			_previewShown = true;
 		}
 	}
@@ -1008,6 +1014,12 @@ void Widget::inlineBotChanged() {
 }
 
 void Widget::inlineResultsDone(const MTPmessages_BotResults &result) {
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getInstance()->getSettings().isDialogAllowed(_inlineBot)) {
+		hideAnimated();
+		return;
+	}
+	//CloudVeil end
 	_inlineRequestId = 0;
 	Notify::inlineBotRequesting(false);
 
@@ -1056,6 +1068,13 @@ void Widget::inlineResultsDone(const MTPmessages_BotResults &result) {
 }
 
 void Widget::queryInlineBot(UserData *bot, PeerData *peer, QString query) {
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getInstance()->getSettings().isDialogAllowed(bot)) {
+		hideAnimated();
+		return;
+	}
+	//CloudVeil end
+
 	bool force = false;
 	_inlineQueryPeer = peer;
 	if (bot != _inlineBot) {

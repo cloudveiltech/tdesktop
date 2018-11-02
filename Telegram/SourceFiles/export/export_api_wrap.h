@@ -124,6 +124,7 @@ private:
 	void requestDialogsSlice();
 	void appendDialogsSlice(Data::DialogsInfo &&info);
 	void finishDialogsList();
+	void requestSinglePeerDialog();
 
 	void requestLeftChannelsIfNeeded();
 	void requestLeftChannelsList(
@@ -140,6 +141,8 @@ private:
 		int splitIndex);
 
 	void requestMessagesCount(int localSplitIndex);
+	void checkFirstMessageDate(int localSplitIndex, int count);
+	void messagesCountLoaded(int localSplitIndex, int count);
 	void requestMessagesSlice();
 	void requestChatMessages(
 		int splitIndex,
@@ -190,7 +193,7 @@ private:
 	void ioError(const Output::Result &result);
 
 	MTP::ConcurrentSender _mtp;
-	base::optional<uint64> _takeoutId;
+	std::optional<uint64> _takeoutId;
 	Output::Stats *_stats = nullptr;
 
 	std::unique_ptr<Settings> _settings;

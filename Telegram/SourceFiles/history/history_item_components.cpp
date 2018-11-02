@@ -262,7 +262,7 @@ void HistoryMessageReply::paint(
 					auto to = rtlrect(x + st::msgReplyBarSkip, y + st::msgReplyPadding.top() + st::msgReplyBarPos.y(), st::msgReplyBarSize.height(), st::msgReplyBarSize.height(), w + 2 * x);
 					auto previewWidth = replyPreview->width() / cIntRetinaFactor();
 					auto previewHeight = replyPreview->height() / cIntRetinaFactor();
-					auto preview = replyPreview->pixSingle(previewWidth, previewHeight, to.width(), to.height(), ImageRoundRadius::Small, RectPart::AllCorners, selected ? &st::msgStickerOverlay : nullptr);
+					auto preview = replyPreview->pixSingle(replyToMsg->fullId(), previewWidth, previewHeight, to.width(), to.height(), ImageRoundRadius::Small, RectPart::AllCorners, selected ? &st::msgStickerOverlay : nullptr);
 					p.drawPixmap(to.x(), to.y(), preview);
 				}
 			}
@@ -616,6 +616,9 @@ void ReplyKeyboard::startAnimation(int i, int j, int direction) {
 }
 
 void ReplyKeyboard::step_selected(TimeMs ms, bool timer) {
+	if (anim::Disabled()) {
+		ms += st::botKbDuration;
+	}
 	for (auto i = _animations.begin(); i != _animations.end();) {
 		const auto index = std::abs(i->first) - 1;
 		const auto row = (index / MatrixRowShift);

@@ -11,18 +11,22 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 class PhotoData {
 public:
+	explicit PhotoData(const PhotoId &id);
 	PhotoData(
 		const PhotoId &id,
-		const uint64 &access = 0,
-		int32 date = 0,
-		const ImagePtr &thumb = ImagePtr(),
-		const ImagePtr &medium = ImagePtr(),
-		const ImagePtr &full = ImagePtr());
+		const uint64 &access,
+		const QByteArray &fileReference,
+		TimeId date,
+		const ImagePtr &thumb,
+		const ImagePtr &medium,
+		const ImagePtr &full);
 
-	void automaticLoad(const HistoryItem *item);
+	void automaticLoad(
+		Data::FileOrigin origin,
+		const HistoryItem *item);
 	void automaticLoadSettingsChanged();
 
-	void download();
+	void download(Data::FileOrigin origin);
 	bool loaded() const;
 	bool loading() const;
 	bool displayLoading() const;
@@ -35,11 +39,20 @@ public:
 	bool waitingForAlbum() const;
 
 	void forget();
-	ImagePtr makeReplyPreview();
+	ImagePtr makeReplyPreview(Data::FileOrigin origin);
 
-	PhotoId id;
-	uint64 access;
-	int32 date;
+	MTPInputPhoto mtpInput() const;
+
+	// When we have some client-side generated photo
+	// (for example for displaying an external inline bot result)
+	// and it has downloaded full image, we can collect image from it
+	// to (this) received from the server "same" photo.
+	void collectLocalData(PhotoData *local);
+
+	PhotoId id = 0;
+	uint64 access = 0;
+	QByteArray fileReference;
+	TimeId date = 0;
 	ImagePtr thumb, replyPreview;
 	ImagePtr medium;
 	ImagePtr full;

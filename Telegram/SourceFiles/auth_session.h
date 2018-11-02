@@ -15,9 +15,22 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 class ApiWrap;
 enum class SendFilesWay;
 
+namespace Ui {
+enum class InputSubmitSettings;
+} // namespace Ui
+
+namespace Support {
+enum class SwitchSettings;
+class Templates;
+} // namespace Support
+
 namespace Data {
 class Session;
 } // namespace Data
+
+namespace Calls {
+enum class PeerToPeer;
+} // namespace Calls
 
 namespace Storage {
 class Downloader;
@@ -64,6 +77,32 @@ public:
 	SendFilesWay sendFilesWay() const {
 		return _variables.sendFilesWay;
 	}
+	void setSendSubmitWay(Ui::InputSubmitSettings value) {
+		_variables.sendSubmitWay = value;
+	}
+	Ui::InputSubmitSettings sendSubmitWay() const {
+		return _variables.sendSubmitWay;
+	}
+
+	void setSupportSwitch(Support::SwitchSettings value) {
+		_variables.supportSwitch = value;
+	}
+	Support::SwitchSettings supportSwitch() const {
+		return _variables.supportSwitch;
+	}
+	void setSupportFixChatsOrder(bool fix) {
+		_variables.supportFixChatsOrder = fix;
+	}
+	bool supportFixChatsOrder() const {
+		return _variables.supportFixChatsOrder;
+	}
+	void setSupportTemplatesAutocomplete(bool enabled) {
+		_variables.supportTemplatesAutocomplete = enabled;
+	}
+	bool supportTemplatesAutocomplete() const {
+		return _variables.supportTemplatesAutocomplete;
+	}
+
 	ChatHelpers::SelectorTab selectorTab() const {
 		return _variables.selectorTab;
 	}
@@ -144,6 +183,16 @@ public:
 		_variables.groupStickersSectionHidden.remove(peerId);
 	}
 
+	rpl::producer<Calls::PeerToPeer> callsPeerToPeerValue() const {
+		return _variables.callsPeerToPeer.value();
+	}
+	Calls::PeerToPeer callsPeerToPeer() const {
+		return _variables.callsPeerToPeer.current();
+	}
+	void setCallsPeerToPeer(Calls::PeerToPeer value) {
+		_variables.callsPeerToPeer = value;
+	}
+
 private:
 	struct Variables {
 		Variables();
@@ -167,6 +216,13 @@ private:
 			= kDefaultDialogsWidthRatio; // per-window
 		rpl::variable<int> thirdColumnWidth
 			= kDefaultThirdColumnWidth; // per-window
+		rpl::variable<Calls::PeerToPeer> callsPeerToPeer
+			= Calls::PeerToPeer();
+		Ui::InputSubmitSettings sendSubmitWay;
+
+		Support::SwitchSettings supportSwitch;
+		bool supportFixChatsOrder = true;
+		bool supportTemplatesAutocomplete = true;
 	};
 
 	rpl::event_stream<bool> _thirdSectionInfoEnabledValue;
@@ -186,7 +242,7 @@ class AuthSession final
 	: public base::has_weak_ptr
 	, private base::Subscriber {
 public:
-	AuthSession(UserId userId);
+	AuthSession(const MTPUser &user);
 
 	AuthSession(const AuthSession &other) = delete;
 	AuthSession &operator=(const AuthSession &other) = delete;
@@ -194,12 +250,14 @@ public:
 	static bool Exists();
 
 	UserId userId() const {
-		return _userId;
+		return _user->bareId();
 	}
 	PeerId userPeerId() const {
-		return peerFromUser(userId());
+		return _user->id;
 	}
-	UserData *user() const;
+	not_null<UserData*> user() const {
+		return _user;
+	}
 	bool validateSelf(const MTPUser &user);
 
 	Storage::Downloader &downloader() {
@@ -237,15 +295,22 @@ public:
 	void checkAutoLock();
 	void checkAutoLockIn(TimeMs time);
 
+	rpl::lifetime &lifetime() {
+		return _lifetime;
+	}
+
 	base::Observable<DocumentData*> documentUpdated;
 	base::Observable<std::pair<not_null<HistoryItem*>, MsgId>> messageIdChanging;
+
+	bool supportMode() const;
+	not_null<Support::Templates*> supportTemplates() const;
 
 	~AuthSession();
 
 private:
 	static constexpr auto kDefaultSaveDelay = TimeMs(1000);
 
-	const UserId _userId = 0;
+	const not_null<UserData*> _user;
 	AuthSessionSettings _settings;
 	base::Timer _saveDataTimer;
 
@@ -264,6 +329,8 @@ private:
 
 	// _changelogs depends on _data, subscribes on chats loading event.
 	const std::unique_ptr<Core::Changelogs> _changelogs;
+
+	const std::unique_ptr<Support::Templates> _supportTemplates;
 
 	rpl::lifetime _lifetime;
 

@@ -217,6 +217,7 @@ void ListWidget::Section::setHeader(not_null<BaseLayout*> item) {
 bool ListWidget::Section::belongsHere(
 		not_null<BaseLayout*> item) const {
 	Expects(!_items.empty());
+
 	auto date = item->dateTime().date();
 	auto myDate = _items.back().second->dateTime().date();
 
@@ -929,6 +930,10 @@ void ListWidget::markLayoutsStale() {
 	}
 }
 
+bool ListWidget::preventAutoHide() const {
+	return (_contextMenu != nullptr) || (_actionBoxWeak != nullptr);
+}
+
 void ListWidget::saveState(not_null<Memento*> memento) {
 	if (_universalAroundId != kDefaultAroundId) {
 		auto state = countScrollState();
@@ -976,7 +981,7 @@ auto ListWidget::findItemByPoint(QPoint point) const -> FoundItem {
 }
 
 auto ListWidget::findItemById(
-		UniversalMsgId universalId) -> base::optional<FoundItem> {
+		UniversalMsgId universalId) -> std::optional<FoundItem> {
 	auto sectionIt = findSectionByItem(universalId);
 	if (sectionIt != _sections.end()) {
 		auto item = sectionIt->findItemNearId(universalId);
@@ -984,14 +989,14 @@ auto ListWidget::findItemById(
 			return foundItemInSection(item, *sectionIt);
 		}
 	}
-	return base::none;
+	return std::nullopt;
 }
 
 auto ListWidget::findItemDetails(
-		BaseLayout *item) -> base::optional<FoundItem> {
+		BaseLayout *item) -> std::optional<FoundItem> {
 	return item
 		? findItemById(GetUniversalId(item))
-		: base::none;
+		: std::nullopt;
 }
 
 auto ListWidget::foundItemInSection(
@@ -1053,7 +1058,7 @@ void ListWidget::checkMoveToOtherViewer() {
 			auto delta = _slice.distance(
 				sliceKey(_universalAroundId),
 				sliceKey(universalId));
-			Assert(delta != base::none);
+			Assert(delta != std::nullopt);
 			preloadRequired = (qAbs(*delta) >= minUniversalIdDelta);
 		}
 		if (preloadRequired) {
@@ -1165,7 +1170,6 @@ void ListWidget::showContextMenu(
 		QContextMenuEvent *e,
 		ContextMenuSource source) {
 	if (_contextMenu) {
-		_contextMenu->deleteLater();
 		_contextMenu = nullptr;
 		repaintItem(_contextUniversalId);
 	}
@@ -1217,10 +1221,11 @@ void ListWidget::showContextMenu(
 
 	auto link = ClickHandler::getActive();
 
-	_contextMenu = new Ui::PopupMenu(nullptr);
+	const auto itemFullId = item->fullId();
+	_contextMenu = base::make_unique_q<Ui::PopupMenu>(this);
 	_contextMenu->addAction(
 		lang(lng_context_to_msg),
-		[itemFullId = item->fullId()] {
+		[itemFullId] {
 			if (auto item = App::histItemById(itemFullId)) {
 				Ui::showPeerHistoryAtItem(item);
 			}
@@ -1268,8 +1273,11 @@ void ListWidget::showContextMenu(
 					auto handler = App::LambdaDelayed(
 						st::defaultDropdownMenu.menu.ripple.hideDuration,
 						this,
-						[document] {
-							DocumentSaveClickHandler::doSave(document, true);
+						[=] {
+							DocumentSaveClickHandler::Save(
+								itemFullId,
+								document,
+								true);
 						});
 					_contextMenu->addAction(
 						lang(isVideo
@@ -1347,7 +1355,6 @@ void ListWidget::showContextMenu(
 	_contextMenu->setDestroyedCallback(crl::guard(
 		this,
 		[this, universalId] {
-			_contextMenu = nullptr;
 			mouseActionUpdate(QCursor::pos());
 			repaintItem(universalId);
 			_checkForHide.fire({});
@@ -2121,7 +2128,12 @@ auto ListWidget::findSectionAfterBottom(
 		[](const Section &section) { return section.top(); });
 }
 
-ListWidget::~ListWidget() = default;
+ListWidget::~ListWidget() {
+	if (_contextMenu) {
+		// We don't want it to be called after ListWidget is destroyed.
+		_contextMenu->setDestroyedCallback(nullptr);
+	}
+}
 
 } // namespace Media
 } // namespace Info

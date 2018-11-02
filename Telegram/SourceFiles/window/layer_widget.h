@@ -111,6 +111,7 @@ public:
 	void hideAll(anim::type animated);
 	void hideTopLayer(anim::type animated);
 	void setHideByBackgroundClick(bool hide);
+	void removeBodyCache();
 
 	bool showSectionInternal(
 		not_null<SectionMemento*> memento,
@@ -201,8 +202,12 @@ class MediaPreviewWidget : public TWidget, private base::Subscriber {
 public:
 	MediaPreviewWidget(QWidget *parent, not_null<Window::Controller*> controller);
 
-	void showPreview(DocumentData *document);
-	void showPreview(PhotoData *photo);
+	void showPreview(
+		Data::FileOrigin origin,
+		not_null<DocumentData*> document);
+	void showPreview(
+		Data::FileOrigin origin,
+		not_null<PhotoData*> photo);
 	void hidePreview();
 
 	~MediaPreviewWidget();
@@ -222,6 +227,7 @@ private:
 
 	Animation _a_shown;
 	bool _hiding = false;
+	Data::FileOrigin _origin;
 	DocumentData *_document = nullptr;
 	PhotoData *_photo = nullptr;
 	Media::Clip::ReaderPointer _gif;

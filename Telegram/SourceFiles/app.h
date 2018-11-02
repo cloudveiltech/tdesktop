@@ -7,7 +7,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "core/basic_types.h"
 #include "data/data_types.h"
 #include "data/data_peer.h"
 
@@ -136,14 +135,11 @@ namespace App {
 	void enumerateChatsChannels(
 		Fn<void(not_null<PeerData*>)> action);
 
-	UserData *self();
 	PeerData *peerByName(const QString &username);
 	QString peerName(const PeerData *peer, bool forDialogs = false);
 
 	LocationData *location(const LocationCoords &coords);
 	void forgetMedia();
-
-	MTPPhoto photoFromUserPhoto(MTPint userId, MTPint date, const MTPUserProfilePhoto &photo);
 
 	Histories &histories();
 	not_null<History*> history(const PeerId &peer);
@@ -200,8 +196,6 @@ namespace App {
 	void deinitMedia();
 
 	void checkImageCacheSize();
-
-	bool isValidPhone(QString phone);
 
 	enum LaunchState {
 		Launched = 0,

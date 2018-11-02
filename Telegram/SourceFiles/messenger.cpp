@@ -29,7 +29,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/update_checker.h"
 #include "passport/passport_form_controller.h"
 #include "observer_peer.h"
-#include "storage/file_upload.h"
+#include "storage/storage_databases.h"
 #include "mainwidget.h"
 #include "mediaview.h"
 #include "mtproto/dc_options.h"
@@ -66,6 +66,8 @@ Messenger *Messenger::InstancePointer() {
 
 struct Messenger::Private {
 	UserId authSessionUserId = 0;
+	QByteArray authSessionUserSerialized;
+	int32 authSessionUserStreamVersion = 0;
 	std::unique_ptr<AuthSessionSettings> storedAuthSession;
 	MTP::Instance::Config mtpConfig;
 	MTP::AuthKeysList mtpKeysToDestroy;
@@ -76,6 +78,7 @@ Messenger::Messenger(not_null<Core::Launcher*> launcher)
 : QObject()
 , _launcher(launcher)
 , _private(std::make_unique<Private>())
+, _databases(std::make_unique<Storage::Databases>())
 , _langpack(std::make_unique<Lang::Instance>())
 , _audio(std::make_unique<Media::Audio::Instance>())
 , _logo(Window::LoadLogo())
@@ -144,7 +147,6 @@ Messenger::Messenger(not_null<Core::Launcher*> launcher)
 
 	Shortcuts::start();
 
-	initLocationManager();
 	App::initMedia();
 
 	Local::ReadMapState state = Local::readMap(QByteArray());
@@ -370,12 +372,19 @@ QByteArray Messenger::serializeMtpAuthorization() const {
 
 void Messenger::setAuthSessionUserId(UserId userId) {
 	Expects(!authSession());
+
 	_private->authSessionUserId = userId;
 }
 
-void Messenger::setAuthSessionFromStorage(std::unique_ptr<AuthSessionSettings> data) {
+void Messenger::setAuthSessionFromStorage(
+		std::unique_ptr<AuthSessionSettings> data,
+		QByteArray &&selfSerialized,
+		int32 selfStreamVersion) {
 	Expects(!authSession());
+
 	_private->storedAuthSession = std::move(data);
+	_private->authSessionUserSerialized = std::move(selfSerialized);
+	_private->authSessionUserStreamVersion = selfStreamVersion;
 }
 
 AuthSessionSettings *Messenger::getAuthSessionSettings() {
@@ -453,7 +462,30 @@ void Messenger::startMtp() {
 	}
 
 	if (_private->authSessionUserId) {
-		authSessionCreate(base::take(_private->authSessionUserId));
+		QDataStream peekStream(_private->authSessionUserSerialized);
+		const auto phone = Serialize::peekUserPhone(
+			_private->authSessionUserStreamVersion,
+			peekStream);
+		const auto flags = MTPDuser::Flag::f_self | (phone.isEmpty()
+			? MTPDuser::Flag()
+			: MTPDuser::Flag::f_phone);
+		authSessionCreate(MTP_user(
+			MTP_flags(flags),
+			MTP_int(base::take(_private->authSessionUserId)),
+			MTPlong(), // access_hash
+			MTPstring(), // first_name
+			MTPstring(), // last_name
+			MTPstring(), // username
+			MTP_string(phone),
+			MTPUserProfilePhoto(),
+			MTPUserStatus(),
+			MTPint(), // bot_info_version
+			MTPstring(), // restriction_reason
+			MTPstring(), // bot_inline_placeholder
+			MTPstring())); // lang_code
+		Local::readSelf(
+			base::take(_private->authSessionUserSerialized),
+			base::take(_private->authSessionUserStreamVersion));
 	}
 	if (_private->storedAuthSession) {
 		if (_authSession) {
@@ -468,6 +500,11 @@ void Messenger::startMtp() {
 		mtp());
 	if (!Core::UpdaterDisabled()) {
 		Core::UpdateChecker().setMtproto(mtp());
+	}
+
+	if (_authSession) {
+		// Skip all pending self updates so that we won't Local::writeSelf.
+		Notify::peerUpdatedSendDelayed();
 	}
 }
 
@@ -535,17 +572,10 @@ void Messenger::startLocalStorage() {
 			}
 		}
 	});
-	subscribe(authSessionChanged(), [this] {
-		InvokeQueued(this, [this] {
-			if (_mtproto) {
-				_mtproto->requestConfig();
-			}
-		});
-	});
-	subscribe(Global::RefSelfChanged(), [=] {
+	subscribe(authSessionChanged(), [=] {
 		InvokeQueued(this, [=] {
-			const auto phone = App::self()
-				? App::self()->phone()
+			const auto phone = AuthSession::Exists()
+				? Auth().user()->phone()
 				: QString();
 			if (cLoggedPhoneNumber() != phone) {
 				cSetLoggedPhoneNumber(phone);
@@ -554,85 +584,12 @@ void Messenger::startLocalStorage() {
 				}
 				Local::writeSettings();
 			}
+			if (_mtproto) {
+				_mtproto->requestConfig();
+			}
+			qApp->setWindowIcon(Window::CreateIcon());
 		});
 	});
-}
-
-void Messenger::regPhotoUpdate(const PeerId &peer, const FullMsgId &msgId) {
-	photoUpdates.insert(msgId, peer);
-}
-
-bool Messenger::isPhotoUpdating(const PeerId &peer) {
-	for (QMap<FullMsgId, PeerId>::iterator i = photoUpdates.begin(), e = photoUpdates.end(); i != e; ++i) {
-		if (i.value() == peer) {
-			return true;
-		}
-	}
-	return false;
-}
-
-void Messenger::cancelPhotoUpdate(const PeerId &peer) {
-	for (QMap<FullMsgId, PeerId>::iterator i = photoUpdates.begin(), e = photoUpdates.end(); i != e;) {
-		if (i.value() == peer) {
-			i = photoUpdates.erase(i);
-		} else {
-			++i;
-		}
-	}
-}
-
-void Messenger::selfPhotoCleared(const MTPUserProfilePhoto &result) {
-	if (!App::self()) return;
-	App::self()->setPhoto(result);
-	emit peerPhotoDone(App::self()->id);
-}
-
-void Messenger::chatPhotoCleared(PeerId peer, const MTPUpdates &updates) {
-	if (App::main()) {
-		App::main()->sentUpdatesReceived(updates);
-	}
-	cancelPhotoUpdate(peer);
-	emit peerPhotoDone(peer);
-}
-
-void Messenger::selfPhotoDone(const MTPphotos_Photo &result) {
-	if (!App::self()) return;
-	const auto &photo = result.c_photos_photo();
-	Auth().data().photo(photo.vphoto);
-	App::feedUsers(photo.vusers);
-	cancelPhotoUpdate(App::self()->id);
-	emit peerPhotoDone(App::self()->id);
-}
-
-void Messenger::chatPhotoDone(PeerId peer, const MTPUpdates &updates) {
-	if (App::main()) {
-		App::main()->sentUpdatesReceived(updates);
-	}
-	cancelPhotoUpdate(peer);
-	emit peerPhotoDone(peer);
-}
-
-bool Messenger::peerPhotoFailed(PeerId peer, const RPCError &error) {
-	if (MTP::isDefaultHandledError(error)) return false;
-
-	LOG(("Application Error: update photo failed %1: %2").arg(error.type()).arg(error.description()));
-	cancelPhotoUpdate(peer);
-	emit peerPhotoFail(peer);
-	return true;
-}
-
-void Messenger::peerClearPhoto(PeerId id) {
-	if (!AuthSession::Exists()) return;
-
-	if (id == Auth().userPeerId()) {
-		MTP::send(MTPphotos_UpdateProfilePhoto(MTP_inputPhotoEmpty()), rpcDone(&Messenger::selfPhotoCleared), rpcFail(&Messenger::peerPhotoFailed, id));
-	} else if (peerIsChat(id)) {
-		MTP::send(MTPmessages_EditChatPhoto(peerToBareMTPInt(id), MTP_inputChatPhotoEmpty()), rpcDone(&Messenger::chatPhotoCleared, id), rpcFail(&Messenger::peerPhotoFailed, id));
-	} else if (peerIsChannel(id)) {
-		if (auto channel = App::channelLoaded(id)) {
-			MTP::send(MTPchannels_EditPhoto(channel->inputChannel, MTP_inputChatPhotoEmpty()), rpcDone(&Messenger::chatPhotoCleared, id), rpcFail(&Messenger::peerPhotoFailed, id));
-		}
-	}
 }
 
 void Messenger::killDownloadSessionsStart(MTP::DcId dcId) {
@@ -668,7 +625,8 @@ void Messenger::forceLogOut(const TextWithEntities &explanation) {
 }
 
 void Messenger::checkLocalTime() {
-	if (App::main()) App::main()->checkLastUpdate(checkms());
+	const auto updated = checkms();
+	if (App::main()) App::main()->checkLastUpdate(updated);
 }
 
 void Messenger::onAppStateChanged(Qt::ApplicationState state) {
@@ -725,37 +683,15 @@ void Messenger::killDownloadSessions() {
 	}
 }
 
-void Messenger::photoUpdated(const FullMsgId &msgId, const MTPInputFile &file) {
-	Expects(AuthSession::Exists());
-
-	auto i = photoUpdates.find(msgId);
-	if (i != photoUpdates.end()) {
-		auto id = i.value();
-		if (id == Auth().userPeerId()) {
-			MTP::send(MTPphotos_UploadProfilePhoto(file), rpcDone(&Messenger::selfPhotoDone), rpcFail(&Messenger::peerPhotoFailed, id));
-		} else if (peerIsChat(id)) {
-			auto history = App::history(id);
-			history->sendRequestId = MTP::send(MTPmessages_EditChatPhoto(history->peer->asChat()->inputChat, MTP_inputChatUploadedPhoto(file)), rpcDone(&Messenger::chatPhotoDone, id), rpcFail(&Messenger::peerPhotoFailed, id), 0, 0, history->sendRequestId);
-		} else if (peerIsChannel(id)) {
-			auto history = App::history(id);
-			history->sendRequestId = MTP::send(MTPchannels_EditPhoto(history->peer->asChannel()->inputChannel, MTP_inputChatUploadedPhoto(file)), rpcDone(&Messenger::chatPhotoDone, id), rpcFail(&Messenger::peerPhotoFailed, id), 0, 0, history->sendRequestId);
-		}
-	}
-}
-
 void Messenger::onSwitchDebugMode() {
 	if (Logs::DebugEnabled()) {
-		QFile(cWorkingDir() + qsl("tdata/withdebug")).remove();
 		Logs::SetDebugEnabled(false);
+		Sandbox::WriteDebugModeSetting();
 		App::restart();
 	} else {
 		Logs::SetDebugEnabled(true);
+		Sandbox::WriteDebugModeSetting();
 		DEBUG_LOG(("Debug logs started."));
-		QFile f(cWorkingDir() + qsl("tdata/withdebug"));
-		if (f.open(QIODevice::WriteOnly)) {
-			f.write("1");
-			f.close();
-		}
 		Ui::hideLayer();
 	}
 }
@@ -782,20 +718,20 @@ void Messenger::onSwitchTestMode() {
 	App::restart();
 }
 
-void Messenger::authSessionCreate(UserId userId) {
+void Messenger::authSessionCreate(const MTPUser &user) {
 	Expects(_mtproto != nullptr);
 
-	_authSession = std::make_unique<AuthSession>(userId);
+	_authSession = std::make_unique<AuthSession>(user);
 	authSessionChanged().notify(true);
 }
 
 void Messenger::authSessionDestroy() {
 	unlockTerms();
 
-	_uploaderSubscription = rpl::lifetime();
 	_authSession.reset();
 	_private->storedAuthSession.reset();
 	_private->authSessionUserId = 0;
+	_private->authSessionUserSerialized = {};
 	authSessionChanged().notify(true);
 }
 
@@ -862,7 +798,9 @@ bool Messenger::openLocalUrl(const QString &url, QVariant context) {
 		const auto scope = params.value("scope", QString());
 		const auto callback = params.value("callback_url", QString());
 		const auto publicKey = params.value("public_key", QString());
-		const auto payload = params.value("payload", QString());
+		const auto nonce = params.value(
+			Passport::NonceNameByScope(scope),
+			QString());
 		const auto errors = params.value("errors", QString());
 		if (const auto window = App::wnd()) {
 			if (const auto controller = window->controller()) {
@@ -871,7 +809,7 @@ bool Messenger::openLocalUrl(const QString &url, QVariant context) {
 					scope,
 					callback,
 					publicKey,
-					payload,
+					nonce,
 					errors));
 				return true;
 			}
@@ -975,10 +913,14 @@ bool Messenger::openLocalUrl(const QString &url, QVariant context) {
 				};
 				if (result.is_update_app()) {
 					const auto box = std::make_shared<QPointer<BoxContent>>();
+					const auto callback = [=] {
+						Core::UpdateApplication();
+						if (*box) (*box)->closeBox();
+					};
 					*box = Ui::show(Box<ConfirmBox>(
 						text,
 						lang(lng_menu_update),
-						[=] { Core::UpdateApplication(); if (*box) (*box)->closeBox(); }));
+						callback));
 				} else {
 					Ui::show(Box<InformBox>(text));
 				}
@@ -987,48 +929,6 @@ bool Messenger::openLocalUrl(const QString &url, QVariant context) {
 		}
 	}
 	return false;
-}
-
-void Messenger::uploadProfilePhoto(QImage &&tosend, const PeerId &peerId) {
-	PreparedPhotoThumbs photoThumbs;
-	QVector<MTPPhotoSize> photoSizes;
-
-	auto thumb = App::pixmapFromImageInPlace(tosend.scaled(160, 160, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-	photoThumbs.insert('a', thumb);
-	photoSizes.push_back(MTP_photoSize(MTP_string("a"), MTP_fileLocationUnavailable(MTP_long(0), MTP_int(0), MTP_long(0)), MTP_int(thumb.width()), MTP_int(thumb.height()), MTP_int(0)));
-
-	auto medium = App::pixmapFromImageInPlace(tosend.scaled(320, 320, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-	photoThumbs.insert('b', medium);
-	photoSizes.push_back(MTP_photoSize(MTP_string("b"), MTP_fileLocationUnavailable(MTP_long(0), MTP_int(0), MTP_long(0)), MTP_int(medium.width()), MTP_int(medium.height()), MTP_int(0)));
-
-	auto full = QPixmap::fromImage(tosend, Qt::ColorOnly);
-	photoThumbs.insert('c', full);
-	photoSizes.push_back(MTP_photoSize(MTP_string("c"), MTP_fileLocationUnavailable(MTP_long(0), MTP_int(0), MTP_long(0)), MTP_int(full.width()), MTP_int(full.height()), MTP_int(0)));
-
-	QByteArray jpeg;
-	QBuffer jpegBuffer(&jpeg);
-	full.save(&jpegBuffer, "JPG", 87);
-
-	PhotoId id = rand_value<PhotoId>();
-
-	auto photo = MTP_photo(MTP_flags(0), MTP_long(id), MTP_long(0), MTP_int(unixtime()), MTP_vector<MTPPhotoSize>(photoSizes));
-
-	QString file, filename;
-	int32 filesize = 0;
-	QByteArray data;
-
-	SendMediaReady ready(SendMediaType::Photo, file, filename, filesize, data, id, id, qsl("jpg"), peerId, photo, photoThumbs, MTP_documentEmpty(MTP_long(0)), jpeg, 0);
-
-	if (!_uploaderSubscription) {
-		_uploaderSubscription = Auth().uploader().photoReady(
-		) | rpl::start_with_next([=](const Storage::UploadedPhoto &data) {
-			photoUpdated(data.fullId, data.file);
-		});
-	}
-
-	FullMsgId newId(peerToChannel(peerId), clientMsgId());
-	regPhotoUpdate(peerId, newId);
-	Auth().uploader().uploadMedia(newId, ready);
 }
 
 void Messenger::lockByPasscode() {
@@ -1072,8 +972,8 @@ void Messenger::unlockTerms() {
 	}
 }
 
-base::optional<Window::TermsLock> Messenger::termsLocked() const {
-	return _termsLock ? base::make_optional(*_termsLock) : base::none;
+std::optional<Window::TermsLock> Messenger::termsLocked() const {
+	return _termsLock ? base::make_optional(*_termsLock) : std::nullopt;
 }
 
 rpl::producer<bool> Messenger::termsLockChanges() const {
@@ -1129,7 +1029,6 @@ Messenger::~Messenger() {
 
 	stopWebLoadManager();
 	App::deinitMedia();
-	deinitLocationManager();
 
 	Window::Theme::Unload();
 
@@ -1213,13 +1112,16 @@ void Messenger::loggedOut() {
 		w->setupIntro();
 	}
 	App::histories().clear();
+	if (const auto session = authSession()) {
+		session->data().cache().close();
+		session->data().cache().clear();
+	}
 	authSessionDestroy();
 	if (_mediaView) {
 		hideMediaView();
 		_mediaView->clearData();
 	}
 	Local::reset();
-	Window::Theme::Background()->reset();
 
 	cSetOtherOnline(0);
 	clearStorageImages();

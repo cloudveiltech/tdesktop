@@ -119,7 +119,7 @@ void activateBotCommand(
 			Ui::showPeerHistory(history, ShowAtTheEndMsgId);
 			auto options = ApiWrap::SendOptions(history);
 			options.replyTo = msgId;
-			Auth().api().shareContact(App::self(), options);
+			Auth().api().shareContact(Auth().user(), options);
 		}));
 	} break;
 
@@ -203,15 +203,17 @@ void showBox(
 
 } // namespace internal
 
-void showMediaPreview(DocumentData *document) {
+void showMediaPreview(
+		Data::FileOrigin origin,
+		not_null<DocumentData*> document) {
 	if (auto w = App::wnd()) {
-		w->ui_showMediaPreview(document);
+		w->ui_showMediaPreview(origin, document);
 	}
 }
 
-void showMediaPreview(PhotoData *photo) {
+void showMediaPreview(Data::FileOrigin origin, not_null<PhotoData*> photo) {
 	if (auto w = App::wnd()) {
-		w->ui_showMediaPreview(photo);
+		w->ui_showMediaPreview(origin, photo);
 	}
 }
 
@@ -369,68 +371,147 @@ uint64 SandboxUserTag = 0;
 
 namespace Sandbox {
 
-bool CheckBetaVersionDir() {
-	QFile beta(cExeDir() + qsl("TelegramBeta_data/tdata/beta"));
-	if (cBetaVersion()) {
-		cForceWorkingDir(cExeDir() + qsl("TelegramBeta_data/"));
-		QDir().mkpath(cWorkingDir() + qstr("tdata"));
-		if (*BetaPrivateKey) {
-			cSetBetaPrivateKey(QByteArray(BetaPrivateKey));
-		}
-		if (beta.open(QIODevice::WriteOnly)) {
-			QDataStream dataStream(&beta);
-			dataStream.setVersion(QDataStream::Qt_5_3);
-			dataStream << quint64(cRealBetaVersion()) << cBetaPrivateKey();
-		} else {
-			LOG(("FATAL: Could not open '%1' for writing private key!").arg(beta.fileName()));
-			return false;
-		}
-	} else if (beta.exists()) {
-		cForceWorkingDir(cExeDir() + qsl("TelegramBeta_data/"));
-		if (beta.open(QIODevice::ReadOnly)) {
-			QDataStream dataStream(&beta);
-			dataStream.setVersion(QDataStream::Qt_5_3);
-
-			quint64 v;
-			QByteArray k;
-			dataStream >> v >> k;
-			if (dataStream.status() == QDataStream::Ok && !k.isEmpty()) {
-				cSetBetaVersion(AppVersion * 1000ULL);
-				cSetBetaPrivateKey(k);
-				cSetRealBetaVersion(v);
-			} else {
-				LOG(("FATAL: '%1' is corrupted, reinstall private beta!").arg(beta.fileName()));
+bool MoveLegacyAlphaFolder(const QString &folder, const QString &file) {
+	const auto was = cExeDir() + folder;
+	const auto now = cExeDir() + qsl("TelegramForcePortable");
+	if (QDir(was).exists() && !QDir(now).exists()) {
+		const auto oldFile = was + "/tdata/" + file;
+		const auto newFile = was + "/tdata/alpha";
+		if (QFile(oldFile).exists() && !QFile(newFile).exists()) {
+			if (!QFile(oldFile).copy(newFile)) {
+				LOG(("FATAL: Could not copy '%1' to '%2'"
+					).arg(oldFile
+					).arg(newFile));
 				return false;
 			}
-		} else {
-			LOG(("FATAL: could not open '%1' for reading private key!").arg(beta.fileName()));
+		}
+		if (!QDir().rename(was, now)) {
+			LOG(("FATAL: Could not rename '%1' to '%2'"
+				).arg(was
+				).arg(now));
 			return false;
 		}
 	}
 	return true;
 }
 
-void WorkingDirReady() {
+bool MoveLegacyAlphaFolder() {
+	if (!MoveLegacyAlphaFolder(qsl("TelegramAlpha_data"), qsl("alpha"))
+		|| !MoveLegacyAlphaFolder(qsl("TelegramBeta_data"), qsl("beta"))) {
+		return false;
+	}
+	return true;
+}
+
+bool CheckPortableVersionDir() {
+	if (!MoveLegacyAlphaFolder()) {
+		return false;
+	}
+
+	const auto portable = cExeDir() + qsl("TelegramForcePortable");
+	QFile key(portable + qsl("/tdata/alpha"));
+	if (cAlphaVersion()) {
+		cForceWorkingDir(portable + '/');
+		QDir().mkpath(cWorkingDir() + qstr("tdata"));
+		if (*AlphaPrivateKey) {
+			cSetAlphaPrivateKey(QByteArray(AlphaPrivateKey));
+		}
+		if (!key.open(QIODevice::WriteOnly)) {
+			LOG(("FATAL: Could not open '%1' for writing private key!"
+				).arg(key.fileName()));
+			return false;
+		}
+		QDataStream dataStream(&key);
+		dataStream.setVersion(QDataStream::Qt_5_3);
+		dataStream << quint64(cRealAlphaVersion()) << cAlphaPrivateKey();
+		return true;
+	}
+	if (!QDir(portable).exists()) {
+		return true;
+	}
+	cForceWorkingDir(portable + '/');
+	if (!key.exists()) {
+		return true;
+	}
+
+	if (!key.open(QIODevice::ReadOnly)) {
+		LOG(("FATAL: could not open '%1' for reading private key. "
+			"Delete it or reinstall private alpha version."
+			).arg(key.fileName()));
+		return false;
+	}
+	QDataStream dataStream(&key);
+	dataStream.setVersion(QDataStream::Qt_5_3);
+
+	quint64 v;
+	QByteArray k;
+	dataStream >> v >> k;
+	if (dataStream.status() != QDataStream::Ok || k.isEmpty()) {
+		LOG(("FATAL: '%1' is corrupted. "
+			"Delete it or reinstall private alpha version."
+			).arg(key.fileName()));
+		return false;
+	}
+	cSetAlphaVersion(AppVersion * 1000ULL);
+	cSetAlphaPrivateKey(k);
+	cSetRealAlphaVersion(v);
+	return true;
+}
+
+QString InstallBetaVersionsSettingPath() {
+	return cWorkingDir() + qsl("tdata/devversion");
+}
+
+void WriteInstallBetaVersionsSetting() {
+	QFile f(InstallBetaVersionsSettingPath());
+	if (f.open(QIODevice::WriteOnly)) {
+		f.write(cInstallBetaVersion() ? "1" : "0");
+	}
+}
+
+QString DebugModeSettingPath() {
+	return cWorkingDir() + qsl("tdata/withdebug");
+}
+
+void WriteDebugModeSetting() {
+	QFile f(DebugModeSettingPath());
+	if (f.open(QIODevice::WriteOnly)) {
+		f.write(Logs::DebugEnabled() ? "1" : "0");
+	}
+}
+
+void ComputeTestMode() {
 	if (QFile(cWorkingDir() + qsl("tdata/withtestmode")).exists()) {
 		cSetTestMode(true);
 	}
-	if (!Logs::DebugEnabled()
-		&& QFile(cWorkingDir() + qsl("tdata/withdebug")).exists()) {
-		Logs::SetDebugEnabled(true);
-	}
-	if (cBetaVersion()) {
-		cSetAlphaVersion(false);
-	} else if (!cAlphaVersion() && QFile(cWorkingDir() + qsl("tdata/devversion")).exists()) {
-		cSetAlphaVersion(true);
-	} else if (AppAlphaVersion) {
-		QFile f(cWorkingDir() + qsl("tdata/devversion"));
-		if (!f.exists() && f.open(QIODevice::WriteOnly)) {
-			f.write("1");
+}
+
+void ComputeDebugMode() {
+	Logs::SetDebugEnabled(cAlphaVersion() != 0);
+	const auto debugModeSettingPath = DebugModeSettingPath();
+	if (QFile(debugModeSettingPath).exists()) {
+		QFile f(debugModeSettingPath);
+		if (f.open(QIODevice::ReadOnly)) {
+			Logs::SetDebugEnabled(f.read(1) != "0");
 		}
 	}
+}
 
-	srand((int32)time(NULL));
+void ComputeInstallBetaVersions() {
+	const auto installBetaSettingPath = InstallBetaVersionsSettingPath();
+	if (cAlphaVersion()) {
+		cSetInstallBetaVersion(false);
+	} else if (QFile(installBetaSettingPath).exists()) {
+		QFile f(installBetaSettingPath);
+		if (f.open(QIODevice::ReadOnly)) {
+			cSetInstallBetaVersion(f.read(1) != "0");
+		}
+	} else if (AppBetaVersion) {
+		WriteInstallBetaVersionsSetting();
+	}
+}
 
+void ComputeUserTag() {
 	SandboxUserTag = 0;
 	QFile usertag(cWorkingDir() + qsl("tdata/usertag"));
 	if (usertag.open(QIODevice::ReadOnly)) {
@@ -449,6 +530,15 @@ void WorkingDirReady() {
 			usertag.close();
 		}
 	}
+}
+
+void WorkingDirReady() {
+	srand((int32)time(NULL));
+
+	ComputeTestMode();
+	ComputeDebugMode();
+	ComputeInstallBetaVersions();
+	ComputeUserTag();
 }
 
 void start() {
@@ -548,8 +638,6 @@ struct Data {
 	Stickers::Order ArchivedStickerSetsOrder;
 
 	CircleMasksMap CircleMasks;
-
-	base::Observable<void> SelfChanged;
 
 	bool AskDownloadPath = false;
 	QString DownloadPath;
@@ -678,8 +766,6 @@ DefineVar(Global, TimeMs, LastFeaturedStickersUpdate);
 DefineVar(Global, Stickers::Order, ArchivedStickerSetsOrder);
 
 DefineRefVar(Global, CircleMasksMap, CircleMasks);
-
-DefineRefVar(Global, base::Observable<void>, SelfChanged);
 
 DefineVar(Global, bool, AskDownloadPath);
 DefineVar(Global, QString, DownloadPath);

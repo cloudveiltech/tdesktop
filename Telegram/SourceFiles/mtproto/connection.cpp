@@ -2651,7 +2651,7 @@ bytes::vector ConnectionPrivate::encryptPQInnerRSA(
 		memset_rand(&encBuffer[encSize], (65 - encSize) * sizeof(mtpPrime));
 	}
 
-	auto bytes = bytes::make_span1(encBuffer);
+	auto bytes = bytes::make_span(encBuffer);
 	auto bytesToEncrypt = bytes.subspan(3, 256);
 	return key.encrypt(bytesToEncrypt);
 }

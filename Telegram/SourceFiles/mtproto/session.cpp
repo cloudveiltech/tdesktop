@@ -279,7 +279,7 @@ void Session::sendMsgsStateInfo(quint64 msgId, QByteArray data) {
 	auto info = bytes::vector();
 	if (!data.isEmpty()) {
 		info.resize(data.size());
-		bytes::copy(info, bytes::make_span1(data));
+		bytes::copy(info, bytes::make_span(data));
 	}
 	_instance->sendProtocolMessage(
 		dcWithShift,

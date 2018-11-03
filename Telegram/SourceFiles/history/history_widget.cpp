@@ -1829,7 +1829,7 @@ void HistoryWidget::applyCloudDraft(History *history) {
 
 void HistoryWidget::showHistory(const PeerId &peerId, MsgId showAtMsgId, bool reload) {
 	//CloudVeil start
-	if (peerId != 0 && !GlobalSecuritySettings::getSettings().isDialogAllowed(App::peer(peerId))) {
+	if (!GlobalSecuritySettings::getSettings().isDialogAllowed(App::peer(peerId))) {
 		Ui::showChatsList();
 		Ui::show(Box<InformBox>(lang(lng_dialog_forbidden)));
 		Ui::show(Box<ConfirmBox>(

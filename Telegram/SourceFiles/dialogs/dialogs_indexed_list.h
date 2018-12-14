@@ -66,7 +66,6 @@ public:
 	bool contains(Key key) const { return all().contains(key); }
 	Row *getRow(Key key) const { return all().getRow(key); }
 	Row *rowAtY(int32 y, int32 h) const { return all().rowAtY(y, h); }
-	void remove(History *history) { _list.remove(history); }
 
 	using iterator = List::iterator;
 	using const_iterator = List::const_iterator;

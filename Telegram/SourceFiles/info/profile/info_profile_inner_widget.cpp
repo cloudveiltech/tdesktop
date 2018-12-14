@@ -106,7 +106,7 @@ object_ptr<Ui::RpWidget> InnerWidget::setupContent(
 	if (auto actions = SetupActions(_controller, result.data(), _peer)) {
 		result->add(std::move(actions));
 	}
-	
+
 	if (_peer->isChat() || _peer->isMegagroup()) {
 		_members = result->add(object_ptr<Members>(
 			result,
@@ -172,8 +172,7 @@ object_ptr<Ui::RpWidget> InnerWidget::setupSharedMedia(
 	if (auto user = _peer->asUser()) {
 		addCommonGroupsButton(user, st::infoIconMediaGroup);
 	}
-	addMediaButton(MediaType::VoiceFile, st::infoIconMediaVoice);
-//	addMediaButton(MediaType::RoundFile, st::infoIconMediaRound);
+	addMediaButton(MediaType::RoundVoiceFile, st::infoIconMediaVoice);
 
 	auto result = object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
 		parent,

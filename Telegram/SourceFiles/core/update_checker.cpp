@@ -34,8 +34,6 @@ extern "C" {
 #include <lzma.h>
 #endif // else of Q_OS_WIN
 
-#define TDESKTOP_DISABLE_AUTOUPDATE 1
-
 namespace Core {
 namespace {
 

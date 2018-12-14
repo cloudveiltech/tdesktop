@@ -7,10 +7,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "app.h"
 
-#ifdef OS_MAC_OLD
-#include <libexif/exif-data.h>
-#endif // OS_MAC_OLD
-
 #include "styles/style_overview.h"
 #include "styles/style_mediaview.h"
 #include "styles/style_chat_helpers.h"
@@ -27,6 +23,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item_components.h"
 #include "history/view/history_view_service_message.h"
 #include "media/media_audio.h"
+#include "ui/image/image.h"
 #include "inline_bots/inline_bot_layout_item.h"
 #include "messenger.h"
 #include "application.h"
@@ -47,13 +44,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/platform_notifications_manager.h"
 #include "cloudveil/GlobalSecuritySettings.h"
 
+#ifdef OS_MAC_OLD
+#include <libexif/exif-data.h>
+#endif // OS_MAC_OLD
+
 namespace {
 	App::LaunchState _launchState = App::Launched;
 
 	std::unordered_map<PeerId, std::unique_ptr<PeerData>> peersData;
-
-	using LocationsData = QHash<LocationCoords, LocationData*>;
-	LocationsData locationsData;
 
 	using DependentItemsSet = OrderedSet<HistoryItem*>;
 	using DependentItems = QMap<HistoryItem*, DependentItemsSet>;
@@ -78,7 +76,6 @@ namespace {
 		*pressedLinkItem = nullptr,
 		*mousedItem = nullptr;
 
-	QPixmap *emoji = nullptr, *emojiLarge = nullptr;
 	style::font monofont;
 
 	struct CornersPixmaps {
@@ -88,10 +85,6 @@ namespace {
 	using CornersMap = QMap<uint32, CornersPixmaps>;
 	CornersMap cornersMap;
 	QImage cornersMaskLarge[4], cornersMaskSmall[4];
-
-	using EmojiImagesMap = QMap<int, QPixmap>;
-	EmojiImagesMap MainEmojiMap;
-	QMap<int, EmojiImagesMap> OtherEmojiMap;
 
 	int32 serviceImageCacheSize = 0;
 
@@ -365,7 +358,7 @@ namespace App {
 		return result;
 	}
 
-	PeerData *feedChat(const MTPChat &chat) {		
+	PeerData *feedChat(const MTPChat &chat) {
 		PeerData *data = nullptr;
 		bool minimal = false;
 
@@ -415,14 +408,11 @@ namespace App {
 							}
 						}
 					}
-
 					Notify::migrateUpdated(channel);
-
 					update.flags |= UpdateFlag::MigrationChanged;
 				}
 				if (updatedTo) {
 					Notify::migrateUpdated(cdata);
-					
 					update.flags |= UpdateFlag::MigrationChanged;
 				}
 			}
@@ -593,7 +583,6 @@ namespace App {
 			update.peer = data;
 			Notify::peerUpdatedDelayed(update);
 		}
-
 		return data;
 	}
 
@@ -674,7 +663,7 @@ namespace App {
 					bool found = !h || !h->lastKeyboardFrom;
 					auto botStatus = -1;
 					for (auto i = chat->participants.begin(); i != chat->participants.end();) {
-						auto [user, version] = *i;
+						const auto [user, version] = *i;
 						if (version < pversion) {
 							i = chat->participants.erase(i);
 						} else {
@@ -773,7 +762,7 @@ namespace App {
 					}
 					if (chat->botStatus > 0 && user->botInfo) {
 						int32 botStatus = -1;
-						for (auto [participant, v] : chat->participants) {
+						for (const auto [participant, v] : chat->participants) {
 							if (participant->botInfo) {
 								if (true || botStatus > 0/* || !participant->botInfo->readsAllHistory*/) {
 									botStatus = 2;
@@ -962,7 +951,7 @@ namespace App {
 			auto &d = size.c_photoSize();
 			if (d.vlocation.type() == mtpc_fileLocation) {
 				auto &l = d.vlocation.c_fileLocation();
-				return ImagePtr(
+				return Images::Create(
 					StorageImageLocation(
 						d.vw.v,
 						d.vh.v,
@@ -979,7 +968,7 @@ namespace App {
 			if (d.vlocation.type() == mtpc_fileLocation) {
 				auto &l = d.vlocation.c_fileLocation();
 				auto bytes = qba(d.vbytes);
-				return ImagePtr(
+				return Images::Create(
 					StorageImageLocation(
 						d.vw.v,
 						d.vh.v,
@@ -991,7 +980,7 @@ namespace App {
 					bytes);
 			} else if (d.vlocation.type() == mtpc_fileLocationUnavailable) {
 				auto bytes = qba(d.vbytes);
-				return ImagePtr(
+				return Images::Create(
 					StorageImageLocation(
 						d.vw.v,
 						d.vh.v,
@@ -1146,11 +1135,20 @@ namespace App {
 		}
 	}
 
-	void enumerateChatsChannels(
-			Fn<void(not_null<PeerData*>)> action) {
+	void enumerateGroups(Fn<void(not_null<PeerData*>)> action) {
 		for (const auto &[peerId, peer] : peersData) {
-			if (!peer->isUser()) {
+			if (peer->isChat() || peer->isMegagroup()) {
 				action(peer.get());
+			}
+		}
+	}
+
+	void enumerateChannels(Fn<void(not_null<ChannelData*>)> action) {
+		for (const auto &[peerId, peer] : peersData) {
+			if (const auto channel = peer->asChannel()) {
+				if (!channel->isMegagroup()) {
+					action(channel);
+				}
 			}
 		}
 	}
@@ -1163,20 +1161,6 @@ namespace App {
 			}
 		}
 		return nullptr;
-	}
-
-	LocationData *location(const LocationCoords &coords) {
-		auto i = locationsData.constFind(coords);
-		if (i == locationsData.cend()) {
-			i = locationsData.insert(coords, new LocationData(coords));
-		}
-		return i.value();
-	}
-
-	void forgetMedia() {
-		for_const (auto location, ::locationsData) {
-			location->thumb->forget();
-		}
 	}
 
 	QString peerName(const PeerData *peer, bool forDialogs) {
@@ -1269,9 +1253,6 @@ namespace App {
 			for (const auto item : data) {
 				delete item;
 			}
-		}
-		for (const auto data : base::take(::locationsData)) {
-			delete data;
 		}
 
 		clearMousedItems();
@@ -1445,15 +1426,6 @@ namespace App {
 			if (family.isEmpty()) family = QFontDatabase::systemFont(QFontDatabase::FixedFont).family();
 			::monofont = style::font(st::normalFont->f.pixelSize(), 0, family);
 		}
-		Ui::Emoji::Init();
-		if (!::emoji) {
-			::emoji = new QPixmap(Ui::Emoji::Filename(Ui::Emoji::Index()));
-            if (cRetina()) ::emoji->setDevicePixelRatio(cRetinaFactor());
-		}
-		if (!::emojiLarge) {
-			::emojiLarge = new QPixmap(Ui::Emoji::Filename(Ui::Emoji::Index() + 1));
-			if (cRetina()) ::emojiLarge->setDevicePixelRatio(cRetinaFactor());
-		}
 
 		createCorners();
 
@@ -1489,26 +1461,16 @@ namespace App {
 
 		histories().clear();
 
-		clearStorageImages();
+		Images::ClearRemote();
 		cSetServerBackgrounds(WallPapers());
-
-		serviceImageCacheSize = imageCacheSize();
 	}
 
 	void deinitMedia() {
-		delete ::emoji;
-		::emoji = nullptr;
-		delete ::emojiLarge;
-		::emojiLarge = nullptr;
-
 		clearCorners();
-
-		MainEmojiMap.clear();
-		OtherEmojiMap.clear();
 
 		Data::clearGlobalStructures();
 
-		clearAllImages();
+		Images::ClearAll();
 	}
 
 	void hoveredItem(HistoryView::Element *item) {
@@ -1561,39 +1523,6 @@ namespace App {
 
 	const style::font &monofont() {
 		return ::monofont;
-	}
-
-	const QPixmap &emoji() {
-		return *::emoji;
-	}
-
-	const QPixmap &emojiLarge() {
-		return *::emojiLarge;
-	}
-
-	const QPixmap &emojiSingle(EmojiPtr emoji, int32 fontHeight) {
-		auto &map = (fontHeight == st::msgFont->height) ? MainEmojiMap : OtherEmojiMap[fontHeight];
-		auto i = map.constFind(emoji->index());
-		if (i == map.cend()) {
-			auto image = QImage(Ui::Emoji::Size() + st::emojiPadding * cIntRetinaFactor() * 2, fontHeight * cIntRetinaFactor(), QImage::Format_ARGB32_Premultiplied);
-            if (cRetina()) image.setDevicePixelRatio(cRetinaFactor());
-			image.fill(Qt::transparent);
-			{
-				QPainter p(&image);
-				emojiDraw(p, emoji, st::emojiPadding * cIntRetinaFactor(), (fontHeight * cIntRetinaFactor() - Ui::Emoji::Size()) / 2);
-			}
-			i = map.insert(emoji->index(), App::pixmapFromImageInPlace(std::move(image)));
-		}
-		return i.value();
-	}
-
-	void checkImageCacheSize() {
-		int64 nowImageCacheSize = imageCacheSize();
-		if (nowImageCacheSize > serviceImageCacheSize + MemoryForImageCache) {
-			App::forgetMedia();
-			Auth().data().forgetMedia();
-			serviceImageCacheSize = imageCacheSize();
-		}
 	}
 
 	void quit() {

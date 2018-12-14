@@ -13,19 +13,19 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/flags.h"
 
 namespace Dialogs {
-	class Row;
-	class FakeRow;
-	class IndexedList;
+class Row;
+class FakeRow;
+class IndexedList;
 } // namespace Dialogs
 
 namespace Ui {
-	class IconButton;
-	class PopupMenu;
-	class LinkButton;
+class IconButton;
+class PopupMenu;
+class LinkButton;
 } // namespace Ui
 
 namespace Window {
-	class Controller;
+class Controller;
 } // namespace Window
 
 class DialogsInner : public Ui::SplittedWidget, public RPCSender, private base::Subscriber {
@@ -66,12 +66,7 @@ public:
 
 	void destroyData();
 
-	Dialogs::RowDescriptor chatListEntryBefore(
-		const Dialogs::RowDescriptor &which) const;
-	Dialogs::RowDescriptor chatListEntryAfter(
-		const Dialogs::RowDescriptor &which) const;
-
-	void scrollToPeer(not_null<History*> history, MsgId msgId);
+	void scrollToEntry(const Dialogs::RowDescriptor &entry);
 
 	Dialogs::IndexedList *contactsList();
 	Dialogs::IndexedList *dialogsList();
@@ -123,7 +118,7 @@ signals:
 	void mustScrollTo(int scrollToTop, int scrollToBottom);
 	void dialogMoved(int movedFrom, int movedTo);
 	void searchMessages();
-	void searchResultChosen();
+	void clearSearchQuery();
 	void cancelSearchInChat();
 	void completeHashtag(QString tag);
 	void refreshHashtags();
@@ -159,6 +154,9 @@ private:
 	bool switchImportantChats();
 	bool chooseHashtag();
 	ChosenRow computeChosenRow() const;
+	bool isSearchResultActive(
+		not_null<Dialogs::FakeRow*> result,
+		const Dialogs::RowDescriptor &entry) const;
 
 	void userIsContactUpdated(not_null<UserData*> user);
 	void mousePressReleased(Qt::MouseButton button);
@@ -196,16 +194,29 @@ private:
 	bool uniqueSearchResults() const;
 	bool hasHistoryInSearchResults(not_null<History*> history) const;
 
+	void setupShortcuts();
+	Dialogs::RowDescriptor computeJump(
+		const Dialogs::RowDescriptor &to,
+		int skipDirection);
+	bool jumpToDialogRow(const Dialogs::RowDescriptor &to);
+
+	Dialogs::RowDescriptor chatListEntryBefore(
+		const Dialogs::RowDescriptor &which) const;
+	Dialogs::RowDescriptor chatListEntryAfter(
+		const Dialogs::RowDescriptor &which) const;
+	Dialogs::RowDescriptor chatListEntryFirst() const;
+	Dialogs::RowDescriptor chatListEntryLast() const;
+
 	void applyDialog(const MTPDdialog &dialog);
-	//	void applyFeedDialog(const MTPDdialogFeed &dialog); // #feed
+//	void applyFeedDialog(const MTPDdialogFeed &dialog); // #feed
 
 	void itemRemoved(not_null<const HistoryItem*> item);
 	enum class UpdateRowSection {
-		Default = (1 << 0),
-		Filtered = (1 << 1),
-		PeerSearch = (1 << 2),
+		Default       = (1 << 0),
+		Filtered      = (1 << 1),
+		PeerSearch    = (1 << 2),
 		MessageSearch = (1 << 3),
-		All = Default | Filtered | PeerSearch | MessageSearch,
+		All           = Default | Filtered | PeerSearch | MessageSearch,
 	};
 	using UpdateRowSections = base::flags<UpdateRowSection>;
 	friend inline constexpr auto is_flag_type(UpdateRowSection) { return true; };

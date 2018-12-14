@@ -254,16 +254,16 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 
 	case mtpc_messageActionChatEditPhoto: {
 		//CloudVeil start
-		if(!GlobalSecuritySettings::getSettings().disableProfilePhoto) {
+		if (!GlobalSecuritySettings::getSettings().disableProfilePhoto) {
 			auto &photo = action.c_messageActionChatEditPhoto().vphoto;
 			if (photo.type() == mtpc_photo) {
-			_media = std::make_unique<Data::MediaPhoto>(
-				this,
-				history()->peer,
-				Auth().data().photo(photo.c_photo()));
+				_media = std::make_unique<Data::MediaPhoto>(
+					this,
+					history()->peer,
+					Auth().data().photo(photo.c_photo()));
 			}
 		}
-	  //CloudVeil end
+		//CloudVeil end
 	} break;
 
 	case mtpc_messageActionChatMigrateTo:
@@ -329,7 +329,7 @@ HistoryService::PreparedText HistoryService::preparePinnedText() {
 		const auto mediaText = [&] {
 			if (const auto media = pinned->msg->media()) {
 				return media->pinnedTextSubstring();
-					}
+			}
 			return QString();
 		}();
 		result.links.push_back(fromLink());
@@ -488,13 +488,12 @@ HistoryService::HistoryService(
 	PhotoData *photo)
 : HistoryItem(history, id, flags, date, from) {
 	setServiceText(message);
-		
 	if (photo) {
 		_media = std::make_unique<Data::MediaPhoto>(
 			this,
 			history->peer,
 			photo);
-	}	
+	}
 }
 
 bool HistoryService::updateDependencyItem() {
@@ -651,10 +650,10 @@ void HistoryService::removeMedia() {
 	if (!_media) return;
 
 	_media.reset();
-		_textWidth = -1;
-		_textHeight = 0;
+	_textWidth = -1;
+	_textHeight = 0;
 	Auth().data().requestItemResize(this);
-	}
+}
 
 Storage::SharedMediaTypesMask HistoryService::sharedMediaTypes() const {
 	if (auto media = this->media()) {
@@ -684,7 +683,7 @@ void HistoryService::updateDependentText() {
 		if (feed->textCachedFor == this) {
 			feed->textCachedFor = nullptr;
 			feed->updateChatListEntry();
-	}
+		}
 	}
 	if (const auto main = App::main()) {
 		// #TODO feeds search results
@@ -717,16 +716,16 @@ HistoryService::PreparedText GenerateJoinedText(
 			: lng_action_add_you)(lt_from, textcmdLink(1, inviter->name));
 		return result;
 	} else if (history->isMegagroup()) {
-			auto self = App::user(Auth().userPeerId());
+		auto self = App::user(Auth().userPeerId());
 		auto result = HistoryService::PreparedText{};
-			result.links.push_back(self->createOpenLink());
+		result.links.push_back(self->createOpenLink());
 		result.text = lng_action_user_joined(
 			lt_from,
 			textcmdLink(1, self->name));
-			return result;
-		}
-		return { lang(lng_action_you_joined) };
+		return result;
 	}
+	return { lang(lng_action_you_joined) };
+}
 
 HistoryService *GenerateJoinedMessage(
 		not_null<History*> history,

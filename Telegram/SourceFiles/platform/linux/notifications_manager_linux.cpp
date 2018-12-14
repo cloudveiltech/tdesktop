@@ -111,6 +111,7 @@ public:
 	bool show() {
 		if (valid()) {
 			GError *error = nullptr;
+
 			Libs::notify_notification_show(_data, &error);
 			if (!error) {
 				return true;
@@ -151,6 +152,8 @@ private:
 		} else if (capabilities.contains(qsl("x-canonical-append"))) {
 			Libs::notify_notification_set_hint_string(_data, "x-canonical-append", "true");
 		}
+
+		Libs::notify_notification_set_hint_string(_data, "desktop-entry", "telegramdesktop");
 
 		auto signalReceiver = Libs::g_object_cast(_data);
 		auto signalHandler = G_CALLBACK(NotificationData::notificationClosed);
@@ -228,7 +231,7 @@ QString GetServerName() {
 	if (!LibNotifyLoaded()) {
 		return QString();
 	}
-	if (!Libs::notify_is_initted() && !Libs::notify_init("CloudVeil Messenger Desktop")) {
+	if (!Libs::notify_is_initted() && !Libs::notify_init("Telegram Desktop")) {
 		LOG(("LibNotify Error: failed to init!"));
 		return QString();
 	}

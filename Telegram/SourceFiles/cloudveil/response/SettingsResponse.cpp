@@ -72,13 +72,15 @@ template<typename T> void SettingsResponse::readArrayFromJson(QJsonArray &jsonAr
 	for (int i = 0; i < jsonArray.size(); i++)
 	{
 		QJsonObject row = jsonArray[i].toObject();
-		QString key = row.keys().at(0);
-		bool value = row[key].toBool();
+		if (row.keys().size() > 0) {
+			QString key = row.keys().at(0);
+			bool value = row[key].toBool();
 
-		bool success = false;
-		T intKey = key.toLongLong(&success);
-		if (success) {
-			objects.insert(intKey, value);
+			bool success = false;
+			T intKey = key.toLongLong(&success);
+			if (success) {
+				objects.insert(intKey, value);
+			}
 		}
 	}
 }

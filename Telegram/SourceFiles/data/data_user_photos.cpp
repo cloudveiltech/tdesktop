@@ -12,8 +12,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_facade.h"
 #include "storage/storage_user_photos.h"
 
-
-
 class UserPhotosSliceBuilder {
 public:
 	using Key = UserPhotosSlice::Key;
@@ -121,12 +119,6 @@ bool UserPhotosSliceBuilder::applyUpdate(const Storage::UserPhotosResult &update
 	return true;
 }
 
-auto add2 = [](auto value) {
-	return [value](auto other) {
-		return value + other;
-	};
-};
-
 bool UserPhotosSliceBuilder::applyUpdate(const Storage::UserPhotosSliceUpdate &update) {
 	if (update.userId != _key.userId) {
 		return false;
@@ -135,7 +127,7 @@ bool UserPhotosSliceBuilder::applyUpdate(const Storage::UserPhotosSliceUpdate &u
 	mergeSliceData(
 		update.count,
 		update.photoIds ? *update.photoIds : std::deque<PhotoId> {},
-		update.count | add2(-idsCount),
+		update.count | func::add(-idsCount),
 		0);
 	return true;
 }

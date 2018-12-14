@@ -102,6 +102,7 @@ Application::Application(
 		int &argc,
 		char **argv)
 : QApplication(argc, argv)
+, _mainThreadId(QThread::currentThreadId())
 , _launcher(launcher)
 , _updateChecker(Core::UpdaterDisabled()
 	? nullptr
@@ -356,13 +357,19 @@ void Application::createMessenger() {
 	Expects(!App::quitting());
 
 	_messengerInstance = std::make_unique<Messenger>(_launcher);
+
+	// Ideally this should go to constructor.
+	// But we want to catch all native events and Messenger installs
+	// its own filter that can filter out some of them. So we install
+	// our filter after the Messenger constructor installs his.
+	installNativeEventFilter(this);
 }
 
 void Application::refreshGlobalProxy() {
 #ifndef TDESKTOP_DISABLE_NETWORK_PROXY
 	const auto proxy = [&] {
 		if (Global::started()) {
-			return Global::UseProxy()
+			return (Global::ProxySettings() == ProxyData::Settings::Enabled)
 				? Global::SelectedProxy()
 				: ProxyData();
 		}
@@ -372,10 +379,60 @@ void Application::refreshGlobalProxy() {
 		|| proxy.type == ProxyData::Type::Http) {
 		QNetworkProxy::setApplicationProxy(
 			ToNetworkProxy(ToDirectIpProxy(proxy)));
-	} else {
+	} else if (!Global::started()
+		|| Global::ProxySettings() == ProxyData::Settings::System) {
 		QNetworkProxyFactory::setUseSystemConfiguration(true);
+	} else {
+		QNetworkProxy::setApplicationProxy(QNetworkProxy::NoProxy);
 	}
 #endif // TDESKTOP_DISABLE_NETWORK_PROXY
+}
+
+void Application::postponeCall(FnMut<void()> &&callable) {
+	Expects(callable != nullptr);
+	Expects(_eventNestingLevel > _loopNestingLevel);
+
+	_postponedCalls.push_back({
+		_loopNestingLevel,
+		std::move(callable)
+	});
+}
+
+bool Application::notify(QObject *receiver, QEvent *e) {
+	if (QThread::currentThreadId() != _mainThreadId) {
+		return QApplication::notify(receiver, e);
+	}
+	++_eventNestingLevel;
+	const auto result = QApplication::notify(receiver, e);
+	if (_eventNestingLevel == _loopNestingLevel) {
+		_loopNestingLevel = _previousLoopNestingLevels.back();
+		_previousLoopNestingLevels.pop_back();
+	}
+	processPostponedCalls(--_eventNestingLevel);
+	return result;
+}
+
+void Application::processPostponedCalls(int level) {
+	while (!_postponedCalls.empty()) {
+		auto &last = _postponedCalls.back();
+		if (last.loopNestingLevel != level) {
+			break;
+		}
+		auto taken = std::move(last);
+		_postponedCalls.pop_back();
+		taken.callable();
+	}
+}
+
+bool Application::nativeEventFilter(
+		const QByteArray &eventType,
+		void *message,
+		long *result) {
+	if (_eventNestingLevel > _loopNestingLevel) {
+		_previousLoopNestingLevels.push_back(_loopNestingLevel);
+		_loopNestingLevel = _eventNestingLevel;
+	}
+	return false;
 }
 
 void Application::closeApplication() {
@@ -459,15 +516,20 @@ void connect(const char *signal, QObject *object, const char *method) {
 void launch() {
 	Assert(application() != 0);
 
-	float64 dpi = Application::primaryScreen()->logicalDotsPerInch();
-	if (dpi <= 108) { // 0-96-108
-		cSetScreenScale(dbisOne);
-	} else if (dpi <= 132) { // 108-120-132
-		cSetScreenScale(dbisOneAndQuarter);
-	} else if (dpi <= 168) { // 132-144-168
-		cSetScreenScale(dbisOneAndHalf);
-	} else { // 168-192-inf
-		cSetScreenScale(dbisTwo);
+	const auto dpi = Application::primaryScreen()->logicalDotsPerInch();
+	LOG(("Primary screen DPI: %1").arg(dpi));
+	if (dpi <= 108) {
+		cSetScreenScale(100); // 100%:  96 DPI (0-108)
+	} else if (dpi <= 132) {
+		cSetScreenScale(125); // 125%: 120 DPI (108-132)
+	} else if (dpi <= 168) {
+		cSetScreenScale(150); // 150%: 144 DPI (132-168)
+	} else if (dpi <= 216) {
+		cSetScreenScale(200); // 200%: 192 DPI (168-216)
+	} else if (dpi <= 264) {
+		cSetScreenScale(250); // 250%: 240 DPI (216-264)
+	} else {
+		cSetScreenScale(300); // 300%: 288 DPI (264-inf)
 	}
 
 	auto devicePixelRatio = application()->devicePixelRatio();
@@ -479,11 +541,9 @@ void launch() {
 			LOG(("Environmental variables: QT_AUTO_SCREEN_SCALE_FACTOR='%1'").arg(QString::fromLatin1(qgetenv("QT_AUTO_SCREEN_SCALE_FACTOR"))));
 			LOG(("Environmental variables: QT_SCREEN_SCALE_FACTORS='%1'").arg(QString::fromLatin1(qgetenv("QT_SCREEN_SCALE_FACTORS"))));
 		}
-		cSetRetina(true);
 		cSetRetinaFactor(devicePixelRatio);
 		cSetIntRetinaFactor(int32(cRetinaFactor()));
-		cSetConfigScale(dbisOne);
-		cSetRealScale(dbisOne);
+		cSetScreenScale(kInterfaceScaleDefault);
 	}
 
 	application()->createMessenger();

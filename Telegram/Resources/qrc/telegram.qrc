@@ -50,7 +50,6 @@
     <file alias="art/logo_256.png">../art/logo_256.png</file>
     <file alias="art/logo_256_no_margin.png">../art/logo_256_no_margin.png</file>
     <file alias="art/sunrise.jpg">../art/sunrise.jpg</file>
-    <file alias="art/banned.png">../art/banned.png</file>
     <file alias="day-blue.tdesktop-theme">../day-blue.tdesktop-theme</file>
     <file alias="night.tdesktop-theme">../night.tdesktop-theme</file>
     <file alias="night-green.tdesktop-theme">../night-green.tdesktop-theme</file>
@@ -65,6 +64,9 @@
   </qresource>
   <qresource prefix="/qt-project.org">
     <file>qmime/freedesktop.org.xml</file>
+  </qresource>
+  <qresource prefix="/misc">
+    <file alias="default_shortcuts-custom.json">../default_shortcuts-custom.json</file>
   </qresource>
   <qresource prefix="/langs">
     <file alias="lang_it.strings">../langs/lang_it.strings</file>

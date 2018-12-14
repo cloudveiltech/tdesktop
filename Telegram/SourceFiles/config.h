@@ -68,14 +68,10 @@ enum {
 	MaxZoomLevel = 7, // x8
 	ZoomToScreenLevel = 1024, // just constant
 
-	ShortcutsCountLimit = 256, // how many shortcuts can be in json file
-
 	PreloadHeightsCount = 3, // when 3 screens to scroll left make a preload request
 
 	SearchPeopleLimit = 5,
 	UsernameCheckTimeout = 200,
-
-	MaxPhotoCaption = 200,
 
 	MaxMessageSize = 4096,
 
@@ -93,7 +89,6 @@ enum {
 	UpdateDelayRandPart = 8 * 3600, // 8 hour max - min time between update check requests
 
 	WrongPasscodeTimeout = 1500,
-	SessionsShortPollTimeout = 60000,
 
 	ChoosePeerByDragTimeout = 1000, // 1 second mouse not moved to choose dialog when dragging a file
 };
@@ -109,9 +104,9 @@ inline bool isServiceUser(uint64 id) {
 #ifdef Q_OS_WIN
 inline const GUID &cGUID() {
 #ifndef OS_MAC_STORE
-	static const GUID gGuid = { 0x87a94ab0, 0xe370, 0x4cde,{ 0x98, 0xd3, 0xac, 0xc1, 0x10, 0xc5, 0x96, 0x7d } };
+	static const GUID gGuid = { 0x87a94ab0, 0xe370, 0x4cde, { 0x98, 0xd3, 0xac, 0xc1, 0x10, 0xc5, 0x96, 0x7d } };
 #else // OS_MAC_STORE
-	static const GUID gGuid = { 0xe51fb841, 0x8c0b, 0x4ef9,{ 0x9e, 0x9e, 0x5a, 0x0, 0x78, 0x56, 0x76, 0x27 } };
+	static const GUID gGuid = { 0xe51fb841, 0x8c0b, 0x4ef9, { 0x9e, 0x9e, 0x5a, 0x0, 0x78, 0x56, 0x76, 0x27 } };
 #endif // OS_MAC_STORE
 
 	return gGuid;
@@ -136,30 +131,30 @@ struct BuiltInDc {
 
 static const BuiltInDc _builtInDcs[] = {
 	{ 1, "149.154.175.50", 443 },
-{ 2, "149.154.167.51", 443 },
-{ 3, "149.154.175.100", 443 },
-{ 4, "149.154.167.91", 443 },
-{ 5, "149.154.171.5", 443 }
+	{ 2, "149.154.167.51", 443 },
+	{ 3, "149.154.175.100", 443 },
+	{ 4, "149.154.167.91", 443 },
+	{ 5, "149.154.171.5", 443 }
 };
 
 static const BuiltInDc _builtInDcsIPv6[] = {
 	{ 1, "2001:0b28:f23d:f001:0000:0000:0000:000a", 443 },
-{ 2, "2001:067c:04e8:f002:0000:0000:0000:000a", 443 },
-{ 3, "2001:0b28:f23d:f003:0000:0000:0000:000a", 443 },
-{ 4, "2001:067c:04e8:f004:0000:0000:0000:000a", 443 },
-{ 5, "2001:0b28:f23f:f005:0000:0000:0000:000a", 443 }
+	{ 2, "2001:067c:04e8:f002:0000:0000:0000:000a", 443 },
+	{ 3, "2001:0b28:f23d:f003:0000:0000:0000:000a", 443 },
+	{ 4, "2001:067c:04e8:f004:0000:0000:0000:000a", 443 },
+	{ 5, "2001:0b28:f23f:f005:0000:0000:0000:000a", 443 }
 };
 
 static const BuiltInDc _builtInTestDcs[] = {
 	{ 1, "149.154.175.10", 443 },
-{ 2, "149.154.167.40", 443 },
-{ 3, "149.154.175.117", 443 }
+	{ 2, "149.154.167.40", 443 },
+	{ 3, "149.154.175.117", 443 }
 };
 
 static const BuiltInDc _builtInTestDcsIPv6[] = {
 	{ 1, "2001:0b28:f23d:f001:0000:0000:0000:000e", 443 },
-{ 2, "2001:067c:04e8:f002:0000:0000:0000:000e", 443 },
-{ 3, "2001:0b28:f23d:f003:0000:0000:0000:000e", 443 }
+	{ 2, "2001:067c:04e8:f002:0000:0000:0000:000e", 443 },
+	{ 3, "2001:0b28:f23d:f003:0000:0000:0000:000e", 443 }
 };
 
 inline const BuiltInDc *builtInDcs() {
@@ -194,23 +189,50 @@ w/CVnbwQOw0g5GBwwFV3r0uTTvy44xx8XXxk+Qknu4eBCsmrAFNnAgMBAAE=\n\
 -----END RSA PUBLIC KEY-----\
 ";
 
-#ifdef CUSTOM_API_ID
-#include "../../../TelegramPrivate/custom_api_id.h" // Custom API id and API hash
-#else
-static const int32 ApiId = 66408;
-static const char *ApiHash = "2db8d372e3978a884a38ee57d04d4ee1";
-#endif
+#if defined TDESKTOP_API_ID && defined TDESKTOP_API_HASH
+
+#define TDESKTOP_API_HASH_TO_STRING_HELPER(V) #V
+#define TDESKTOP_API_HASH_TO_STRING(V) TDESKTOP_API_HASH_TO_STRING_HELPER(V)
+
+constexpr auto ApiId = TDESKTOP_API_ID;
+constexpr auto ApiHash = TDESKTOP_API_HASH_TO_STRING(TDESKTOP_API_HASH);
+
+#undef TDESKTOP_API_HASH_TO_STRING
+#undef TDESKTOP_API_HASH_TO_STRING_HELPER
+
+#else // TDESKTOP_API_ID && TDESKTOP_API_HASH
+
+// To build your version of Telegram Desktop you're required to provide
+// your own 'api_id' and 'api_hash' for the Telegram API access.
+//
+// How to obtain your 'api_id' and 'api_hash' is described here:
+// https://core.telegram.org/api/obtaining_api_id
+//
+// If you're building the application not for deployment,
+// but only for test purposes you can comment out the error below.
+//
+// This will allow you to use TEST ONLY 'api_id' and 'api_hash' which are
+// very limited by the Telegram API server.
+//
+// Your users will start getting internal server errors on login
+// if you deploy an app using those 'api_id' and 'api_hash'.
+
+#error You are required to provide API_ID and API_HASH.
+
+constexpr auto ApiId = 17349;
+constexpr auto ApiHash = "344583e45741c457fe1862106095a5eb";
+
+#endif // TDESKTOP_API_ID && TDESKTOP_API_HASH
 
 #if Q_BYTE_ORDER == Q_BIG_ENDIAN
 #error "Only little endian is supported!"
 #endif // Q_BYTE_ORDER == Q_BIG_ENDIAN
 
-#ifndef ALPHA_VERSION_MACRO
-#error "Alpha version macro is not defined."
-#endif
+#if (TDESKTOP_ALPHA_VERSION != 0)
 
-#if (defined CUSTOM_API_ID) && (ALPHA_VERSION_MACRO > 0ULL)
-#include "../../../TelegramPrivate/alpha_private.h" // private key for downloading closed alphas
+// Private key for downloading closed alphas.
+#include "../../../TelegramPrivate/alpha_private.h"
+
 #else
 static const char *AlphaPrivateKey = "";
 #endif
@@ -231,16 +253,16 @@ enum {
 	DialogsFirstLoad = 20, // first dialogs part size requested
 	DialogsPerPage = 500, // next dialogs part size
 
-	UseBigFilesFrom = 10 * 1024 * 1024, // mtp big files methods used for files greater than 10mb
+    UseBigFilesFrom = 10 * 1024 * 1024, // mtp big files methods used for files greater than 10mb
 
 	UploadPartSize = 32 * 1024, // 32kb for photo
-	DocumentMaxPartsCount = 3000, // no more than 3000 parts
-	DocumentUploadPartSize0 = 32 * 1024, // 32kb for tiny document ( < 1mb )
-	DocumentUploadPartSize1 = 64 * 1024, // 64kb for little document ( <= 32mb )
-	DocumentUploadPartSize2 = 128 * 1024, // 128kb for small document ( <= 375mb )
-	DocumentUploadPartSize3 = 256 * 1024, // 256kb for medium document ( <= 750mb )
-	DocumentUploadPartSize4 = 512 * 1024, // 512kb for large document ( <= 1500mb )
-	UploadRequestInterval = 500, // one part each half second, if not uploaded faster
+    DocumentMaxPartsCount = 3000, // no more than 3000 parts
+    DocumentUploadPartSize0 = 32 * 1024, // 32kb for tiny document ( < 1mb )
+    DocumentUploadPartSize1 = 64 * 1024, // 64kb for little document ( <= 32mb )
+    DocumentUploadPartSize2 = 128 * 1024, // 128kb for small document ( <= 375mb )
+    DocumentUploadPartSize3 = 256 * 1024, // 256kb for medium document ( <= 750mb )
+    DocumentUploadPartSize4 = 512 * 1024, // 512kb for large document ( <= 1500mb )
+    UploadRequestInterval = 500, // one part each half second, if not uploaded faster
 
 	MaxPhotosInMemory = 50, // try to clear some memory after 50 photos are created
 	NoUpdatesTimeout = 60 * 1000, // if nothing is received in 1 min we ping
@@ -248,7 +270,6 @@ enum {
 	WaitForSkippedTimeout = 1000, // 1s wait for skipped seq or pts in updates
 	WaitForChannelGetDifference = 1000, // 1s wait after show channel history before sending getChannelDifference
 
-	MemoryForImageCache = 64 * 1024 * 1024, // after 64mb of unpacked images we try to clear some memory
 	IdleMsecs = 60 * 1000, // after 60secs without user input we think we are idle
 
 	SendViewsTimeout = 1000, // send views each second

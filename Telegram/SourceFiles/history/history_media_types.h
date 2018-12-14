@@ -20,11 +20,13 @@ struct HistoryDocumentNamed;
 struct HistoryMessageVia;
 struct HistoryMessageReply;
 struct HistoryMessageForwarded;
+struct WebPageCollage;
 
 namespace Data {
 enum class CallFinishReason : char;
 struct Invoice;
 struct Call;
+class Media;
 } // namespace Data
 
 namespace Media {
@@ -309,7 +311,8 @@ private:
 	void updateStatusText() const;
 
 	not_null<DocumentData*> _data;
-	int _thumbw;
+	int _thumbw = 1;
+	int _thumbh = 1;
 	Text _caption;
 
 };
@@ -537,7 +540,8 @@ private:
 	int _pixh = 1;
 	ClickHandlerPtr _packLink;
 	not_null<DocumentData*> _data;
-	QString _emoji;	
+	QString _emoji;
+
 };
 
 class HistoryContact : public HistoryMedia {
@@ -729,6 +733,7 @@ private:
 	bool isLogEntryOriginal() const;
 
 	not_null<WebPageData*> _data;
+	std::vector<std::unique_ptr<Data::Media>> _collage;
 	ClickHandlerPtr _openl;
 	std::unique_ptr<HistoryMedia> _attach;
 

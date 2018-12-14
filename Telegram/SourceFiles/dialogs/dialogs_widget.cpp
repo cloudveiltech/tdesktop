@@ -16,6 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/input_fields.h"
 #include "ui/wrap/fade_wrap.h"
+#include "ui/effects/radial_animation.h"
 #include "lang/lang_keys.h"
 #include "application.h"
 #include "mainwindow.h"
@@ -43,9 +44,16 @@ QString SwitchToChooseFromQuery() {
 
 } // namespace
 
-class DialogsWidget::UpdateButton : public Ui::RippleButton {
+class DialogsWidget::BottomButton : public Ui::RippleButton {
 public:
-	UpdateButton(QWidget *parent);
+	BottomButton(
+		QWidget *parent,
+		const QString &text,
+		const style::FlatButton &st,
+		const style::icon &icon,
+		const style::icon &iconOver);
+
+	void setText(const QString &text);
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -53,39 +61,84 @@ protected:
 	void onStateChanged(State was, StateChangeSource source) override;
 
 private:
+	void step_radial(TimeMs ms, bool timer);
+
 	QString _text;
 	const style::FlatButton &_st;
+	const style::icon &_icon;
+	const style::icon &_iconOver;
+	std::unique_ptr<Ui::InfiniteRadialAnimation> _loading;
 
 };
 
-DialogsWidget::UpdateButton::UpdateButton(QWidget *parent) : RippleButton(parent, st::dialogsUpdateButton.ripple)
-, _text(lang(lng_update_telegram).toUpper())
-, _st(st::dialogsUpdateButton) {
+DialogsWidget::BottomButton::BottomButton(
+	QWidget *parent,
+	const QString &text,
+	const style::FlatButton &st,
+	const style::icon &icon,
+	const style::icon &iconOver)
+: RippleButton(parent, st.ripple)
+, _text(text.toUpper())
+, _st(st)
+, _icon(icon)
+, _iconOver(iconOver) {
 	resize(st::columnMinimalWidthLeft, _st.height);
 }
 
-void DialogsWidget::UpdateButton::onStateChanged(State was, StateChangeSource source) {
-	RippleButton::onStateChanged(was, source);
+void DialogsWidget::BottomButton::setText(const QString &text) {
+	_text = text.toUpper();
 	update();
 }
 
-void DialogsWidget::UpdateButton::paintEvent(QPaintEvent *e) {
-	QPainter p(this);
+void DialogsWidget::BottomButton::step_radial(TimeMs ms, bool timer) {
+	if (timer && !anim::Disabled() && width() < st::columnMinimalWidthLeft) {
+		update();
+	}
+}
+
+void DialogsWidget::BottomButton::onStateChanged(State was, StateChangeSource source) {
+	RippleButton::onStateChanged(was, source);
+	if ((was & StateFlag::Disabled) != (state() & StateFlag::Disabled)) {
+		_loading = isDisabled()
+			? std::make_unique<Ui::InfiniteRadialAnimation>(
+				animation(this, &BottomButton::step_radial),
+				st::dialogsLoadMoreLoading)
+			: nullptr;
+		if (_loading) {
+			_loading->start();
+		}
+	}
+	update();
+}
+
+void DialogsWidget::BottomButton::paintEvent(QPaintEvent *e) {
+	Painter p(this);
+
+	const auto over = isOver() && !isDisabled();
 
 	QRect r(0, height() - _st.height, width(), _st.height);
-	p.fillRect(r, isOver() ? _st.overBgColor : _st.bgColor);
+	p.fillRect(r, over ? _st.overBgColor : _st.bgColor);
 
-	paintRipple(p, 0, 0, getms());
+	if (!isDisabled()) {
+		paintRipple(p, 0, 0, getms());
+	}
 
-	p.setFont(isOver() ? _st.overFont : _st.font);
+	p.setFont(over ? _st.overFont : _st.font);
 	p.setRenderHint(QPainter::TextAntialiasing);
-	p.setPen(isOver() ? _st.overColor : _st.color);
+	p.setPen(over ? _st.overColor : _st.color);
 
 	if (width() >= st::columnMinimalWidthLeft) {
 		r.setTop(_st.textTop);
 		p.drawText(r, _text, style::al_top);
+	} else if (isDisabled() && _loading) {
+		_loading->draw(
+			p,
+			QPoint(
+				(width() - st::dialogsLoadMoreLoading.size.width()) / 2,
+				(height() - st::dialogsLoadMoreLoading.size.height()) / 2),
+			width());
 	} else {
-		(isOver() ? st::dialogsInstallUpdateOver : st::dialogsInstallUpdate).paintInCenter(p, r);
+		(over ? _iconOver : _icon).paintInCenter(p, r);
 	}
 }
 
@@ -106,7 +159,7 @@ DialogsWidget::DialogsWidget(QWidget *parent, not_null<Window::Controller*> cont
 	connect(_inner, SIGNAL(mustScrollTo(int,int)), _scroll, SLOT(scrollToY(int,int)));
 	connect(_inner, SIGNAL(dialogMoved(int,int)), this, SLOT(onDialogMoved(int,int)));
 	connect(_inner, SIGNAL(searchMessages()), this, SLOT(onNeedSearchMessages()));
-	connect(_inner, SIGNAL(searchResultChosen()), this, SLOT(onCancel()));
+	connect(_inner, SIGNAL(clearSearchQuery()), this, SLOT(onCancel()));
 	connect(_inner, SIGNAL(completeHashtag(QString)), this, SLOT(onCompleteHashtag(QString)));
 	connect(_inner, SIGNAL(refreshHashtags()), this, SLOT(onFilterCursorMoved()));
 	connect(_inner, SIGNAL(cancelSearchInChat()), this, SLOT(onCancelSearchInChat()));
@@ -173,6 +226,7 @@ DialogsWidget::DialogsWidget(QWidget *parent, not_null<Window::Controller*> cont
 	updateJumpToDateVisibility(true);
 	updateSearchFromVisibility(true);
 	setupConnectingWidget();
+	setupSupportLoadingLimit();
 }
 
 void DialogsWidget::setupConnectingWidget() {
@@ -181,13 +235,29 @@ void DialogsWidget::setupConnectingWidget() {
 		Window::AdaptiveIsOneColumn());
 }
 
+void DialogsWidget::setupSupportLoadingLimit() {
+	if (!Auth().supportMode()) {
+		return;
+	}
+	Auth().settings().supportChatsTimeSliceValue(
+	) | rpl::start_with_next([=](int seconds) {
+		_dialogsLoadTill = seconds ? std::max(unixtime() - seconds, 0) : 0;
+		refreshLoadMoreButton();
+	}, lifetime());
+}
+
 void DialogsWidget::checkUpdateStatus() {
 	Expects(!Core::UpdaterDisabled());
 
 	using Checker = Core::UpdateChecker;
 	if (Checker().state() == Checker::State::Ready) {
 		if (_updateTelegram) return;
-		_updateTelegram.create(this);
+		_updateTelegram.create(
+			this,
+			lang(lng_update_telegram),
+			st::dialogsUpdateButton,
+			st::dialogsInstallUpdate,
+			st::dialogsInstallUpdateOver);
 		_updateTelegram->show();
 		_updateTelegram->setClickedCallback([] {
 			Core::checkReadyUpdate();
@@ -344,20 +414,21 @@ void DialogsWidget::dialogsReceived(
 		const MTPmessages_Dialogs &dialogs,
 		mtpRequestId requestId) {
 	if (_dialogsRequestId != requestId) return;
+
 	const auto [dialogsList, messagesList] = [&] {
 		const auto process = [&](const auto &data) {
-		App::feedUsers(data.vusers);
-		App::feedChats(data.vchats);
+			App::feedUsers(data.vusers);
+			App::feedChats(data.vchats);
 			return std::make_tuple(&data.vdialogs.v, &data.vmessages.v);
 		};
 		switch (dialogs.type()) {
 		case mtpc_messages_dialogs:
-		_dialogsFull = true;
+			_dialogsFull = true;
 			return process(dialogs.c_messages_dialogs());
 
 		case mtpc_messages_dialogsSlice:
 			return process(dialogs.c_messages_dialogsSlice());
-	}
+		}
 		Unexpected("Type in DialogsWidget::dialogsReceived");
 	}();
 
@@ -368,12 +439,16 @@ void DialogsWidget::dialogsReceived(
 	_dialogsRequestId = 0;
 	loadDialogs();
 
+	if (!_dialogsRequestId) {
+		refreshLoadMoreButton();
+	}
+
 	Auth().data().moreChatsLoaded().notify();
 	if (_dialogsFull && _pinnedDialogsReceived) {
 		Auth().data().allChatsLoaded().set(true);
-								}
+	}
 	Auth().api().requestContacts();
-							}
+}
 
 void DialogsWidget::updateDialogsOffset(
 		const QVector<MTPDialog> &dialogs,
@@ -386,22 +461,22 @@ void DialogsWidget::updateDialogsOffset(
 		const auto msgId = dialog.vtop_message.v;
 		if (!peer || !msgId) {
 			return;
-						}
+		}
 		if (!lastPeer) {
 			lastPeer = peer;
-					}
+		}
 		if (!lastMsgId) {
 			lastMsgId = msgId;
-				}
+		}
 		for (auto j = messages.size(); j != 0;) {
 			const auto &message = messages[--j];
 			if (idFromMessage(message) == msgId
 				&& peerFromMessage(message) == peer) {
 				if (const auto date = dateFromMessage(message)) {
 					lastDate = date;
-			}
+				}
 				return;
-		}
+			}
 		}
 	};
 	for (auto i = dialogs.size(); i != 0;) {
@@ -416,13 +491,43 @@ void DialogsWidget::updateDialogsOffset(
 		}
 	}
 	if (lastDate) {
-			_dialogsOffsetDate = lastDate;
-			_dialogsOffsetId = lastMsgId;
-			_dialogsOffsetPeer = App::peer(lastPeer);
-		} else {
-			_dialogsFull = true;
-		}
+		_dialogsOffsetDate = lastDate;
+		_dialogsOffsetId = lastMsgId;
+		_dialogsOffsetPeer = App::peer(lastPeer);
+	} else {
+		_dialogsFull = true;
 	}
+}
+
+void DialogsWidget::refreshLoadMoreButton() {
+	if (_dialogsFull || !_dialogsLoadTill) {
+		_loadMoreChats.destroy();
+		updateControlsGeometry();
+		return;
+	}
+	if (!_loadMoreChats) {
+		_loadMoreChats.create(
+			this,
+			"Load more",
+			st::dialogsLoadMoreButton,
+			st::dialogsLoadMore,
+			st::dialogsLoadMore);
+		_loadMoreChats->addClickHandler([=] {
+			if (_loadMoreChats->isDisabled()) {
+				return;
+			}
+			const auto max = Auth().settings().supportChatsTimeSlice();
+			_dialogsLoadTill = _dialogsOffsetDate
+				? (_dialogsOffsetDate - max)
+				: (unixtime() - max);
+			loadDialogs();
+		});
+		updateControlsGeometry();
+	}
+	const auto loading = !loadingBlockedByDate();
+	_loadMoreChats->setDisabled(loading);
+	_loadMoreChats->setText(loading ? "Loading..." : "Load more");
+}
 
 void DialogsWidget::pinnedDialogsReceived(
 		const MTPmessages_PeerDialogs &result,
@@ -444,7 +549,7 @@ void DialogsWidget::pinnedDialogsReceived(
 	Auth().data().moreChatsLoaded().notify();
 	if (_dialogsFull && _pinnedDialogsReceived) {
 		Auth().data().allChatsLoaded().set(true);
-}
+	}
 }
 
 void DialogsWidget::applyReceivedDialogs(
@@ -484,10 +589,6 @@ void DialogsWidget::onDraggingScrollDelta(int delta) {
 void DialogsWidget::onDraggingScrollTimer() {
 	auto delta = (_draggingScrollDelta > 0) ? qMin(_draggingScrollDelta * 3 / 20 + 1, int32(MaxScrollSpeed)) : qMax(_draggingScrollDelta * 3 / 20 - 1, -int32(MaxScrollSpeed));
 	_scroll->scrollToY(_scroll->scrollTop() + delta);
-}
-
-void DialogsWidget::refreshOnUpdate() {
-	_inner->refreshOnUpdate();
 }
 
 bool DialogsWidget::onSearchMessages(bool searchCache) {
@@ -601,8 +702,8 @@ bool DialogsWidget::onSearchMessages(bool searchCache) {
 
 bool DialogsWidget::searchForPeersRequired(const QString &query) const {
 	if (_searchInChat || query.isEmpty()) {
-	return false;
-}
+		return false;
+	}
 	return (query[0] != '#');
 }
 
@@ -734,10 +835,20 @@ void DialogsWidget::onSearchMore() {
 	}
 }
 
+bool DialogsWidget::loadingBlockedByDate() const {
+	return !_dialogsFull
+		&& !_dialogsRequestId
+		&& (_dialogsLoadTill > 0)
+		&& (_dialogsOffsetDate > 0)
+		&& (_dialogsOffsetDate <= _dialogsLoadTill);
+}
+
 void DialogsWidget::loadDialogs() {
 	if (_dialogsRequestId) return;
 	if (_dialogsFull) {
 		_inner->addAllSavedPeers();
+		return;
+	} else if (loadingBlockedByDate()) {
 		return;
 	}
 
@@ -762,6 +873,7 @@ void DialogsWidget::loadDialogs() {
 	if (!_pinnedDialogsReceived) {
 		loadPinnedDialogs();
 	}
+	refreshLoadMoreButton();
 }
 
 void DialogsWidget::loadPinnedDialogs() {
@@ -793,8 +905,8 @@ void DialogsWidget::searchReceived(
 			auto &d = result.c_messages_messages();
 			if (_searchRequest != 0) {
 				// Don't apply cached data!
-			App::feedUsers(d.vusers);
-			App::feedChats(d.vchats);
+				App::feedUsers(d.vusers);
+				App::feedChats(d.vchats);
 			}
 			auto &msgs = d.vmessages.v;
 			if (!_inner->searchReceived(msgs, type, msgs.size())) {
@@ -810,8 +922,8 @@ void DialogsWidget::searchReceived(
 			auto &d = result.c_messages_messagesSlice();
 			if (_searchRequest != 0) {
 				// Don't apply cached data!
-			App::feedUsers(d.vusers);
-			App::feedChats(d.vchats);
+				App::feedUsers(d.vusers);
+				App::feedChats(d.vchats);
 			}
 			auto &msgs = d.vmessages.v;
 			if (!_inner->searchReceived(msgs, type, d.vcount.v)) {
@@ -828,11 +940,11 @@ void DialogsWidget::searchReceived(
 			if (const auto peer = _searchInChat.peer()) {
 				if (const auto channel = peer->asChannel()) {
 					channel->ptsReceived(d.vpts.v);
-			} else {
+				} else {
 					LOG(("API Error: "
 						"received messages.channelMessages when no channel "
 						"was passed! (DialogsWidget::searchReceived)"));
-			}
+				}
 			} else {
 				LOG(("API Error: "
 					"received messages.channelMessages when no channel "
@@ -840,8 +952,8 @@ void DialogsWidget::searchReceived(
 			}
 			if (_searchRequest != 0) {
 				// Don't apply cached data!
-			App::feedUsers(d.vusers);
-			App::feedChats(d.vchats);
+				App::feedUsers(d.vusers);
+				App::feedChats(d.vchats);
 			}
 			auto &msgs = d.vmessages.v;
 			if (!_inner->searchReceived(msgs, type, d.vcount.v)) {
@@ -1084,17 +1196,16 @@ void DialogsWidget::showJumpToDate() {
 void DialogsWidget::showSearchFrom() {
 	if (const auto peer = _searchInChat.peer()) {
 		const auto chat = _searchInChat;
-	Dialogs::ShowSearchFromBox(
-		controller(),
-		peer,
-			crl::guard(this, [=](
-				not_null<UserData*> user) {
-			Ui::hideLayer();
+		Dialogs::ShowSearchFromBox(
+			controller(),
+			peer,
+			crl::guard(this, [=](not_null<UserData*> user) {
+				Ui::hideLayer();
 				setSearchInChat(chat, user);
-			onFilterUpdate(true);
-		}),
-			crl::guard(this, [this] { _filter->setFocus(); }));
-}
+				onFilterUpdate(true);
+			}),
+			crl::guard(this, [=] { _filter->setFocus(); }));
+	}
 }
 
 void DialogsWidget::onFilterCursorMoved(int from, int to) {
@@ -1208,11 +1319,19 @@ void DialogsWidget::updateControlsGeometry() {
 	auto addToScroll = App::main() ? App::main()->contentScrollAddToY() : 0;
 	auto newScrollTop = _scroll->scrollTop() + addToScroll;
 	auto scrollHeight = height() - scrollTop;
-	if (_updateTelegram) {
-		auto updateHeight = _updateTelegram->height();
-		_updateTelegram->setGeometry(0, height() - updateHeight, width(), updateHeight);
-		scrollHeight -= updateHeight;
-	}
+	const auto putBottomButton = [&](object_ptr<BottomButton> &button) {
+		if (button) {
+			const auto buttonHeight = button->height();
+			scrollHeight -= buttonHeight;
+			button->setGeometry(
+				0,
+				scrollTop + scrollHeight,
+				width(),
+				buttonHeight);
+		}
+	};
+	putBottomButton(_updateTelegram);
+	putBottomButton(_loadMoreChats);
 	auto wasScrollHeight = _scroll->height();
 	_scroll->setGeometry(0, scrollTop, width(), scrollHeight);
 	if (scrollHeight != wasScrollHeight) {
@@ -1330,18 +1449,8 @@ void DialogsWidget::destroyData() {
 	_inner->destroyData();
 }
 
-Dialogs::RowDescriptor DialogsWidget::chatListEntryBefore(
-		const Dialogs::RowDescriptor &which) const {
-	return _inner->chatListEntryBefore(which);
-}
-
-Dialogs::RowDescriptor DialogsWidget::chatListEntryAfter(
-		const Dialogs::RowDescriptor &which) const {
-	return _inner->chatListEntryAfter(which);
-}
-
-void DialogsWidget::scrollToPeer(not_null<History*> history, MsgId msgId) {
-	_inner->scrollToPeer(history, msgId);
+void DialogsWidget::scrollToEntry(const Dialogs::RowDescriptor &entry) {
+	_inner->scrollToEntry(entry);
 }
 
 void DialogsWidget::removeDialog(Dialogs::Key key) {
@@ -1375,7 +1484,7 @@ bool DialogsWidget::onCancelSearch() {
 				controller()->showSection(HistoryFeed::Memento(feed));
 			} else {
 				Unexpected("Empty key in onCancelSearch().");
-		}
+			}
 		}
 		setSearchInChat(Dialogs::Key());
 		clearing = true;
@@ -1400,8 +1509,8 @@ void DialogsWidget::onCancelSearchInChat() {
 				controller()->showSection(HistoryFeed::Memento(feed));
 			} else {
 				Unexpected("Empty key in onCancelSearchInPeer().");
+			}
 		}
-	}
 		setSearchInChat(Dialogs::Key());
 	}
 	_inner->clearFilter();

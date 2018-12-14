@@ -50,15 +50,15 @@ auto PlainBioValue(
 			user,
 			Notify::PeerUpdate::Flag::AboutChanged
 	) | rpl::map([user] { 
-			//CloudVeil start
-			if (GlobalSecuritySettings::getSettings().disableBio)
-			{
-				return QString();
-			}
-			else
-			{
-				return user->about();
-			}
+		//CloudVeil start
+		if (GlobalSecuritySettings::getSettings().disableBio)
+		{
+			return QString();
+		}
+		else
+		{
+			return user->about();
+		}
 		//CloudVeil end
 	});
 }

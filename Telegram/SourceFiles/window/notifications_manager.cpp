@@ -45,7 +45,8 @@ System::System(AuthSession *session) : _authSession(session) {
 			clearAll();
 		} else if (type == ChangeType::ViewParams) {
 			updateAll();
-		} else if (type == ChangeType::IncludeMuted) {
+		} else if (type == ChangeType::IncludeMuted
+			|| type == ChangeType::CountMessages) {
 			Notify::unreadCounterUpdated();
 		}
 	});
@@ -78,17 +79,17 @@ void System::schedule(History *history, HistoryItem *item) {
 	if (haveSetting && Auth().data().notifyIsMuted(history->peer)) {
 		if (notifyBy) {
 			haveSetting = !Auth().data().notifyMuteUnknown(notifyBy);
-	if (haveSetting) {
+			if (haveSetting) {
 				if (Auth().data().notifyIsMuted(notifyBy)) {
-						history->popNotification(item);
-						return;
-					}
+					history->popNotification(item);
+					return;
 				}
-			} else {
-				history->popNotification(item);
-				return;
 			}
+		} else {
+			history->popNotification(item);
+			return;
 		}
+	}
 	if (!item->notificationReady()) {
 		haveSetting = false;
 	}
@@ -229,11 +230,13 @@ void System::showNext() {
 			if (peerAlert || fromAlert) {
 				alert = true;
 			}
+
 			//CloudVeil start
 			if (!GlobalSecuritySettings::getSettings().isDialogAllowed(peer)) {
 				alert = false;
 			}
 			//CloudVeil end
+
 			while (!i.value().isEmpty()
 				&& i.value().begin().key() <= ms + kMinimalAlertDelay) {
 				i.value().erase(i.value().begin());
@@ -271,6 +274,7 @@ void System::showNext() {
 		History *notifyHistory = nullptr;
 		for (auto i = _waiters.begin(); i != _waiters.end();) {
 			History *history = i.key();
+
 			//CloudVeil start
 			if (!GlobalSecuritySettings::getSettings().isDialogAllowed(history)) {
 				history->clearNotifications();
@@ -430,15 +434,15 @@ void Manager::openNotificationMessage(
 			return false;
 		}
 		const auto item = App::histItemById(history->channelId(), messageId);
-				if (!item || !item->mentionsMe()) {
+		if (!item || !item->mentionsMe()) {
 			return false;
-				}
+		}
 		return true;
 	}();
 	const auto messageFeed = [&] {
 		if (const auto channel = history->peer->asChannel()) {
 			return channel->feed();
-			}
+		}
 		return (Data::Feed*)nullptr;
 	}();
 	if (openExactlyMessage) {
@@ -449,8 +453,8 @@ void Manager::openNotificationMessage(
 	} else {
 		Ui::showPeerHistory(history, ShowAtUnreadMsgId);
 	}
-			system()->clearFromHistory(history);
-		}
+	system()->clearFromHistory(history);
+}
 
 void Manager::notificationReplied(
 		PeerId peerId,
@@ -465,7 +469,7 @@ void Manager::notificationReplied(
 	message.replyTo = (msgId > 0 && !history->peer->isUser()) ? msgId : 0;
 	message.clearDraft = false;
 	Auth().api().sendMessage(std::move(message));
-	}
+}
 
 void NativeManager::doShowNotification(HistoryItem *item, int forwardedCount) {
 	const auto options = getNotificationOptions(item);

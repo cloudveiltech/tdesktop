@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/platform_file_utilities.h"
 #include "storage/localimageloader.h"
 #include "core/mime_type.h"
+#include "ui/image/image_prepare.h"
 
 namespace Storage {
 namespace {
@@ -81,7 +82,7 @@ bool PrepareAlbumMediaIsWaiting(
 			if (ValidPhotoForAlbum(*image)) {
 				file.shownDimensions = PrepareShownDimensions(image->data);
 				file.preview = Images::prepareOpaque(image->data.scaledToWidth(
-					std::min(previewWidth, convertScale(image->data.width()))
+					std::min(previewWidth, ConvertScale(image->data.width()))
 						* cIntRetinaFactor(),
 					Qt::SmoothTransformation));
 				Assert(!file.preview.isNull());

@@ -230,7 +230,7 @@ MainWidget::MainWidget(
 	this,
 	_controller,
 	Media::Player::Panel::Layout::OnlyPlaylist)
-, _playerPanel(this, _controller, Media::Player::Panel::Layout::Full),//CloudVeil start
+, _playerPanel(this, _controller, Media::Player::Panel::Layout::Full)//CloudVeil start
 	, globalSettings(this)
 	, simpleUpdater(this) {
 

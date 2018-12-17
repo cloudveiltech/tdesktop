@@ -1876,6 +1876,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_mac_menu_add_contact" = "Add Contact";
 "lng_mac_menu_new_group" = "New Group";
 "lng_mac_menu_new_channel" = "New Channel";
-"lng_mac_menu_show" = "Show Telegram";
+"lng_mac_menu_show" = "Show CloudVeil Messenger";
 
+"lng_dialog_forbidden" = "This channel/group/bot is blocked by our server policy. Please contact CloudVeil Support at support@cloudveil.org to request it be unblocked.";
+"lng_feature_forbidden" = "This feature is blocked by our server policy. Please contact CloudVeil Support at support@cloudveil.org to request it be unblocked.";
+"lng_blocked_for_protection" = "Content blocked for your protection.";
+"lng_download_click" = "Download";
+"lng_contact" = "Contact";
 // Keys finished

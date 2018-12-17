@@ -1528,3 +1528,9 @@ void DialogsWidget::onDialogMoved(int movedFrom, int movedTo) {
 		_scroll->scrollToY(st + st::dialogsRowHeight);
 	}
 }
+
+//CloudVeil start
+void DialogsWidget::refreshOnUpdate() {
+	_inner->refreshOnUpdate();
+}
+//CloudVeil end

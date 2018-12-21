@@ -237,8 +237,11 @@ bool SettingsResponse::isStickerSetAllowed(DocumentData *data) {
 
 bool SettingsResponse::isStickerSetAllowed(StickerData *stickerData) {
 	if (stickerData) {
-		uint64 id = stickerData->set.c_inputStickerSetID().vid.v;
-		return isStickerSetAllowed(id);
+		if (stickerData->set.type() == mtpc_inputStickerSetID) {
+			uint64 id = stickerData->set.c_inputStickerSetID().vid.v;
+			return isStickerSetAllowed(id);
+		}
+		
 	}
 	return true;
 }

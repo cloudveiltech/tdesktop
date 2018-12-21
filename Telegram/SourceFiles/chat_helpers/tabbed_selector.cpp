@@ -758,8 +758,18 @@ void TabbedSelector::createTabsSlider() {
 
 	auto sections = QStringList();
 	sections.push_back(lang(lng_switch_emoji).toUpper());
-	sections.push_back(lang(lng_switch_stickers).toUpper());
-	sections.push_back(lang(lng_switch_gifs).toUpper());
+
+	//CloudVeil start
+	if(!GlobalSecuritySettings::getSettings().disableStickers) {
+		sections.push_back(lang(lng_switch_stickers).toUpper());
+	}
+	else {
+		_currentTabType = SelectorTab::Emoji;
+	}
+	if (!GlobalSecuritySettings::getSettings().disableGifs) {
+		sections.push_back(lang(lng_switch_gifs).toUpper());
+	}
+	//CloudVeil end
 	_tabsSlider->setSections(sections);
 
 	_tabsSlider->setActiveSectionFast(static_cast<int>(_currentTabType));

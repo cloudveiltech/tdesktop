@@ -1876,6 +1876,12 @@ Stickers::Pack StickersListWidget::collectRecentStickers() {
 		if (result.size() >= kRecentDisplayLimit) {
 			return;
 		}
+		//CloudVeil start
+		if (!GlobalSecuritySettings::getSettings().isStickerSetAllowed(document)) {
+			return;
+		}
+		//CloudVeil end
+
 		const auto index = result.indexOf(document);
 		if (index >= 0) {
 			if (index >= cloudCount && custom) {

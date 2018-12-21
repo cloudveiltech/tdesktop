@@ -1439,6 +1439,12 @@ void StickersBox::Inner::rebuild() {
 			continue;
 		}
 
+		//CloudVeil start
+		if (!GlobalSecuritySettings::getSettings().isStickerSetAllowed(setId)) {
+			continue;
+		}
+		//CloudVeil end
+
 		rebuildAppendSet(it.value(), maxNameWidth);
 
 		if (it->stickers.isEmpty() || (it->flags & MTPDstickerSet_ClientFlag::f_not_loaded)) {
@@ -1549,6 +1555,11 @@ void StickersBox::Inner::rebuildAppendSet(const Stickers::Set &set, int maxNameW
 	QString title = fillSetTitle(set, maxNameWidth, &titleWidth);
 	int count = fillSetCount(set);
 
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getSettings().isStickerSetAllowed(set.id)) {
+		return;
+	}
+	//CloudVeil end
 	_rows.push_back(std::make_unique<Row>(
 		set.id,
 		set.access,

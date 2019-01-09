@@ -1564,7 +1564,9 @@ Fn<void(const RPCError &)> MtpLoader::failHandler() {
 } // namespace
 
 bool UpdaterDisabled() {
-	return UpdaterIsDisabled;
+	//CloudVeil start
+	return true;// UpdaterIsDisabled;
+	//CloudVeil end
 }
 
 void SetUpdaterDisabledAtStartup() {

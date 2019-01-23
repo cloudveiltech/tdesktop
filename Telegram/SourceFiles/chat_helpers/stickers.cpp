@@ -20,6 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/toast/toast.h"
 #include "ui/emoji_config.h"
 #include "styles/style_chat_helpers.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace Stickers {
 
@@ -697,7 +698,10 @@ std::vector<not_null<DocumentData*>> GetListByEmoji(
 		if (ranges::find(result, document, [](const StickerWithDate &data) {
 			return data.document;
 		}) == result.end()) {
-			result.push_back({ document, date });
+			//CloudVeil start
+			if (GlobalSecuritySettings::getInstance()->getSettings().isStickerSetAllowed(document)) {
+				result.push_back({ document, date });
+			}
 		}
 	};
 
@@ -754,9 +758,14 @@ std::vector<not_null<DocumentData*>> GetListByEmoji(
 				const auto date = usageDate
 					? usageDate
 					: InstallDate(document);
-				result.push_back({
-					document,
-					date ? date : CreateRecentSortKey(document) });
+
+				//CloudVeil start
+				if (GlobalSecuritySettings::getInstance()->getSettings().isStickerSetAllowed(document)) {
+					result.push_back({
+						document,
+						date ? date : CreateRecentSortKey(document) });
+				}
+				//CloudVeil end
 			}
 		}
 	}
@@ -810,7 +819,11 @@ std::vector<not_null<DocumentData*>> GetListByEmoji(
 		}
 		result.reserve(result.size() + others->size());
 		for (const auto document : *others) {
-			add(document, CreateOtherSortKey(document));
+			//CloudVeil start
+			if (GlobalSecuritySettings::getInstance()->getSettings().isStickerSetAllowed(document)) {
+				add(document, CreateOtherSortKey(document));
+			}
+			//CloudVeil end
 		}
 	}
 

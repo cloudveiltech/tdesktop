@@ -1954,7 +1954,9 @@ void StickersListWidget::refreshRecentStickers(bool performResize) {
 
 void StickersListWidget::refreshFavedStickers() {
 	clearSelection();
-	auto &sets = Auth().data().stickerSets();
+	//CloudVeil start
+	auto &sets = Auth().data().stickerSetsFiltered();
+	//CloudVeil end
 	auto it = sets.constFind(Stickers::FavedSetId);
 	if (it == sets.cend() || it->stickers.isEmpty()) {
 		return;
@@ -1970,6 +1972,7 @@ void StickersListWidget::refreshFavedStickers() {
 		externalLayout,
 		it->count,
 		it->stickers));
+
 	_favedStickersMap = base::flat_set<not_null<DocumentData*>> { it->stickers.begin(), it->stickers.end() };
 }
 

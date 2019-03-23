@@ -247,7 +247,7 @@ bool SettingsResponse::isStickerSetAllowed(StickerData *stickerData) {
 		}
 		
 	}
-	return true;
+	return !disableStickers;
 }
 
 bool SettingsResponse::isStickerSetKnown(DocumentData *data) {
@@ -261,7 +261,7 @@ bool SettingsResponse::isStickerSetKnown(DocumentData *data) {
 			return false;
 		}
 	}
-	return true;
+	return !disableStickers;
 }
 
 bool SettingsResponse::isStickerSetAllowed(uint64 id) {

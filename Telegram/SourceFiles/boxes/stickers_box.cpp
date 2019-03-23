@@ -1397,6 +1397,11 @@ void StickersBox::Inner::rebuildMegagroupSet() {
 	}
 	auto &set = _megagroupSetInput.c_inputStickerSetID();
 	auto setId = set.vid.v;
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getSettings().isStickerSetAllowed(setId)) {
+		return;
+	}
+	//CloudVeil end
 	auto &sets = Auth().data().stickerSets();
 	auto it = sets.find(setId);
 	if (it == sets.cend() || (it->flags & MTPDstickerSet_ClientFlag::f_not_loaded)) {

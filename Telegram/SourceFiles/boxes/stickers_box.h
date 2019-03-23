@@ -33,9 +33,11 @@ public:
 		Installed,
 		Featured,
 		Archived,
+		Attached,
 	};
 	StickersBox(QWidget*, Section section);
 	StickersBox(QWidget*, not_null<ChannelData*> megagroup);
+	StickersBox(QWidget*, const MTPVector<MTPStickerSetCovered> &attachedSets);
 
 	void setInnerFocus() override;
 
@@ -97,6 +99,7 @@ private:
 	void requestArchivedSets();
 	void loadMoreArchived();
 	void getArchivedDone(uint64 offsetId, const MTPmessages_ArchivedStickers &result);
+	void showAttachedStickers();
 
 	object_ptr<Ui::SettingsSlider> _tabs = { nullptr };
 	QList<Section> _tabIndices;
@@ -109,7 +112,10 @@ private:
 	Tab _installed;
 	Tab _featured;
 	Tab _archived;
+	Tab _attached;
 	Tab *_tab = nullptr;
+
+	const MTPVector<MTPStickerSetCovered> _attachedSets;
 
 	ChannelData *_megagroupSet = nullptr;
 
@@ -262,9 +268,9 @@ private:
 	QRect relativeButtonRect(bool removeButton) const;
 	void ensureRipple(const style::RippleAnimation &st, QImage mask, bool removeButton);
 
-	void step_shifting(TimeMs ms, bool timer);
-	void paintRow(Painter &p, Row *set, int index, TimeMs ms);
-	void paintFakeButton(Painter &p, Row *set, int index, TimeMs ms);
+	void step_shifting(crl::time ms, bool timer);
+	void paintRow(Painter &p, Row *set, int index, crl::time ms);
+	void paintFakeButton(Painter &p, Row *set, int index, crl::time ms);
 	void clear();
 	void setActionSel(int32 actionSel);
 	float64 aboveShadowOpacity() const;
@@ -289,8 +295,8 @@ private:
 	int32 _rowHeight;
 
 	std::vector<std::unique_ptr<Row>> _rows;
-	QList<TimeMs> _animStartTimes;
-	TimeMs _aboveShadowFadeStart = 0;
+	QList<crl::time> _animStartTimes;
+	crl::time _aboveShadowFadeStart = 0;
 	anim::value _aboveShadowFadeOpacity;
 	BasicAnimation _a_shifting;
 

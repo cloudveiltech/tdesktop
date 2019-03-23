@@ -4,6 +4,7 @@
 #include "dialogs/dialogs_indexed_list.h"
 #include "data/data_document.h"
 #include "history/history.h"
+#include "data/data_user.h"
 
 void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 {
@@ -240,6 +241,9 @@ bool SettingsResponse::isStickerSetAllowed(StickerData *stickerData) {
 		if (stickerData->set.type() == mtpc_inputStickerSetID) {
 			uint64 id = stickerData->set.c_inputStickerSetID().vid.v;
 			return isStickerSetAllowed(id);
+		}
+		else {
+			return false;
 		}
 		
 	}

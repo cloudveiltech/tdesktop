@@ -10,7 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "storage/localstorage.h"
 #include "mainwindow.h"
-#include "messenger.h"
+#include "core/application.h"
 #include "ui/text/text.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/checkbox.h"
@@ -71,7 +71,7 @@ void LockWidget::animationCallback() {
 void LockWidget::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
-	auto progress = _a_show.current(getms(), 1.);
+	auto progress = _a_show.current(crl::now(), 1.);
 	if (_a_show.animating()) {
 		auto coordUnder = _showBack ? anim::interpolate(-st::slideShift, 0, progress) : anim::interpolate(0, -st::slideShift, progress);
 		auto coordOver = _showBack ? anim::interpolate(0, width(), progress) : anim::interpolate(width(), 0, progress);
@@ -138,12 +138,12 @@ void PasscodeLockWidget::submit() {
 		: (Local::readMap(passcode) != Local::ReadMapPassNeeded);
 	if (!correct) {
 		cSetPasscodeBadTries(cPasscodeBadTries() + 1);
-		cSetPasscodeLastTry(getms(true));
+		cSetPasscodeLastTry(crl::now());
 		error();
 		return;
 	}
 
-	Messenger::Instance().unlockPasscode(); // Destroys this widget.
+	Core::App().unlockPasscode(); // Destroys this widget.
 }
 
 void PasscodeLockWidget::error() {

@@ -148,6 +148,10 @@ private:
 	bool hasAdminBadge() const {
 		return _flags & MTPDmessage_ClientFlag::f_has_admin_badge;
 	}
+	bool isTooOldForEdit(TimeId now) const;
+	bool isUnsupportedMessage() const {
+		return _flags & MTPDmessage_ClientFlag::f_is_unsupported;
+	}
 
 	// For an invoice button we replace the button text with a "Receipt" key.
 	// It should show the receipt for the payed invoice. Still let mobile apps do that.

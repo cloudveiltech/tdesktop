@@ -7,8 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "twidget.h"
 
-#include "application.h"
 #include "mainwindow.h"
+#include "core/application.h"
 
 namespace Fonts {
 namespace {
@@ -22,7 +22,7 @@ bool ValidateFont(const QString &familyName, int flags = 0) {
 	checkFont.setStyleStrategy(QFont::PreferQuality);
 	auto realFamily = QFontInfo(checkFont).family();
 	if (realFamily.trimmed().compare(familyName, Qt::CaseInsensitive)) {
-		LOG(("Font Error: could not resolve '%1' font, got '%2' after feeding '%3'.").arg(familyName).arg(realFamily));
+		LOG(("Font Error: could not resolve '%1' font, got '%2'.").arg(familyName).arg(realFamily));
 		return false;
 	}
 
@@ -234,8 +234,7 @@ void ForceFullRepaint(not_null<QWidget*> widget) {
 }
 
 void PostponeCall(FnMut<void()> &&callable) {
-	const auto app = static_cast<Application*>(qApp);
-	app->postponeCall(std::move(callable));
+	Core::App().postponeCall(std::move(callable));
 }
 
 } // namespace Ui
@@ -254,7 +253,7 @@ void sendSynteticMouseEvent(QWidget *widget, QEvent::Type type, Qt::MouseButton 
 			, Qt::MouseEventSynthesizedByApplication
 #endif // OS_MAC_OLD
 		);
-		ev.setTimestamp(getms());
+		ev.setTimestamp(crl::now());
 		QGuiApplication::sendEvent(windowHandle, &ev);
 	}
 }

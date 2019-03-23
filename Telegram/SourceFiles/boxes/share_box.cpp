@@ -25,13 +25,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text_options.h"
 #include "chat_helpers/message_field.h"
 #include "history/history.h"
-#include "history/history_media_types.h"
 #include "history/history_message.h"
 #include "window/themes/window_theme.h"
 #include "boxes/peer_list_box.h"
 #include "chat_helpers/emoji_suggestions_widget.h"
+#include "data/data_channel.h"
+#include "data/data_user.h"
+#include "data/data_session.h"
 #include "auth_session.h"
-#include "messenger.h"
+#include "core/application.h"
 #include "styles/style_boxes.h"
 #include "styles/style_history.h"
 
@@ -91,7 +93,7 @@ private:
 
 	int displayedChatsCount() const;
 
-	void paintChat(Painter &p, TimeMs ms, not_null<Chat*> chat, int index);
+	void paintChat(Painter &p, crl::time ms, not_null<Chat*> chat, int index);
 	void updateChat(not_null<PeerData*> peer);
 	void updateChatName(not_null<Chat*> chat, not_null<PeerData*> peer);
 	void repaintChat(not_null<PeerData*> peer);
@@ -216,10 +218,10 @@ void ShareBox::prepare() {
 	setDimensions(st::boxWideWidth, st::boxMaxListHeight);
 
 	_select->setQueryChangedCallback([=](const QString &query) {
-		onFilterUpdate(query);
+		applyFilterUpdate(query);
 	});
 	_select->setItemRemovedCallback([=](uint64 itemId) {
-		if (const auto peer = App::peerLoaded(itemId)) {
+		if (const auto peer = Auth().data().peerLoaded(itemId)) {
 			_inner->peerUnselected(peer);
 			selectedChanged();
 			update();
@@ -333,8 +335,8 @@ void ShareBox::peopleReceived(
 		switch (result.type()) {
 		case mtpc_contacts_found: {
 			auto &found = result.c_contacts_found();
-			App::feedUsers(found.vusers);
-			App::feedChats(found.vchats);
+			Auth().data().processUsers(found.vusers);
+			Auth().data().processChats(found.vchats);
 			_inner->peopleReceived(
 				query,
 				found.vmy_results.v,
@@ -404,7 +406,7 @@ void ShareBox::createButtons() {
 	addButton(langFactory(lng_cancel), [=] { closeBox(); });
 }
 
-void ShareBox::onFilterUpdate(const QString &query) {
+void ShareBox::applyFilterUpdate(const QString &query) {
 	onScrollToY(0);
 	_inner->updateFilter(query);
 }
@@ -490,7 +492,7 @@ ShareBox::Inner::Inner(
 	const auto dialogs = App::main()->dialogsList();
 	const auto self = Auth().user();
 	if (_filterCallback(self)) {
-		_chatsIndexed->addToEnd(App::history(self));
+		_chatsIndexed->addToEnd(self->owner().history(self));
 	}
 	for (const auto row : dialogs->all()) {
 		if (const auto history = row->history()) {
@@ -730,7 +732,7 @@ void ShareBox::Inner::setActive(int active) {
 
 void ShareBox::Inner::paintChat(
 		Painter &p,
-		TimeMs ms,
+		crl::time ms,
 		not_null<Chat*> chat,
 		int index) {
 	auto x = _rowsLeft + qFloor((index % _columnCount) * _rowWidthReal);
@@ -759,7 +761,7 @@ ShareBox::Inner::Chat::Chat(PeerData *peer, Fn<void()> updateCallback)
 void ShareBox::Inner::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
-	auto ms = getms();
+	auto ms = crl::now();
 	auto r = e->rect();
 	p.setClipRect(r);
 	p.fillRect(r, st::boxBg);
@@ -879,7 +881,7 @@ void ShareBox::Inner::changeCheckState(Chat *chat) {
 	if (!chat) return;
 
 	if (!_filter.isEmpty()) {
-		const auto history = App::history(chat->peer);
+		const auto history = chat->peer->owner().history(chat->peer);
 		auto row = _chatsIndexed->getRow(history);
 		if (!row) {
 			const auto rowsByLetter = _chatsIndexed->addToEnd(history);
@@ -965,7 +967,7 @@ void ShareBox::Inner::updateFilter(QString filter) {
 				if (toFilter) {
 					_filtered.reserve(toFilter->size());
 					for (const auto row : *toFilter) {
-						auto &nameWords = row->entry()->chatsListNameWords();
+						const auto &nameWords = row->entry()->chatListNameWords();
 						auto nb = nameWords.cbegin(), ne = nameWords.cend(), ni = nb;
 						for (fi = fb; fi != fe; ++fi) {
 							auto filterName = *fi;
@@ -1016,8 +1018,8 @@ void ShareBox::Inner::peopleReceived(
 	d_byUsernameFiltered.reserve(already + my.size() + people.size());
 	const auto feedList = [&](const QVector<MTPPeer> &list) {
 		for (const auto &data : list) {
-			if (const auto peer = App::peerLoaded(peerFromMTP(data))) {
-				const auto history = App::historyLoaded(peer);
+			if (const auto peer = Auth().data().peerLoaded(peerFromMTP(data))) {
+				const auto history = Auth().data().historyLoaded(peer);
 				if (!_filterCallback(peer)) {
 					continue;
 				} else if (history && _chatsIndexed->getRow(history)) {
@@ -1065,7 +1067,9 @@ QVector<PeerData*> ShareBox::Inner::selected() const {
 QString AppendShareGameScoreUrl(const QString &url, const FullMsgId &fullId) {
 	auto shareHashData = QByteArray(0x10, Qt::Uninitialized);
 	auto shareHashDataInts = reinterpret_cast<int32*>(shareHashData.data());
-	auto channel = fullId.channel ? App::channelLoaded(fullId.channel) : static_cast<ChannelData*>(nullptr);
+	auto channel = fullId.channel
+		? Auth().data().channelLoaded(fullId.channel)
+		: static_cast<ChannelData*>(nullptr);
 	auto channelAccessHash = channel ? channel->access : 0ULL;
 	auto channelAccessHashInts = reinterpret_cast<int32*>(&channelAccessHash);
 	shareHashDataInts[0] = Auth().userId();
@@ -1168,17 +1172,19 @@ void ShareGameScoreByHash(const QString &hash) {
 			});
 		};
 
-		auto channel = channelId ? App::channelLoaded(channelId) : nullptr;
+		const auto channel = channelId
+			? Auth().data().channelLoaded(channelId)
+			: nullptr;
 		if (channel || !channelId) {
 			resolveMessageAndShareScore(channel);
 		} else {
 			auto requestChannelIds = MTP_vector<MTPInputChannel>(1, MTP_inputChannel(MTP_int(channelId), MTP_long(channelAccessHash)));
 			auto requestChannel = MTPchannels_GetChannels(requestChannelIds);
-			MTP::send(requestChannel, rpcDone([channelId, resolveMessageAndShareScore](const MTPmessages_Chats &result) {
-				if (auto chats = Api::getChatsFromMessagesChats(result)) {
-					App::feedChats(*chats);
-				}
-				if (auto channel = App::channelLoaded(channelId)) {
+			MTP::send(requestChannel, rpcDone([=](const MTPmessages_Chats &result) {
+				result.match([](const auto &data) {
+					Auth().data().processChats(data.vchats);
+				});
+				if (const auto channel = Auth().data().channelLoaded(channelId)) {
 					resolveMessageAndShareScore(channel);
 				}
 			}));

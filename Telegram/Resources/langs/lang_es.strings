@@ -700,7 +700,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_sure_delete_group" = "¿Quieres eliminar este grupo? Todos los miembros y mensajes se perderán.";
 
 "lng_message_empty" = "Mensaje vacío";
-"lng_message_unsupported" = "Este mensaje no es soportado por tu versión de Telegram Desktop. Por favor, actualiza a la última versión desde Ajustes o instálala desde {link}";
+"lng_message_unsupported" = "Este mensaje no es soportado por tu versión de CloudVeil Messenger. Por favor, actualiza a la última versión desde Ajustes o instálala desde {link}";
 
 "lng_duration_seconds#one" = "{count} segundo";
 "lng_duration_seconds#other" = "{count} segundos";
@@ -829,8 +829,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_cancel_edit_post_yes" = "Sí";
 "lng_cancel_edit_post_no" = "No";
 
-"lng_bot_share_location_unavailable" = "Lo sentimos, compartir la ubicación no está disponible actualmente en Telegram Desktop.";
-"lng_bot_inline_geo_unavailable" = "Lo sentimos, este bot requiere compartir la ubicación.\nNo está disponible en Telegram Desktop.";
+"lng_bot_share_location_unavailable" = "Lo sentimos, compartir la ubicación no está disponible actualmente en CloudVeil Messenger.";
+"lng_bot_inline_geo_unavailable" = "Lo sentimos, este bot requiere compartir la ubicación.\nNo está disponible en CloudVeil Messenger.";
 "lng_bot_share_phone" = "¿Compartir número de teléfono?";
 "lng_bot_share_phone_confirm" = "Compartir";
 
@@ -1218,7 +1218,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_new_authorization" = "{name}:\nDetectamos un inicio de sesión en tu cuenta desde un nuevo dispositivo el {day}, {date} a las {time}\n\nDispositivo: {device}\nUbicación: {location}\n\nSi no eras tú, puedes ir a Ajustes > Mostrar todas las sesiones, y cerrar esa sesión.\n\nSi crees que alguien inició tu sesión sin tu consentimiento, puedes activar la verificación en dos pasos en Ajustes.\n\nAtentamente,\nEl equipo de Telegram";
 
-"lng_new_version_wrap" = "Telegram Desktop ha sido actualizada a la versión {version}\n\n{changes}\n\nEl historial completo está disponible aquí:\n{link}";
+"lng_new_version_wrap" = "CloudVeil Messenger ha sido actualizada a la versión {version}\n\n{changes}\n\nEl historial completo está disponible aquí:\n{link}";
 "lng_new_version_minor" = "— Corrección de errores y otras mejoras menores";
 "lng_new_version_text" = "— Videomensajes mejorados: barra de progreso circular, soporte para Picture-in-Picture y cuenta regresiva de la duración.\n— Los mensajes de voz y de video ahora se reproducen automáticamente uno tras otro.";
 
@@ -1249,7 +1249,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_theme_editor_title" = "Editar la paleta de colores";
 "lng_theme_editor_export_button" = "Exportar tema";
 
-"lng_payments_not_supported" = "Lo sentimos, Telegram Desktop no soporta pagos todavía. Por favor, usa una de nuestras aplicaciones móviles para hacerlo.";
+"lng_payments_not_supported" = "Lo sentimos, CloudVeil Messenger no soporta pagos todavía. Por favor, usa una de nuestras aplicaciones móviles para hacerlo.";
 "lng_payments_receipt_label" = "Recibo";
 "lng_payments_receipt_label_test" = "Recibo de prueba";
 "lng_payments_invoice_label" = "Factura";

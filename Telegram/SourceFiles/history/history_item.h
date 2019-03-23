@@ -115,11 +115,13 @@ public:
 	bool mentionsMe() const {
 		return _flags & MTPDmessage::Flag::f_mentioned;
 	}
-	bool isMediaUnread() const;
+	bool isUnreadMention() const;
+	bool isUnreadMedia() const;
+	bool hasUnreadMediaFlag() const;
 	void markMediaRead();
 
 	// Zero result means this message is not self-destructing right now.
-	virtual TimeMs getSelfDestructIn(TimeMs now) {
+	virtual crl::time getSelfDestructIn(crl::time now) {
 		return 0;
 	}
 
@@ -132,8 +134,11 @@ public:
 	bool hasTextLinks() const {
 		return _flags & MTPDmessage_ClientFlag::f_has_text_links;
 	}
+	bool isGroupEssential() const {
+		return _flags & MTPDmessage_ClientFlag::f_is_group_essential;
+	}
 	bool isGroupMigrate() const {
-		return _flags & MTPDmessage_ClientFlag::f_is_group_migrate;
+		return isGroupEssential() && isEmpty();
 	}
 	bool hasViews() const {
 		return _flags & MTPDmessage::Flag::f_views;
@@ -211,6 +216,7 @@ public:
 
 	bool isPinned() const;
 	bool canPin() const;
+	bool canStopPoll() const;
 	virtual bool allowsForward() const;
 	virtual bool allowsEdit(TimeId now) const;
 	bool canDelete() const;
@@ -291,11 +297,11 @@ protected:
 	}
 	HistoryMessageReplyMarkup *inlineReplyMarkup();
 	ReplyKeyboard *inlineReplyKeyboard();
-	void invalidateChatsListEntry();
+	void invalidateChatListEntry();
 
 	void setGroupId(MessageGroupId groupId);
 
-	Text _text = { int(st::msgMinWidth) };
+	Text _text = { st::msgMinWidth };
 	int _textWidth = -1;
 	int _textHeight = 0;
 

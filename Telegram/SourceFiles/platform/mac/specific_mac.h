@@ -19,6 +19,8 @@ inline bool TranslucentWindowsSupported(QPoint globalPosition) {
 
 QString CurrentExecutablePath(int argc, char *argv[]);
 
+void RemoveQuarantine(const QString &path);
+
 namespace ThirdParty {
 
 inline void start() {
@@ -47,10 +49,6 @@ inline void psCheckLocalSocket(const QString &serverName) {
 void psWriteDump();
 
 void psDeleteDir(const QString &dir);
-
-void psUserActionDone();
-bool psIdleSupported();
-TimeMs psIdleTime();
 
 QStringList psInitLogs();
 void psClearInitLogs();

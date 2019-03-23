@@ -10,11 +10,14 @@ using "dialogs/dialogs.style";
 using "ui/widgets/widgets.style";
 
 minPhotoSize: 100px;
+minVideoSize: 160px;
 maxMediaSize: 430px;
 maxStickerSize: 256px;
 maxGifSize: 320px;
 maxVideoMessageSize: 240px;
 maxSignatureSize: 144px;
+maxWallPaperWidth: 160px;
+maxWallPaperHeight: 240px;
 
 historyMinimalWidth: 380px;
 
@@ -479,9 +482,93 @@ historyAboutProxyPadding: margins(20px, 10px, 20px, 10px);
 historyMapPoint: icon {{ "map_point", mapPointDrop }};
 historyMapPointInner: icon {{ "map_point_inner", mapPointDot }};
 
+webPageLeft: 10px;
+webPageBar: 2px;
+webPageTitleFont: semiboldFont;
+webPageTitleStyle: semiboldTextStyle;
+webPageTitleOutFg: historyTextOutFg;
+webPageTitleInFg: historyTextInFg;
+webPageDescriptionOutFg: historyTextOutFg;
+webPageDescriptionInFg: historyTextInFg;
+webPageDescriptionFont: normalFont;
+webPageDescriptionStyle: defaultTextStyle;
+webPagePhotoSize: 100px;
+webPagePhotoDelta: 8px;
+
+historyPollQuestionFont: semiboldFont;
+historyPollQuestionStyle: TextStyle(defaultTextStyle) {
+	font: historyPollQuestionFont;
+	linkFont: historyPollQuestionFont;
+	linkFontOver: historyPollQuestionFont;
+}
+historyPollAnswerStyle: defaultTextStyle;
+historyPollQuestionTop: 7px;
+historyPollSubtitleSkip: 2px;
+historyPollAnswerPadding: margins(31px, 10px, 0px, 10px);
+historyPollAnswersSkip: 3px;
+historyPollPercentFont: semiboldFont;
+historyPollPercentSkip: 6px;
+historyPollPercentTop: 0px;
+historyPollTotalVotesSkip: 5px;
+historyPollFillingMin: 4px;
+historyPollFillingHeight: 4px;
+historyPollFillingRadius: 1px;
+historyPollFillingBottom: 2px;
+historyPollFillingRight: 4px;
+historyPollRadio: Radio(defaultRadio) {
+	bg: transparent;
+	untoggledFg: checkboxFg;
+	toggledFg: windowBgActive;
+	diameter: 18px;
+	thickness: 2px;
+	skip: 65px; // * 0.1
+	duration: 120;
+	rippleAreaPadding: 8px;
+}
+historyPollRadioOpacity: 0.7;
+historyPollRadioOpacityOver: 1.;
+historyPollDuration: 300;
+historyPollRadialAnimation: InfiniteRadialAnimation(defaultInfiniteRadialAnimation) {
+	thickness: 2px;
+	size: size(18px, 18px);
+}
+historyPollRippleIn: RippleAnimation(defaultRippleAnimation) {
+	color: msgWaveformInInactive;
+}
+historyPollRippleOut: RippleAnimation(defaultRippleAnimation) {
+	color: msgWaveformOutInactive;
+}
+historyPollRippleOpacity: 0.3;
+
 boxAttachEmoji: IconButton(historyAttachEmoji) {
 	width: 30px;
 	height: 30px;
 	rippleAreaSize: 0px;
 }
 boxAttachEmojiTop: 20px;
+
+historyGroupAboutMargin: 16px;
+historyGroupAboutPadding: margins(24px, 16px, 24px, 16px);
+historyGroupAboutBulletSkip: 16px;
+historyGroupAboutHeaderSkip: 10px;
+historyGroupAboutTextSkip: 10px;
+historyGroupAboutSkip: 8px;
+
+historyVideoDownloadSize: 36px;
+historyVideoCancel: icon {{ "playlist_cancel", historyFileThumbIconFg }};
+historyVideoCancelSelected: icon {{ "playlist_cancel", historyFileThumbIconFgSelected }};
+historyVideoDownload: icon {{ "playlist_download", historyFileThumbIconFg }};
+historyVideoDownloadSelected: icon {{ "playlist_download", historyFileThumbIconFgSelected }};
+historyVideoRadialLine: 2px;
+
+historyAudioDownloadSize: 20px;
+historyAudioRadialLine: 2px;
+historyAudioDownloadShift: 28px;
+historyAudioInCancel: icon {{ "history_audio_cancel", historyFileInIconFg }};
+historyAudioInCancelSelected: icon {{ "history_audio_cancel", historyFileInIconFgSelected }};
+historyAudioOutCancel: icon {{ "history_audio_cancel", historyFileOutIconFg }};
+historyAudioOutCancelSelected: icon {{ "history_audio_cancel", historyFileOutIconFgSelected }};
+historyAudioInDownload: icon {{ "history_audio_download", historyFileInIconFg }};
+historyAudioInDownloadSelected: icon {{ "history_audio_download", historyFileInIconFgSelected }};
+historyAudioOutDownload: icon {{ "history_audio_download", historyFileOutIconFg }};
+historyAudioOutDownloadSelected: icon {{ "history_audio_download", historyFileOutIconFgSelected }};

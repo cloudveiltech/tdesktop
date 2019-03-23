@@ -65,7 +65,7 @@ protected:
 	QPoint prepareRippleStartPosition() const override;
 
 private:
-	void step_loading(TimeMs ms, bool timer);
+	void step_loading(crl::time ms, bool timer);
 
 	const style::IconButton &_st;
 
@@ -108,7 +108,7 @@ public:
 	}
 
 	float64 recordActiveRatio() {
-		return _a_recordActive.current(getms(), _recordActive ? 1. : 0.);
+		return _a_recordActive.current(crl::now(), _recordActive ? 1. : 0.);
 	}
 
 protected:
@@ -149,7 +149,7 @@ public:
 
 	UserpicButton(
 		QWidget *parent,
-		PeerId peerForCrop,
+		const QString &cropTitle,
 		Role role,
 		const style::UserpicButton &st);
 	UserpicButton(
@@ -206,7 +206,7 @@ private:
 	const style::UserpicButton &_st;
 	Window::Controller *_controller = nullptr;
 	PeerData *_peer = nullptr;
-	PeerId _peerForCrop = 0;
+	QString _cropTitle;
 	Role _role = Role::ChangePhoto;
 	bool _notShownYet = true;
 	bool _waiting = false;

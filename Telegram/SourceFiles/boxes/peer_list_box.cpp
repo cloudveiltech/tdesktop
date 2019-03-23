@@ -26,7 +26,23 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "observer_peer.h"
 #include "storage/file_download.h"
 #include "data/data_peer_values.h"
+#include "data/data_chat.h"
+#include "data/data_session.h"
 #include "window/themes/window_theme.h"
+
+auto PaintUserpicCallback(
+	not_null<PeerData*> peer,
+	bool respectSavedMessagesChat)
+-> Fn<void(Painter &p, int x, int y, int outerWidth, int size)> {
+	if (respectSavedMessagesChat && peer->isSelf()) {
+		return [](Painter &p, int x, int y, int outerWidth, int size) {
+			Ui::EmptyUserpic::PaintSavedMessages(p, x, y, outerWidth, size);
+		};
+	}
+	return [=](Painter &p, int x, int y, int outerWidth, int size) {
+		peer->paintUserpicLeft(p, x, y, outerWidth, size);
+	};
+}
 
 PeerListBox::PeerListBox(
 	QWidget*,
@@ -49,7 +65,7 @@ void PeerListBox::createMultiSelect() {
 	_select->entity()->setSubmittedCallback([this](Qt::KeyboardModifiers) { content()->submitted(); });
 	_select->entity()->setQueryChangedCallback([this](const QString &query) { searchQueryChanged(query); });
 	_select->entity()->setItemRemovedCallback([this](uint64 itemId) {
-		if (auto peer = App::peerLoaded(itemId)) {
+		if (auto peer = Auth().data().peerLoaded(itemId)) {
 			if (auto row = peerListFindRow(peer->id)) {
 				content()->changeCheckState(row, false, PeerListRow::SetStyle::Animated);
 				update();
@@ -303,13 +319,16 @@ int PeerListBox::peerListSelectedRowsCount() {
 	return _select ? _select->entity()->getItemsCount() : 0;
 }
 
-std::vector<not_null<PeerData*>> PeerListBox::peerListCollectSelectedRows() {
-	auto result = std::vector<not_null<PeerData*>> {};
-	auto items = _select ? _select->entity()->getItems() : QVector<uint64> {};
+auto PeerListBox::peerListCollectSelectedRows()
+-> std::vector<not_null<PeerData*>> {
+	auto result = std::vector<not_null<PeerData*>>();
+	auto items = _select
+		? _select->entity()->getItems()
+		: QVector<uint64>();
 	if (!items.empty()) {
 		result.reserve(items.size());
-		for_const (auto itemId, items) {
-			result.push_back(App::peer(itemId));
+		for (const auto itemId : items) {
+			result.push_back(Auth().data().peer(itemId));
 		}
 	}
 	return result;
@@ -356,7 +375,7 @@ void PeerListRow::refreshStatus() {
 			if (Data::OnlineTextActive(user, time)) {
 				_statusType = StatusType::Online;
 			}
-			_statusValidTill = getms()
+			_statusValidTill = crl::now()
 				+ Data::OnlineChangeTimeout(user, time);
 		}
 	} else if (auto chat = peer()->asChat()) {
@@ -374,7 +393,7 @@ void PeerListRow::refreshStatus() {
 	}
 }
 
-TimeMs PeerListRow::refreshStatusTime() const {
+crl::time PeerListRow::refreshStatusTime() const {
 	return _statusValidTill;
 }
 
@@ -438,7 +457,7 @@ void PeerListRow::stopLastRipple() {
 	}
 }
 
-void PeerListRow::paintRipple(Painter &p, TimeMs ms, int x, int y, int outerWidth) {
+void PeerListRow::paintRipple(Painter &p, crl::time ms, int x, int y, int outerWidth) {
 	if (_ripple) {
 		_ripple->paint(p, x, y, outerWidth, ms);
 		if (_ripple->empty()) {
@@ -450,7 +469,7 @@ void PeerListRow::paintRipple(Painter &p, TimeMs ms, int x, int y, int outerWidt
 void PeerListRow::paintUserpic(
 		Painter &p,
 		const style::PeerListItem &st,
-		TimeMs ms,
+		crl::time ms,
 		int x,
 		int y,
 		int outerWidth) {
@@ -746,6 +765,8 @@ void PeerListContent::clearAllContent() {
 	setSelected(Selected());
 	setPressed(Selected());
 	setContexted(Selected());
+	_mouseSelection = false;
+	_lastMousePosition = std::nullopt;
 	_rowsById.clear();
 	_rowsByPeer.clear();
 	_filterResults.clear();
@@ -836,7 +857,9 @@ void PeerListContent::refreshRows() {
 	if (_visibleBottom > 0) {
 		checkScrollForPreload();
 	}
-	updateSelection();
+	if (_mouseSelection) {
+		selectByMouse(QCursor::pos());
+	}
 	update();
 }
 
@@ -878,7 +901,7 @@ void PeerListContent::paintEvent(QPaintEvent *e) {
 	auto repaintAfterMin = repaintByStatusAfter;
 
 	auto rowsTopCached = rowsTop();
-	auto ms = getms();
+	auto ms = crl::now();
 	auto yFrom = clip.y() - rowsTopCached;
 	auto yTo = clip.y() + clip.height() - rowsTopCached;
 	p.translate(0, rowsTopCached);
@@ -943,29 +966,32 @@ void PeerListContent::enterEventHook(QEvent *e) {
 }
 
 void PeerListContent::leaveEventHook(QEvent *e) {
-	_mouseSelection = false;
 	setMouseTracking(false);
-	setSelected(Selected());
+	if (_mouseSelection) {
+		setSelected(Selected());
+		_mouseSelection = false;
+		_lastMousePosition = std::nullopt;
+	}
 }
 
 void PeerListContent::mouseMoveEvent(QMouseEvent *e) {
 	handleMouseMove(e->globalPos());
 }
 
-void PeerListContent::handleMouseMove(QPoint position) {
-	if (_mouseSelection || _lastMousePosition != position) {
-		_lastMousePosition = position;
-		_mouseSelection = true;
-		updateSelection();
+void PeerListContent::handleMouseMove(QPoint globalPosition) {
+	if (!_lastMousePosition) {
+		_lastMousePosition = globalPosition;
+		return;
+	} else if (!_mouseSelection
+		&& *_lastMousePosition == globalPosition) {
+		return;
 	}
+	selectByMouse(globalPosition);
 }
 
 void PeerListContent::mousePressEvent(QMouseEvent *e) {
 	_pressButton = e->button();
-	_mouseSelection = true;
-	_lastMousePosition = e->globalPos();
-	updateSelection();
-
+	selectByMouse(e->globalPos());
 	setPressed(_selected);
 	if (auto row = getRow(_selected.index)) {
 		auto updateCallback = [this, row, hint = _selected.index] {
@@ -1047,7 +1073,7 @@ void PeerListContent::setPressed(Selected pressed) {
 	_pressed = pressed;
 }
 
-TimeMs PeerListContent::paintRow(Painter &p, TimeMs ms, RowIndex index) {
+crl::time PeerListContent::paintRow(Painter &p, crl::time ms, RowIndex index) {
 	auto row = getRow(index);
 	Assert(row != nullptr);
 
@@ -1157,6 +1183,7 @@ void PeerListContent::selectSkip(int direction) {
 		return;
 	}
 	_mouseSelection = false;
+	_lastMousePosition = std::nullopt;
 
 	auto newSelectedIndex = _selected.index.value + direction;
 
@@ -1305,7 +1332,6 @@ void PeerListContent::searchQueryChanged(QString query) {
 			_controller->search(_searchQuery);
 		}
 		refreshRows();
-		restoreSelection();
 	}
 }
 
@@ -1357,6 +1383,8 @@ void PeerListContent::setSearchQuery(
 	setSelected(Selected());
 	setPressed(Selected());
 	setContexted(Selected());
+	_mouseSelection = false;
+	_lastMousePosition = std::nullopt;
 	_searchQuery = query;
 	_normalizedSearchQuery = normalizedQuery;
 	_mentionHighlight = _searchQuery.startsWith('@')
@@ -1403,8 +1431,9 @@ void PeerListContent::setContexted(Selected contexted) {
 }
 
 void PeerListContent::restoreSelection() {
-	_lastMousePosition = QCursor::pos();
-	updateSelection();
+	if (_mouseSelection) {
+		selectByMouse(QCursor::pos());
+	}
 }
 
 auto PeerListContent::saveSelectedData(Selected from)
@@ -1426,11 +1455,11 @@ auto PeerListContent::restoreSelectedData(SelectedSaved from)
 	return result;
 }
 
-void PeerListContent::updateSelection() {
-	if (!_mouseSelection) return;
-
-	auto point = mapFromGlobal(_lastMousePosition);
-	auto in = parentWidget()->rect().contains(parentWidget()->mapFromGlobal(_lastMousePosition));
+void PeerListContent::selectByMouse(QPoint globalPosition) {
+	_mouseSelection = true;
+	_lastMousePosition = globalPosition;
+	const auto point = mapFromGlobal(globalPosition);
+	auto in = parentWidget()->rect().contains(parentWidget()->mapFromGlobal(globalPosition));
 	auto selected = Selected();
 	auto rowsPointY = point.y() - rowsTop();
 	selected.index.value = (in && rowsPointY >= 0 && rowsPointY < shownRowsCount() * _rowHeight) ? (rowsPointY / _rowHeight) : -1;

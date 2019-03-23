@@ -22,6 +22,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_controller.h"
 #include "boxes/confirm_box.h"
 #include "base/timer.h"
+#include "data/data_channel.h"
+#include "data/data_session.h"
 #include "lang/lang_keys.h"
 #include "styles/style_history.h"
 #include "styles/style_window.h"
@@ -284,7 +286,7 @@ not_null<ChannelData*> Widget::channel() const {
 
 Dialogs::RowDescriptor Widget::activeChat() const {
 	return {
-		App::history(channel()),
+		channel()->owner().history(channel()),
 		FullMsgId(channel()->bareId(), ShowAtUnreadMsgId)
 	};
 }
@@ -326,7 +328,7 @@ void Widget::setupShortcuts() {
 		return isActiveWindow() && !Ui::isLayerShown() && inFocusChain();
 	}) | rpl::start_with_next([=](not_null<Shortcuts::Request*> request) {
 		using Command = Shortcuts::Command;
-		request->check(Command::Search, 1) && request->handle([=] {
+		request->check(Command::Search, 2) && request->handle([=] {
 			_fixedBar->showSearch();
 			return true;
 		});
@@ -394,7 +396,7 @@ void Widget::paintEvent(QPaintEvent *e) {
 	//	updateListSize();
 	//}
 
-	//auto ms = getms();
+	//auto ms = crl::now();
 	//_historyDownShown.step(ms);
 
 	SectionWidget::PaintBackground(this, e);

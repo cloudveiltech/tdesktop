@@ -13,7 +13,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/photo_crop_box.h"
 #include "boxes/confirm_box.h"
 #include "lang/lang_keys.h"
-#include "application.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/input_fields.h"
 #include "ui/widgets/labels.h"
@@ -24,7 +23,7 @@ namespace Intro {
 SignupWidget::SignupWidget(QWidget *parent, Widget::Data *data) : Step(parent, data)
 , _photo(
 	this,
-	peerFromUser(0),
+	lang(lng_settings_crop_profile),
 	Ui::UserpicButton::Role::ChangePhoto,
 	st::defaultUserpicButton)
 , _first(this, st::introName, langFactory(lng_signup_firstname))

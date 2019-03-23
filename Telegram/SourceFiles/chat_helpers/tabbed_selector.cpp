@@ -19,6 +19,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/scroll_area.h"
 #include "ui/image/image_prepare.h"
 #include "storage/localstorage.h"
+#include "data/data_channel.h"
 #include "lang/lang_keys.h"
 #include "mainwindow.h"
 #include "observer_peer.h"
@@ -352,7 +353,7 @@ TabbedSelector::TabbedSelector(
 		subscribe(
 			Notify::PeerUpdated(),
 			Notify::PeerUpdatedHandler(
-				Notify::PeerUpdate::Flag::ChannelRightsChanged,
+				Notify::PeerUpdate::Flag::RightsChanged,
 				handleUpdate));
 
 		Auth().api().stickerSetInstalled(
@@ -494,7 +495,7 @@ void TabbedSelector::updateRestrictedLabelGeometry() {
 void TabbedSelector::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
-	auto ms = getms();
+	auto ms = crl::now();
 
 	auto switching = (_slideAnimation != nullptr);
 	if (switching) {
@@ -509,7 +510,7 @@ void TabbedSelector::paintEvent(QPaintEvent *e) {
 	}
 }
 
-void TabbedSelector::paintSlideFrame(Painter &p, TimeMs ms) {
+void TabbedSelector::paintSlideFrame(Painter &p, crl::time ms) {
 	if (_roundRadius > 0) {
 		if (full()) {
 			auto topPart = QRect(0, 0, width(), _tabsSlider->height() + _roundRadius);
@@ -672,19 +673,21 @@ void TabbedSelector::setCurrentPeer(PeerData *peer) {
 }
 
 void TabbedSelector::checkRestrictedPeer() {
-	if (auto megagroup = _currentPeer ? _currentPeer->asMegagroup() : nullptr) {
-		auto restricted = (_currentTabType == SelectorTab::Stickers) ? megagroup->restricted(ChannelRestriction::f_send_stickers) :
-			(_currentTabType == SelectorTab::Gifs) ? megagroup->restricted(ChannelRestriction::f_send_gifs) : false;
-		if (restricted) {
+	if (_currentPeer) {
+		const auto errorKey = (_currentTabType == SelectorTab::Stickers)
+			? Data::RestrictionErrorKey(
+				_currentPeer,
+				ChatRestriction::f_send_stickers)
+			: (_currentTabType == SelectorTab::Gifs)
+			? Data::RestrictionErrorKey(
+				_currentPeer,
+				ChatRestriction::f_send_gifs)
+			: std::nullopt;
+		if (errorKey) {
 			if (!_restrictedLabel) {
-				auto text = (_currentTabType == SelectorTab::Stickers)
-					? lang(lng_restricted_send_stickers)
-					: (_currentTabType == SelectorTab::Gifs)
-					? lang(lng_restricted_send_gifs)
-					: QString();
 				_restrictedLabel.create(
 					this,
-					text,
+					lang(*errorKey),
 					Ui::FlatLabel::InitType::Simple,
 					st::stickersRestrictedLabel);
 				_restrictedLabel->show();
@@ -758,9 +761,8 @@ void TabbedSelector::createTabsSlider() {
 
 	auto sections = QStringList();
 	sections.push_back(lang(lng_switch_emoji).toUpper());
-
 	//CloudVeil start
-	if(!GlobalSecuritySettings::getSettings().disableStickers) {
+	if (!GlobalSecuritySettings::getSettings().disableStickers) {
 		sections.push_back(lang(lng_switch_stickers).toUpper());
 	}
 	else {

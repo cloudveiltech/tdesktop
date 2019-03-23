@@ -156,7 +156,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_pinned_unpin" = "Desafixar";
 "lng_pinned_notify" = "Notificar todos os membros";
 
-"lng_intro_about" = "Bem vindo ao aplicativo oficial Telegram Desktop.\nÉ rápido e seguro.";
+"lng_intro_about" = "Bem vindo ao aplicativo oficial CloudVeil Messenger.\nÉ rápido e seguro.";
 "lng_start_msgs" = "COMECE A CONVERSAR";
 
 "lng_intro_next" = "PRÓXIMO";
@@ -383,7 +383,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_passcode_enter_first" = "Insira uma senha";
 "lng_passcode_enter_new" = "Insira sua nova senha";
 "lng_passcode_confirm_new" = "Re-insira sua nova senha";
-"lng_passcode_about" = "Quando uma senha de bloqueio é definida, um cadeado aparecerá no topo de sua lista de conversas. Clique para travar o aplicativo.\n\nNota: Se você esquecer sua senha, terá que entrar novamente no Telegram Desktop.";
+"lng_passcode_about" = "Quando uma senha de bloqueio é definida, um cadeado aparecerá no topo de sua lista de conversas. Clique para travar o aplicativo.\n\nNota: Se você esquecer sua senha, terá que entrar novamente no CloudVeil Messenger.";
 "lng_passcode_differ" = "As senhas não correspondem";
 "lng_passcode_wrong" = "Senha errada";
 "lng_passcode_is_same" = "Senha não alterada";
@@ -700,7 +700,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_sure_delete_group" = "Tem certeza que deseja apagar este grupo? Todos os membros serão removidos e todas as mensagens serão perdidas.";
 
 "lng_message_empty" = "Mensagem Vazia";
-"lng_message_unsupported" = "Essa mensagem não é suportada em sua versão do Telegram Desktop. Atualize para a última versão nas Configurações ou instale por aqui {link}";
+"lng_message_unsupported" = "Essa mensagem não é suportada em sua versão do CloudVeil Messenger. Atualize para a última versão nas Configurações ou instale por aqui {link}";
 
 "lng_duration_seconds#one" = "{count} segundo";
 "lng_duration_seconds#other" = "{count} segundos";
@@ -829,8 +829,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_cancel_edit_post_yes" = "Sim";
 "lng_cancel_edit_post_no" = "Não";
 
-"lng_bot_share_location_unavailable" = "O compartilhamento de localização está atualmente indisponível no Telegram Desktop.";
-"lng_bot_inline_geo_unavailable" = "Esse bot requer compartilhamento de localização\nIsso não está disponível no Telegram Desktop.";
+"lng_bot_share_location_unavailable" = "O compartilhamento de localização está atualmente indisponível no CloudVeil Messenger.";
+"lng_bot_inline_geo_unavailable" = "Esse bot requer compartilhamento de localização\nIsso não está disponível no CloudVeil Messenger.";
 "lng_bot_share_phone" = "Compartilhar Número de Telefone?";
 "lng_bot_share_phone_confirm" = "Compartilhar";
 
@@ -1218,7 +1218,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_new_authorization" = "{name},\nDetectamos um acesso à sua conta de um novo dispositivo em {day}, {date} às {time}\n\nDispositivo: {device}\nLocalização: {location}\n\nCaso não tenha sido você, vá em Configurações – Mostrar todas as sessões e terminar essa sessão.\n\nSe você acha que alguém entrou em sua conta, você pode ativar a verificação em duas etapas nas Configurações.\n\nObrigado,\nEquipe Telegram";
 
-"lng_new_version_wrap" = "Telegram Desktop foi atualizado para a versão {version}\n\n{changes}\n\nHistórico completo de mudanças disponível aqui:\n{link}";
+"lng_new_version_wrap" = "CloudVeil Messenger foi atualizado para a versão {version}\n\n{changes}\n\nHistórico completo de mudanças disponível aqui:\n{link}";
 "lng_new_version_minor" = "— Resolução de bugs e outras melhorias menores";
 "lng_new_version_text" = "— Melhorias nas vídeo mensagens: progresso de reprodução, suporte à Picture-in-Picture, contador de duração.\n— Mensagens de voz e de vídeo agora são tocadas automaticamente uma após a outra.";
 
@@ -1249,7 +1249,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_theme_editor_title" = "Editar paleta de cores";
 "lng_theme_editor_export_button" = "Exportar tema";
 
-"lng_payments_not_supported" = "Desculpe, o Telegram Desktop ainda não suporta pagamentos. Use um de nossos apps móveis para isso.";
+"lng_payments_not_supported" = "Desculpe, o CloudVeil Messenger ainda não suporta pagamentos. Use um de nossos apps móveis para isso.";
 "lng_payments_receipt_label" = "Recibo";
 "lng_payments_receipt_label_test" = "Recibo de teste";
 "lng_payments_invoice_label" = "Fatura";

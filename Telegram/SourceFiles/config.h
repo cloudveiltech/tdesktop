@@ -10,26 +10,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/version.h"
 #include "settings.h"
 
-constexpr str_const AppNameOld = "Telegram Win (Unofficial)";
-constexpr str_const AppName = "Telegram Desktop";
+constexpr str_const AppNameOld = "CloudVeil Messenger (Unofficial)";
+constexpr str_const AppName = "CloudVeil Messenger";
 
 constexpr str_const AppId = "{53F49750-6209-4FBF-9CA8-7A333C87D1ED}"; // used in updater.cpp and Setup.iss for Windows
 constexpr str_const AppFile = "Telegram";
 
 enum {
-	MTPIdsBufferSize = 400, // received msgIds and wereAcked msgIds count stored
-	MTPCheckResendTimeout = 10000, // how much time passed from send till we resend request or check it's state, in ms
-	MTPCheckResendWaiting = 1000, // how much time to wait for some more requests, when resending request or checking it's state, in ms
-	MTPAckSendWaiting = 10000, // how much time to wait for some more requests, when sending msg acks
-	MTPResendThreshold = 1, // how much ints should message contain for us not to resend, but to check it's state
-	MTPContainerLives = 600, // container lives 10 minutes in haveSent map
-
-	MTPKillFileSessionTimeout = 5000, // how much time without upload / download causes additional session kill
-
-	MaxUsersPerInvite = 100, // max users in one super group invite request
-
-	MTPChannelGetDifferenceLimit = 100,
-
 	MaxSelectedItems = 100,
 
 	MaxPhoneCodeLength = 4, // max length of country phone code
@@ -61,7 +48,6 @@ enum {
 	AudioVoiceMsgMaxLength = 100 * 60, // 100 minutes
 	AudioVoiceMsgUpdateView = 100, // 100ms
 	AudioVoiceMsgChannels = 2, // stereo
-	AudioVoiceMsgBufferSize = 256 * 1024, // 256 Kb buffers (1.3 - 3.0 secs)
 
 	StickerMaxSize = 2048, // 2048x2048 is a max image size for sticker
 
@@ -75,15 +61,7 @@ enum {
 
 	MaxMessageSize = 4096,
 
-	WriteMapTimeout = 1000,
-
-	SetOnlineAfterActivity = 30, // user with hidden last seen stays online for such amount of seconds in the interface
-
-	ServiceUserId = 777000,
 	WebPageUserId = 701000,
-
-	CacheBackgroundTimeout = 3000, // cache background scaled image after 3s
-	BackgroundsInRow = 3,
 
 	UpdateDelayConstPart = 8 * 3600, // 8 hour min time between update check requests
 	UpdateDelayRandPart = 8 * 3600, // 8 hour max - min time between update check requests
@@ -92,14 +70,6 @@ enum {
 
 	ChoosePeerByDragTimeout = 1000, // 1 second mouse not moved to choose dialog when dragging a file
 };
-
-inline bool isNotificationsUser(uint64 id) {
-	return (id == 333000) || (id == ServiceUserId);
-}
-
-inline bool isServiceUser(uint64 id) {
-	return !(id % 1000);// (id == 333000) || (id == ServiceUserId);
-}
 
 #ifdef Q_OS_WIN
 inline const GUID &cGUID() {
@@ -248,34 +218,6 @@ inline const QString &cTempDir() {
 	static const QString res = cWorkingDir() + qsl("tdata/tdld/");
 	return res;
 }
-
-enum {
-	DialogsFirstLoad = 20, // first dialogs part size requested
-	DialogsPerPage = 500, // next dialogs part size
-
-    UseBigFilesFrom = 10 * 1024 * 1024, // mtp big files methods used for files greater than 10mb
-
-	UploadPartSize = 32 * 1024, // 32kb for photo
-    DocumentMaxPartsCount = 3000, // no more than 3000 parts
-    DocumentUploadPartSize0 = 32 * 1024, // 32kb for tiny document ( < 1mb )
-    DocumentUploadPartSize1 = 64 * 1024, // 64kb for little document ( <= 32mb )
-    DocumentUploadPartSize2 = 128 * 1024, // 128kb for small document ( <= 375mb )
-    DocumentUploadPartSize3 = 256 * 1024, // 256kb for medium document ( <= 750mb )
-    DocumentUploadPartSize4 = 512 * 1024, // 512kb for large document ( <= 1500mb )
-    UploadRequestInterval = 500, // one part each half second, if not uploaded faster
-
-	MaxPhotosInMemory = 50, // try to clear some memory after 50 photos are created
-	NoUpdatesTimeout = 60 * 1000, // if nothing is received in 1 min we ping
-	NoUpdatesAfterSleepTimeout = 60 * 1000, // if nothing is received in 1 min when was a sleepmode we ping
-	WaitForSkippedTimeout = 1000, // 1s wait for skipped seq or pts in updates
-	WaitForChannelGetDifference = 1000, // 1s wait after show channel history before sending getChannelDifference
-
-	IdleMsecs = 60 * 1000, // after 60secs without user input we think we are idle
-
-	SendViewsTimeout = 1000, // send views each second
-
-	ForwardOnAdd = 100, // how many messages from chat history server should forward to user, that was added to this chat
-};
 
 inline const QRegularExpression &cRussianLetters() {
 	static QRegularExpression regexp(QString::fromUtf8("[а-яА-ЯёЁ]"));

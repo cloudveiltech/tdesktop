@@ -372,7 +372,7 @@ void PasscodeBox::validateEmail(
 }
 
 void PasscodeBox::handleSrpIdInvalid() {
-	const auto now = getms(true);
+	const auto now = crl::now();
 	if (_lastSrpIdInvalidTime > 0
 		&& now - _lastSrpIdInvalidTime < Core::kHandleSrpIdInvalidTimeout) {
 		_curRequest.id = 0;
@@ -403,7 +403,7 @@ void PasscodeBox::save(bool force) {
 			if (_turningOff) pwd = conf = QString();
 		} else {
 			cSetPasscodeBadTries(cPasscodeBadTries() + 1);
-			cSetPasscodeLastTry(getms(true));
+			cSetPasscodeLastTry(crl::now());
 			badOldPasscode();
 			return;
 		}
@@ -452,10 +452,13 @@ void PasscodeBox::save(bool force) {
 			changeCloudPassword(old, pwd);
 		}
 	} else {
+		const auto weak = make_weak(this);
 		cSetPasscodeBadTries(0);
 		Local::setPasscode(pwd.toUtf8());
-		Auth().checkAutoLock();
-		closeBox();
+		Auth().localPasscodeChanged();
+		if (weak) {
+			closeBox();
+		}
 	}
 }
 

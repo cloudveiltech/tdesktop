@@ -12,6 +12,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/qthelp_url.h"
 #include "boxes/abstract_box.h"
 #include "ui/wrap/vertical_layout.h"
+#include "data/data_session.h"
+#include "data/data_user.h"
 #include "chat_helpers/emoji_suggestions_widget.h"
 #include "window/window_controller.h"
 #include "lang/lang_keys.h"
@@ -19,13 +21,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "auth_session.h"
 #include "styles/style_boxes.h"
 #include "styles/style_history.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace {
 
 using EditLinkAction = Ui::InputField::EditLinkAction;
 using EditLinkSelection = Ui::InputField::EditLinkSelection;
 
-constexpr auto kParseLinksTimeout = TimeMs(1000);
+constexpr auto kParseLinksTimeout = crl::time(1000);
 const auto kMentionTagStart = qstr("mention://user.");
 
 bool IsMentionLink(const QString &link) {
@@ -153,7 +156,10 @@ void EditLinkBox::prepare() {
 		}
 	});
 
-	setTitle(langFactory(lng_formatting_link_create_title));
+	const auto title = url->getLastText().isEmpty()
+			? lng_formatting_link_create_title
+			: lng_formatting_link_edit_title;
+	setTitle(langFactory(title));
 
 	addButton(langFactory(lng_formatting_link_create), submit);
 	addButton(langFactory(lng_cancel), [=] { closeBox(); });
@@ -376,7 +382,7 @@ InlineBotQuery ParseInlineBotQuery(not_null<const Ui::InputField*> field) {
 			auto username = text.midRef(inlineUsernameStart, inlineUsernameLength);
 			if (username != result.username) {
 				result.username = username.toString();
-				if (const auto peer = App::peerByName(result.username)) {
+				if (const auto peer = Auth().data().peerByUsername(result.username)) {
 					if (const auto user = peer->asUser()) {
 						result.bot = peer->asUser();
 					} else {
@@ -409,6 +415,7 @@ InlineBotQuery ParseInlineBotQuery(not_null<const Ui::InputField*> field) {
 					result.query = QString();
 				}
 				//CLoudVeil end
+
 				return result;
 			}
 		} else {

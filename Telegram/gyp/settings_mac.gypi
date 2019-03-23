@@ -43,6 +43,7 @@
           '-Wno-comment',
           '-Wno-missing-field-initializers',
           '-Wno-sign-compare',
+          '-Wno-unknown-attributes',
         ],
       },
       'xcode_settings': {
@@ -89,6 +90,7 @@
         ],
       },
       'defines': [
+        'OS_MAC_OLD',
         'RANGES_CXX_THREAD_LOCAL=0',
       ],
     }, {
@@ -103,5 +105,11 @@
         ],
       },
     }],
+    [ 'build_macstore', {
+      'defines': [
+        'TDESKTOP_DISABLE_AUTOUPDATE',
+        'OS_MAC_STORE',
+      ],
+    }]
   ],
 }

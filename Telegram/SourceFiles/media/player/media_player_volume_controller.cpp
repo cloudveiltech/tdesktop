@@ -7,13 +7,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "media/player/media_player_volume_controller.h"
 
-#include "media/media_audio.h"
+#include "media/audio/media_audio.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/shadow.h"
 #include "ui/widgets/continuous_sliders.h"
 #include "styles/style_media_player.h"
 #include "styles/style_widgets.h"
 #include "mainwindow.h"
+#include "auth_session.h"
 
 namespace Media {
 namespace Player {
@@ -29,6 +30,7 @@ VolumeController::VolumeController(QWidget *parent) : TWidget(parent)
 			Global::SetRememberedSongVolume(volume);
 		}
 		applyVolumeChange(volume);
+		Auth().saveSettingsDelayed();
 	});
 	subscribe(Global::RefSongVolumeChanged(), [this] {
 		if (!_slider->isChanging()) {
@@ -87,7 +89,11 @@ VolumeWidget::VolumeWidget(QWidget *parent) : TWidget(parent)
 }
 
 QMargins VolumeWidget::getMargin() const {
-	return QMargins(st::mediaPlayerVolumeMargin, st::mediaPlayerPlayback.fullWidth, st::mediaPlayerVolumeMargin, st::mediaPlayerVolumeMargin);
+	const auto top = st::mediaPlayerHeight
+		+ st::lineWidth
+		- st::mediaPlayerPlayTop
+		- st::mediaPlayerVolumeToggle.height;
+	return QMargins(st::mediaPlayerVolumeMargin, top, st::mediaPlayerVolumeMargin, st::mediaPlayerVolumeMargin);
 }
 
 bool VolumeWidget::overlaps(const QRect &globalRect) {
@@ -111,7 +117,7 @@ void VolumeWidget::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
 	if (!_cache.isNull()) {
-		bool animating = _a_appearance.animating(getms());
+		bool animating = _a_appearance.animating(crl::now());
 		if (animating) {
 			p.setOpacity(_a_appearance.current(_hiding));
 		} else if (_hiding || isHidden()) {
@@ -136,7 +142,7 @@ void VolumeWidget::paintEvent(QPaintEvent *e) {
 
 void VolumeWidget::enterEventHook(QEvent *e) {
 	_hideTimer.stop();
-	if (_a_appearance.animating(getms())) {
+	if (_a_appearance.animating(crl::now())) {
 		onShowStart();
 	} else {
 		_showTimer.start(0);
@@ -146,7 +152,7 @@ void VolumeWidget::enterEventHook(QEvent *e) {
 
 void VolumeWidget::leaveEventHook(QEvent *e) {
 	_showTimer.stop();
-	if (_a_appearance.animating(getms())) {
+	if (_a_appearance.animating(crl::now())) {
 		onHideStart();
 	} else {
 		_hideTimer.start(300);
@@ -156,7 +162,7 @@ void VolumeWidget::leaveEventHook(QEvent *e) {
 
 void VolumeWidget::otherEnter() {
 	_hideTimer.stop();
-	if (_a_appearance.animating(getms())) {
+	if (_a_appearance.animating(crl::now())) {
 		onShowStart();
 	} else {
 		_showTimer.start(0);
@@ -165,7 +171,7 @@ void VolumeWidget::otherEnter() {
 
 void VolumeWidget::otherLeave() {
 	_showTimer.stop();
-	if (_a_appearance.animating(getms())) {
+	if (_a_appearance.animating(crl::now())) {
 		onHideStart();
 	} else {
 		_hideTimer.start(0);

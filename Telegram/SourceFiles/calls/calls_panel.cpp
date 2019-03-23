@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "data/data_photo.h"
 #include "data/data_session.h"
+#include "data/data_user.h"
 #include "calls/calls_emoji_fingerprint.h"
 #include "styles/style_calls.h"
 #include "styles/style_history.h"
@@ -20,7 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/wrap/fade_wrap.h"
 #include "ui/empty_userpic.h"
 #include "ui/emoji_config.h"
-#include "messenger.h"
+#include "core/application.h"
 #include "mainwindow.h"
 #include "lang/lang_keys.h"
 #include "auth_session.h"
@@ -29,6 +30,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/platform_specific.h"
 #include "window/main_window.h"
 #include "layout.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace Calls {
 namespace {
@@ -185,7 +187,7 @@ void Panel::Button::setProgress(float64 progress) {
 void Panel::Button::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
-	auto ms = getms();
+	auto ms = crl::now();
 	auto bgPosition = myrtlpoint(_stFrom->button.rippleAreaPosition);
 	auto paintFrom = (_progress == 0.) || !_stTo;
 	auto paintTo = !paintFrom && (_progress == 1.);
@@ -502,34 +504,39 @@ void Panel::processUserPhoto() {
 		_user->loadUserpic(true);
 	}
 	const auto photo = _user->userpicPhotoId()
-		? Auth().data().photo(_user->userpicPhotoId()).get()
+		? _user->owner().photo(_user->userpicPhotoId()).get()
 		: nullptr;
 	if (isGoodUserPhoto(photo)) {
-		photo->full->load(_user->userpicPhotoOrigin(), true);
+		photo->large()->load(_user->userpicPhotoOrigin(), true);
 	} else if (_user->userpicPhotoUnknown() || (photo && !photo->date)) {
-		Auth().api().requestFullPeer(_user);
+		_user->session().api().requestFullPeer(_user);
 	}
 	refreshUserPhoto();
 }
 
 void Panel::refreshUserPhoto() {
 	const auto photo = _user->userpicPhotoId()
-		? Auth().data().photo(_user->userpicPhotoId()).get()
+		? _user->owner().photo(_user->userpicPhotoId()).get()
 		: nullptr;
 	const auto isNewPhoto = [&](not_null<PhotoData*> photo) {
-		return photo->full->loaded()
+		return photo->large()->loaded()
 			&& (photo->id != _userPhotoId || !_userPhotoFull);
 	};
 	if (isGoodUserPhoto(photo) && isNewPhoto(photo)) {
 		_userPhotoId = photo->id;
 		_userPhotoFull = true;
-		createUserpicCache(photo->full, _user->userpicPhotoOrigin());
+		createUserpicCache(
+			photo->isNull() ? nullptr : photo->large().get(),
+			_user->userpicPhotoOrigin());
 	} else if (_userPhoto.isNull()) {
-		createUserpicCache(_user->currentUserpic(), _user->userpicOrigin());
+		const auto userpic = _user->currentUserpic();
+		createUserpicCache(
+			userpic ? userpic.get() : nullptr,
+			_user->userpicOrigin());
 	}
 }
 
-void Panel::createUserpicCache(ImagePtr image, Data::FileOrigin origin) {
+void Panel::createUserpicCache(Image *image, Data::FileOrigin origin) {
 	auto size = st::callWidth * cIntRetinaFactor();
 	auto options = _useTransparency ? (Images::Option::RoundedLarge | Images::Option::RoundedTopLeft | Images::Option::RoundedTopRight | Images::Option::Smooth) : Images::Option::None;
 	if (image) {
@@ -569,19 +576,25 @@ void Panel::createUserpicCache(ImagePtr image, Data::FileOrigin origin) {
 }
 
 bool Panel::isGoodUserPhoto(PhotoData *photo) {
-	if (!photo || !photo->date) {
+	if (!photo || photo->isNull()) {
 		return false;
 	}
-	auto badAspect = [](int a, int b) {
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableProfilePhoto) {
+		return false;
+	}
+	//CloudVeil end
+
+	const auto badAspect = [](int a, int b) {
 		return a > 10 * b;
 	};
-	auto width = photo->full->width();
-	auto height = photo->full->height();
+	const auto width = photo->width();
+	const auto height = photo->height();
 	return !badAspect(width, height) && !badAspect(height, width);
 }
 
 void Panel::initGeometry() {
-	auto center = Messenger::Instance().getPointForCallPanelCenter();
+	auto center = Core::App().getPointForCallPanelCenter();
 	_useTransparency = Platform::TranslucentWindowsSupported(center);
 	setAttribute(Qt::WA_OpaquePaintEvent, !_useTransparency);
 	_padding = _useTransparency ? st::callShadow.extend : style::margins(st::lineWidth, st::lineWidth, st::lineWidth, st::lineWidth);
@@ -689,7 +702,7 @@ void Panel::updateStatusGeometry() {
 void Panel::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 	if (!_animationCache.isNull()) {
-		auto opacity = _opacityAnimation.current(getms(), _call ? 1. : 0.);
+		auto opacity = _opacityAnimation.current(crl::now(), _call ? 1. : 0.);
 		if (!_opacityAnimation.animating()) {
 			finishAnimating();
 			if (!_call || isHidden()) return;
@@ -915,7 +928,7 @@ void Panel::updateStatusText(State state) {
 	updateStatusGeometry();
 }
 
-void Panel::startDurationUpdateTimer(TimeMs currentDuration) {
+void Panel::startDurationUpdateTimer(crl::time currentDuration) {
 	auto msTillNextSecond = 1000 - (currentDuration % 1000);
 	_updateDurationTimer.callOnce(msTillNextSecond + 5);
 }

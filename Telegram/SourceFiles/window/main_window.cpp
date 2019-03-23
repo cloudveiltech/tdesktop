@@ -15,23 +15,19 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_lock_widgets.h"
 #include "boxes/confirm_box.h"
 #include "core/click_handler_types.h"
+#include "core/application.h"
 #include "lang/lang_keys.h"
-#include "mediaview.h"
+#include "data/data_session.h"
 #include "auth_session.h"
 #include "apiwrap.h"
-#include "messenger.h"
 #include "mainwindow.h"
 #include "styles/style_window.h"
 #include "styles/style_boxes.h"
 
-#ifdef small
-#undef small
-#endif // small
-
 namespace Window {
 
-constexpr auto kInactivePressTimeout = TimeMs(200);
-constexpr auto kSaveWindowPositionTimeout = TimeMs(1000);
+constexpr auto kInactivePressTimeout = crl::time(200);
+constexpr auto kSaveWindowPositionTimeout = crl::time(1000);
 
 QImage LoadLogo() {
 	return QImage(qsl(":/gui/art/logo_256.png"));
@@ -90,12 +86,7 @@ void ConvertIconToBlack(QImage &image) {
 }
 
 QIcon CreateOfficialIcon() {
-	auto image = [&] {
-		if (const auto messenger = Messenger::InstancePointer()) {
-			return messenger->logo();
-		}
-		return LoadLogo();
-	}();
+	auto image = Core::IsAppLaunched() ? Core::App().logo() : LoadLogo();
 	if (AuthSession::Exists() && Auth().supportMode()) {
 		ConvertIconToBlack(image);
 	}
@@ -110,11 +101,12 @@ QIcon CreateIcon() {
 	return result;
 }
 
+//CloudVeil change title
 MainWindow::MainWindow()
 : _positionUpdatedTimer([=] { savePosition(); })
 , _body(this)
 , _icon(CreateIcon())
-, _titleText(qsl("Telegram")) {
+, _titleText(qsl("CloudVeil Messegner")) {
 	subscribe(Theme::Background(), [=](
 			const Theme::BackgroundUpdate &data) {
 		if (data.paletteChanged()) {
@@ -127,13 +119,13 @@ MainWindow::MainWindow()
 	subscribe(Global::RefWorkMode(), [=](DBIWorkMode mode) {
 		workmodeUpdated(mode);
 	});
-	subscribe(Messenger::Instance().authSessionChanged(), [=] {
+	subscribe(Core::App().authSessionChanged(), [=] {
 		checkAuthSession();
 		updateWindowIcon();
 	});
 	checkAuthSession();
 
-	Messenger::Instance().termsLockValue(
+	Core::App().termsLockValue(
 	) | rpl::start_with_next([=] {
 		checkLockByTerms();
 	}, lifetime());
@@ -143,7 +135,7 @@ MainWindow::MainWindow()
 }
 
 void MainWindow::checkLockByTerms() {
-	const auto data = Messenger::Instance().termsLocked();
+	const auto data = Core::App().termsLocked();
 	if (!data || !AuthSession::Exists()) {
 		if (_termsBox) {
 			_termsBox->closeBox();
@@ -169,7 +161,7 @@ void MainWindow::checkLockByTerms() {
 				MentionClickHandler(mention).onClick({});
 			}
 		}
-		Messenger::Instance().unlockTerms();
+		Core::App().unlockTerms();
 	}, box->lifetime());
 
 	box->cancelClicks(
@@ -216,7 +208,7 @@ void MainWindow::showTermsDelete() {
 			lang(lng_terms_delete_warning),
 			lang(lng_terms_delete_now),
 			st::attentionBoxButton,
-			[=] { Messenger::Instance().termsDeleteNow(); },
+			[=] { Core::App().termsDeleteNow(); },
 			[=] { if (*box) (*box)->closeBox(); }),
 		LayerOption::KeepOther);
 }
@@ -291,7 +283,7 @@ void MainWindow::init() {
 void MainWindow::handleStateChanged(Qt::WindowState state) {
 	stateChangedHook(state);
 	updateIsActive((state == Qt::WindowMinimized) ? Global::OfflineBlurTimeout() : Global::OnlineFocusTimeout());
-	psUserActionDone();
+	Core::App().updateNonIdle();
 	if (state == Qt::WindowMinimized && Global::WorkMode().value() == dbiwmTrayOnly) {
 		minimizeToTray();
 	}
@@ -300,7 +292,7 @@ void MainWindow::handleStateChanged(Qt::WindowState state) {
 
 void MainWindow::handleActiveChanged() {
 	if (isActiveWindow()) {
-		Messenger::Instance().checkMediaViewActivation();
+		Core::App().checkMediaViewActivation();
 	}
 	App::CallDelayed(1, this, [this] {
 		updateTrayMenu();
@@ -428,7 +420,7 @@ void MainWindow::updateUnreadCounter() {
 	if (!Global::started() || App::quitting()) return;
 
 	const auto counter = AuthSession::Exists()
-		? App::histories().unreadBadge()
+		? Auth().data().unreadBadge()
 		: 0;
 	_titleText = (counter > 0) ? qsl("Telegram (%1)").arg(counter) : qsl("Telegram");
 
@@ -585,7 +577,7 @@ void MainWindow::launchDrag(std::unique_ptr<QMimeData> data) {
 
 void MainWindow::checkAuthSession() {
 	if (AuthSession::Exists()) {
-		_controller = std::make_unique<Window::Controller>(this);
+		_controller = std::make_unique<Window::Controller>(&Auth(), this);
 	} else {
 		_controller = nullptr;
 	}

@@ -156,7 +156,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_pinned_unpin" = "Losmaken";
 "lng_pinned_notify" = "Leden informeren";
 
-"lng_intro_about" = "Welkom bij de officiële Telegram desktop-app.\nSnel en veilig.";
+"lng_intro_about" = "Welkom bij de officiële CloudVeil Messenger-app.\nSnel en veilig.";
 "lng_start_msgs" = "BEGIN MET CHATTEN";
 
 "lng_intro_next" = "VOLGENDE";
@@ -700,7 +700,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_sure_delete_group" = "Groep echt verwijderen? Berichten worden gewist en alle leden verwijderd.";
 
 "lng_message_empty" = "Leeg bericht";
-"lng_message_unsupported" = "Dit bericht wordt niet ondersteund door jouw versie van Telegram Desktop. Werk bij naar de laatste versie via de instellingen of installeer vanuit {link}";
+"lng_message_unsupported" = "Dit bericht wordt niet ondersteund door jouw versie van CloudVeil Messenger. Werk bij naar de laatste versie via de instellingen of installeer vanuit {link}";
 
 "lng_duration_seconds#one" = "{count} seconde";
 "lng_duration_seconds#other" = "{count} seconden";
@@ -829,8 +829,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_cancel_edit_post_yes" = "Ja";
 "lng_cancel_edit_post_no" = "Nee";
 
-"lng_bot_share_location_unavailable" = "Sorry, locatie delen is nog niet beschikbaar via Telegram Desktop.";
-"lng_bot_inline_geo_unavailable" = "Deze bot heeft je locatie nodig, dit is\nnog niet beschikbaar via Telegram Desktop.";
+"lng_bot_share_location_unavailable" = "Sorry, locatie delen is nog niet beschikbaar via CloudVeil Messenger.";
+"lng_bot_inline_geo_unavailable" = "Deze bot heeft je locatie nodig, dit is\nnog niet beschikbaar via CloudVeil Messenger.";
 "lng_bot_share_phone" = "Telefoonnummer delen?";
 "lng_bot_share_phone_confirm" = "Delen";
 
@@ -1249,7 +1249,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_theme_editor_title" = "Kleurenpalet bewerken";
 "lng_theme_editor_export_button" = "Thema exporteren";
 
-"lng_payments_not_supported" = "Telegram Desktop heeft nog geen ondersteuning voor betalingen. Gebruik één van onze mobiele apps hiervoor.";
+"lng_payments_not_supported" = "CloudVeil Messenger heeft nog geen ondersteuning voor betalingen. Gebruik één van onze mobiele apps hiervoor.";
 "lng_payments_receipt_label" = "Betalingsbewijs";
 "lng_payments_receipt_label_test" = "Test betalingsbewijs";
 "lng_payments_invoice_label" = "Factuur";

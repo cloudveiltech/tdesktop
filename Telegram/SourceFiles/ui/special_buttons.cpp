@@ -17,8 +17,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_photo.h"
 #include "data/data_session.h"
 #include "data/data_feed.h"
+#include "data/data_channel.h"
 #include "history/history.h"
 #include "core/file_utilities.h"
+#include "core/application.h"
 #include "boxes/photo_crop_box.h"
 #include "boxes/confirm_box.h"
 #include "window/window_controller.h"
@@ -26,13 +28,22 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "auth_session.h"
 #include "apiwrap.h"
 #include "mainwidget.h"
-#include "messenger.h"
 #include "observer_peer.h"
 
 namespace Ui {
 namespace {
 
 constexpr int kWideScale = 5;
+
+QString CropTitle(not_null<PeerData*> peer) {
+	if (peer->isChat() || peer->isMegagroup()) {
+		return lang(lng_create_group_crop);
+	} else if (peer->isChannel()) {
+		return lang(lng_create_channel_crop);
+	} else {
+		return lang(lng_settings_crop_profile);
+	}
+}
 
 template <typename Callback>
 QPixmap CreateSquarePixmap(int width, Callback &&paintCallback) {
@@ -50,7 +61,7 @@ QPixmap CreateSquarePixmap(int width, Callback &&paintCallback) {
 template <typename Callback>
 void SuggestPhoto(
 		const QImage &image,
-		PeerId peerForCrop,
+		const QString &title,
 		Callback &&callback) {
 	auto badAspect = [](int a, int b) {
 		return (a >= 10 * b);
@@ -64,8 +75,8 @@ void SuggestPhoto(
 		return;
 	}
 
-	auto box = Ui::show(
-		Box<PhotoCropBox>(image, peerForCrop),
+	const auto box = Ui::show(
+		Box<PhotoCropBox>(image, title),
 		LayerOption::KeepOther);
 	box->ready(
 	) | rpl::start_with_next(
@@ -76,7 +87,7 @@ void SuggestPhoto(
 template <typename Callback>
 void SuggestPhotoFile(
 		const FileDialog::OpenResult &result,
-		PeerId peerForCrop,
+		const QString &title,
 		Callback &&callback) {
 	if (result.paths.isEmpty() && result.remoteContent.isEmpty()) {
 		return;
@@ -92,14 +103,14 @@ void SuggestPhotoFile(
 	}();
 	SuggestPhoto(
 		image,
-		peerForCrop,
+		title,
 		std::forward<Callback>(callback));
 }
 
 template <typename Callback>
 void ShowChoosePhotoBox(
 		QPointer<QWidget> parent,
-		PeerId peerForCrop,
+		const QString &title,
 		Callback &&callback) {
 	auto imgExtensions = cImgExtensions();
 	auto filter = qsl("Image files (*")
@@ -107,10 +118,10 @@ void ShowChoosePhotoBox(
 		+ qsl(");;")
 		+ FileDialog::AllFilesFilter();
 	auto handleChosenPhoto = [
-		peerForCrop,
+		title,
 		callback = std::forward<Callback>(callback)
 	](auto &&result) mutable {
-		SuggestPhotoFile(result, peerForCrop, std::move(callback));
+		SuggestPhotoFile(result, title, std::move(callback));
 	};
 	FileDialog::GetOpenPath(
 		parent,
@@ -140,7 +151,7 @@ QPoint HistoryDownButton::prepareRippleStartPosition() const {
 void HistoryDownButton::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
-	const auto ms = getms();
+	const auto ms = crl::now();
 	const auto over = isOver();
 	const auto down = isDown();
 	((over || down) ? _st.iconBelowOver : _st.iconBelow).paint(p, _st.iconPosition, width());
@@ -178,7 +189,7 @@ EmojiButton::EmojiButton(QWidget *parent, const style::IconButton &st)
 void EmojiButton::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
-	auto ms = getms();
+	auto ms = crl::now();
 
 	p.fillRect(e->rect(), st::historyComposeAreaBg);
 	paintRipple(p, _st.rippleAreaPosition.x(), _st.rippleAreaPosition.y(), ms, _rippleOverride ? &(*_rippleOverride)->c : nullptr);
@@ -186,7 +197,7 @@ void EmojiButton::paintEvent(QPaintEvent *e) {
 	const auto over = isOver();
 	const auto loadingState = _loading
 		? _loading->computeState()
-		: Ui::InfiniteRadialAnimation::State{ 0., 0, FullArcLength };
+		: Ui::RadialState{ 0., 0, FullArcLength };
 	if (loadingState.shown < 1.) {
 		p.setOpacity(1. - loadingState.shown);
 
@@ -231,7 +242,7 @@ void EmojiButton::paintEvent(QPaintEvent *e) {
 	}
 }
 
-void EmojiButton::step_loading(TimeMs ms, bool timer) {
+void EmojiButton::step_loading(crl::time ms, bool timer) {
 	if (timer && !anim::Disabled()) {
 		update();
 	}
@@ -323,7 +334,7 @@ void SendButton::mouseMoveEvent(QMouseEvent *e) {
 void SendButton::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
-	auto ms = getms();
+	auto ms = crl::now();
 	auto over = (isDown() || isOver());
 	auto changed = _a_typeChanged.current(ms, 1.);
 	if (changed < 1.) {
@@ -426,12 +437,12 @@ void SendButton::recordAnimationCallback() {
 
 UserpicButton::UserpicButton(
 	QWidget *parent,
-	PeerId peerForCrop,
+	const QString &cropTitle,
 	Role role,
 	const style::UserpicButton &st)
 : RippleButton(parent, st.changeButton.ripple)
 , _st(st)
-, _peerForCrop(peerForCrop)
+, _cropTitle(cropTitle)
 , _role(role) {
 	Expects(_role == Role::ChangePhoto);
 
@@ -449,7 +460,7 @@ UserpicButton::UserpicButton(
 , _st(st)
 , _controller(controller)
 , _peer(peer)
-, _peerForCrop(_peer->id)
+, _cropTitle(CropTitle(_peer))
 , _role(role) {
 	processPeerPhoto();
 	prepare();
@@ -464,7 +475,7 @@ UserpicButton::UserpicButton(
 : RippleButton(parent, st.changeButton.ripple)
 , _st(st)
 , _peer(peer)
-, _peerForCrop(_peer->id)
+, _cropTitle(CropTitle(_peer))
 , _role(role) {
 	Expects(_role != Role::OpenProfile);
 
@@ -510,14 +521,14 @@ void UserpicButton::changePhotoLazy() {
 	auto callback = crl::guard(
 		this,
 		[this](QImage &&image) { setImage(std::move(image)); });
-	ShowChoosePhotoBox(this, _peerForCrop, std::move(callback));
+	ShowChoosePhotoBox(this, _cropTitle, std::move(callback));
 }
 
 void UserpicButton::uploadNewPeerPhoto() {
 	auto callback = crl::guard(this, [=](QImage &&image) {
 		Auth().api().uploadPeerPhoto(_peer, std::move(image));
 	});
-	ShowChoosePhotoBox(this, _peerForCrop, std::move(callback));
+	ShowChoosePhotoBox(this, _cropTitle, std::move(callback));
 }
 
 void UserpicButton::openPeerPhoto() {
@@ -535,7 +546,7 @@ void UserpicButton::openPeerPhoto() {
 	}
 	const auto photo = Auth().data().photo(id);
 	if (photo->date) {
-		Messenger::Instance().showPhoto(photo, _peer);
+		Core::App().showPhoto(photo, _peer);
 	}
 }
 
@@ -568,7 +579,7 @@ void UserpicButton::paintEvent(QPaintEvent *e) {
 	auto photoLeft = photoPosition.x();
 	auto photoTop = photoPosition.y();
 
-	auto ms = getms();
+	auto ms = crl::now();
 	if (showSavedMessages()) {
 		Ui::EmptyUserpic::PaintSavedMessages(
 			p,

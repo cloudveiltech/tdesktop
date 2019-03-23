@@ -38,8 +38,8 @@ enum class MTPDmessage_ClientFlag : uint32 {
 	// message has links for "shared links" indexing
 	f_has_text_links = (1U << 30),
 
-	// message is a group migrate (group -> supergroup) service message
-	f_is_group_migrate = (1U << 29),
+	// message is a group / channel create or migrate service message
+	f_is_group_essential = (1U << 29),
 
 	//// message needs initDimensions() + resize() + paint()
 	//f_pending_init_dimensions = (1U << 28),
@@ -68,8 +68,8 @@ enum class MTPDmessage_ClientFlag : uint32 {
 	// message has an admin badge in supergroup
 	f_has_admin_badge = (1U << 20),
 
-	//// message is not displayed because it is part of a group
-	//f_hidden_by_group = (1U << 19),
+	// message is unsupported by a current version of client
+	f_is_unsupported = (1U << 19),
 
 	// update this when adding new client side flags
 	MIN_FIELD = (1U << 19),

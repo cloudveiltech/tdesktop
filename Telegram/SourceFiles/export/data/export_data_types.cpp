@@ -14,6 +14,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QDateTime>
 #include <QtCore/QRegularExpression>
 #include <QtGui/QImageReader>
+#include <range/v3/algorithm/max_element.hpp>
+#include <range/v3/view/all.hpp>
+#include <range/v3/view/transform.hpp>
+#include <range/v3/to_container.hpp>
 
 namespace App { // Hackish..
 QString formatPhone(QString phone);
@@ -230,6 +234,8 @@ Image ParseMaxImage(
 	auto maxArea = int64(0);
 	for (const auto &size : data.v) {
 		size.match([](const MTPDphotoSizeEmpty &) {
+		}, [](const MTPDphotoStrippedSize &) {
+			// Max image size should not be a stripped image.
 		}, [&](const auto &data) {
 			const auto area = data.vw.v * int64(data.vh.v);
 			if (area > maxArea) {
@@ -400,6 +406,43 @@ QString DocumentFolder(const Document &data) {
 	return "files";
 }
 
+Image ParseDocumentThumb(
+		const QVector<MTPPhotoSize> &thumbs,
+		const QString &documentPath) {
+	const auto area = [](const MTPPhotoSize &size) {
+		return size.match([](const MTPDphotoSizeEmpty &) {
+			return 0;
+		}, [](const MTPDphotoStrippedSize &) {
+			return 0;
+		}, [](const auto &data) {
+			return data.vw.v * data.vh.v;
+		});
+	};
+	const auto i = ranges::max_element(thumbs, ranges::less(), area);
+	if (i == thumbs.end()) {
+		return Image();
+	}
+	return i->match([](const MTPDphotoSizeEmpty &) {
+		return Image();
+	}, [](const MTPDphotoStrippedSize &) {
+		return Image();
+	}, [&](const auto &data) {
+		auto result = Image();
+		result.width = data.vw.v;
+		result.height = data.vh.v;
+		result.file.location = ParseLocation(data.vlocation);
+		if constexpr (MTPDphotoCachedSize::Is<decltype(data)>()) {
+			result.file.content = data.vbytes.v;
+			result.file.size = result.file.content.size();
+		} else {
+			result.file.content = QByteArray();
+			result.file.size = data.vsize.v;
+		}
+		result.file.suggestedPath = documentPath + "_thumb.jpg";
+		return result;
+	});
+}
+
 Document ParseDocument(
 		ParseMediaContext &context,
 		const MTPDocument &data,
@@ -418,27 +461,13 @@ Document ParseDocument(
 			data.vid,
 			data.vaccess_hash,
 			data.vfile_reference);
-		const auto path = result.file.suggestedPath = suggestedFolder
+		result.file.suggestedPath = suggestedFolder
 			+ DocumentFolder(result) + '/'
 			+ CleanDocumentName(ComputeDocumentName(context, result, date));
 
-		result.thumb = data.vthumb.match([](const MTPDphotoSizeEmpty &) {
-			return Image();
-		}, [&](const auto &data) {
-			auto result = Image();
-			result.width = data.vw.v;
-			result.height = data.vh.v;
-			result.file.location = ParseLocation(data.vlocation);
-			if constexpr (MTPDphotoCachedSize::Is<decltype(data)>()) {
-				result.file.content = data.vbytes.v;
-				result.file.size = result.file.content.size();
-			} else {
-				result.file.content = QByteArray();
-				result.file.size = data.vsize.v;
-			}
-			result.file.suggestedPath = path + "_thumb.jpg";
-			return result;
-		});
+		result.thumb = ParseDocumentThumb(
+			data.vthumbs.v,
+			result.file.suggestedPath);
 	}, [&](const MTPDdocumentEmpty &data) {
 		result.id = data.vid.v;
 	});
@@ -504,6 +533,49 @@ Invoice ParseInvoice(const MTPDmessageMediaInvoice &data) {
 	if (data.has_receipt_msg_id()) {
 		result.receiptMsgId = data.vreceipt_msg_id.v;
 	}
+	return result;
+}
+
+Poll ParsePoll(const MTPDmessageMediaPoll &data) {
+	auto result = Poll();
+	data.vpoll.match([&](const MTPDpoll &poll) {
+		result.id = poll.vid.v;
+		result.question = ParseString(poll.vquestion);
+		result.closed = poll.is_closed();
+		result.answers = ranges::view::all(
+			poll.vanswers.v
+		) | ranges::view::transform([](const MTPPollAnswer &answer) {
+			return answer.match([](const MTPDpollAnswer &answer) {
+				auto result = Poll::Answer();
+				result.text = ParseString(answer.vtext);
+				result.option = answer.voption.v;
+				return result;
+			});
+		}) | ranges::to_vector;
+	});
+	data.vresults.match([&](const MTPDpollResults &results) {
+		if (results.has_total_voters()) {
+			result.totalVotes = results.vtotal_voters.v;
+		}
+		if (results.has_results()) {
+			for (const auto &single : results.vresults.v) {
+				single.match([&](const MTPDpollAnswerVoters &voters) {
+					const auto &option = voters.voption.v;
+					const auto i = ranges::find(
+						result.answers,
+						voters.voption.v,
+						&Poll::Answer::option);
+					if (i == end(result.answers)) {
+						return;
+					}
+					i->votes = voters.vvoters.v;
+					if (voters.is_chosen()) {
+						i->my = true;
+					}
+				});
+			}
+		}
+	});
 	return result;
 }
 
@@ -869,6 +941,8 @@ Media ParseMedia(
 	}, [&](const MTPDmessageMediaGeoLive &data) {
 		result.content = ParseGeoPoint(data.vgeo);
 		result.ttl = data.vperiod.v;
+	}, [&](const MTPDmessageMediaPoll &data) {
+		result.content = ParsePoll(data);
 	}, [](const MTPDmessageMediaEmpty &data) {});
 	return result;
 }
@@ -1011,6 +1085,8 @@ ServiceAction ParseServiceAction(
 			}));
 		}
 		result.content = content;
+	}, [&](const MTPDmessageActionContactSignUp &data) {
+		result.content = ActionContactSignUp();
 	}, [](const MTPDmessageActionEmpty &data) {});
 	return result;
 }

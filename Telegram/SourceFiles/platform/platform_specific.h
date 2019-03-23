@@ -22,6 +22,10 @@ enum class PermissionType {
 	Microphone,
 };
 
+enum class SystemSettingsType {
+	Audio,
+};
+
 void SetWatchingMediaKeys(bool watching);
 bool IsApplicationActive();
 void SetApplicationIcon(const QIcon &icon);
@@ -34,9 +38,15 @@ void RegisterCustomScheme();
 PermissionStatus GetPermissionStatus(PermissionType type);
 void RequestPermission(PermissionType type, Fn<void(PermissionStatus)> resultCallback);
 void OpenSystemSettingsForPermission(PermissionType type);
+bool OpenSystemSettings(SystemSettingsType type);
 
-QString SystemLanguage();
-QString SystemCountry();
+[[nodiscard]] QString SystemLanguage();
+[[nodiscard]] QString SystemCountry();
+
+[[nodiscard]] std::optional<crl::time> LastUserInputTime();
+[[nodiscard]] inline bool LastUserInputTimeSupported() {
+	return LastUserInputTime().has_value();
+}
 
 namespace ThirdParty {
 

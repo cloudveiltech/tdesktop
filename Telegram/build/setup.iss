@@ -1,10 +1,10 @@
 #define MyAppShortName "CloudVeil Messenger"
 #define MyAppName "CloudVeil Messenger Desktop"
-#define MyAppPublisher "CloudVeil Messenger"
+#define MyAppPublisher "Telegram Messenger LLP"
 #define MyAppURL "https://github.com/cloudveiltech"
 #define MyAppExeName "CloudVeilMessenger.exe"
-#define MyAppId "7BF3C861-C022-41EC-8C16-87EBECBDCE4B"      
-#define MyAppVersion "1.5.2"
+#define MyAppId "7BF3C861-C022-41EC-8C16-87EBECBDCE4B"
+#define MyAppVersion "1.6.1"       
 #define ReleasePath "..\..\out\Release"
 
 [Setup]

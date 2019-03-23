@@ -97,7 +97,7 @@ public:
 	}
 	void paintAction(
 		Painter &p,
-		TimeMs ms,
+		crl::time ms,
 		int x,
 		int y,
 		int outerWidth,
@@ -143,7 +143,7 @@ void BoxController::Row::paintStatusText(Painter &p, const style::PeerListItem &
 
 void BoxController::Row::paintAction(
 		Painter &p,
-		TimeMs ms,
+		crl::time ms,
 		int x,
 		int y,
 		int outerWidth,
@@ -255,9 +255,9 @@ void BoxController::loadMoreRows() {
 	)).done([this](const MTPmessages_Messages &result) {
 		_loadRequestId = 0;
 
-		auto handleResult = [this](auto &data) {
-			App::feedUsers(data.vusers);
-			App::feedChats(data.vchats);
+		auto handleResult = [&](auto &data) {
+			Auth().data().processUsers(data.vusers);
+			Auth().data().processChats(data.vchats);
 			receivedCalls(data.vmessages.v);
 		};
 
@@ -302,11 +302,11 @@ void BoxController::receivedCalls(const QVector<MTPMessage> &result) {
 		_allLoaded = true;
 	}
 
-	for_const (auto &message, result) {
-		auto msgId = idFromMessage(message);
-		auto peerId = peerFromMessage(message);
-		if (auto peer = App::peerLoaded(peerId)) {
-			auto item = App::histories().addNewMessage(message, NewMessageExisting);
+	for (const auto &message : result) {
+		auto msgId = IdFromMessage(message);
+		auto peerId = PeerFromMessage(message);
+		if (auto peer = Auth().data().peerLoaded(peerId)) {
+			auto item = Auth().data().addNewMessage(message, NewMessageExisting);
 			insertRow(item, InsertWay::Append);
 		} else {
 			LOG(("API Error: a search results with not loaded peer %1").arg(peerId));

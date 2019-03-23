@@ -9,8 +9,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "settings/settings_common.h"
 #include "boxes/connection_box.h"
+#include "boxes/auto_download_box.h"
 #include "boxes/stickers_box.h"
 #include "boxes/background_box.h"
+#include "boxes/background_preview_box.h"
 #include "boxes/download_path_box.h"
 #include "boxes/local_storage_box.h"
 #include "ui/wrap/vertical_layout.h"
@@ -21,6 +23,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/radial_animation.h"
 #include "ui/toast/toast.h"
 #include "ui/image/image.h"
+#include "ui/image/image_source.h"
 #include "lang/lang_keys.h"
 #include "window/themes/window_theme_editor.h"
 #include "window/themes/window_theme.h"
@@ -28,6 +31,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/localstorage.h"
 #include "core/file_utilities.h"
 #include "data/data_session.h"
+#include "chat_helpers/emoji_sets_manager.h"
 #include "support/support_common.h"
 #include "support/support_templates.h"
 #include "auth_session.h"
@@ -53,8 +57,8 @@ private:
 	bool radialLoading() const;
 	QRect radialRect() const;
 	void radialStart();
-	TimeMs radialTimeShift() const;
-	void step_radial(TimeMs ms, bool timer);
+	crl::time radialTimeShift() const;
+	void step_radial(crl::time ms, bool timer);
 
 	QPixmap _background;
 	object_ptr<Ui::LinkButton> _chooseFromGallery;
@@ -90,7 +94,7 @@ public:
 		int left,
 		int top,
 		int outerWidth,
-		TimeMs ms) override;
+		crl::time ms) override;
 	QImage prepareRippleMask() const override;
 	bool checkRippleStartPosition(QPoint position) const override;
 
@@ -138,13 +142,13 @@ void BackgroundRow::paintEvent(QPaintEvent *e) {
 	bool radial = false;
 	float64 radialOpacity = 0;
 	if (_radial.animating()) {
-		_radial.step(getms());
+		_radial.step(crl::now());
 		radial = _radial.animating();
 		radialOpacity = _radial.opacity();
 	}
 	if (radial) {
 		const auto backThumb = App::main()->newBackgroundThumb();
-		if (backThumb->isNull()) {
+		if (!backThumb) {
 			p.drawPixmap(0, 0, _background);
 		} else {
 			const auto &pix = backThumb->pixBlurred(
@@ -236,16 +240,16 @@ void BackgroundRow::radialStart() {
 			_radial.update(
 				radialProgress(),
 				!radialLoading(),
-				getms() + shift);
+				crl::now() + shift);
 		}
 	}
 }
 
-TimeMs BackgroundRow::radialTimeShift() const {
+crl::time BackgroundRow::radialTimeShift() const {
 	return st::radialDuration;
 }
 
-void BackgroundRow::step_radial(TimeMs ms, bool timer) {
+void BackgroundRow::step_radial(crl::time ms, bool timer) {
 	const auto updated = _radial.update(
 		radialProgress(),
 		!radialLoading(),
@@ -263,26 +267,35 @@ void BackgroundRow::updateImage() {
 		Painter p(&back);
 		PainterHighQualityEnabler hq(p);
 
-		const auto &pix = Window::Theme::Background()->pixmap();
-		const auto sx = (pix.width() > pix.height())
-			? ((pix.width() - pix.height()) / 2)
-			: 0;
-		const auto sy = (pix.height() > pix.width())
-			? ((pix.height() - pix.width()) / 2)
-			: 0;
-		const auto s = (pix.width() > pix.height())
-			? pix.height()
-			: pix.width();
-		p.drawPixmap(
-			0,
-			0,
-			st::settingsBackgroundThumb,
-			st::settingsBackgroundThumb,
-			pix,
-			sx,
-			sy,
-			s,
-			s);
+		if (const auto color = Window::Theme::Background()->colorForFill()) {
+			p.fillRect(
+				0,
+				0,
+				st::settingsBackgroundThumb,
+				st::settingsBackgroundThumb,
+				*color);
+		} else {
+			const auto &pix = Window::Theme::Background()->pixmap();
+			const auto sx = (pix.width() > pix.height())
+				? ((pix.width() - pix.height()) / 2)
+				: 0;
+			const auto sy = (pix.height() > pix.width())
+				? ((pix.height() - pix.width()) / 2)
+				: 0;
+			const auto s = (pix.width() > pix.height())
+				? pix.height()
+				: pix.width();
+			p.drawPixmap(
+				0,
+				0,
+				st::settingsBackgroundThumb,
+				st::settingsBackgroundThumb,
+				pix,
+				sx,
+				sy,
+				s,
+				s);
+		}
 	}
 	Images::prepareRound(back, ImageRoundRadius::Small);
 	_background = App::pixmapFromImageInPlace(std::move(back));
@@ -312,7 +325,7 @@ void DefaultTheme::paint(
 		int left,
 		int top,
 		int outerWidth,
-		TimeMs ms) {
+		crl::time ms) {
 	const auto received = QRect(
 		st::settingsThemeBubblePosition,
 		st::settingsThemeBubbleSize);
@@ -340,7 +353,7 @@ void DefaultTheme::paint(
 		(outerWidth - radio.width()) / 2,
 		getSize().height() - radio.height() - st::settingsThemeRadioBottom,
 		outerWidth,
-		getms());
+		crl::now());
 }
 
 QImage DefaultTheme::prepareRippleMask() const {
@@ -356,7 +369,7 @@ void DefaultTheme::checkedChangedHook(anim::type animated) {
 }
 
 void ChooseFromFile(not_null<QWidget*> parent) {
-	const auto imgExtensions = cImgExtensions();
+	const auto &imgExtensions = cImgExtensions();
 	auto filters = QStringList(
 		qsl("Theme files (*.tdesktop-theme *.tdesktop-palette *")
 		+ imgExtensions.join(qsl(" *"))
@@ -384,24 +397,13 @@ void ChooseFromFile(not_null<QWidget*> parent) {
 			: App::readImage(result.remoteContent);
 		if (image.isNull() || image.width() <= 0 || image.height() <= 0) {
 			return;
-		} else if (image.width() > 4096 * image.height()) {
-			image = image.copy(
-				(image.width() - 4096 * image.height()) / 2,
-				0,
-				4096 * image.height(),
-				image.height());
-		} else if (image.height() > 4096 * image.width()) {
-			image = image.copy(
-				0,
-				(image.height() - 4096 * image.width()) / 2,
-				image.width(),
-				4096 * image.width());
 		}
-
-		Window::Theme::Background()->setImage(
-			Window::Theme::kCustomBackground,
-			std::move(image));
-		Window::Theme::Background()->setTile(false);
+		auto local = Data::CustomWallPaper();
+		local.setLocalImageAsThumbnail(std::make_shared<Image>(
+			std::make_unique<Images::ImageSource>(
+				std::move(image),
+				"JPG")));
+		Ui::show(Box<BackgroundPreviewBox>(local));
 	};
 	FileDialog::GetOpenPath(
 		parent.get(),
@@ -484,6 +486,16 @@ void SetupStickersEmoji(not_null<Ui::VerticalLayout*> container) {
 		Ui::show(Box<StickersBox>(StickersBox::Section::Installed));
 	});
 
+	AddButton(
+		container,
+		lng_emoji_manage_sets,
+		st::settingsChatButton,
+		&st::settingsIconEmoji,
+		st::settingsChatIconLeft
+	)->addClickHandler([] {
+		Ui::show(Box<Ui::Emoji::ManageSetsBox>());
+	});
+
 	AddSkip(container, st::settingsCheckboxesSkip);
 }
 
@@ -558,7 +570,9 @@ void SetupLocalStorage(not_null<Ui::VerticalLayout*> container) {
 		lng_settings_manage_local_storage,
 		st::settingsButton
 	)->addClickHandler([] {
-		LocalStorageBox::Show(&Auth().data().cache());
+		LocalStorageBox::Show(
+			&Auth().data().cache(),
+			&Auth().data().cacheBigFile());
 	});
 }
 
@@ -616,16 +630,31 @@ void SetupDataStorage(not_null<Ui::VerticalLayout*> container) {
 
 	}, ask->lifetime());
 
-	AddButton(
-		container,
-		lng_media_auto_settings,
-		st::settingsButton
-	)->addClickHandler([] {
-		Ui::show(Box<AutoDownloadBox>());
-	});
-
 	SetupLocalStorage(container);
 	SetupExport(container);
+
+	AddSkip(container, st::settingsCheckboxesSkip);
+}
+
+void SetupAutoDownload(not_null<Ui::VerticalLayout*> container) {
+	AddDivider(container);
+	AddSkip(container);
+
+	AddSubsectionTitle(container, lng_media_auto_settings);
+
+	using Source = Data::AutoDownload::Source;
+	const auto add = [&](LangKey label, Source source) {
+		AddButton(
+			container,
+			label,
+			st::settingsButton
+		)->addClickHandler([=] {
+			Ui::show(Box<AutoDownloadBox>(source));
+		});
+	};
+	add(lng_media_auto_in_private, Source::User);
+	add(lng_media_auto_in_groups, Source::Group);
+	add(lng_media_auto_in_channels, Source::Channel);
 
 	AddSkip(container, st::settingsCheckboxesSkip);
 }

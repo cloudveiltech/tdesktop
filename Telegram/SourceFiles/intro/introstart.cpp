@@ -8,7 +8,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "intro/introstart.h"
 
 #include "lang/lang_keys.h"
-#include "application.h"
 #include "intro/introphone.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
@@ -17,7 +16,7 @@ namespace Intro {
 
 StartWidget::StartWidget(QWidget *parent, Widget::Data *data) : Step(parent, data, true) {
 	setMouseTracking(true);
-	setTitleText([] { return qsl("CloudVeil Messenger Desktop"); });
+	setTitleText([] { return qsl("CloudVeil Messenger"); });
 	setDescriptionText(langFactory(lng_intro_about));
 	show();
 }

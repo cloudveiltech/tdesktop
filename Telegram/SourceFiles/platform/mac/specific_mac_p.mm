@@ -9,15 +9,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "mainwindow.h"
 #include "mainwidget.h"
-#include "messenger.h"
+#include "core/application.h"
+#include "core/crash_reports.h"
 #include "storage/localstorage.h"
+#include "media/audio/media_audio.h"
 #include "media/player/media_player_instance.h"
-#include "media/media_audio.h"
 #include "platform/mac/mac_utilities.h"
-#include "styles/style_window.h"
 #include "lang/lang_keys.h"
 #include "base/timer.h"
-#include "core/crash_reports.h"
+#include "styles/style_window.h"
 
 #include <Cocoa/Cocoa.h>
 #include <CoreFoundation/CFURL.h>
@@ -141,13 +141,11 @@ ApplicationDelegate *_sharedDelegate = nil;
 
 - (void) applicationDidBecomeActive:(NSNotification *)aNotification {
 	ApplicationIsActive = true;
-	if (auto messenger = Messenger::InstancePointer()) {
-		if (!_ignoreActivation) {
-			messenger->handleAppActivated();
-			if (auto window = App::wnd()) {
-				if (window->isHidden()) {
-					window->showFromTray();
-				}
+	if (Core::IsAppLaunched() && !_ignoreActivation) {
+		Core::App().handleAppActivated();
+		if (auto window = App::wnd()) {
+			if (window->isHidden()) {
+				window->showFromTray();
 			}
 		}
 	}
@@ -158,8 +156,8 @@ ApplicationDelegate *_sharedDelegate = nil;
 }
 
 - (void) receiveWakeNote:(NSNotification*)aNotification {
-	if (auto messenger = Messenger::InstancePointer()) {
-		messenger->checkLocalTime();
+	if (Core::IsAppLaunched()) {
+		Core::App().checkLocalTime();
 	}
 
 	LOG(("Audio Info: -receiveWakeNote: received, scheduling detach from audio device"));
@@ -343,64 +341,6 @@ void objc_outputDebugString(const QString &str) {
 	NSLog(@"%@", Q2NSString(str));
 
 	}
-}
-
-bool objc_idleSupported() {
-	auto idleTime = 0LL;
-	return objc_idleTime(idleTime);
-}
-
-bool objc_idleTime(TimeMs &idleTime) { // taken from https://github.com/trueinteractions/tint/issues/53
-	CFMutableDictionaryRef properties = 0;
-	CFTypeRef obj;
-	mach_port_t masterPort;
-	io_iterator_t iter;
-	io_registry_entry_t curObj;
-
-	IOMasterPort(MACH_PORT_NULL, &masterPort);
-
-	/* Get IOHIDSystem */
-	IOServiceGetMatchingServices(masterPort, IOServiceMatching("IOHIDSystem"), &iter);
-	if (iter == 0) {
-		return false;
-	} else {
-		curObj = IOIteratorNext(iter);
-	}
-	if (IORegistryEntryCreateCFProperties(curObj, &properties, kCFAllocatorDefault, 0) == KERN_SUCCESS && properties != NULL) {
-		obj = CFDictionaryGetValue(properties, CFSTR("HIDIdleTime"));
-		CFRetain(obj);
-	} else {
-		return false;
-	}
-
-	uint64 err = ~0L, result = err;
-	if (obj) {
-		CFTypeID type = CFGetTypeID(obj);
-
-		if (type == CFDataGetTypeID()) {
-			CFDataGetBytes((CFDataRef) obj, CFRangeMake(0, sizeof(result)), (UInt8*)&result);
-		} else if (type == CFNumberGetTypeID()) {
-			CFNumberGetValue((CFNumberRef)obj, kCFNumberSInt64Type, &result);
-		} else {
-			// error
-		}
-
-		CFRelease(obj);
-
-		if (result != err) {
-			result /= 1000000; // return as ms
-		}
-	} else {
-		// error
-	}
-
-	CFRelease((CFTypeRef)properties);
-	IOObjectRelease(curObj);
-	IOObjectRelease(iter);
-	if (result == err) return false;
-
-	idleTime = static_cast<TimeMs>(result);
-	return true;
 }
 
 void objc_start() {

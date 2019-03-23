@@ -136,11 +136,11 @@ DeclareRefSetting(RecentInlineBots, RecentInlineBots);
 DeclareSetting(bool, PasswordRecovered);
 
 DeclareSetting(int32, PasscodeBadTries);
-DeclareSetting(TimeMs, PasscodeLastTry);
+DeclareSetting(crl::time, PasscodeLastTry);
 
 inline bool passcodeCanTry() {
 	if (cPasscodeBadTries() < 3) return true;
-	auto dt = getms(true) - cPasscodeLastTry();
+	auto dt = crl::now() - cPasscodeLastTry();
 	switch (cPasscodeBadTries()) {
 	case 3: return dt >= 5000;
 	case 4: return dt >= 10000;
@@ -173,14 +173,6 @@ DeclareRefSetting(SavedPeersByTime, SavedPeersByTime);
 typedef QMap<uint64, DBIPeerReportSpamStatus> ReportSpamStatuses;
 DeclareRefSetting(ReportSpamStatuses, ReportSpamStatuses);
 
-enum DBIAutoDownloadFlags {
-	dbiadNoPrivate = 0x01,
-	dbiadNoGroups  = 0x02,
-};
-
-DeclareSetting(int32, AutoDownloadPhoto);
-DeclareSetting(int32, AutoDownloadAudio);
-DeclareSetting(int32, AutoDownloadGif);
 DeclareSetting(bool, AutoPlayGif);
 
 constexpr auto kInterfaceScaleAuto = 0;
@@ -206,6 +198,10 @@ inline T ConvertScale(T value, int scale) {
 template <typename T>
 inline T ConvertScale(T value) {
 	return ConvertScale(value, cScale());
+}
+
+inline QSize ConvertScale(QSize size) {
+	return QSize(ConvertScale(size.width()), ConvertScale(size.height()));
 }
 
 inline void SetScaleChecked(int scale) {

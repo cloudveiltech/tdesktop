@@ -115,9 +115,10 @@ public:
 
 	struct StateRequest {
 		enum class Flag {
-			BreakEverywhere = (1 << 0),
-			LookupSymbol    = (1 << 1),
-			LookupLink      = (1 << 2),
+			BreakEverywhere     = (1 << 0),
+			LookupSymbol        = (1 << 1),
+			LookupLink          = (1 << 2),
+			LookupCustomTooltip = (1 << 3),
 		};
 		using Flags = base::flags<Flag>;
 		friend inline constexpr auto is_flag_type(Flag) { return true; };
@@ -260,7 +261,7 @@ QString textcmdStopSemibold();
 const QChar *textSkipCommand(const QChar *from, const QChar *end, bool canLink = true);
 
 inline bool chIsSpace(QChar ch, bool rich = false) {
-	return ch.isSpace() || (ch < 32 && !(rich && ch == TextCommand)) || (ch == QChar::ParagraphSeparator) || (ch == QChar::LineSeparator) || (ch == QChar::ObjectReplacementCharacter) || (ch == QChar::CarriageReturn) || (ch == QChar::Tabulation);
+	return ch.isSpace() || (ch < 32 && !(rich && ch == TextCommand)) || (ch == QChar::ParagraphSeparator) || (ch == QChar::LineSeparator) || (ch == QChar::ObjectReplacementCharacter) || (ch == QChar::CarriageReturn) || (ch == QChar::Tabulation) || (ch == QChar(8203)/*Zero width space.*/);
 }
 inline bool chIsDiac(QChar ch) { // diac and variation selectors
 	return (ch.category() == QChar::Mark_NonSpacing) || (ch == 1652) || (ch >= 64606 && ch <= 64611);

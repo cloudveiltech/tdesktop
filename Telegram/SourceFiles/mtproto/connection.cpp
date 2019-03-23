@@ -13,7 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/dc_options.h"
 #include "mtproto/connection_abstract.h"
 #include "zlib.h"
-#include "messenger.h"
+#include "core/application.h"
 #include "core/launcher.h"
 #include "lang/lang_keys.h"
 #include "base/openssl_help.h"
@@ -28,6 +28,10 @@ extern "C" {
 #include <openssl/rand.h>
 } // extern "C"
 
+#ifdef small
+#undef small
+#endif // small
+
 namespace MTP {
 namespace internal {
 namespace {
@@ -35,19 +39,19 @@ namespace {
 constexpr auto kRecreateKeyId = AuthKey::KeyId(0xFFFFFFFFFFFFFFFFULL);
 constexpr auto kIntSize = static_cast<int>(sizeof(mtpPrime));
 constexpr auto kMaxModExpSize = 256;
-constexpr auto kWaitForBetterTimeout = TimeMs(2000);
-constexpr auto kMinConnectedTimeout = TimeMs(1000);
-constexpr auto kMaxConnectedTimeout = TimeMs(8000);
-constexpr auto kMinReceiveTimeout = TimeMs(4000);
-constexpr auto kMaxReceiveTimeout = TimeMs(64000);
-constexpr auto kMarkConnectionOldTimeout = TimeMs(192000);
+constexpr auto kWaitForBetterTimeout = crl::time(2000);
+constexpr auto kMinConnectedTimeout = crl::time(1000);
+constexpr auto kMaxConnectedTimeout = crl::time(8000);
+constexpr auto kMinReceiveTimeout = crl::time(4000);
+constexpr auto kMaxReceiveTimeout = crl::time(64000);
+constexpr auto kMarkConnectionOldTimeout = crl::time(192000);
 constexpr auto kPingDelayDisconnect = 60;
-constexpr auto kPingSendAfter = TimeMs(30000);
-constexpr auto kPingSendAfterForce = TimeMs(45000);
+constexpr auto kPingSendAfter = crl::time(30000);
+constexpr auto kPingSendAfterForce = crl::time(45000);
 constexpr auto kTestModeDcIdShift = 10000;
 
 // If we can't connect for this time we will ask _instance to update config.
-constexpr auto kRequestConfigTimeout = TimeMs(8000);
+constexpr auto kRequestConfigTimeout = crl::time(8000);
 
 // Don't try to handle messages larger than this size.
 constexpr auto kMaxMessageLength = 16 * 1024 * 1024;
@@ -470,7 +474,7 @@ int32 ConnectionPrivate::getState() const {
 	int32 result = _state;
 	if (_state < 0) {
 		if (_retryTimer.isActive()) {
-			result = int32(getms(true) - _retryWillFinish);
+			result = int32(crl::now() - _retryWillFinish);
 			if (result >= 0) {
 				result = -1;
 			}
@@ -500,7 +504,7 @@ bool ConnectionPrivate::setState(int32 state, int32 ifState) {
 	if (state < 0) {
 		_retryTimeout = -state;
 		_retryTimer.callOnce(_retryTimeout);
-		_retryWillFinish = getms(true) + _retryTimeout;
+		_retryWillFinish = crl::now() + _retryTimeout;
 	}
 	emit stateChanged(state);
 	return true;
@@ -729,7 +733,7 @@ void ConnectionPrivate::tryToSend() {
 	auto prependOnly = (state != ConnectedState);
 	auto pingRequest = SecureRequest();
 	if (_shiftedDcId == BareDcId(_shiftedDcId)) { // main session
-		if (!prependOnly && !_pingIdToSend && !_pingId && _pingSendAt <= getms(true)) {
+		if (!prependOnly && !_pingIdToSend && !_pingId && _pingSendAt <= crl::now()) {
 			_pingIdToSend = rand_value<mtpPingId>();
 		}
 	}
@@ -748,7 +752,7 @@ void ConnectionPrivate::tryToSend() {
 				"ping_id: %1").arg(_pingIdToSend));
 		}
 
-		pingRequest->msDate = getms(true); // > 0 - can send without container
+		pingRequest->msDate = crl::now(); // > 0 - can send without container
 		_pingSendAt = pingRequest->msDate + kPingSendAfter;
 		pingRequest->requestId = 0; // dont add to haveSent / wereAcked maps
 
@@ -771,7 +775,7 @@ void ConnectionPrivate::tryToSend() {
 	if (!prependOnly && !ackRequestData.isEmpty()) {
 		ackRequest = SecureRequest::Serialize(MTPMsgsAck(
 			MTP_msgs_ack(MTP_vector<MTPlong>(ackRequestData))));
-		ackRequest->msDate = getms(true); // > 0 - can send without container
+		ackRequest->msDate = crl::now(); // > 0 - can send without container
 		ackRequest->requestId = 0; // dont add to haveSent / wereAcked maps
 
 		ackRequestData.clear();
@@ -779,7 +783,7 @@ void ConnectionPrivate::tryToSend() {
 	if (!prependOnly && !resendRequestData.isEmpty()) {
 		resendRequest = SecureRequest::Serialize(MTPMsgResendReq(
 			MTP_msg_resend_req(MTP_vector<MTPlong>(resendRequestData))));
-		resendRequest->msDate = getms(true); // > 0 - can send without container
+		resendRequest->msDate = crl::now(); // > 0 - can send without container
 		resendRequest->requestId = 0; // dont add to haveSent / wereAcked maps
 
 		resendRequestData.clear();
@@ -800,13 +804,13 @@ void ConnectionPrivate::tryToSend() {
 		if (!stateReq.isEmpty()) {
 			stateRequest = SecureRequest::Serialize(MTPMsgsStateReq(
 				MTP_msgs_state_req(MTP_vector<MTPlong>(stateReq))));
-			stateRequest->msDate = getms(true); // > 0 - can send without container
+			stateRequest->msDate = crl::now(); // > 0 - can send without container
 			stateRequest->requestId = GetNextRequestId();// add to haveSent / wereAcked maps, but don't add to requestMap
 		}
 		if (_connection->usingHttpWait()) {
 			httpWaitRequest = SecureRequest::Serialize(MTPHttpWait(
 				MTP_http_wait(MTP_int(100), MTP_int(30), MTP_int(25000))));
-			httpWaitRequest->msDate = getms(true); // > 0 - can send without container
+			httpWaitRequest->msDate = crl::now(); // > 0 - can send without container
 			httpWaitRequest->requestId = 0; // dont add to haveSent / wereAcked maps
 		}
 	}
@@ -820,10 +824,10 @@ void ConnectionPrivate::tryToSend() {
 		const auto langPackName = _connectionOptions->langPackName;
 		const auto deviceModel = (_dcType == DcType::Cdn)
 			? "n/a"
-			: Messenger::Instance().launcher()->deviceModel();
+			: _instance->deviceModel();
 		const auto systemVersion = (_dcType == DcType::Cdn)
 			? "n/a"
-			: Messenger::Instance().launcher()->systemVersion();
+			: _instance->systemVersion();
 #if defined OS_MAC_STORE || defined OS_WIN_STORE
 		const auto appVersion = QString::fromLatin1(AppVersionStr)
 			+ " store";
@@ -889,7 +893,7 @@ void ConnectionPrivate::tryToSend() {
 
 			if (toSendRequest->requestId) {
 				if (toSendRequest.needAck()) {
-					toSendRequest->msDate = toSendRequest.isStateRequest() ? 0 : getms(true);
+					toSendRequest->msDate = toSendRequest.isStateRequest() ? 0 : crl::now();
 
 					QWriteLocker locker2(sessionData->haveSentMutex());
 					auto &haveSent = sessionData->haveSentMap();
@@ -985,7 +989,7 @@ void ConnectionPrivate::tryToSend() {
 				bool added = false;
 				if (req->requestId) {
 					if (req.needAck()) {
-						req->msDate = req.isStateRequest() ? 0 : getms(true);
+						req->msDate = req.isStateRequest() ? 0 : crl::now();
 						int32 reqNeedsLayer = (needsLayer && req->needsLayer) ? toSendRequest->size() : 0;
 						if (req->after) {
 							wrapInvokeAfter(toSendRequest, req, haveSent, reqNeedsLayer ? initSizeInInts : 0);
@@ -1165,8 +1169,8 @@ void ConnectionPrivate::connectToServer(bool afterConfig) {
 		).arg(_testConnections.size()));
 
 	if (!_startedConnectingAt) {
-		_startedConnectingAt = getms(true);
-	} else if (getms(true) - _startedConnectingAt > kRequestConfigTimeout) {
+		_startedConnectingAt = crl::now();
+	} else if (crl::now() - _startedConnectingAt > kRequestConfigTimeout) {
 		InvokeQueued(_instance, [instance = _instance] {
 			instance->requestConfigIfOld();
 		});
@@ -1239,7 +1243,7 @@ void ConnectionPrivate::onSentSome(uint64 size) {
 		}
 		_waitForReceivedTimer.callOnce(remain);
 	}
-	if (!firstSentAt) firstSentAt = getms(true);
+	if (!firstSentAt) firstSentAt = crl::now();
 }
 
 void ConnectionPrivate::onReceivedSome() {
@@ -1250,7 +1254,7 @@ void ConnectionPrivate::onReceivedSome() {
 	_oldConnectionTimer.callOnce(kMarkConnectionOldTimeout);
 	_waitForReceivedTimer.cancel();
 	if (firstSentAt > 0) {
-		const auto ms = getms(true) - firstSentAt;
+		const auto ms = crl::now() - firstSentAt;
 		DEBUG_LOG(("MTP Info: response in %1ms, _waitForReceived: %2ms").arg(ms).arg(_waitForReceived));
 
 		if (ms > 0 && ms * 2 < _waitForReceived) {
@@ -1270,7 +1274,7 @@ void ConnectionPrivate::sendPingByTimer() {
 	if (_pingId) {
 		// _pingSendAt: when to send next ping (lastPingAt + kPingSendAfter)
 		// could be equal to zero.
-		const auto now = getms(true);
+		const auto now = crl::now();
 		const auto mustSendTill = _pingSendAt
 			+ kPingSendAfterForce
 			- kPingSendAfter;
@@ -1563,7 +1567,7 @@ void ConnectionPrivate::handleReceived() {
 		uint32 toAckSize = ackRequestData.size();
 		if (toAckSize) {
 			DEBUG_LOG(("MTP Info: will send %1 acks, ids: %2").arg(toAckSize).arg(LogIdsVector(ackRequestData)));
-			emit sendAnythingAsync(MTPAckSendWaiting);
+			emit sendAnythingAsync(kAckSendWaiting);
 		}
 
 		bool emitSignal = false;
@@ -1590,7 +1594,7 @@ void ConnectionPrivate::handleReceived() {
 			DEBUG_LOG(("MTP Info: marked auth key as checked"));
 			sessionData->setCheckedKey(true);
 		}
-		_startedConnectingAt = TimeMs(0);
+		_startedConnectingAt = crl::time(0);
 
 		if (!wasConnected) {
 			if (getState() == ConnectedState) {
@@ -1612,7 +1616,7 @@ ConnectionPrivate::HandleResult ConnectionPrivate::handleOneReceived(const mtpPr
 	case mtpc_gzip_packed: {
 		DEBUG_LOG(("Message Info: gzip container"));
 		mtpBuffer response = ungzip(++from, end);
-		if (!response.size()) {
+		if (response.empty()) {
 			return HandleResult::RestartConnection;
 		}
 		return handleOneReceived(response.data(), response.data() + response.size(), msgId, serverTime, serverSalt, badTime);
@@ -2321,10 +2325,10 @@ void ConnectionPrivate::requestsAcked(const QVector<MTPlong> &ids, bool byRespon
 		}
 
 		uint32 ackedCount = wereAcked.size();
-		if (ackedCount > MTPIdsBufferSize) {
-			DEBUG_LOG(("Message Info: removing some old acked sent msgIds %1").arg(ackedCount - MTPIdsBufferSize));
-			clearedBecauseTooOld.reserve(ackedCount - MTPIdsBufferSize);
-			while (ackedCount-- > MTPIdsBufferSize) {
+		if (ackedCount > kIdsBufferSize) {
+			DEBUG_LOG(("Message Info: removing some old acked sent msgIds %1").arg(ackedCount - kIdsBufferSize));
+			clearedBecauseTooOld.reserve(ackedCount - kIdsBufferSize);
+			while (ackedCount-- > kIdsBufferSize) {
 				auto i = wereAcked.begin();
 				clearedBecauseTooOld.push_back(RPCCallbackClear(
 					i.value(),

@@ -24,7 +24,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/confirm_box.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
-#include "messenger.h"
+#include "core/application.h"
 #include "lang/lang_instance.h"
 #include "lang/lang_cloud_manager.h"
 #include "styles/style_boxes.h"
@@ -772,7 +772,7 @@ int Rows::countAvailableWidth() const {
 void Rows::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
-	const auto ms = getms();
+	const auto ms = crl::now();
 	const auto clip = e->rect();
 
 	const auto checkLeft = st::passportRowPadding.left();
@@ -1132,7 +1132,7 @@ not_null<Ui::MultiSelect*> LanguageBox::createMultiSelect() {
 base::binary_guard LanguageBox::Show() {
 	auto result = base::binary_guard();
 
-	const auto manager = Messenger::Instance().langCloudManager();
+	const auto manager = Core::App().langCloudManager();
 	if (manager->languageList().empty()) {
 		auto guard = std::make_shared<base::binary_guard>();
 		std::tie(result, *guard) = base::make_binary_guard();

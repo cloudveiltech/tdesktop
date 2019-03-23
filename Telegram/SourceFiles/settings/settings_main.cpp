@@ -18,6 +18,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/discrete_sliders.h"
 #include "info/profile/info_profile_button.h"
 #include "info/profile/info_profile_cover.h"
+#include "data/data_user.h"
+#include "data/data_session.h"
 #include "lang/lang_keys.h"
 #include "storage/localstorage.h"
 #include "auth_session.h"
@@ -223,8 +225,7 @@ void SetupHelp(not_null<Ui::VerticalLayout*> container) {
 			st::settingsSectionButton);
 		button->addClickHandler([=] {
 			const auto ready = crl::guard(button, [](const MTPUser &data) {
-				const auto users = MTP_vector<MTPUser>(1, data);
-				if (const auto user = App::feedUsers(users)) {
+				if (const auto user = Auth().data().processUser(data)) {
 					Ui::showPeerHistory(user, ShowAtUnreadMsgId);
 				}
 			});
@@ -283,6 +284,7 @@ void Main::setupContent(not_null<Window::Controller*> controller) {
 
 	// If we load this in advance it won't jump when we open its' section.
 	Auth().api().reloadPasswordState();
+	Auth().api().reloadContactSignupSilent();
 }
 
 rpl::producer<Type> Main::sectionShowOther() {

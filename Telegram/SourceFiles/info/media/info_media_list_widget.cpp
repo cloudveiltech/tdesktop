@@ -79,10 +79,12 @@ public:
 
 	UniversalMsgId minId() const {
 		Expects(!empty());
+
 		return _items.back().first;
 	}
 	UniversalMsgId maxId() const {
 		Expects(!empty());
+
 		return _items.front().first;
 	}
 
@@ -1119,7 +1121,7 @@ void ListWidget::paintEvent(QPaintEvent *e) {
 
 	auto outerWidth = width();
 	auto clip = e->rect();
-	auto ms = getms();
+	auto ms = crl::now();
 	auto fromSectionIt = findSectionAfterTop(clip.y());
 	auto tillSectionIt = findSectionAfterBottom(
 		fromSectionIt,
@@ -1256,7 +1258,7 @@ void ListWidget::showContextMenu(
 							document->cancel();
 						});
 				} else {
-					auto filepath = document->filepath(DocumentData::FilePathResolveChecked);
+					auto filepath = document->filepath(DocumentData::FilePathResolve::Checked);
 					if (!filepath.isEmpty()) {
 						auto handler = App::LambdaDelayed(
 							st::defaultDropdownMenu.menu.ripple.hideDuration,
@@ -1277,7 +1279,7 @@ void ListWidget::showContextMenu(
 							DocumentSaveClickHandler::Save(
 								itemFullId,
 								document,
-								true);
+								DocumentSaveClickHandler::Mode::ToNewFile);
 						});
 					_contextMenu->addAction(
 						lang(isVideo
@@ -1468,7 +1470,7 @@ void ListWidget::switchToWordSelection() {
 	mouseActionUpdate();
 
 	_trippleClickPoint = _mousePosition;
-	_trippleClickStartTime = getms();
+	_trippleClickStartTime = crl::now();
 }
 
 void ListWidget::applyItemSelection(
@@ -1580,7 +1582,7 @@ void ListWidget::clearSelected() {
 
 void ListWidget::validateTrippleClickStartTime() {
 	if (_trippleClickStartTime) {
-		auto elapsed = (getms() - _trippleClickStartTime);
+		auto elapsed = (crl::now() - _trippleClickStartTime);
 		if (elapsed >= QApplication::doubleClickInterval()) {
 			_trippleClickStartTime = 0;
 		}
@@ -1838,7 +1840,7 @@ void ListWidget::mouseActionStart(
 					_mouseAction = MouseAction::Selecting;
 					_mouseSelectType = TextSelectType::Paragraphs;
 					mouseActionUpdate(_mousePosition);
-					_trippleClickStartTime = getms();
+					_trippleClickStartTime = crl::now();
 				}
 			}
 		} else {
@@ -1957,7 +1959,7 @@ void ListWidget::performDrag() {
 	//		auto mimeData = std::make_unique<QMimeData>();
 	//		mimeData->setData(forwardMimeType, "1");
 	//		if (auto document = (pressedMedia ? pressedMedia->getDocument() : nullptr)) {
-	//			auto filepath = document->filepath(DocumentData::FilePathResolveChecked);
+	//			auto filepath = document->filepath(DocumentData::FilePathResolve::Checked);
 	//			if (!filepath.isEmpty()) {
 	//				QList<QUrl> urls;
 	//				urls.push_back(QUrl::fromLocalFile(filepath));

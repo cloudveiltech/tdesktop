@@ -13,10 +13,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/platform_notifications_manager.h"
 #include "history/history.h"
 #include "mainwindow.h"
-#include "messenger.h"
-#include "application.h"
+#include "core/application.h"
 #include "lang/lang_keys.h"
 #include "storage/localstorage.h"
+#include <QtDBus>
 
 namespace Platform {
 namespace {
@@ -37,6 +37,8 @@ int32 _trayIconSize = 22;
 bool _trayIconMuted = true;
 int32 _trayIconCount = 0;
 QImage _trayIconImageBack, _trayIconImage;
+QString _desktopFile;
+QString _dbusPath = "/";
 
 #ifndef TDESKTOP_DISABLE_GTK_INTEGRATION
 void _trayIconPopup(GtkStatusIcon *status_icon, guint button, guint32 activate_time, gpointer popup_menu) {
@@ -71,14 +73,14 @@ gboolean _trayIconResized(GtkStatusIcon *status_icon, gint size, gpointer popup_
 #endif // !TDESKTOP_DISABLE_GTK_INTEGRATION
 
 QImage _trayIconImageGen() {
-	const auto counter = Messenger::Instance().unreadBadge();
-	const auto muted = Messenger::Instance().unreadBadgeMuted();
+	const auto counter = Core::App().unreadBadge();
+	const auto muted = Core::App().unreadBadgeMuted();
 	const auto counterSlice = (counter >= 1000)
 		? (1000 + (counter % 100))
 		: counter;
 	if (_trayIconImage.isNull() || _trayIconImage.width() != _trayIconSize || muted != _trayIconMuted || counterSlice != _trayIconCount) {
 		if (_trayIconImageBack.isNull() || _trayIconImageBack.width() != _trayIconSize) {
-			_trayIconImageBack = Messenger::Instance().logo().scaled(_trayIconSize, _trayIconSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+			_trayIconImageBack = Core::App().logo().scaled(_trayIconSize, _trayIconSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
 			_trayIconImageBack = _trayIconImageBack.convertToFormat(QImage::Format_ARGB32);
 			int w = _trayIconImageBack.width(), h = _trayIconImageBack.height(), perline = _trayIconImageBack.bytesPerLine();
 			uchar *bytes = _trayIconImageBack.bits();
@@ -92,6 +94,8 @@ QImage _trayIconImageGen() {
 			}
 		}
 		_trayIconImage = _trayIconImageBack;
+		_trayIconMuted = muted;
+		_trayIconCount = counterSlice;
 		if (counter > 0) {
 			QPainter p(&_trayIconImage);
 			int32 layerSize = -16;
@@ -112,11 +116,11 @@ QImage _trayIconImageGen() {
 }
 
 QString _trayIconImageFile() {
-	const auto counter = Messenger::Instance().unreadBadge();
-	const auto muted = Messenger::Instance().unreadBadgeMuted();
+	const auto counter = Core::App().unreadBadge();
+	const auto muted = Core::App().unreadBadgeMuted();
 	const auto counterSlice = (counter >= 1000) ? (1000 + (counter % 100)) : counter;
 
-	QString name = cWorkingDir() + qsl("tdata/ticons/ico%1_%2_%3.png").arg(muted ? "mute" : "").arg(_trayIconSize).arg(counterSlice);
+	QString name = cWorkingDir() + qsl("tdata/ticons/icon%1_%2_%3.png").arg(muted ? "mute" : "").arg(_trayIconSize).arg(counterSlice);
 	QFileInfo info(name);
 	if (info.exists()) return name;
 
@@ -176,10 +180,16 @@ static gboolean _trayIconCheck(gpointer/* pIn*/) {
 	return FALSE;
 }
 
-#ifndef TDESKTOP_DISABLE_UNITY_INTEGRATION
-UnityLauncherEntry *_psUnityLauncherEntry = nullptr;
-#endif // !TDESKTOP_DISABLE_UNITY_INTEGRATION
 #endif // !TDESKTOP_DISABLE_GTK_INTEGRATION
+
+quint32 djbStringHash(QString string) {
+        quint32 hash = 5381;
+        QByteArray chars = string.toLatin1();
+        for(int i = 0; i < chars.length(); i++){
+                hash = (hash << 5) + hash + chars[i];
+        }
+        return hash;
+}
 
 } // namespace
 
@@ -313,7 +323,7 @@ void MainWindow::workmodeUpdated(DBIWorkMode mode) {
 void MainWindow::psUpdateIndicator() {
 #ifndef TDESKTOP_DISABLE_GTK_INTEGRATION
 	_psUpdateIndicatorTimer.stop();
-	_psLastIndicatorUpdate = getms();
+	_psLastIndicatorUpdate = crl::now();
 	QFileInfo iconFile(_trayIconImageFile());
 	if (iconFile.exists()) {
 		QByteArray path = QFile::encodeName(iconFile.absoluteFilePath()), name = QFile::encodeName(iconFile.fileName());
@@ -333,23 +343,27 @@ void MainWindow::unreadCounterChangedHook() {
 void MainWindow::updateIconCounters() {
 	updateWindowIcon();
 
-	const auto counter = Messenger::Instance().unreadBadge();
+	const auto counter = Core::App().unreadBadge();
 
-#if !defined(TDESKTOP_DISABLE_GTK_INTEGRATION) && !defined(TDESKTOP_DISABLE_UNITY_INTEGRATION)
-	if (_psUnityLauncherEntry) {
+	if (useUnityCount) {
+		QVariantMap dbusUnityProperties;
 		if (counter > 0) {
-			Libs::unity_launcher_entry_set_count(_psUnityLauncherEntry, (counter > 9999) ? 9999 : counter);
-			Libs::unity_launcher_entry_set_count_visible(_psUnityLauncherEntry, TRUE);
+			// Gnome requires that count is a 64bit integer
+			dbusUnityProperties.insert("count", (qint64) ((counter > 9999) ? 9999 : (counter)));
+			dbusUnityProperties.insert("count-visible", true);
 		} else {
-			Libs::unity_launcher_entry_set_count_visible(_psUnityLauncherEntry, FALSE);
+			dbusUnityProperties.insert("count-visible", false);
 		}
+		QDBusMessage signal = QDBusMessage::createSignal(_dbusPath, "com.canonical.Unity.LauncherEntry", "Update");
+		signal << "application://" + _desktopFile;
+		signal << dbusUnityProperties;
+		QDBusConnection::sessionBus().send(signal);
 	}
-#endif // !TDESKTOP_DISABLE_GTK_INTEGRATION && !TDESKTOP_DISABLE_UNITY_INTEGRATION
 
 	if (noQtTrayIcon) {
 #ifndef TDESKTOP_DISABLE_GTK_INTEGRATION
 		if (useAppIndicator) {
-			if (getms() > _psLastIndicatorUpdate + 1000) {
+			if (crl::now() > _psLastIndicatorUpdate + 1000) {
 				psUpdateIndicator();
 			} else if (!_psUpdateIndicatorTimer.isActive()) {
 				_psUpdateIndicatorTimer.start(100);
@@ -372,8 +386,8 @@ void MainWindow::updateIconCounters() {
 			QByteArray path = QFile::encodeName(iconFile.absoluteFilePath());
 			icon = QIcon(path.constData());
 		} else {
-			const auto counter = Messenger::Instance().unreadBadge();
-			const auto muted = Messenger::Instance().unreadBadgeMuted();
+			const auto counter = Core::App().unreadBadge();
+			const auto muted = Core::App().unreadBadgeMuted();
 
 			auto &bg = (muted ? st::trayCounterBgMute : st::trayCounterBg);
 			auto &fg = st::trayCounterFg;
@@ -440,15 +454,6 @@ void MainWindow::LibsLoaded() {
 	if (useStatusIcon) {
 		DEBUG_LOG(("Status icon api loaded!"));
 	}
-
-#ifndef TDESKTOP_DISABLE_UNITY_INTEGRATION
-	useUnityCount = (Libs::unity_launcher_entry_get_for_desktop_id != nullptr)
-			&& (Libs::unity_launcher_entry_set_count != nullptr)
-			&& (Libs::unity_launcher_entry_set_count_visible != nullptr);
-	if (useUnityCount) {
-		DEBUG_LOG(("Unity count api loaded!"));
-	}
-#endif // !TDESKTOP_DISABLE_UNITY_INTEGRATION
 #endif // !TDESKTOP_DISABLE_GTK_INTEGRATION
 }
 
@@ -543,23 +548,29 @@ void MainWindow::psCreateTrayIcon() {
 void MainWindow::psFirstShow() {
 	psCreateTrayIcon();
 
-#if !defined(TDESKTOP_DISABLE_GTK_INTEGRATION) && !defined(TDESKTOP_DISABLE_UNITY_INTEGRATION)
-	if (useUnityCount) {
-		_psUnityLauncherEntry = Libs::unity_launcher_entry_get_for_desktop_id("telegramdesktop.desktop");
-		if (_psUnityLauncherEntry) {
-			LOG(("Found Unity Launcher entry telegramdesktop.desktop!"));
-		} else {
-			_psUnityLauncherEntry = Libs::unity_launcher_entry_get_for_desktop_id("Telegram.desktop");
-			if (_psUnityLauncherEntry) {
-				LOG(("Found Unity Launcher entry Telegram.desktop!"));
+	if (QDBusInterface("com.canonical.Unity", "/").isValid()) {
+		auto snapName = QString::fromLatin1(qgetenv("SNAP_NAME"));
+		if(snapName.isEmpty()) {
+			if(!QStandardPaths::locate(QStandardPaths::ApplicationsLocation, "telegramdesktop.desktop").isEmpty()) {
+				_desktopFile = "telegramdesktop.desktop";
+				LOG(("Found Unity Launcher entry telegramdesktop.desktop!"));
+				useUnityCount=true;
+			} else if(!QStandardPaths::locate(QStandardPaths::ApplicationsLocation, "Telegram.desktop").isEmpty()) {
+				_desktopFile = "telegramdesktop.desktop";
+				LOG(("Found Unity Launcher entry telegramdesktop.desktop!"));
+				useUnityCount=true;
 			} else {
 				LOG(("Could not get Unity Launcher entry!"));
 			}
+		} else {
+			LOG(("SNAP Enviroment detected, setting Launcher entry to %1-telegramdesktop.desktop!").arg(snapName));
+			_desktopFile = snapName + "_telegramdesktop.desktop";
+			useUnityCount=true;
 		}
+		_dbusPath = "/com/canonical/unity/launcherentry/" + QString::number(djbStringHash("application://" + _desktopFile));
 	} else {
 		LOG(("Not using Unity Launcher count."));
 	}
-#endif // !TDESKTOP_DISABLE_GTK_INTEGRATION && !TDESKTOP_DISABLE_GTK_INTEGRATION
 
 	psUpdateMargins();
 
@@ -612,12 +623,6 @@ MainWindow::~MainWindow() {
 		Libs::g_object_unref(_trayIndicator);
 		_trayIndicator = nullptr;
 	}
-#ifndef TDESKTOP_DISABLE_UNITY_INTEGRATION
-	if (_psUnityLauncherEntry) {
-		Libs::g_object_unref(_psUnityLauncherEntry);
-		_psUnityLauncherEntry = nullptr;
-	}
-#endif // ! TDESKTOP_DISABLE_UNITY_INTEGRATION
 #endif // !TDESKTOP_DISABLE_GTK_INTEGRATION
 }
 

@@ -481,9 +481,9 @@ void SpecialSetReceived(
 		auto custom = sets.find(CustomSetId);
 		auto pack = Pack();
 		pack.reserve(items.size());
-		for_const (auto &mtpDocument, items) {
+		for (const auto &item : items) {
 			++dateIndex;
-			auto document = Auth().data().document(mtpDocument);
+			const auto document = Auth().data().processDocument(item);
 			if (!document->sticker()) {
 				continue;
 			}
@@ -663,10 +663,11 @@ void GifsReceived(const QVector<MTPDocument> &items, int32 hash) {
 	saved.clear();
 
 	saved.reserve(items.size());
-	for_const (auto &gif, items) {
-		auto document = Auth().data().document(gif);
+	for (const auto &item : items) {
+		const auto document = Auth().data().processDocument(item);
 		if (!document->isGifv()) {
-			LOG(("API Error: bad document returned in HistoryWidget::savedGifsGot!"));
+			LOG(("API Error: "
+				"bad document returned in HistoryWidget::savedGifsGot!"));
 			continue;
 		}
 
@@ -758,7 +759,6 @@ std::vector<not_null<DocumentData*>> GetListByEmoji(
 				const auto date = usageDate
 					? usageDate
 					: InstallDate(document);
-
 				//CloudVeil start
 				if (GlobalSecuritySettings::getInstance()->getSettings().isStickerSetAllowed(document)) {
 					result.push_back({
@@ -930,13 +930,13 @@ Set *FeedSetFull(const MTPmessages_StickerSet &data) {
 
 	auto pack = Pack();
 	pack.reserve(d_docs.size());
-	for (auto i = 0, l = d_docs.size(); i != l; ++i) {
-		auto doc = Auth().data().document(d_docs.at(i));
-		if (!doc->sticker()) continue;
+	for (const auto &item : d_docs) {
+		const auto document = Auth().data().processDocument(item);
+		if (!document->sticker()) continue;
 
-		pack.push_back(doc);
+		pack.push_back(document);
 		if (custom != sets.cend()) {
-			auto index = custom->stickers.indexOf(doc);
+			const auto index = custom->stickers.indexOf(document);
 			if (index >= 0) {
 				custom->stickers.removeAt(index);
 			}

@@ -9,7 +9,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "platform/platform_specific.h"
 #include "platform/platform_main_window.h"
-#include "core/single_timer.h"
 #include "base/unique_qptr.h"
 
 class MainWidget;
@@ -162,7 +161,7 @@ private:
 	void placeSmallCounter(QImage &img, int size, int count, style::color bg, const QPoint &shift, style::color color) override;
 	QImage icon16, icon32, icon64, iconbig16, iconbig32, iconbig64;
 
-	TimeMs _lastTrayClickTime = 0;
+	crl::time _lastTrayClickTime = 0;
 
 	object_ptr<Window::PasscodeLockWidget> _passcodeLock = { nullptr };
 	object_ptr<Intro::Widget> _intro = { nullptr };

@@ -8,7 +8,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/section_widget.h"
 
 #include <rpl/range.h>
-#include "application.h"
 #include "mainwidget.h"
 #include "window/section_memento.h"
 #include "window/window_slide_animation.h"
@@ -78,6 +77,10 @@ void SectionWidget::PaintBackground(QWidget *widget, QPaintEvent *event) {
 
 	auto clip = event->rect();
 	auto fill = QRect(0, 0, widget->width(), App::main()->height());
+	if (const auto color = Window::Theme::Background()->colorForFill()) {
+		p.fillRect(fill, *color);
+		return;
+	}
 	auto fromy = App::main()->backgroundFromY();
 	auto x = 0, y = 0;
 	auto cached = App::main()->cachedBackground(fill, x, y);

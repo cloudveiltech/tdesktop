@@ -17,20 +17,20 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/shadow.h"
+#include "ui/emoji_config.h"
 #include "lang/lang_cloud_manager.h"
 #include "lang/lang_instance.h"
 #include "lang/lang_keys.h"
 #include "core/shortcuts.h"
-#include "messenger.h"
+#include "core/sandbox.h"
+#include "core/application.h"
 #include "auth_session.h"
-#include "application.h"
 #include "intro/introwidget.h"
 #include "mainwidget.h"
 #include "boxes/confirm_box.h"
 #include "boxes/add_contact_box.h"
 #include "boxes/connection_box.h"
 #include "observer_peer.h"
-#include "mediaview.h"
 #include "storage/localstorage.h"
 #include "apiwrap.h"
 #include "settings/settings_intro.h"
@@ -65,12 +65,12 @@ void FeedLangTestingKey(int key) {
 } // namespace
 
 MainWindow::MainWindow() {
-	auto logo = Messenger::Instance().logo();
+	auto logo = Core::App().logo();
 	icon16 = logo.scaledToWidth(16, Qt::SmoothTransformation);
 	icon32 = logo.scaledToWidth(32, Qt::SmoothTransformation);
 	icon64 = logo.scaledToWidth(64, Qt::SmoothTransformation);
 
-	auto logoNoMargin = Messenger::Instance().logoNoMargin();
+	auto logoNoMargin = Core::App().logoNoMargin();
 	iconbig16 = logoNoMargin.scaledToWidth(16, Qt::SmoothTransformation);
 	iconbig32 = logoNoMargin.scaledToWidth(32, Qt::SmoothTransformation);
 	iconbig64 = logoNoMargin.scaledToWidth(64, Qt::SmoothTransformation);
@@ -79,7 +79,7 @@ MainWindow::MainWindow() {
 
 	setLocale(QLocale(QLocale::English, QLocale::UnitedStates));
 
-	subscribe(Messenger::Instance().authSessionChanged(), [this] {
+	subscribe(Core::App().authSessionChanged(), [this] {
 		updateGlobalMenu();
 		if (!AuthSession::Exists()) {
 			_mediaPreview.destroy();
@@ -88,9 +88,14 @@ MainWindow::MainWindow() {
 	subscribe(Window::Theme::Background(), [this](const Window::Theme::BackgroundUpdate &data) {
 		themeUpdated(data);
 	});
-	Messenger::Instance().lockChanges(
+	Core::App().lockChanges(
 	) | rpl::start_with_next([=] {
 		updateGlobalMenu();
+	}, lifetime());
+
+	Ui::Emoji::Updated(
+	) | rpl::start_with_next([=] {
+		Ui::ForceFullRepaint(this);
 	}, lifetime());
 
 	setAttribute(Qt::WA_NoSystemBackground);
@@ -136,13 +141,9 @@ void MainWindow::firstShow() {
 void MainWindow::clearWidgetsHook() {
 	Expects(_passcodeLock == nullptr || !Global::LocalPasscode());
 
-	auto wasMain = (_main != nullptr);
 	_main.destroy();
 	_passcodeLock.destroy();
 	_intro.destroy();
-	if (wasMain) {
-		App::clearHistories();
-	}
 }
 
 QPixmap MainWindow::grabInner() {
@@ -162,7 +163,7 @@ void MainWindow::setupPasscodeLock() {
 	_passcodeLock.create(bodyWidget());
 	updateControlsGeometry();
 
-	Messenger::Instance().hideMediaView();
+	Core::App().hideMediaView();
 	Ui::hideSettingsAndLayer(anim::type::instant);
 	if (_main) {
 		_main->hide();
@@ -187,9 +188,9 @@ void MainWindow::clearPasscodeLock() {
 		_intro->showAnimated(bg, true);
 	} else if (_main) {
 		_main->showAnimated(bg, true);
-		Messenger::Instance().checkStartUrl();
+		Core::App().checkStartUrl();
 	} else {
-		Messenger::Instance().startMtp();
+		Core::App().startMtp();
 		if (AuthSession::Exists()) {
 			setupMain();
 		} else {
@@ -240,7 +241,12 @@ void MainWindow::setupMain() {
 }
 
 void MainWindow::showSettings() {
-	if (isHidden()) showFromTray();
+	if (isHidden()) {
+		showFromTray();
+	}
+	if (_passcodeLock) {
+		return;
+	}
 
 	if (const auto controller = this->controller()) {
 		controller->showSettings();
@@ -252,7 +258,9 @@ void MainWindow::showSettings() {
 void MainWindow::showSpecialLayer(
 		object_ptr<Window::LayerWidget> layer,
 		anim::type animated) {
-	if (_passcodeLock) return;
+	if (_passcodeLock) {
+		return;
+	}
 
 	if (layer) {
 		ensureLayerCreated();
@@ -301,13 +309,18 @@ void MainWindow::destroyLayer() {
 	if (!_layer) {
 		return;
 	}
-	const auto resetFocus = Ui::InFocusChain(_layer);
-	if (resetFocus) setFocus();
-	_layer = nullptr;
+	auto layer = base::take(_layer);
+	const auto resetFocus = Ui::InFocusChain(layer);
+	if (resetFocus) {
+		setFocus();
+	}
+	layer = nullptr;
 	if (controller()) {
 		controller()->disableGifPauseReason(Window::GifPauseReason::Layer);
 	}
-	if (resetFocus) setInnerFocus();
+	if (resetFocus) {
+		setInnerFocus();
+	}
 	InvokeQueued(this, [=] {
 		checkHistoryActivation();
 	});
@@ -348,7 +361,7 @@ void MainWindow::ui_showBox(
 				destroyLayer();
 			}
 		}
-		Messenger::Instance().hideMediaView();
+		Core::App().hideMediaView();
 	}
 }
 
@@ -483,7 +496,7 @@ bool MainWindow::eventFilter(QObject *object, QEvent *e) {
 
 	case QEvent::MouseMove: {
 		if (_main && _main->isIdle()) {
-			psUserActionDone();
+			Core::App().updateNonIdle();
 			_main->checkIdleFinish();
 		}
 	} break;
@@ -593,7 +606,7 @@ void MainWindow::onLogout() {
 	}
 
 	const auto logout = [] {
-		Messenger::Instance().logOut();
+		Core::App().logOut();
 	};
 	const auto callback = [=] {
 		if (AuthSession::Exists() && Auth().data().exportInProgress()) {
@@ -667,18 +680,18 @@ void MainWindow::toggleTray(QSystemTrayIcon::ActivationReason reason) {
 		} else {
 			showFromTray(reason);
 		}
-		_lastTrayClickTime = getms();
+		_lastTrayClickTime = crl::now();
 	}
 }
 
 bool MainWindow::skipTrayClick() const {
 	return (_lastTrayClickTime > 0)
-		&& (getms() - _lastTrayClickTime
+		&& (crl::now() - _lastTrayClickTime
 			< QApplication::doubleClickInterval());
 }
 
 void MainWindow::toggleDisplayNotifyFromTray() {
-	if (Messenger::Instance().locked()) {
+	if (Core::App().locked()) {
 		if (!isActive()) showFromTray();
 		Ui::show(Box<InformBox>(lang(lng_passcode_need_unblock)));
 		return;
@@ -712,7 +725,7 @@ void MainWindow::toggleDisplayNotifyFromTray() {
 }
 
 void MainWindow::closeEvent(QCloseEvent *e) {
-	if (Sandbox::isSavingSession()) {
+	if (Core::Sandbox::Instance().isSavingSession()) {
 		e->accept();
 		App::quit();
 	} else {
@@ -830,6 +843,8 @@ QImage MainWindow::iconWithCounter(int size, int count, style::color bg, style::
 	if (layer) {
 		if (size != 16 && size != 20 && size != 24) size = 32;
 
+		// platform/linux/main_window_linux depends on count used the same
+		// way for all the same (count % 1000) values.
 		QString cnt = (count < 1000) ? QString("%1").arg(count) : QString("..%1").arg(count % 100, 2, 10, QChar('0'));
 		QImage result(size, size, QImage::Format_ARGB32);
 		int32 cntSize = cnt.size();
@@ -892,10 +907,10 @@ QImage MainWindow::iconWithCounter(int size, int count, style::color bg, style::
 }
 
 void MainWindow::sendPaths() {
-	if (Messenger::Instance().locked()) {
+	if (Core::App().locked()) {
 		return;
 	}
-	Messenger::Instance().hideMediaView();
+	Core::App().hideMediaView();
 	Ui::hideSettingsAndLayer(anim::type::instant);
 	if (_main) {
 		_main->activate();

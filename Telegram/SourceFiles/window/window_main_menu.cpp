@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_main_menu.h"
 
 #include "window/themes/window_theme.h"
+#include "window/window_controller.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/menu.h"
@@ -16,6 +17,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwindow.h"
 #include "storage/localstorage.h"
 #include "support/support_templates.h"
+#include "settings/settings_common.h"
 #include "boxes/about_box.h"
 #include "boxes/peer_list_controllers.h"
 #include "calls/calls_box_controller.h"
@@ -23,10 +25,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/click_handler_types.h"
 #include "observer_peer.h"
 #include "auth_session.h"
+#include "data/data_user.h"
 #include "mainwidget.h"
 #include "styles/style_window.h"
 #include "styles/style_dialogs.h"
 #include "styles/style_settings.h"
+#include "styles/style_boxes.h"
 
 namespace Window {
 namespace {
@@ -152,7 +156,7 @@ MainMenu::MainMenu(
 	});
 	refreshMenu();
 
-	_telegram->setRichText(textcmdLink(1, qsl("CloudVeil Messenger Desktop")));
+	_telegram->setRichText(textcmdLink(1, qsl("CloudVeil Messenger")));
 	_telegram->setLink(1, std::make_shared<UrlClickHandler>(qsl("https://desktop.telegram.org")));
 	_version->setRichText(textcmdLink(1, lng_settings_current_version(lt_version, currentVersionText())) + QChar(' ') + QChar(8211) + QChar(' ') + textcmdLink(2, lang(lng_menu_about)));
 	_version->setLink(1, std::make_shared<UrlClickHandler>(qsl("https://desktop.telegram.org/changelog")));
@@ -193,7 +197,14 @@ void MainMenu::refreshMenu() {
 		if (Global::PhoneCallsEnabled()) {
 			_menu->addAction(lang(lng_menu_calls), [] {
 				Ui::show(Box<PeerListBox>(std::make_unique<Calls::BoxController>(), [](not_null<PeerListBox*> box) {
-					box->addButton(langFactory(lng_close), [box] { box->closeBox(); });
+					box->addButton(langFactory(lng_close), [=] {
+						box->closeBox();
+					});
+					box->addTopButton(st::callSettingsButton, [=] {
+						App::wnd()->controller()->showSettings(
+							Settings::Type::Calls,
+							Window::SectionShow(anim::type::instant));
+					});
 				}));
 			}, &st::mainMenuCalls, &st::mainMenuCallsOver);
 		}

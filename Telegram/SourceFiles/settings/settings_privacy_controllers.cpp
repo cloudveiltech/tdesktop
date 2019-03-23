@@ -14,6 +14,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwidget.h"
 #include "auth_session.h"
 #include "storage/localstorage.h"
+#include "data/data_user.h"
+#include "data/data_session.h"
 #include "history/history.h"
 #include "calls/calls_instance.h"
 #include "ui/widgets/checkbox.h"
@@ -110,7 +112,10 @@ void BlockedBoxController::loadMoreRows() {
 		return;
 	}
 
-	_loadRequestId = request(MTPcontacts_GetBlocked(MTP_int(_offset), MTP_int(kBlockedPerPage))).done([this](const MTPcontacts_Blocked &result) {
+	_loadRequestId = request(MTPcontacts_GetBlocked(
+		MTP_int(_offset),
+		MTP_int(kBlockedPerPage)
+	)).done([=](const MTPcontacts_Blocked &result) {
 		_loadRequestId = 0;
 
 		if (!_offset) {
@@ -118,7 +123,7 @@ void BlockedBoxController::loadMoreRows() {
 		}
 
 		auto handleContactsBlocked = [](auto &list) {
-			App::feedUsers(list.vusers);
+			Auth().data().processUsers(list.vusers);
 			return list.vblocked.v;
 		};
 		switch (result.type()) {
@@ -161,7 +166,7 @@ void BlockedBoxController::receivedUsers(const QVector<MTPContactBlocked> &resul
 		}
 		auto &contactBlocked = item.c_contactBlocked();
 		auto userId = contactBlocked.vuser_id.v;
-		if (auto user = App::userLoaded(userId)) {
+		if (auto user = Auth().data().userLoaded(userId)) {
 			appendRow(user);
 			user->setBlockStatus(UserData::BlockStatus::Blocked);
 		}
@@ -214,7 +219,7 @@ bool BlockedBoxController::prependRow(not_null<UserData*> user) {
 std::unique_ptr<PeerListRow> BlockedBoxController::createRow(
 		not_null<UserData*> user) const {
 	auto row = std::make_unique<PeerListRowWithLink>(user);
-	row->setActionLink(lang(user->botInfo
+	row->setActionLink(lang((user->isBot() && !user->isSupport())
 		? lng_blocked_list_restart
 		: lng_blocked_list_unblock));
 	const auto status = [&] {

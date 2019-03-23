@@ -11,6 +11,9 @@
 #include "storage/localstorage.h"
 #include "history/history.h"
 #include "data/data_session.h"
+#include "data/data_user.h"
+#include "data/data_chat.h"
+#include "data/data_channel.h"
 
 SettingsResponse GlobalSecuritySettings::lastResponse;
 GlobalSecuritySettings* GlobalSecuritySettings::instance;

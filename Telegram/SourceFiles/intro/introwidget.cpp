@@ -18,8 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwidget.h"
 #include "apiwrap.h"
 #include "mainwindow.h"
-#include "messenger.h"
-#include "application.h"
+#include "core/application.h"
 #include "boxes/confirm_box.h"
 #include "ui/text/text.h"
 #include "ui/widgets/buttons.h"
@@ -30,12 +29,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_slide_animation.h"
 #include "window/window_connecting_widget.h"
 #include "window/window_lock_widgets.h"
-#include "styles/style_boxes.h"
-#include "styles/style_intro.h"
-#include "styles/style_window.h"
+#include "data/data_user.h"
 #include "window/themes/window_theme.h"
 #include "lang/lang_cloud_manager.h"
 #include "auth_session.h"
+#include "styles/style_boxes.h"
+#include "styles/style_intro.h"
+#include "styles/style_window.h"
 
 namespace Intro {
 namespace {
@@ -43,14 +43,14 @@ namespace {
 constexpr str_const kDefaultCountry = "US";
 
 void PrepareSupportMode() {
+	using Data::AutoDownload::Full;
+
 	anim::SetDisabled(true);
 	Local::writeSettings();
 
 	Global::SetDesktopNotify(false);
 	Global::SetSoundNotify(false);
-	cSetAutoDownloadAudio(dbiadNoPrivate | dbiadNoGroups);
-	cSetAutoDownloadGif(dbiadNoPrivate | dbiadNoGroups);
-	cSetAutoDownloadPhoto(dbiadNoPrivate | dbiadNoGroups);
+	Auth().settings().autoDownload() = Full::FullDisabled();
 	cSetAutoPlayGif(false);
 	Local::writeUserSettings();
 }
@@ -94,6 +94,7 @@ Widget::Widget(QWidget *parent) : RpWidget(parent)
 	show();
 	showControls();
 	getStep()->showFast();
+	setInnerFocus();
 
 	cSetPasswordRecovered(false);
 
@@ -114,7 +115,7 @@ Widget::Widget(QWidget *parent) : RpWidget(parent)
 }
 
 void Widget::setupConnectingWidget() {
-	_connecting = Window::ConnectingWidget::CreateDefaultWidget(
+	_connecting = std::make_unique<Window::ConnectionState>(
 		this,
 		rpl::single(true));
 }
@@ -393,7 +394,7 @@ void Widget::getNearestDC() {
 			).arg(qs(nearest.vcountry)
 			).arg(nearest.vnearest_dc.v
 			).arg(nearest.vthis_dc.v));
-		Messenger::Instance().suggestMainDcId(nearest.vnearest_dc.v);
+		Core::App().suggestMainDcId(nearest.vnearest_dc.v);
 		auto nearestCountry = qs(nearest.vcountry);
 		if (getData()->country != nearestCountry) {
 			getData()->country = nearestCountry;
@@ -513,7 +514,7 @@ void Widget::paintEvent(QPaintEvent *e) {
 	setMouseTracking(true);
 
 	if (_coverShownAnimation.animating()) {
-		_coverShownAnimation.step(getms());
+		_coverShownAnimation.step(crl::now());
 	}
 
 	QPainter p(this);
@@ -521,7 +522,7 @@ void Widget::paintEvent(QPaintEvent *e) {
 		p.setClipRect(e->rect());
 	}
 	p.fillRect(e->rect(), st::windowBg);
-	auto progress = _a_show.current(getms(), 1.);
+	auto progress = _a_show.current(crl::now(), 1.);
 	if (_a_show.animating()) {
 		auto coordUnder = _showBack ? anim::interpolate(-st::slideShift, 0, progress) : anim::interpolate(0, -st::slideShift, progress);
 		auto coordOver = _showBack ? anim::interpolate(0, width(), progress) : anim::interpolate(width(), 0, progress);
@@ -627,7 +628,7 @@ void Widget::Step::finish(const MTPUser &user, QImage &&photo) {
 		Local::writeLangPack();
 	}
 
-	Messenger::Instance().authSessionCreate(user);
+	Core::App().authSessionCreate(user);
 	Local::writeMtpData();
 	App::wnd()->setupMain();
 
@@ -709,7 +710,7 @@ void Widget::Step::showFinished() {
 
 bool Widget::Step::paintAnimated(Painter &p, QRect clip) {
 	if (_slideAnimation) {
-		_slideAnimation->paintFrame(p, (width() - st::introStepWidth) / 2, contentTop(), width(), getms());
+		_slideAnimation->paintFrame(p, (width() - st::introStepWidth) / 2, contentTop(), width(), crl::now());
 		if (!_slideAnimation->animating()) {
 			showFinished();
 			return false;
@@ -717,7 +718,7 @@ bool Widget::Step::paintAnimated(Painter &p, QRect clip) {
 		return true;
 	}
 
-	auto dt = _a_show.current(getms(), 1.);
+	auto dt = _a_show.current(crl::now(), 1.);
 	if (!_a_show.animating()) {
 		if (hasCover()) {
 			paintCover(p, 0);

@@ -53,17 +53,17 @@ WebPageCollage ExtractCollage(
 
 	auto &storage = Auth().data();
 	for (const auto &photo : photos) {
-		storage.photo(photo);
+		storage.processPhoto(photo);
 	}
 	for (const auto &document : documents) {
-		storage.document(document);
+		storage.processDocument(document);
 	}
 	auto result = WebPageCollage();
 	result.items.reserve(count);
 	for (const auto &item : items) {
 		const auto good = item.match([&](const MTPDpageBlockPhoto &data) {
 			const auto photo = storage.photo(data.vphoto_id.v);
-			if (photo->full->isNull()) {
+			if (photo->isNull()) {
 				return false;
 			}
 			result.items.push_back(photo);
@@ -89,12 +89,12 @@ WebPageCollage ExtractCollage(const MTPDwebPage &data) {
 	if (!data.has_cached_page()) {
 		return {};
 	}
-	const auto parseMedia = [&] {
+	const auto processMedia = [&] {
 		if (data.has_photo()) {
-			Auth().data().photo(data.vphoto);
+			Auth().data().processPhoto(data.vphoto);
 		}
 		if (data.has_document()) {
-			Auth().data().document(data.vdocument);
+			Auth().data().processDocument(data.vdocument);
 		}
 	};
 	return data.vcached_page.match([&](const auto &page) {
@@ -108,13 +108,13 @@ WebPageCollage ExtractCollage(const MTPDwebPage &data) {
 			case mtpc_pageBlockAudio:
 				return WebPageCollage();
 			case mtpc_pageBlockSlideshow:
-				parseMedia();
+				processMedia();
 				return ExtractCollage(
 					block.c_pageBlockSlideshow().vitems.v,
 					page.vphotos.v,
 					page.vdocuments.v);
 			case mtpc_pageBlockCollage:
-				parseMedia();
+				processMedia();
 				return ExtractCollage(
 					block.c_pageBlockCollage().vitems.v,
 					page.vphotos.v,
@@ -130,12 +130,19 @@ WebPageCollage ExtractCollage(const MTPDwebPage &data) {
 
 WebPageType ParseWebPageType(const MTPDwebPage &page) {
 	const auto type = page.has_type() ? qs(page.vtype) : QString();
-	if (type == qstr("photo")) return WebPageType::Photo;
-	if (type == qstr("video")) return WebPageType::Video;
-	if (type == qstr("profile")) return WebPageType::Profile;
-	return page.has_cached_page()
-		? WebPageType::ArticleWithIV
-		: WebPageType::Article;
+	if (type == qstr("video") || page.has_embed_url()) {
+		return WebPageType::Video;
+	} else if (type == qstr("photo")) {
+		return WebPageType::Photo;
+	} else if (type == qstr("profile")) {
+		return WebPageType::Profile;
+	} else if (type == qstr("telegram_background")) {
+		return WebPageType::WallPaper;
+	} else if (page.has_cached_page()) {
+		return WebPageType::ArticleWithIV;
+	} else {
+		return WebPageType::Article;
+	}
 }
 
 WebPageCollage::WebPageCollage(const MTPDwebPage &data)
@@ -217,6 +224,10 @@ bool WebPageData::applyChanges(
 	pendingTill = newPendingTill;
 	++version;
 
+	if (type == WebPageType::WallPaper && document) {
+		document->checkWallPaperProperties();
+	}
+
 	replaceDocumentGoodThumbnail();
 
 	return true;
@@ -226,12 +237,12 @@ void WebPageData::replaceDocumentGoodThumbnail() {
 	if (!document || !photo || !document->goodThumbnail()) {
 		return;
 	}
-	const auto &location = photo->full->location();
+	const auto &location = photo->large()->location();
 	if (!location.isNull()) {
 		document->replaceGoodThumbnail(
 			std::make_unique<Images::StorageSource>(
 				location,
-				photo->full->bytesSize()));
+				photo->large()->bytesSize()));
 	}
 
 }

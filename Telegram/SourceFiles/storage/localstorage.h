@@ -12,6 +12,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/localimageloader.h"
 #include "auth_session.h"
 
+namespace Data {
+class WallPaper;
+} // namespace Data
+
 namespace Lang {
 struct Language;
 } // namespace Lang
@@ -108,10 +112,16 @@ bool hasDraft(const PeerId &peer);
 void writeFileLocation(MediaKey location, const FileLocation &local);
 FileLocation readFileLocation(MediaKey location, bool check = true);
 
-QString cachePath();
 Storage::EncryptionKey cacheKey();
+QString cachePath();
 Storage::Cache::Database::Settings cacheSettings();
-void updateCacheSettings(Storage::Cache::Database::SettingsUpdate &update);
+void updateCacheSettings(
+	Storage::Cache::Database::SettingsUpdate &update,
+	Storage::Cache::Database::SettingsUpdate &updateBig);
+
+Storage::EncryptionKey cacheBigFileKey();
+QString cacheBigFilePath();
+Storage::Cache::Database::Settings cacheBigFileSettings();
 
 void countVoiceWaveform(DocumentData *document);
 
@@ -136,7 +146,7 @@ void writeSavedGifs();
 void readSavedGifs();
 int32 countSavedGifsHash();
 
-void writeBackground(int32 id, const QImage &img);
+void writeBackground(const Data::WallPaper &paper, const QImage &image);
 bool readBackground();
 
 void writeTheme(const Window::Theme::Saved &saved);

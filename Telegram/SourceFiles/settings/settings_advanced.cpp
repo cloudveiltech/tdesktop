@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/platform_specific.h"
 #include "lang/lang_keys.h"
 #include "core/update_checker.h"
+#include "core/application.h"
 #include "storage/localstorage.h"
 #include "data/data_session.h"
 #include "auth_session.h"
@@ -174,7 +175,7 @@ void SetupUpdate(not_null<Ui::VerticalLayout*> container) {
 			return (toggled != cInstallBetaVersion());
 		}) | rpl::start_with_next([=](bool toggled) {
 			cSetInstallBetaVersion(toggled);
-			Sandbox::WriteInstallBetaVersionsSetting();
+			Core::App().writeInstallBetaVersionsSetting();
 
 			Core::UpdateChecker checker;
 			checker.stop();
@@ -436,9 +437,30 @@ void SetupPerformance(not_null<Ui::VerticalLayout*> container) {
 	}, container->lifetime());
 }
 
+void SetupSystemIntegration(
+		not_null<Ui::VerticalLayout*> container,
+		Fn<void(Type)> showOther) {
+	AddDivider(container);
+	AddSkip(container);
+	AddSubsectionTitle(container, lng_settings_system_integration);
+	AddButton(
+		container,
+		lng_settings_section_call_settings,
+		st::settingsButton
+	)->addClickHandler([=] {
+		showOther(Type::Calls);
+	});
+	SetupTray(container);
+	AddSkip(container);
+}
+
 Advanced::Advanced(QWidget *parent, UserData *self)
 : Section(parent) {
 	setupContent();
+}
+
+rpl::producer<Type> Advanced::sectionShowOther() {
+	return _showOther.events();
 }
 
 void Advanced::setupContent() {
@@ -472,18 +494,17 @@ void Advanced::setupContent() {
 		AddSkip(content);
 	}
 	SetupDataStorage(content);
-	if (HasTray()) {
-		addDivider();
-		AddSkip(content);
-		AddSubsectionTitle(content, lng_settings_system_integration);
-		SetupTray(content);
-		AddSkip(content);
-	}
-	addDivider();
+	SetupAutoDownload(content);
+	SetupSystemIntegration(content, [=](Type type) {
+		_showOther.fire_copy(type);
+	});
+
+	AddDivider(content);
 	AddSkip(content);
 	AddSubsectionTitle(content, lng_settings_performance);
 	SetupPerformance(content);
 	AddSkip(content);
+
 	if (cAutoUpdate()) {
 		addUpdate();
 	}

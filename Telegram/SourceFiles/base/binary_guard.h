@@ -21,7 +21,9 @@ public:
 	~binary_guard();
 
 	bool alive() const;
-	void kill();
+
+	binary_guard &operator=(std::nullptr_t);
+	explicit operator bool() const;
 
 private:
 	void destroy();
@@ -44,15 +46,20 @@ inline binary_guard &binary_guard::operator=(binary_guard &&other) {
 	return *this;
 }
 
-inline binary_guard::~binary_guard() {
+inline binary_guard &binary_guard::operator=(std::nullptr_t) {
 	destroy();
+	return *this;
+}
+
+inline binary_guard::operator bool() const {
+	return alive();
 }
 
 inline bool binary_guard::alive() const {
 	return _bothAlive && _bothAlive->load();
 }
 
-inline void binary_guard::kill() {
+inline binary_guard::~binary_guard() {
 	destroy();
 }
 
@@ -74,3 +81,21 @@ inline std::pair<binary_guard, binary_guard> make_binary_guard() {
 }
 
 } // namespace base
+
+namespace crl {
+
+template <typename T, typename Enable>
+struct guard_traits;
+
+template <>
+struct guard_traits<base::binary_guard, void> {
+	static base::binary_guard create(base::binary_guard value) {
+		return value;
+	}
+	static bool check(const base::binary_guard &guard) {
+		return guard.alive();
+	}
+
+};
+
+} // namespace crl

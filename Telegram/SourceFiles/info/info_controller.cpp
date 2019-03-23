@@ -15,6 +15,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/info_memento.h"
 #include "info/media/info_media_widget.h"
 #include "observer_peer.h"
+#include "data/data_peer.h"
+#include "data/data_channel.h"
+#include "data/data_chat.h"
+#include "data/data_session.h"
+#include "auth_session.h"
 #include "window/window_controller.h"
 
 namespace Info {
@@ -23,8 +28,8 @@ namespace {
 not_null<PeerData*> CorrectPeer(PeerId peerId) {
 	Expects(peerId != 0);
 
-	auto result = App::peer(peerId);
-	if (auto to = result->migrateTo()) {
+	const auto result = Auth().data().peer(peerId);
+	if (const auto to = result->migrateTo()) {
 		return to;
 	}
 	return result;
@@ -81,6 +86,25 @@ rpl::producer<QString> AbstractController::mediaSourceQueryValue() const {
 	return rpl::single(QString());
 }
 
+AbstractController::AbstractController(not_null<Window::Controller*> parent)
+: Navigation(&parent->session())
+, _parent(parent) {
+}
+
+PeerId AbstractController::peerId() const {
+	if (const auto peer = key().peer()) {
+		return peer->id;
+	}
+	return PeerId(0);
+}
+
+PeerId AbstractController::migratedPeerId() const {
+	if (const auto peer = migrated()) {
+		return peer->id;
+	}
+	return PeerId(0);
+}
+
 void AbstractController::showSection(
 		Window::SectionMemento &&memento,
 		const Window::SectionShow &params) {
@@ -100,7 +124,7 @@ Controller::Controller(
 , _widget(widget)
 , _key(memento->key())
 , _migrated(memento->migratedPeerId()
-	? App::peer(memento->migratedPeerId())
+	? Auth().data().peer(memento->migratedPeerId()).get()
 	: nullptr)
 , _section(memento->section()) {
 	updateSearchControllers(memento);

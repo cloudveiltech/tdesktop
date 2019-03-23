@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/flags.h"
 #include "dialogs/dialogs_key.h"
 
+class AuthSession;
 class MainWidget;
 class HistoryMessage;
 class HistoryService;
@@ -103,6 +104,10 @@ class Controller;
 
 class Navigation {
 public:
+	explicit Navigation(not_null<AuthSession*> session);
+
+	AuthSession &session() const;
+
 	virtual void showSection(
 		SectionMemento &&memento,
 		const SectionShow &params = SectionShow()) = 0;
@@ -127,11 +132,16 @@ public:
 
 	virtual ~Navigation() = default;
 
+private:
+	const not_null<AuthSession*> _session;
+
 };
 
 class Controller : public Navigation {
 public:
-	Controller(not_null<MainWindow*> window);
+	Controller(
+		not_null<AuthSession*> session,
+		not_null<MainWindow*> window);
 
 	not_null<MainWindow*> window() const {
 		return _window;
@@ -149,6 +159,7 @@ public:
 	rpl::producer<Dialogs::Key> activeChatChanges() const;
 	rpl::producer<Dialogs::RowDescriptor> activeChatEntryValue() const;
 	rpl::producer<Dialogs::Key> activeChatValue() const;
+	bool jumpToChatListEntry(Dialogs::RowDescriptor row);
 
 	void enableGifPauseReason(GifPauseReason reason);
 	void disableGifPauseReason(GifPauseReason reason);
@@ -259,6 +270,9 @@ public:
 	~Controller();
 
 private:
+	void init();
+	void initSupportMode();
+
 	int minimalThreeColumnWidth() const;
 	not_null<MainWidget*> chats() const;
 	int countDialogsWidthFromRatio(int bodyWidth) const;
@@ -272,7 +286,10 @@ private:
 		int thirdWidth,
 		int bodyWidth) const;
 
-	not_null<MainWindow*> _window;
+	void pushToChatEntryHistory(Dialogs::RowDescriptor row);
+	bool chatEntryHistoryMove(int steps);
+
+	const not_null<MainWindow*> _window;
 
 	std::unique_ptr<Passport::FormController> _passportForm;
 
@@ -283,6 +300,8 @@ private:
 	rpl::variable<Dialogs::RowDescriptor> _activeChatEntry;
 	base::Variable<bool> _dialogsListFocused = { false };
 	base::Variable<bool> _dialogsListDisplayForced = { false };
+	std::deque<Dialogs::RowDescriptor> _chatEntryHistory;
+	int _chatEntryHistoryPosition = -1;
 
 	std::unique_ptr<RoundController> _roundVideo;
 	std::unique_ptr<Media::Player::FloatController> _floatPlayers;

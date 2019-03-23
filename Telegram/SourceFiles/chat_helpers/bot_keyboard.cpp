@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "history/history.h"
 #include "history/history_item_components.h"
+#include "data/data_user.h"
 #include "styles/style_widgets.h"
 #include "styles/style_history.h"
 
@@ -109,7 +110,7 @@ void BotKeyboard::paintEvent(QPaintEvent *e) {
 	if (_impl) {
 		int x = rtl() ? st::botKbScroll.width : _st->margin;
 		p.translate(x, st::botKbScroll.deltat);
-		_impl->paint(p, width(), clip.translated(-x, -st::botKbScroll.deltat), getms());
+		_impl->paint(p, width(), clip.translated(-x, -st::botKbScroll.deltat), crl::now());
 	}
 }
 

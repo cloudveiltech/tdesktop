@@ -28,7 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace {
 
-constexpr auto kSessionsShortPollTimeout = 60 * TimeMs(1000);
+constexpr auto kSessionsShortPollTimeout = 60 * crl::time(1000);
 
 } // namespace
 
@@ -181,8 +181,8 @@ SessionsBox::Entry SessionsBox::ParseEntry(const MTPDauthorization &data) {
 	const auto apiId = data.vapi_id.v;
 	if (apiId == 2040 || apiId == 17349) {
 		appName = (apiId == 2040)
-			? qstr("Telegram Desktop")
-			: qstr("Telegram Desktop (GitHub)");
+			? qstr("CloudVeil Messenger")
+			: qstr("CloudVeil Messenger (GitHub)");
 		//if (systemVer == qstr("windows")) {
 		//	deviceModel = qsl("Windows");
 		//} else if (systemVer == qstr("os x")) {

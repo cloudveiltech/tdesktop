@@ -57,7 +57,7 @@ public:
 	bool hidden() const;
 	void checkForAnimationStart();
 
-	void paint(Painter &p, int x, int y, int outerWidth, TimeMs ms);
+	void paint(Painter &p, int x, int y, int outerWidth, crl::time ms);
 	ClickHandlerPtr getState(QPoint point) const;
 
 	rpl::producer<QRect> updateRequests() const {
@@ -99,7 +99,7 @@ private:
 		Key key,
 		const WebPageCollage &collage,
 		int index);
-	std::unique_ptr<Thumb> createThumb(Key key, ImagePtr image);
+	std::unique_ptr<Thumb> createThumb(Key key, Image *image);
 
 	void update();
 	void countUpdatedRect();

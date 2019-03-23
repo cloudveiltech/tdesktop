@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/change_phone_box.h"
 #include "boxes/photo_crop_box.h"
 #include "boxes/username_box.h"
+#include "data/data_user.h"
 #include "info/profile/info_profile_values.h"
 #include "info/profile/info_profile_button.h"
 #include "lang/lang_keys.h"
@@ -29,6 +30,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/file_utilities.h"
 #include "styles/style_boxes.h"
 #include "styles/style_settings.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace Settings {
 namespace {
@@ -36,9 +38,9 @@ namespace {
 constexpr auto kSaveBioTimeout = 1000;
 
 void SetupPhoto(
-		not_null<Ui::VerticalLayout*> container,
-		not_null<Window::Controller*> controller,
-		not_null<UserData*> self) {
+	not_null<Ui::VerticalLayout*> container,
+	not_null<Window::Controller*> controller,
+	not_null<UserData*> self) {
 	const auto wrap = container->add(object_ptr<BoxContentDivider>(
 		container,
 		st::settingsInfoPhotoHeight));
@@ -74,7 +76,8 @@ void SetupPhoto(
 				return;
 			}
 
-			auto box = Ui::show(Box<PhotoCropBox>(image, self));
+			const auto box = Ui::show(
+				Box<PhotoCropBox>(image, lang(lng_settings_crop_profile)));
 			box->ready(
 			) | rpl::start_with_next([=](QImage &&image) {
 				Auth().api().uploadPeerPhoto(self, std::move(image));
@@ -86,6 +89,13 @@ void SetupPhoto(
 			filter,
 			crl::guard(upload, callback));
 	});
+
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableProfilePhotoChange) {
+		upload->hide();
+	}
+	//CloudVeil end
+	
 	rpl::combine(
 		wrap->widthValue(),
 		photo->widthValue(),
@@ -299,6 +309,11 @@ BioManager SetupBio(
 			*current),
 		st::settingsBioMargins);
 
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableBioChange) {
+		bio->setEnabled(false);
+	}
+	//CloudVeil end
 	const auto countdown = Ui::CreateChild<Ui::FlatLabel>(
 		container.get(),
 		QString(),

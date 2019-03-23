@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <rpl/filter.h>
 #include <rpl/variable.h>
 #include "base/timer.h"
+#include "data/data_auto_download.h"
 
 class ApiWrap;
 enum class SendFilesWay;
@@ -102,6 +103,9 @@ public:
 	void setSupportChatsTimeSlice(int slice);
 	int supportChatsTimeSlice() const;
 	rpl::producer<int> supportChatsTimeSliceValue() const;
+	void setSupportAllSearchResults(bool all);
+	bool supportAllSearchResults() const;
+	rpl::producer<bool> supportAllSearchResultsValue() const;
 
 	ChatHelpers::SelectorTab selectorTab() const {
 		return _variables.selectorTab;
@@ -134,12 +138,6 @@ public:
 	}
 	bool smallDialogsList() const {
 		return _variables.smallDialogsList;
-	}
-	void setLastTimeVideoPlayedAt(TimeMs time) {
-		_lastTimeVideoPlayedAt = time;
-	}
-	TimeMs lastTimeVideoPlayedAt() const {
-		return _lastTimeVideoPlayedAt;
 	}
 	void setSoundOverride(const QString &key, const QString &path) {
 		_variables.soundOverrides.insert(key, path);
@@ -181,6 +179,13 @@ public:
 	}
 	void removeGroupStickersSectionHidden(PeerId peerId) {
 		_variables.groupStickersSectionHidden.remove(peerId);
+	}
+
+	Data::AutoDownload::Full &autoDownload() {
+		return _variables.autoDownload;
+	}
+	const Data::AutoDownload::Full &autoDownload() const {
+		return _variables.autoDownload;
 	}
 
 	bool hadLegacyCallsPeerToPeerNobody() const {
@@ -234,6 +239,7 @@ private:
 		bool includeMutedCounter = true;
 		bool countUnreadMessages = true;
 		bool exeLaunchWarning = true;
+		Data::AutoDownload::Full autoDownload;
 
 		static constexpr auto kDefaultSupportChatsLimitSlice
 			= 7 * 24 * 60 * 60;
@@ -243,6 +249,7 @@ private:
 		bool supportTemplatesAutocomplete = true;
 		rpl::variable<int> supportChatsTimeSlice
 			= kDefaultSupportChatsLimitSlice;
+		rpl::variable<bool> supportAllSearchResults = false;
 	};
 
 	rpl::event_stream<bool> _thirdSectionInfoEnabledValue;
@@ -250,11 +257,9 @@ private:
 	rpl::event_stream<bool> _tabbedReplacedWithInfoValue;
 
 	Variables _variables;
-	TimeMs _lastTimeVideoPlayedAt = 0;
 
 };
 
-// One per Messenger.
 class AuthSession;
 AuthSession &Auth();
 
@@ -269,12 +274,8 @@ public:
 
 	static bool Exists();
 
-	UserId userId() const {
-		return _user->bareId();
-	}
-	PeerId userPeerId() const {
-		return _user->id;
-	}
+	UserId userId() const;
+	PeerId userPeerId() const;
 	not_null<UserData*> user() const {
 		return _user;
 	}
@@ -303,7 +304,7 @@ public:
 		return _settings;
 	}
 	void moveSettingsFrom(AuthSessionSettings &&other);
-	void saveSettingsDelayed(TimeMs delay = kDefaultSaveDelay);
+	void saveSettingsDelayed(crl::time delay = kDefaultSaveDelay);
 
 	ApiWrap &api() {
 		return *_api;
@@ -314,7 +315,8 @@ public:
 	}
 
 	void checkAutoLock();
-	void checkAutoLockIn(TimeMs time);
+	void checkAutoLockIn(crl::time time);
+	void localPasscodeChanged();
 
 	rpl::lifetime &lifetime() {
 		return _lifetime;
@@ -330,13 +332,12 @@ public:
 	~AuthSession();
 
 private:
-	static constexpr auto kDefaultSaveDelay = TimeMs(1000);
+	static constexpr auto kDefaultSaveDelay = crl::time(1000);
 
-	const not_null<UserData*> _user;
 	AuthSessionSettings _settings;
 	base::Timer _saveDataTimer;
 
-	TimeMs _shouldLockAt = 0;
+	crl::time _shouldLockAt = 0;
 	base::Timer _autoLockTimer;
 
 	const std::unique_ptr<ApiWrap> _api;
@@ -346,8 +347,9 @@ private:
 	const std::unique_ptr<Storage::Facade> _storage;
 	const std::unique_ptr<Window::Notifications::System> _notifications;
 
-	// _data depends on _downloader / _uploader, including destructor.
+	// _data depends on _downloader / _uploader / _notifications.
 	const std::unique_ptr<Data::Session> _data;
+	const not_null<UserData*> _user;
 
 	// _changelogs depends on _data, subscribes on chats loading event.
 	const std::unique_ptr<Core::Changelogs> _changelogs;

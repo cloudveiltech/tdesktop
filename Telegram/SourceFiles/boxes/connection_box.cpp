@@ -7,41 +7,28 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/connection_box.h"
 
-#include "data/data_photo.h"
-#include "data/data_document.h"
 #include "boxes/confirm_box.h"
 #include "lang/lang_keys.h"
 #include "storage/localstorage.h"
 #include "base/qthelp_url.h"
-#include "mainwidget.h"
-#include "messenger.h"
-#include "mainwindow.h"
-#include "auth_session.h"
-#include "data/data_session.h"
-#include "mtproto/connection.h"
+#include "core/application.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/input_fields.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/dropdown_menu.h"
-#include "ui/wrap/fade_wrap.h"
-#include "ui/wrap/padding_wrap.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/wrap/vertical_layout.h"
 #include "ui/toast/toast.h"
 #include "ui/effects/radial_animation.h"
 #include "ui/text_options.h"
-#include "history/history_location_manager.h"
-#include "settings/settings_common.h"
-#include "application.h"
 #include "styles/style_boxes.h"
 #include "styles/style_chat_helpers.h"
 #include "styles/style_info.h"
-#include "styles/style_settings.h"
 
 namespace {
 
-constexpr auto kSaveSettingsDelayedTimeout = TimeMs(1000);
+constexpr auto kSaveSettingsDelayedTimeout = crl::time(1000);
 
 class ProxyRow : public Ui::RippleButton {
 public:
@@ -65,8 +52,8 @@ protected:
 private:
 	void setupControls(View &&view);
 	int countAvailableWidth() const;
-	void step_radial(TimeMs ms, bool timer);
-	void paintCheck(Painter &p, TimeMs ms);
+	void step_radial(crl::time ms, bool timer);
+	void paintCheck(Painter &p, crl::time ms);
 	void showMenu();
 
 	View _view;
@@ -254,7 +241,7 @@ void ProxyRow::updateFields(View &&view) {
 	update();
 }
 
-void ProxyRow::step_radial(TimeMs ms, bool timer) {
+void ProxyRow::step_radial(crl::time ms, bool timer) {
 	if (timer && !anim::Disabled()) {
 		update();
 	}
@@ -281,7 +268,7 @@ int ProxyRow::resizeGetHeight(int newWidth) {
 void ProxyRow::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
-	const auto ms = getms();
+	const auto ms = crl::now();
 	if (!_view.deleted) {
 		paintRipple(p, 0, 0, ms);
 	}
@@ -354,13 +341,13 @@ void ProxyRow::paintEvent(QPaintEvent *e) {
 	top += st::normalFont->height + st::proxyRowPadding.bottom();
 }
 
-void ProxyRow::paintCheck(Painter &p, TimeMs ms) {
+void ProxyRow::paintCheck(Painter &p, crl::time ms) {
 	if (_progress) {
 		_progress->step(ms);
 	}
 	const auto loading = _progress
 		? _progress->computeState()
-		: Ui::InfiniteRadialAnimation::State{ 0., 0, FullArcLength };
+		: Ui::RadialState{ 0., 0, FullArcLength };
 	const auto toggled = _toggled.current(ms, _view.selected ? 1. : 0.)
 		* (1. - loading.shown);
 	const auto _st = &st::defaultRadio;
@@ -374,6 +361,7 @@ void ProxyRow::paintCheck(Painter &p, TimeMs ms) {
 
 	auto pen = anim::pen(_st->untoggledFg, _st->toggledFg, toggled * set);
 	pen.setWidth(_st->thickness);
+	pen.setCapStyle(Qt::RoundCap);
 	p.setPen(pen);
 	p.setBrush(_st->bg);
 	const auto rect = rtlrect(QRectF(left, top, _st->diameter, _st->diameter).marginsRemoved(QMarginsF(_st->thickness / 2., _st->thickness / 2., _st->thickness / 2., _st->thickness / 2.)), outerWidth);
@@ -936,102 +924,6 @@ void ProxyBox::addLabel(
 
 } // namespace
 
-AutoDownloadBox::AutoDownloadBox(QWidget *parent) {
-}
-
-void AutoDownloadBox::prepare() {
-	setupContent();
-}
-
-void AutoDownloadBox::setupContent() {
-	using namespace Settings;
-
-	setTitle(langFactory(lng_media_auto_title));
-
-	auto wrap = object_ptr<Ui::VerticalLayout>(this);
-	const auto content = wrap.data();
-	setInnerWidget(object_ptr<Ui::OverrideMargins>(
-		this,
-		std::move(wrap)));
-
-	using pair = std::pair<Ui::Checkbox*, Ui::Checkbox*>;
-	const auto pairValue = [](pair checkboxes) {
-		return (checkboxes.first->checked() ? 0 : dbiadNoPrivate)
-			| (checkboxes.second->checked() ? 0 : dbiadNoGroups);
-	};
-	const auto enabledSomething = [](int32 oldValue, int32 newValue) {
-		return (uint32(oldValue) & ~uint32(newValue)) != 0;
-	};
-	const auto addCheckbox = [&](int32 value, DBIAutoDownloadFlags flag) {
-		const auto label = (flag == dbiadNoPrivate)
-			? lng_media_auto_private_chats
-			: lng_media_auto_groups;
-		return content->add(
-			object_ptr<Ui::Checkbox>(
-				content,
-				lang(label),
-				!(value & flag),
-				st::settingsSendType),
-			st::settingsSendTypePadding);
-	};
-	const auto addPair = [&](int32 value) {
-		const auto first = addCheckbox(value, dbiadNoPrivate);
-		const auto second = addCheckbox(value, dbiadNoGroups);
-		return pair(first, second);
-	};
-
-	AddSubsectionTitle(content, lng_media_photo_title);
-	const auto photo = addPair(cAutoDownloadPhoto());
-	AddSkip(content);
-
-	AddSkip(content);
-	AddSubsectionTitle(content, lng_media_audio_title);
-	const auto audio = addPair(cAutoDownloadAudio());
-	AddSkip(content);
-
-	AddSkip(content);
-	AddSubsectionTitle(content, lng_media_gif_title);
-	const auto gif = addPair(cAutoDownloadGif());
-	AddSkip(content);
-
-	addButton(langFactory(lng_connection_save), [=] {
-		const auto photoValue = pairValue(photo);
-		const auto audioValue = pairValue(audio);
-		const auto gifValue = pairValue(gif);
-		const auto photosEnabled = enabledSomething(
-			cAutoDownloadPhoto(),
-			photoValue);
-		const auto audioEnabled = enabledSomething(
-			cAutoDownloadAudio(),
-			audioValue);
-		const auto gifEnabled = enabledSomething(
-			cAutoDownloadGif(),
-			gifValue);
-		const auto photosChanged = (cAutoDownloadPhoto() != photoValue);
-		const auto documentsChanged = (cAutoDownloadAudio() != audioValue)
-			|| (cAutoDownloadGif() != gifValue);
-		cSetAutoDownloadAudio(audioValue);
-		cSetAutoDownloadGif(gifValue);
-		cSetAutoDownloadPhoto(photoValue);
-		if (photosChanged || documentsChanged) {
-			Local::writeUserSettings();
-		}
-		if (photosEnabled) {
-			Auth().data().photoLoadSettingsChanged();
-		}
-		if (audioEnabled) {
-			Auth().data().voiceLoadSettingsChanged();
-		}
-		if (gifEnabled) {
-			Auth().data().animationLoadSettingsChanged();
-		}
-		closeBox();
-	});
-	addButton(langFactory(lng_cancel), [=] { closeBox(); });
-
-	setDimensionsToContent(st::boxWideWidth, content);
-}
-
 ProxiesBoxController::ProxiesBoxController()
 : _saveTimer([] { Local::writeSettings(); }) {
 	_list = ranges::view::all(
@@ -1083,7 +975,7 @@ void ProxiesBoxController::ShowApplyConfirmation(
 			if (ranges::find(proxies, proxy) == end(proxies)) {
 				proxies.push_back(proxy);
 			}
-			Messenger::Instance().setCurrentProxy(
+			Core::App().setCurrentProxy(
 				proxy,
 				ProxyData::Settings::Enabled);
 			Local::writeSettings();
@@ -1106,7 +998,7 @@ void ProxiesBoxController::refreshChecker(Item &item) {
 	const auto type = (item.data.type == Type::Http)
 		? Variants::Http
 		: Variants::Tcp;
-	const auto mtproto = Messenger::Instance().mtp();
+	const auto mtproto = Core::App().mtp();
 	const auto dcId = mtproto->mainDcId();
 
 	item.state = ItemState::Checking;
@@ -1248,7 +1140,7 @@ void ProxiesBoxController::applyItem(int id) {
 
 	auto j = findByProxy(Global::SelectedProxy());
 
-	Messenger::Instance().setCurrentProxy(
+	Core::App().setCurrentProxy(
 		item->data,
 		ProxyData::Settings::Enabled);
 	saveDelayed();
@@ -1271,7 +1163,7 @@ void ProxiesBoxController::setDeleted(int id, bool deleted) {
 			_lastSelectedProxy = base::take(Global::RefSelectedProxy());
 			if (Global::ProxySettings() == ProxyData::Settings::Enabled) {
 				_lastSelectedProxyUsed = true;
-				Messenger::Instance().setCurrentProxy(
+				Core::App().setCurrentProxy(
 					ProxyData(),
 					ProxyData::Settings::System);
 				saveDelayed();
@@ -1296,7 +1188,7 @@ void ProxiesBoxController::setDeleted(int id, bool deleted) {
 			Assert(Global::ProxySettings() != ProxyData::Settings::Enabled);
 
 			if (base::take(_lastSelectedProxyUsed)) {
-				Messenger::Instance().setCurrentProxy(
+				Core::App().setCurrentProxy(
 					base::take(_lastSelectedProxy),
 					ProxyData::Settings::Enabled);
 			} else {
@@ -1401,9 +1293,7 @@ bool ProxiesBoxController::setProxySettings(ProxyData::Settings value) {
 			}
 		}
 	}
-	Messenger::Instance().setCurrentProxy(
-		Global::SelectedProxy(),
-		value);
+	Core::App().setCurrentProxy(Global::SelectedProxy(), value);
 	saveDelayed();
 	return true;
 }
@@ -1491,7 +1381,7 @@ void ProxiesBoxController::share(const ProxyData &proxy) {
 			? "&pass=" + qthelp::url_encode(proxy.password) : "")
 		+ ((proxy.type == Type::Mtproto && !proxy.password.isEmpty())
 			? "&secret=" + proxy.password : "");
-	Application::clipboard()->setText(link);
+	QApplication::clipboard()->setText(link);
 	Ui::Toast::Show(lang(lng_username_copied));
 }
 

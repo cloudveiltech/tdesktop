@@ -99,26 +99,14 @@ private:
 
 class AbstractController : public Window::Navigation {
 public:
-	AbstractController(not_null<Window::Controller*> parent)
-	: _parent(parent) {
-	}
+	AbstractController(not_null<Window::Controller*> parent);
 
 	virtual Key key() const = 0;
 	virtual PeerData *migrated() const = 0;
 	virtual Section section() const = 0;
 
-	PeerId peerId() const {
-		if (const auto peer = key().peer()) {
-			return peer->id;
-		}
-		return PeerId(0);
-	}
-	PeerId migratedPeerId() const {
-		if (auto peer = migrated()) {
-			return peer->id;
-		}
-		return PeerId(0);
-	}
+	PeerId peerId() const;
+	PeerId migratedPeerId() const;
 	Data::Feed *feed() const {
 		return key().feed();
 	}

@@ -11,9 +11,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
-#include "messenger.h"
+#include "core/application.h"
 #include "storage/localstorage.h"
 #include "platform/platform_file_utilities.h"
+#include "mtproto/connection.h" // for MTP::kAckSendWaiting
 #include "auth_session.h"
 #include "apiwrap.h"
 #include "core/crash_reports.h"
@@ -21,8 +22,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/openssl_help.h"
 
 namespace Storage {
+namespace {
 
-Downloader::Downloader() {
+// How much time without download causes additional session kill.
+constexpr auto kKillSessionTimeout = crl::time(5000);
+
+} // namespace
+
+Downloader::Downloader()
+: _killDownloadSessionsTimer([=] { killDownloadSessions(); }) {
 }
 
 void Downloader::clearPriorities() {
@@ -38,9 +46,49 @@ void Downloader::requestedAmountIncrement(MTP::DcId dcId, int index, int amount)
 	}
 	it->second[index] += amount;
 	if (it->second[index]) {
-		Messenger::Instance().killDownloadSessionsStop(dcId);
+		killDownloadSessionsStop(dcId);
 	} else {
-		Messenger::Instance().killDownloadSessionsStart(dcId);
+		killDownloadSessionsStart(dcId);
+	}
+}
+
+void Downloader::killDownloadSessionsStart(MTP::DcId dcId) {
+	if (!_killDownloadSessionTimes.contains(dcId)) {
+		_killDownloadSessionTimes.emplace(
+			dcId,
+			crl::now() + MTP::kAckSendWaiting + kKillSessionTimeout);
+	}
+	if (!_killDownloadSessionsTimer.isActive()) {
+		_killDownloadSessionsTimer.callOnce(
+			MTP::kAckSendWaiting + kKillSessionTimeout + 5);
+	}
+}
+
+void Downloader::killDownloadSessionsStop(MTP::DcId dcId) {
+	_killDownloadSessionTimes.erase(dcId);
+	if (_killDownloadSessionTimes.empty()
+		&& _killDownloadSessionsTimer.isActive()) {
+		_killDownloadSessionsTimer.cancel();
+	}
+}
+
+void Downloader::killDownloadSessions() {
+	auto ms = crl::now(), left = MTP::kAckSendWaiting + kKillSessionTimeout;
+	for (auto i = _killDownloadSessionTimes.begin(); i != _killDownloadSessionTimes.end(); ) {
+		if (i->second <= ms) {
+			for (int j = 0; j < MTP::kDownloadSessionsCount; ++j) {
+				MTP::stopSession(MTP::downloadDcId(i->first, j));
+			}
+			i = _killDownloadSessionTimes.erase(i);
+		} else {
+			if (i->second - ms < left) {
+				left = i->second - ms;
+			}
+			++i;
+		}
+	}
+	if (!_killDownloadSessionTimes.empty()) {
+		_killDownloadSessionsTimer.callOnce(left);
 	}
 }
 
@@ -57,7 +105,9 @@ int Downloader::chooseDcIndexForRequest(MTP::DcId dcId) const {
 	return result;
 }
 
-Downloader::~Downloader() = default;
+Downloader::~Downloader() {
+	killDownloadSessions();
+}
 
 } // namespace Storage
 
@@ -168,6 +218,10 @@ void FileLoader::readImage(const QSize &shrinkBox) const {
 	}
 }
 
+Data::FileOrigin FileLoader::fileOrigin() const {
+	return Data::FileOrigin();
+}
+
 float64 FileLoader::currentProgress() const {
 	if (_finished) return 1.;
 	if (!fullSize()) return 0.;
@@ -243,7 +297,7 @@ void FileLoader::localLoaded(
 		const StorageImageSaved &result,
 		const QByteArray &imageFormat,
 		const QImage &imageData) {
-	_localLoading.kill();
+	_localLoading = nullptr;
 	if (result.data.isEmpty()) {
 		_localStatus = LocalStatus::NotFound;
 		start(true);
@@ -372,16 +426,12 @@ void FileLoader::loadLocal(const Storage::Cache::Key &key) {
 			QByteArray &&value,
 			QImage &&image,
 			QByteArray &&format) mutable {
-		crl::on_main([
+		crl::on_main(std::move(guard), [
 			=,
 			value = std::move(value),
 			image = std::move(image),
-			format = std::move(format),
-			guard = std::move(guard)
+			format = std::move(format)
 		]() mutable {
-			if (!guard.alive()) {
-				return;
-			}
 			localLoaded(
 				StorageImageSaved(std::move(value)),
 				format,
@@ -429,7 +479,7 @@ bool FileLoader::tryLoadLocal() {
 		return false;
 	} else if (_localStatus != LocalStatus::NotTried) {
 		return _finished;
-	} else if (_localLoading.alive()) {
+	} else if (_localLoading) {
 		_localStatus = LocalStatus::Loading;
 		return true;
 	}
@@ -592,19 +642,19 @@ Data::FileOrigin mtpFileLoader::fileOrigin() const {
 }
 
 void mtpFileLoader::refreshFileReferenceFrom(
-		const Data::UpdatedFileReferences &data,
+		const Data::UpdatedFileReferences &updates,
 		int requestId,
 		const QByteArray &current) {
 	const auto updated = [&] {
 		if (_location) {
-			const auto i = data.find(Data::SimpleFileLocationId(
+			const auto i = updates.data.find(Data::SimpleFileLocationId(
 				_location->volume(),
 				_location->dc(),
 				_location->local()));
-			return (i == end(data)) ? QByteArray() : i->second;
+			return (i == end(updates.data)) ? QByteArray() : i->second;
 		}
-		const auto i = data.find(_id);
-		return (i == end(data)) ? QByteArray() : i->second;
+		const auto i = updates.data.find(_id);
+		return (i == end(updates.data)) ? QByteArray() : i->second;
 	}();
 	if (updated.isEmpty() || updated == current) {
 		cancel(true);
@@ -941,7 +991,7 @@ int mtpFileLoader::finishSentRequestGetOffset(mtpRequestId requestId) {
 bool mtpFileLoader::feedPart(int offset, bytes::const_span buffer) {
 	Expects(!_finished);
 
-	if (buffer.size()) {
+	if (!buffer.empty()) {
 		if (_fileIsOpen) {
 			auto fsize = _file.size();
 			if (offset < fsize) {
@@ -974,7 +1024,7 @@ bool mtpFileLoader::feedPart(int offset, bytes::const_span buffer) {
 			}
 		}
 	}
-	if (!buffer.size() || (buffer.size() % 1024)) { // bad next offset
+	if (buffer.empty() || (buffer.size() % 1024)) { // bad next offset
 		_lastComplete = true;
 	}
 	if (_sentRequests.empty()
@@ -1436,18 +1486,18 @@ void WebLoadManager::onFailed(QNetworkReply *reply) {
 }
 
 void WebLoadManager::onProgress(qint64 already, qint64 size) {
-	QNetworkReply *reply = qobject_cast<QNetworkReply*>(QObject::sender());
+	const auto reply = qobject_cast<QNetworkReply*>(QObject::sender());
 	if (!reply) return;
 
-	Replies::iterator j = _replies.find(reply);
+	const auto j = _replies.find(reply);
 	if (j == _replies.cend()) { // handled already
 		return;
 	}
-	webFileLoaderPrivate *loader = j.value();
+	const auto loader = j.value();
 
-	WebReplyProcessResult result = WebReplyProcessProgress;
-	QVariant statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
-	int32 status = statusCode.isValid() ? statusCode.toInt() : 200;
+	auto result = WebReplyProcessProgress;
+	const auto statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
+	const auto status = statusCode.isValid() ? statusCode.toInt() : 200;
 	if (status != 200 && status != 206 && status != 416) {
 		if (status == 301 || status == 302) {
 			QString loc = reply->header(QNetworkRequest::LocationHeader).toString();
@@ -1486,20 +1536,19 @@ void WebLoadManager::onProgress(qint64 already, qint64 size) {
 }
 
 void WebLoadManager::onMeta() {
-	QNetworkReply *reply = qobject_cast<QNetworkReply*>(QObject::sender());
+	const auto reply = qobject_cast<QNetworkReply*>(QObject::sender());
 	if (!reply) return;
 
-	Replies::iterator j = _replies.find(reply);
+	const auto j = _replies.find(reply);
 	if (j == _replies.cend()) { // handled already
 		return;
 	}
-	webFileLoaderPrivate *loader = j.value();
+	const auto loader = j.value();
 
-	typedef QList<QNetworkReply::RawHeaderPair> Pairs;
-	Pairs pairs = reply->rawHeaderPairs();
-	for (Pairs::iterator i = pairs.begin(), e = pairs.end(); i != e; ++i) {
+	const auto pairs = reply->rawHeaderPairs();
+	for (auto i = pairs.begin(), e = pairs.end(); i != e; ++i) {
 		if (QString::fromUtf8(i->first).toLower() == "content-range") {
-			QRegularExpressionMatch m = QRegularExpression(qsl("/(\\d+)([^\\d]|$)")).match(QString::fromUtf8(i->second));
+			const auto m = QRegularExpression(qsl("/(\\d+)([^\\d]|$)")).match(QString::fromUtf8(i->second));
 			if (m.hasMatch()) {
 				loader->setProgress(qMax(qint64(loader->data().size()), loader->already()), m.captured(1).toLongLong());
 				if (!handleReplyResult(loader, WebReplyProcessProgress)) {

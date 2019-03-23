@@ -11,6 +11,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_tag.h"
 #include "base/qthelp_url.h"
 #include "ui/emoji_config.h"
+#include "data/data_user.h"
+#include "data/data_session.h"
 
 namespace TextUtilities {
 namespace {
@@ -1471,7 +1473,7 @@ EntitiesInText EntitiesFromMTP(const QVector<MTPMessageEntity> &entities) {
 			case mtpc_messageEntityMentionName: {
 				auto &d = entity.c_messageEntityMentionName();
 				auto data = [&d] {
-					if (auto user = App::userLoaded(peerFromUser(d.vuser_id))) {
+					if (auto user = Auth().data().userLoaded(d.vuser_id.v)) {
 						return MentionNameDataFromFields({
 							d.vuser_id.v,
 							user->accessHash() });

@@ -10,9 +10,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "data/data_photo.h"
 #include "data/data_document.h"
-#include "media/media_clip_reader.h"
+#include "media/clip/media_clip_reader.h"
 #include "boxes/abstract_box.h"
-#include "application.h"
 #include "mainwindow.h"
 #include "mainwidget.h"
 #include "core/file_utilities.h"
@@ -218,7 +217,7 @@ void LayerStackWidget::BackgroundWidget::paintEvent(QPaintEvent *e) {
 	auto specialLayerBox = _specialLayerCache.isNull() ? _specialLayerBox : _specialLayerCacheBox;
 	auto layerBox = _layerCache.isNull() ? _layerBox : _layerCacheBox;
 
-	auto ms = getms();
+	auto ms = crl::now();
 	auto mainMenuProgress = _a_mainMenuShown.current(ms, -1);
 	auto mainMenuRight = (_mainMenuCache.isNull() || mainMenuProgress < 0) ? _mainMenuRight : (mainMenuProgress < 0) ? _mainMenuRight : anim::interpolate(0, _mainMenuCacheWidth, mainMenuProgress);
 	if (mainMenuRight) {
@@ -619,15 +618,16 @@ void LayerStackWidget::replaceBox(
 		object_ptr<BoxContent> box,
 		anim::type animated) {
 	const auto pointer = pushBox(std::move(box), animated);
-	while (!_layers.empty() && _layers.front().get() != pointer) {
-		auto removingLayer = std::move(_layers.front());
-		_layers.erase(begin(_layers));
-
-		if (removingLayer->inFocusChain()) {
-			setFocus();
-		}
-		removingLayer->setClosing();
-	}
+	const auto removeTill = ranges::find(
+		_layers,
+		pointer,
+		&std::unique_ptr<LayerWidget>::get);
+	_closingLayers.insert(
+		end(_closingLayers),
+		std::make_move_iterator(begin(_layers)),
+		std::make_move_iterator(removeTill));
+	_layers.erase(begin(_layers), removeTill);
+	clearClosingLayers();
 }
 
 void LayerStackWidget::prepareForAnimation() {
@@ -781,11 +781,37 @@ bool LayerStackWidget::takeToThirdSection() {
 }
 
 void LayerStackWidget::clearLayers() {
-	for (auto &layer : base::take(_layers)) {
+	_closingLayers.insert(
+		end(_closingLayers),
+		std::make_move_iterator(begin(_layers)),
+		std::make_move_iterator(end(_layers)));
+	_layers.clear();
+	clearClosingLayers();
+}
+
+void LayerStackWidget::clearClosingLayers() {
+	const auto weak = make_weak(this);
+	while (!_closingLayers.empty()) {
+		const auto index = _closingLayers.size() - 1;
+		const auto layer = _closingLayers.back().get();
 		if (layer->inFocusChain()) {
 			setFocus();
 		}
+
+		// This may destroy LayerStackWidget (by calling Ui::hideLayer).
+		// So each time we check a weak pointer (if we are still alive).
 		layer->setClosing();
+
+		// setClosing() could destroy 'this' or could call clearLayers().
+		if (weak && !_closingLayers.empty()) {
+			// We could enqueue more closing layers, so we remove by index.
+			Assert(index < _closingLayers.size());
+			Assert(_closingLayers[index].get() == layer);
+			_closingLayers.erase(begin(_closingLayers) + index);
+		} else {
+			// Everything was destroyed in clearLayers or ~LayerStackWidget.
+			break;
+		}
 	}
 }
 
@@ -837,7 +863,7 @@ void MediaPreviewWidget::paintEvent(QPaintEvent *e) {
 
 	auto image = currentImage();
 	int w = image.width() / cIntRetinaFactor(), h = image.height() / cIntRetinaFactor();
-	auto shown = _a_shown.current(getms(), _hiding ? 0. : 1.);
+	auto shown = _a_shown.current(crl::now(), _hiding ? 0. : 1.);
 	if (!_a_shown.animating()) {
 		if (_hiding) {
 			hide();
@@ -893,11 +919,6 @@ void MediaPreviewWidget::showPreview(
 void MediaPreviewWidget::showPreview(
 		Data::FileOrigin origin,
 		not_null<PhotoData*> photo) {
-	if (photo->full->isNull()) {
-		hidePreview();
-		return;
-	}
-
 	startShow();
 	_origin = origin;
 	_photo = photo;
@@ -966,7 +987,7 @@ QSize MediaPreviewWidget::currentDimensions() const {
 
 	QSize result, box;
 	if (_photo) {
-		result = QSize(_photo->full->width(), _photo->full->height());
+		result = QSize(_photo->width(), _photo->height());
 		box = QSize(width() - 2 * st::boxVerticalMargin, height() - 2 * st::boxVerticalMargin);
 	} else {
 		result = _document->dimensions;
@@ -998,13 +1019,15 @@ QPixmap MediaPreviewWidget::currentImage() const {
 	if (_document) {
 		if (_document->sticker()) {
 			if (_cacheStatus != CacheLoaded) {
-				if (const auto image = _document->getStickerImage()) {
+				if (const auto image = _document->getStickerLarge()) {
 					QSize s = currentDimensions();
 					_cache = image->pix(_origin, s.width(), s.height());
 					_cacheStatus = CacheLoaded;
-				} else if (_cacheStatus != CacheThumbLoaded && _document->thumb->loaded()) {
+				} else if (_cacheStatus != CacheThumbLoaded
+					&& _document->hasThumbnail()
+					&& _document->thumbnail()->loaded()) {
 					QSize s = currentDimensions();
-					_cache = _document->thumb->pixBlurred(_origin, s.width(), s.height());
+					_cache = _document->thumbnail()->pixBlurred(_origin, s.width(), s.height());
 					_cacheStatus = CacheThumbLoaded;
 				}
 			}
@@ -1022,28 +1045,45 @@ QPixmap MediaPreviewWidget::currentImage() const {
 			if (_gif && _gif->started()) {
 				auto s = currentDimensions();
 				auto paused = _controller->isGifPausedAtLeastFor(Window::GifPauseReason::MediaPreview);
-				return _gif->current(s.width(), s.height(), s.width(), s.height(), ImageRoundRadius::None, RectPart::None, paused ? 0 : getms());
+				return _gif->current(s.width(), s.height(), s.width(), s.height(), ImageRoundRadius::None, RectPart::None, paused ? 0 : crl::now());
 			}
-			if (_cacheStatus != CacheThumbLoaded && _document->thumb->loaded()) {
+			if (_cacheStatus != CacheThumbLoaded
+				&& _document->hasThumbnail()) {
 				QSize s = currentDimensions();
-				_cache = _document->thumb->pixBlurred(_origin, s.width(), s.height());
-				_cacheStatus = CacheThumbLoaded;
+				if (_document->thumbnail()->loaded()) {
+					_cache = _document->thumbnail()->pixBlurred(_origin, s.width(), s.height());
+					_cacheStatus = CacheThumbLoaded;
+				} else if (const auto blurred = _document->thumbnailInline()) {
+					_cache = _document->thumbnail()->pixBlurred(_origin, s.width(), s.height());
+					_cacheStatus = CacheThumbLoaded;
+				} else {
+					_document->thumbnail()->load(_origin);
+				}
 			}
 		}
 	} else if (_photo) {
 		if (_cacheStatus != CacheLoaded) {
-			if (_photo->full->loaded()) {
+			if (_photo->loaded()) {
 				QSize s = currentDimensions();
-				_cache = _photo->full->pix(_origin, s.width(), s.height());
+				_cache = _photo->large()->pix(_origin, s.width(), s.height());
 				_cacheStatus = CacheLoaded;
 			} else {
-				if (_cacheStatus != CacheThumbLoaded && _photo->thumb->loaded()) {
+				_photo->load(_origin);
+				if (_cacheStatus != CacheThumbLoaded) {
 					QSize s = currentDimensions();
-					_cache = _photo->thumb->pixBlurred(_origin, s.width(), s.height());
-					_cacheStatus = CacheThumbLoaded;
+					if (_photo->thumbnail()->loaded()) {
+						_cache = _photo->thumbnail()->pixBlurred(_origin, s.width(), s.height());
+						_cacheStatus = CacheThumbLoaded;
+					} else if (_photo->thumbnailSmall()->loaded()) {
+						_cache = _photo->thumbnailSmall()->pixBlurred(_origin, s.width(), s.height());
+						_cacheStatus = CacheThumbLoaded;
+					} else if (const auto blurred = _photo->thumbnailInline()) {
+						_cache = blurred->pixBlurred(_origin, s.width(), s.height());
+						_cacheStatus = CacheThumbLoaded;
+					} else {
+						_photo->thumbnailSmall()->load(_origin);
+					}
 				}
-				_photo->thumb->load(_origin);
-				_photo->full->load(_origin);
 			}
 		}
 

@@ -8,7 +8,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/countryinput.h"
 
 #include "lang/lang_keys.h"
-#include "application.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/multi_select.h"
 #include "ui/effects/ripple_animation.h"
@@ -234,15 +233,19 @@ void CountrySelectBox::prepare() {
 	setTitle(langFactory(lng_country_select));
 
 	_select->resizeToWidth(st::boxWidth);
-	_select->setQueryChangedCallback([this](const QString &query) { onFilterUpdate(query); });
-	_select->setSubmittedCallback([this](Qt::KeyboardModifiers) { onSubmit(); });
+	_select->setQueryChangedCallback([=](const QString &query) {
+		applyFilterUpdate(query);
+	});
+	_select->setSubmittedCallback([=](Qt::KeyboardModifiers) {
+		submit();
+	});
 
 	_inner = setInnerWidget(
 		object_ptr<Inner>(this, _type),
 		st::countriesScroll,
 		_select->height());
 
-	addButton(langFactory(lng_close), [this] { closeBox(); });
+	addButton(langFactory(lng_close), [=] { closeBox(); });
 
 	setDimensions(st::boxWidth, st::boxMaxListHeight);
 
@@ -250,7 +253,7 @@ void CountrySelectBox::prepare() {
 	connect(_inner, SIGNAL(countryChosen(const QString&)), this, SIGNAL(countryChosen(const QString&)));
 }
 
-void CountrySelectBox::onSubmit() {
+void CountrySelectBox::submit() {
 	_inner->chooseCountry();
 }
 
@@ -277,7 +280,7 @@ void CountrySelectBox::resizeEvent(QResizeEvent *e) {
 	_inner->resizeToWidth(width());
 }
 
-void CountrySelectBox::onFilterUpdate(const QString &query) {
+void CountrySelectBox::applyFilterUpdate(const QString &query) {
 	onScrollToY(0);
 	_inner->updateFilter(query);
 }
@@ -342,7 +345,7 @@ void CountrySelectBox::Inner::paintEvent(QPaintEvent *e) {
 	QRect r(e->rect());
 	p.setClipRect(r);
 
-	auto ms = getms();
+	auto ms = crl::now();
 	int l = countriesNow->size();
 	if (l) {
 		if (r.intersects(QRect(0, 0, width(), st::countriesSkip))) {

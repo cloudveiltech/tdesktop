@@ -72,7 +72,7 @@ parts:
       - libicu-dev
       - liblzma-dev
       - libssl-dev
-      - libunity-dev
+      - libdee-dev
       - zlib1g-dev
     gyp-file: Telegram/gyp/Telegram.gyp
     build-type: 'Release'
@@ -133,7 +133,6 @@ parts:
       - libappindicator3-1
       - libnotify4
       - libpulse0
-      - libunity9
     after: [desktop-gtk3]
     stage:
       - -./usr/share/fonts/**
@@ -177,6 +176,7 @@ parts:
   libvdpau:
     source: git://anongit.freedesktop.org/vdpau/libvdpau
     source-depth: 1
+    source-branch: libvdpau-1.2
     plugin: autotools
     build-packages:
       - libx11-dev

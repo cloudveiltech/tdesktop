@@ -34,19 +34,10 @@ namespace Notify {
 struct PeerUpdate;
 } // namespace Notify
 
-inline auto PaintUserpicCallback(
+auto PaintUserpicCallback(
 	not_null<PeerData*> peer,
 	bool respectSavedMessagesChat)
-->Fn<void(Painter &p, int x, int y, int outerWidth, int size)> {
-	if (respectSavedMessagesChat && peer->isSelf()) {
-		return [](Painter &p, int x, int y, int outerWidth, int size) {
-			Ui::EmptyUserpic::PaintSavedMessages(p, x, y, outerWidth, size);
-		};
-	}
-	return [peer](Painter &p, int x, int y, int outerWidth, int size) {
-		peer->paintUserpicLeft(p, x, y, outerWidth, size);
-	};
-}
+-> Fn<void(Painter &p, int x, int y, int outerWidth, int size)>;
 
 using PeerListRowId = uint64;
 class PeerListRow {
@@ -101,7 +92,7 @@ public:
 	}
 	virtual void paintAction(
 		Painter &p,
-		TimeMs ms,
+		crl::time ms,
 		int x,
 		int y,
 		int outerWidth,
@@ -120,7 +111,7 @@ public:
 		Custom,
 	};
 	void refreshStatus();
-	TimeMs refreshStatusTime() const;
+	crl::time refreshStatusTime() const;
 
 	void setAbsoluteIndex(int index) {
 		_absoluteIndex = index;
@@ -167,11 +158,11 @@ public:
 		QPoint point,
 		UpdateCallback updateCallback);
 	void stopLastRipple();
-	void paintRipple(Painter &p, TimeMs ms, int x, int y, int outerWidth);
+	void paintRipple(Painter &p, crl::time ms, int x, int y, int outerWidth);
 	void paintUserpic(
 		Painter &p,
 		const style::PeerListItem &st,
-		TimeMs ms,
+		crl::time ms,
 		int x,
 		int y,
 		int outerWidth);
@@ -217,7 +208,7 @@ private:
 	Text _name;
 	Text _status;
 	StatusType _statusType = StatusType::Online;
-	TimeMs _statusValidTill = 0;
+	crl::time _statusValidTill = 0;
 	base::flat_set<QChar> _nameFirstLetters;
 	int _absoluteIndex = -1;
 	State _disabledState = State::Active;
@@ -312,6 +303,10 @@ public:
 		std::unique_ptr<SavedStateBase> state) {
 	}
 
+	rpl::lifetime &lifetime() {
+		return _lifetime;
+	}
+
 protected:
 	not_null<PeerListSearchDelegate*> delegate() const {
 		return _delegate;
@@ -319,6 +314,7 @@ protected:
 
 private:
 	PeerListSearchDelegate *_delegate = nullptr;
+	rpl::lifetime _lifetime;
 
 };
 
@@ -329,7 +325,8 @@ public:
 	};
 
 	// Search works only with RowId == peer->id.
-	PeerListController(std::unique_ptr<PeerListSearchController> searchController = nullptr);
+	PeerListController(
+		std::unique_ptr<PeerListSearchController> searchController = {});
 
 	void setDelegate(not_null<PeerListDelegate*> delegate) {
 		_delegate = delegate;
@@ -553,7 +550,7 @@ private:
 	SelectedSaved saveSelectedData(Selected from);
 	Selected restoreSelectedData(SelectedSaved from);
 
-	void updateSelection();
+	void selectByMouse(QPoint globalPosition);
 	void loadProfilePhotos();
 	void checkScrollForPreload();
 
@@ -564,7 +561,7 @@ private:
 	RowIndex findRowIndex(not_null<PeerListRow*> row, RowIndex hint = RowIndex());
 	QRect getActionRect(not_null<PeerListRow*> row, RowIndex index) const;
 
-	TimeMs paintRow(Painter &p, TimeMs ms, RowIndex index);
+	crl::time paintRow(Painter &p, crl::time ms, RowIndex index);
 
 	void addRowEntry(not_null<PeerListRow*> row);
 	void addToSearchIndex(not_null<PeerListRow*> row);
@@ -587,7 +584,7 @@ private:
 
 	void clearSearchRows();
 	void clearAllContent();
-	void handleMouseMove(QPoint position);
+	void handleMouseMove(QPoint globalPosition);
 	void mousePressReleased(Qt::MouseButton button);
 
 	const style::PeerList &_st;
@@ -602,6 +599,7 @@ private:
 	Selected _pressed;
 	Selected _contexted;
 	bool _mouseSelection = false;
+	std::optional<QPoint> _lastMousePosition;
 	Qt::MouseButton _pressButton = Qt::LeftButton;
 
 	rpl::event_stream<Ui::ScrollToRequest> _scrollToRequests;
@@ -621,8 +619,6 @@ private:
 	object_ptr<Ui::FlatLabel> _description = { nullptr };
 	object_ptr<Ui::FlatLabel> _searchNoResults = { nullptr };
 	object_ptr<Ui::FlatLabel> _searchLoading = { nullptr };
-
-	QPoint _lastMousePosition;
 
 	std::vector<std::unique_ptr<PeerListRow>> _searchRows;
 	base::Timer _repaintByStatus;

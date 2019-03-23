@@ -11,12 +11,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/image/image.h"
 #include "ui/text_options.h"
 #include "ui/special_buttons.h"
-#include "media/media_clip_reader.h"
+#include "media/clip/media_clip_reader.h"
 #include "history/history.h"
 #include "history/history_item.h"
 #include "data/data_media_types.h"
 #include "data/data_photo.h"
 #include "data/data_document.h"
+#include "data/data_user.h"
 #include "lang/lang_keys.h"
 #include "core/event_filter.h"
 #include "chat_helpers/message_field.h"
@@ -41,17 +42,17 @@ EditCaptionBox::EditCaptionBox(
 	Expects(item->media()->allowsEditCaption());
 
 	QSize dimensions;
-	ImagePtr image;
+	auto image = (Image*)nullptr;
 	DocumentData *doc = nullptr;
 
 	const auto media = item->media();
 	if (const auto photo = media->photo()) {
 		_photo = true;
-		dimensions = QSize(photo->full->width(), photo->full->height());
-		image = photo->full;
+		dimensions = QSize(photo->width(), photo->height());
+		image = photo->large();
 	} else if (const auto document = media->document()) {
 		dimensions = document->dimensions;
-		image = document->thumb;
+		image = document->thumbnail();
 		if (document->isAnimation()) {
 			_animated = true;
 		} else if (document->isVideoFile()) {
@@ -67,8 +68,8 @@ EditCaptionBox::EditCaptionBox(
 		ConvertEntitiesToTextTags(original.entities)
 	};
 
-	if (!_animated && (dimensions.isEmpty() || doc || image->isNull())) {
-		if (image->isNull()) {
+	if (!_animated && (dimensions.isEmpty() || doc || !image)) {
+		if (!image) {
 			_thumbw = 0;
 		} else {
 			int32 tw = image->width(), th = image->height();
@@ -114,6 +115,9 @@ EditCaptionBox::EditCaptionBox(
 			_refreshThumbnail();
 		}
 	} else {
+		if (!image) {
+			image = Image::BlankMedia();
+		}
 		int32 maxW = 0, maxH = 0;
 		if (_animated) {
 			int32 limitW = st::sendMediaPreviewSize;
@@ -200,7 +204,9 @@ EditCaptionBox::EditCaptionBox(
 		? _thumbnailImage->loaded()
 		: true;
 	subscribe(Auth().downloaderTaskFinished(), [=] {
-		if (!_thumbnailImageLoaded && _thumbnailImage->loaded()) {
+		if (!_thumbnailImageLoaded
+			&& _thumbnailImage
+			&& _thumbnailImage->loaded()) {
 			_thumbnailImageLoaded = true;
 			_refreshThumbnail();
 			update();
@@ -367,7 +373,7 @@ void EditCaptionBox::paintEvent(QPaintEvent *e) {
 		if (_gifPreview && _gifPreview->started()) {
 			auto s = QSize(_thumbw, _thumbh);
 			auto paused = _controller->isGifPausedAtLeastFor(Window::GifPauseReason::Layer);
-			auto frame = _gifPreview->current(s.width(), s.height(), s.width(), s.height(), ImageRoundRadius::None, RectPart::None, paused ? 0 : getms());
+			auto frame = _gifPreview->current(s.width(), s.height(), s.width(), s.height(), ImageRoundRadius::None, RectPart::None, paused ? 0 : crl::now());
 			p.drawPixmap(_thumbx, st::boxPhotoPadding.top(), frame);
 		} else {
 			p.drawPixmap(_thumbx, st::boxPhotoPadding.top(), _thumb);
@@ -500,8 +506,7 @@ void EditCaptionBox::save() {
 			MTP_string(sending.text),
 			MTPInputMedia(),
 			MTPnullMarkup,
-			sentEntities,
-			MTP_inputGeoPointEmpty()),
+			sentEntities),
 		rpcDone(&EditCaptionBox::saveDone),
 		rpcFail(&EditCaptionBox::saveFail));
 }

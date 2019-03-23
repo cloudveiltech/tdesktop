@@ -278,7 +278,7 @@ AdminLog::OwnedItem GenerateCommentItem(
 		replyTo,
 		viaBotId,
 		unixtime(),
-		Auth().userId(),
+		history->session().userId(),
 		QString(),
 		TextWithEntities{ TextUtilities::Clean(data.comment) });
 	return AdminLog::OwnedItem(delegate, item);
@@ -296,7 +296,7 @@ AdminLog::OwnedItem GenerateContactItem(
 	const auto message = MTP_message(
 		MTP_flags(flags),
 		MTP_int(id),
-		MTP_int(Auth().userId()),
+		MTP_int(history->session().userId()),
 		peerToMTP(history->peer->id),
 		MTPMessageFwdHeader(),
 		MTP_int(viaBotId),
@@ -561,7 +561,7 @@ void ConfirmContactBox::paintEvent(QPaintEvent *e) {
 
 	p.fillRect(e->rect(), st::boxBg);
 
-	const auto ms = getms();
+	const auto ms = crl::now();
 	p.translate(st::boxPadding.left(), 0);
 	if (_comment) {
 		_comment->draw(p, rect(), TextSelection(), ms);
@@ -592,9 +592,9 @@ void ConfirmContactBox::elementAnimationAutoplayAsync(
 	not_null<const Element*> element) {
 }
 
-TimeMs ConfirmContactBox::elementHighlightTime(
+crl::time ConfirmContactBox::elementHighlightTime(
 		not_null<const Element*> element) {
-	return TimeMs();
+	return crl::time(0);
 }
 
 bool ConfirmContactBox::elementInSelectionMode() {

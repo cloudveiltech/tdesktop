@@ -9,6 +9,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "dialogs/dialogs_key.h"
 #include "data/data_drafts.h"
+#include "data/data_user.h"
+#include "data/data_session.h"
 #include "history/history.h"
 #include "boxes/abstract_box.h"
 #include "ui/toast/toast.h"
@@ -21,6 +23,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_controller.h"
 #include "storage/storage_media_prepare.h"
 #include "storage/localimageloader.h"
+#include "core/sandbox.h"
 #include "auth_session.h"
 #include "observer_peer.h"
 #include "apiwrap.h"
@@ -30,7 +33,7 @@ namespace Support {
 namespace {
 
 constexpr auto kOccupyFor = TimeId(60);
-constexpr auto kReoccupyEach = 30 * TimeMs(1000);
+constexpr auto kReoccupyEach = 30 * crl::time(1000);
 constexpr auto kMaxSupportInfoLength = MaxMessageSize * 4;
 
 class EditInfoBox : public BoxContent {
@@ -135,7 +138,7 @@ QString FormatDateTime(TimeId value) {
 }
 
 uint32 OccupationTag() {
-	return uint32(Sandbox::UserTag() & 0xFFFFFFFFU);
+	return uint32(Core::Sandbox::Instance().installationTag() & 0xFFFFFFFF);
 }
 
 QString NormalizeName(QString name) {
@@ -278,8 +281,16 @@ Helper::Helper(not_null<AuthSession*> session)
 		});
 	}).fail([=](const RPCError &error) {
 		setSupportName(
-			qsl("[rand^") + QString::number(Sandbox::UserTag()) + ']');
+			qsl("[rand^")
+			+ QString::number(Core::Sandbox::Instance().installationTag())
+			+ ']');
 	}).send();
+}
+
+std::unique_ptr<Helper> Helper::Create(not_null<AuthSession*> session) {
+	//return std::make_unique<Helper>(session); AssertIsDebug();
+	const auto valid = session->user()->phone().startsWith(qstr("424"));
+	return valid ? std::make_unique<Helper>(session) : nullptr;
 }
 
 void Helper::registerWindow(not_null<Window::Controller*> controller) {
@@ -330,7 +341,7 @@ void Helper::checkOccupiedChats() {
 				Notify::PeerUpdate::Flag::UserOccupiedChanged);
 		} else {
 			_checkOccupiedTimer.callOnce(
-				(nearest->second - now) * TimeMs(1000));
+				(nearest->second - now) * crl::time(1000));
 			return;
 		}
 	}
@@ -572,7 +583,7 @@ QString InterpretSendPath(const QString &path) {
 			return "App Error: Invalid command: " + line;
 		}
 	}
-	const auto history = App::historyLoaded(toId);
+	const auto history = Auth().data().historyLoaded(toId);
 	if (!history) {
 		return "App Error: Could not find channel with id: " + QString::number(peerToChannel(toId));
 	}

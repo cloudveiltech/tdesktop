@@ -8,8 +8,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "base/observer.h"
-#include "data/data_file_origin.h"
+#include "base/timer.h"
 #include "base/binary_guard.h"
+#include "data/data_file_origin.h"
 
 namespace Storage {
 namespace Cache {
@@ -19,7 +20,9 @@ struct Key;
 constexpr auto kMaxFileInMemory = 10 * 1024 * 1024; // 10 MB max file could be hold in memory
 constexpr auto kMaxVoiceInMemory = 2 * 1024 * 1024; // 2 MB audio is hold in memory and auto loaded
 constexpr auto kMaxStickerInMemory = 2 * 1024 * 1024; // 2 MB stickers hold in memory, auto loaded and displayed inline
+constexpr auto kMaxWallPaperInMemory = kMaxFileInMemory;
 constexpr auto kMaxAnimationInMemory = kMaxFileInMemory; // 10 MB gif and mp4 animations held in memory while playing
+constexpr auto kMaxWallPaperDimension = 4096; // 4096x4096 is max area.
 
 class Downloader final {
 public:
@@ -40,11 +43,18 @@ public:
 	~Downloader();
 
 private:
+	void killDownloadSessionsStart(MTP::DcId dcId);
+	void killDownloadSessionsStop(MTP::DcId dcId);
+	void killDownloadSessions();
+
 	base::Observable<void> _taskFinishedObservable;
 	int _priority = 1;
 
 	using RequestedInDc = std::array<int64, MTP::kDownloadSessionsCount>;
 	std::map<MTP::DcId, RequestedInDc> _requestedBytesAmount;
+
+	base::flat_map<MTP::DcId, crl::time> _killDownloadSessionTimes;
+	base::Timer _killDownloadSessionsTimer;
 
 };
 
@@ -94,9 +104,7 @@ public:
 	QString fileName() const {
 		return _filename;
 	}
-	virtual Data::FileOrigin fileOrigin() const {
-		return Data::FileOrigin();
-	}
+	virtual Data::FileOrigin fileOrigin() const;
 	float64 currentProgress() const;
 	virtual int32 currentOffset(bool includeSkipped = false) const = 0;
 	int32 fullSize() const;
@@ -240,7 +248,7 @@ public:
 		rpcInvalidate();
 	}
 	void refreshFileReferenceFrom(
-		const Data::UpdatedFileReferences &data,
+		const Data::UpdatedFileReferences &updates,
 		int requestId,
 		const QByteArray &current);
 

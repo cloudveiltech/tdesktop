@@ -19,31 +19,6 @@ namespace {
 std::map<int, const char*> BetaLogs() {
 	return {
 	{
-		1003011,
-		"- Added a new night theme.\n"
-
-		"- You can now assign custom themes "
-		"as night and day themes to quickly switch between them."
-	},
-	{
-		1003015,
-		"- Improved local caching "
-		"for images and GIF animations.\n"
-
-		"- Control how much disk space is used by the cache "
-		"and for how long the cached files are stored."
-	},
-	{
-		1003017,
-		"- Fully redisigned Settings section.\n"
-
-		"- New theme selector in Chat Settings.\n"
-		"- New settings: Peer-to-Peer settings for calls, "
-		"disable animations for low performance computers.\n"
-
-		"- Various other improvements."
-	},
-	{
 		1004004,
 		"- Interface scaling for large screens, up to 300% "
 		"(up to 150% for macOS retina screens).\n"
@@ -71,6 +46,29 @@ std::map<int, const char*> BetaLogs() {
 		"- Switch off the 'Count unread messages' option "
 		"in Settings > Notifications if you want to see "
 		"the unread chats count in the badge instead."
+	},
+	{
+		1005005,
+		"- Support for auto-download of files and music.\n"
+
+		"- Improved auto-download settings.\n"
+
+		"- Bug fixes and other minor improvements."
+	},
+	{
+		1005007,
+		"- Choose the emoji set you would like to use "
+		"in Settings > Chat Settings.\n"
+
+		"- Choose input and output devices for Telegram Calls "
+		"in Settings > Adavanced > Call Settings."
+	},
+	{
+		1005016,
+		"- Play video files and listen to received music "
+		"without waiting for them to download.\n"
+
+		"- Press CTRL+0 (CMD+0 on macOS) to jump to your Saved Messages."
 	}
 	};
 }
@@ -96,7 +94,7 @@ Changelogs::Changelogs(not_null<AuthSession*> session, int oldVersion)
 , _oldVersion(oldVersion) {
 	_chatsSubscription = subscribe(
 		_session->data().moreChatsLoaded(),
-		[this] { requestCloudLogs(); });
+		[=] { requestCloudLogs(); });
 }
 
 std::unique_ptr<Changelogs> Changelogs::Create(
@@ -159,14 +157,12 @@ void Changelogs::addLocalLogs() {
 void Changelogs::addLocalLog(const QString &text) {
 	auto textWithEntities = TextWithEntities{ text };
 	TextUtilities::ParseEntities(textWithEntities, TextParseLinks);
-	_session->data().serviceNotification(
-		textWithEntities,
-		MTP_messageMediaEmpty());
+	_session->data().serviceNotification(textWithEntities);
 	_addedSomeLocal = true;
 };
 
 void Changelogs::addBetaLogs() {
-	for (const auto[version, changes] : BetaLogs()) {
+	for (const auto [version, changes] : BetaLogs()) {
 		addBetaLog(version, changes);
 	}
 }

@@ -38,6 +38,10 @@ enum class PeerFloodType {
 	InviteChannel,
 };
 QString PeerFloodErrorText(PeerFloodType type);
+void ShowAddParticipantsError(
+	const QString &error,
+	not_null<PeerData*> chat,
+	const std::vector<not_null<UserData*>> &users);
 
 class AddContactBox : public BoxContent, public RPCSender {
 public:
@@ -96,7 +100,6 @@ private:
 
 	void descriptionResized();
 	void updateMaxHeight();
-	void updateSelected(const QPoint &cursorGlobalPosition);
 
 	CreatingGroupType _creating;
 	bool _fromTypeChoose = false;
@@ -134,7 +137,6 @@ private:
 	};
 	void privacyChanged(Privacy value);
 	void updateSelected(const QPoint &cursorGlobalPosition);
-	void showAddContactsToChannelBox() const;
 	void handleChange();
 	void check();
 	void save();
@@ -198,62 +200,6 @@ private:
 
 	mtpRequestId _requestId = 0;
 	QString _sentName;
-
-};
-
-class EditChannelBox : public BoxContent, public RPCSender {
-public:
-	EditChannelBox(QWidget*, not_null<ChannelData*> channel);
-
-protected:
-	void prepare() override;
-	void setInnerFocus() override;
-
-	void keyPressEvent(QKeyEvent *e) override;
-	void resizeEvent(QResizeEvent *e) override;
-	void paintEvent(QPaintEvent *e) override;
-
-private:
-	void updateMaxHeight();
-	bool canEditSignatures() const;
-	bool canEditInvites() const;
-	void handleChannelNameChange();
-	void descriptionResized();
-	void setupPublicLink();
-	void save();
-
-	void onSaveTitleDone(const MTPUpdates &result);
-	void onSaveDescriptionDone(const MTPBool &result);
-	void onSaveSignDone(const MTPUpdates &result);
-	void onSaveInvitesDone(const MTPUpdates &result);
-	bool onSaveFail(const RPCError &error, mtpRequestId req);
-
-	void saveDescription();
-	void saveSign();
-	void saveInvites();
-
-	not_null<ChannelData*> _channel;
-
-	object_ptr<Ui::InputField> _title;
-	object_ptr<Ui::InputField> _description;
-	object_ptr<Ui::Checkbox> _sign;
-
-	enum class Invites {
-		Everybody,
-		OnlyAdmins,
-	};
-	std::shared_ptr<Ui::RadioenumGroup<Invites>> _inviteGroup;
-	object_ptr<Ui::Radioenum<Invites>> _inviteEverybody;
-	object_ptr<Ui::Radioenum<Invites>> _inviteOnlyAdmins;
-
-	object_ptr<Ui::LinkButton> _publicLink;
-
-	mtpRequestId _saveTitleRequestId = 0;
-	mtpRequestId _saveDescriptionRequestId = 0;
-	mtpRequestId _saveSignRequestId = 0;
-	mtpRequestId _saveInvitesRequestId = 0;
-
-	QString _sentTitle, _sentDescription;
 
 };
 

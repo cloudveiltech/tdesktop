@@ -13,14 +13,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_element.h"
 #include "history/view/history_view_service_message.h"
 #include "history/history_item_components.h"
-#include "history/history_media_types.h"
-#include "history/history_media_grouped.h"
+#include "history/media/history_media_grouped.h"
 #include "history/history_service.h"
 #include "history/history_message.h"
 #include "history/history.h"
-#include "media/media_clip_reader.h"
-#include "styles/style_dialogs.h"
-#include "styles/style_history.h"
+#include "media/clip/media_clip_reader.h"
 #include "ui/effects/ripple_animation.h"
 #include "ui/text_options.h"
 #include "storage/file_upload.h"
@@ -29,8 +26,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_feed_messages.h"
 #include "auth_session.h"
 #include "apiwrap.h"
-#include "media/media_audio.h"
-#include "messenger.h"
+#include "media/audio/media_audio.h"
+#include "core/application.h"
 #include "mainwindow.h"
 #include "window/window_controller.h"
 #include "core/crash_reports.h"
@@ -38,8 +35,20 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_messages.h"
 #include "data/data_media_types.h"
 #include "data/data_feed.h"
+#include "data/data_channel.h"
+#include "data/data_chat.h"
+#include "data/data_user.h"
+#include "styles/style_dialogs.h"
+#include "styles/style_history.h"
 
 namespace {
+
+enum class MediaCheckResult {
+	Good,
+	Unsupported,
+	Empty,
+	HasTimeToLive,
+};
 
 not_null<HistoryItem*> CreateUnsupportedMessage(
 		not_null<History*> history,
@@ -57,6 +66,7 @@ not_null<HistoryItem*> CreateUnsupportedMessage(
 	text.entities.push_front(
 		EntityInText(EntityInTextItalic, 0, text.text.size()));
 	flags &= ~MTPDmessage::Flag::f_post_author;
+	flags |= MTPDmessage_ClientFlag::f_is_unsupported;
 	return new HistoryMessage(
 		history,
 		msgId,
@@ -67,6 +77,75 @@ not_null<HistoryItem*> CreateUnsupportedMessage(
 		from,
 		QString(),
 		text);
+}
+
+MediaCheckResult CheckMessageMedia(const MTPMessageMedia &media) {
+	using Result = MediaCheckResult;
+	return media.match([](const MTPDmessageMediaEmpty &) {
+		return Result::Good;
+	}, [](const MTPDmessageMediaContact &) {
+		return Result::Good;
+	}, [](const MTPDmessageMediaGeo &data) {
+		return data.vgeo.match([](const MTPDgeoPoint &) {
+			return Result::Good;
+		}, [](const MTPDgeoPointEmpty &) {
+			return Result::Empty;
+		});
+	}, [](const MTPDmessageMediaVenue &data) {
+		return data.vgeo.match([](const MTPDgeoPoint &) {
+			return Result::Good;
+		}, [](const MTPDgeoPointEmpty &) {
+			return Result::Empty;
+		});
+	}, [](const MTPDmessageMediaGeoLive &data) {
+		return data.vgeo.match([](const MTPDgeoPoint &) {
+			return Result::Good;
+		}, [](const MTPDgeoPointEmpty &) {
+			return Result::Empty;
+		});
+	}, [](const MTPDmessageMediaPhoto &data) {
+		if (data.has_ttl_seconds()) {
+			return Result::HasTimeToLive;
+		} else if (!data.has_photo()) {
+			return Result::Empty;
+		}
+		return data.vphoto.match([](const MTPDphoto &) {
+			return Result::Good;
+		}, [](const MTPDphotoEmpty &) {
+			return Result::Empty;
+		});
+	}, [](const MTPDmessageMediaDocument &data) {
+		if (data.has_ttl_seconds()) {
+			return Result::HasTimeToLive;
+		} else if (!data.has_document()) {
+			return Result::Empty;
+		}
+		return data.vdocument.match([](const MTPDdocument &) {
+			return Result::Good;
+		}, [](const MTPDdocumentEmpty &) {
+			return Result::Empty;
+		});
+	}, [](const MTPDmessageMediaWebPage &data) {
+		return data.vwebpage.match([](const MTPDwebPage &) {
+			return Result::Good;
+		}, [](const MTPDwebPageEmpty &) {
+			return Result::Good;
+		}, [](const MTPDwebPagePending &) {
+			return Result::Good;
+		}, [](const MTPDwebPageNotModified &) {
+			return Result::Unsupported;
+		});
+	}, [](const MTPDmessageMediaGame &data) {
+		return data.vgame.match([](const MTPDgame &) {
+			return Result::Good;
+		});
+	}, [](const MTPDmessageMediaInvoice &) {
+		return Result::Good;
+	}, [](const MTPDmessageMediaPoll &) {
+		return Result::Good;
+	}, [](const MTPDmessageMediaUnsupported &) {
+		return Result::Unsupported;
+	});
 }
 
 } // namespace
@@ -85,7 +164,7 @@ HistoryItem::HistoryItem(
 	UserId from)
 : id(id)
 , _history(history)
-, _from(from ? App::user(from) : history->peer)
+, _from(from ? history->owner().user(from) : history->peer)
 , _flags(flags)
 , _date(date) {
 	App::historyRegItem(this);
@@ -96,13 +175,13 @@ TimeId HistoryItem::date() const {
 }
 
 void HistoryItem::finishEdition(int oldKeyboardTop) {
-	Auth().data().requestItemViewRefresh(this);
-	invalidateChatsListEntry();
-	if (const auto group = Auth().data().groups().find(this)) {
+	_history->owner().requestItemViewRefresh(this);
+	invalidateChatListEntry();
+	if (const auto group = _history->owner().groups().find(this)) {
 		const auto leader = group->items.back();
 		if (leader != this) {
-			Auth().data().requestItemViewRefresh(leader);
-			leader->invalidateChatsListEntry();
+			_history->owner().requestItemViewRefresh(leader);
+			leader->invalidateChatListEntry();
 		}
 	}
 
@@ -119,7 +198,7 @@ void HistoryItem::setGroupId(MessageGroupId groupId) {
 	Expects(!_groupId);
 
 	_groupId = groupId;
-	Auth().data().groups().registerMessage(this);
+	_history->owner().groups().registerMessage(this);
 }
 
 HistoryMessageReplyMarkup *HistoryItem::inlineReplyMarkup() {
@@ -138,10 +217,10 @@ ReplyKeyboard *HistoryItem::inlineReplyKeyboard() {
 	return nullptr;
 }
 
-void HistoryItem::invalidateChatsListEntry() {
+void HistoryItem::invalidateChatListEntry() {
 	if (const auto main = App::main()) {
 		// #TODO feeds search results
-		main->repaintDialogRow(history(), id);
+		main->repaintDialogRow({ history(), fullId() });
 	}
 
 	// invalidate cache for drawInDialog
@@ -161,14 +240,31 @@ void HistoryItem::finishEditionToEmpty() {
 	_history->itemVanished(this);
 }
 
-bool HistoryItem::isMediaUnread() const {
-	if (!mentionsMe() && _history->peer->isChannel()) {
-		auto passed = unixtime() - date();
+bool HistoryItem::hasUnreadMediaFlag() const {
+	if (_history->peer->isChannel()) {
+		const auto passed = unixtime() - date();
 		if (passed >= Global::ChannelsReadMediaPeriod()) {
 			return false;
 		}
 	}
 	return _flags & MTPDmessage::Flag::f_media_unread;
+}
+
+bool HistoryItem::isUnreadMention() const {
+	return mentionsMe() && (_flags & MTPDmessage::Flag::f_media_unread);
+}
+
+bool HistoryItem::isUnreadMedia() const {
+	if (!hasUnreadMediaFlag()) {
+		return false;
+	} else if (const auto media = this->media()) {
+		if (const auto document = media->document()) {
+			if (document->isVoiceMessage() || document->isVideoMessage()) {
+				return (media->webpage() == nullptr);
+			}
+		}
+	}
+	return false;
 }
 
 void HistoryItem::markMediaRead() {
@@ -212,7 +308,7 @@ void HistoryItem::addLogEntryOriginal(
 	Expects(isLogEntry());
 
 	AddComponents(HistoryMessageLogEntryOriginal::Bit());
-	Get<HistoryMessageLogEntryOriginal>()->page = Auth().data().webpage(
+	Get<HistoryMessageLogEntryOriginal>()->page = _history->owner().webpage(
 		localId,
 		label,
 		content);
@@ -237,7 +333,6 @@ UserData *HistoryItem::getMessageBot() const {
 };
 
 void HistoryItem::destroy() {
-	const auto history = this->history();
 	if (isLogEntry()) {
 		Assert(!mainView());
 	} else {
@@ -245,13 +340,13 @@ void HistoryItem::destroy() {
 		eraseFromUnreadMentions();
 		if (IsServerMsgId(id)) {
 			if (const auto types = sharedMediaTypes()) {
-				Auth().storage().remove(Storage::SharedMediaRemoveOne(
-					history->peer->id,
+				_history->session().storage().remove(Storage::SharedMediaRemoveOne(
+					_history->peer->id,
 					types,
 					id));
 			}
 		} else {
-			Auth().api().cancelLocalItem(this);
+			_history->session().api().cancelLocalItem(this);
 		}
 		_history->itemRemoved(this);
 	}
@@ -260,14 +355,14 @@ void HistoryItem::destroy() {
 
 void HistoryItem::refreshMainView() {
 	if (const auto view = mainView()) {
-		Auth().data().notifyHistoryChangeDelayed(_history);
+		_history->owner().notifyHistoryChangeDelayed(_history);
 		view->refreshInBlock();
 	}
 }
 
 void HistoryItem::removeMainView() {
 	if (const auto view = mainView()) {
-		Auth().data().notifyHistoryChangeDelayed(_history);
+		_history->owner().notifyHistoryChangeDelayed(_history);
 		view->removeFromBlock();
 	}
 }
@@ -285,14 +380,14 @@ void HistoryItem::indexAsNewItem() {
 		addToUnreadMentions(UnreadMentionType::New);
 		CrashReports::ClearAnnotation("addToUnreadMentions");
 		if (const auto types = sharedMediaTypes()) {
-			Auth().storage().add(Storage::SharedMediaAddNew(
+			_history->session().storage().add(Storage::SharedMediaAddNew(
 				history()->peer->id,
 				types,
 				id));
 		}
 		if (const auto channel = history()->peer->asChannel()) {
 			if (const auto feed = channel->feed()) {
-				Auth().storage().add(Storage::FeedMessagesAddNew(
+				_history->session().storage().add(Storage::FeedMessagesAddNew(
 					feed->id(),
 					position()));
 			}
@@ -316,8 +411,8 @@ void HistoryItem::setRealId(MsgId newId) {
 		}
 	}
 
-	Auth().data().notifyItemIdChange({ this, oldId });
-	Auth().data().requestItemRepaint(this);
+	_history->owner().notifyItemIdChange({ this, oldId });
+	_history->owner().requestItemRepaint(this);
 }
 
 bool HistoryItem::isPinned() const {
@@ -339,13 +434,35 @@ bool HistoryItem::allowsEdit(TimeId now) const {
 	return false;
 }
 
+bool HistoryItem::canStopPoll() const {
+	if (id < 0
+		|| Has<HistoryMessageVia>()
+		|| Has<HistoryMessageForwarded>()) {
+		return false;
+	}
+
+	const auto peer = _history->peer;
+	if (peer->isSelf()) {
+		return true;
+	} else if (const auto channel = peer->asChannel()) {
+		if (isPost() && channel->canEditMessages()) {
+			return true;
+		} else if (out()) {
+			return isPost() ? channel->canPublish() : channel->canWrite();
+		} else {
+			return false;
+		}
+	}
+	return out();
+}
+
 bool HistoryItem::canDelete() const {
 	if (isLogEntry() || (!IsServerMsgId(id) && serviceMsg())) {
 		return false;
 	}
 	auto channel = _history->peer->asChannel();
 	if (!channel) {
-		return !(_flags & MTPDmessage_ClientFlag::f_is_group_migrate);
+		return !isGroupMigrate();
 	}
 
 	if (id == 1) {
@@ -389,7 +506,9 @@ bool HistoryItem::canDeleteForEveryone(TimeId now) const {
 	}
 	if (!out()) {
 		if (const auto chat = peer->asChat()) {
-			if (!chat->amCreator() && (!chat->amAdmin() || !chat->adminsEnabled())) {
+			if (!chat->amCreator()
+				&& !(chat->adminRights()
+					& ChatAdminRight::f_delete_messages)) {
 				return false;
 			}
 		} else if (peer->isUser()) {
@@ -453,7 +572,7 @@ QString HistoryItem::directLink() const {
 				}
 			}
 		}
-		return Messenger::Instance().createInternalLinkFull(query);
+		return Core::App().createInternalLinkFull(query);
 	}
 	return QString();
 }
@@ -587,7 +706,10 @@ QString HistoryItem::notificationText() const {
 QString HistoryItem::inDialogsText(DrawInDialog way) const {
 	auto getText = [this]() {
 		if (_media) {
-			return _media->chatsListText();
+			if (_groupId) {
+				return textcmdLink(1, TextUtilities::Clean(lang(lng_in_dlg_album)));
+			}
+			return _media->chatListText();
 		} else if (!emptyText()) {
 			return TextUtilities::Clean(_text.originalText());
 		}
@@ -634,10 +756,10 @@ void HistoryItem::drawInDialog(
 }
 
 HistoryItem::~HistoryItem() {
-	Auth().data().notifyItemRemoved(this);
+	_history->owner().notifyItemRemoved(this);
 	App::historyUnregItem(this);
 	if (id < 0 && !App::quitting()) {
-		Auth().uploader().cancel(fullId());
+		_history->session().uploader().cancel(fullId());
 	}
 }
 
@@ -676,98 +798,11 @@ ClickHandlerPtr goToMessageClickHandler(
 not_null<HistoryItem*> HistoryItem::Create(
 		not_null<History*> history,
 		const MTPMessage &message) {
-	switch (message.type()) {
-	case mtpc_messageEmpty: {
-		const auto &data = message.c_messageEmpty();
-		const auto text = HistoryService::PreparedText {
-			lang(lng_message_empty)
-		};
-		return new HistoryService(history, data.vid.v, TimeId(0), text);
-	} break;
-
-	case mtpc_message: {
-		const auto &data = message.c_message();
-		enum class MediaCheckResult {
-			Good,
-			Unsupported,
-			Empty,
-			HasTimeToLive,
-		};
-		auto badMedia = MediaCheckResult::Good;
-		const auto &media = data.vmedia;
-		if (data.has_media()) switch (media.type()) {
-		case mtpc_messageMediaEmpty:
-		case mtpc_messageMediaContact: break;
-		case mtpc_messageMediaGeo:
-			switch (media.c_messageMediaGeo().vgeo.type()) {
-			case mtpc_geoPoint: break;
-			case mtpc_geoPointEmpty: badMedia = MediaCheckResult::Empty; break;
-			default: badMedia = MediaCheckResult::Unsupported; break;
-			}
-			break;
-		case mtpc_messageMediaVenue:
-			switch (media.c_messageMediaVenue().vgeo.type()) {
-			case mtpc_geoPoint: break;
-			case mtpc_geoPointEmpty: badMedia = MediaCheckResult::Empty; break;
-			default: badMedia = MediaCheckResult::Unsupported; break;
-			}
-			break;
-		case mtpc_messageMediaGeoLive:
-			switch (media.c_messageMediaGeoLive().vgeo.type()) {
-			case mtpc_geoPoint: break;
-			case mtpc_geoPointEmpty: badMedia = MediaCheckResult::Empty; break;
-			default: badMedia = MediaCheckResult::Unsupported; break;
-			}
-			break;
-		case mtpc_messageMediaPhoto: {
-			auto &photo = media.c_messageMediaPhoto();
-			if (photo.has_ttl_seconds()) {
-				badMedia = MediaCheckResult::HasTimeToLive;
-			} else if (!photo.has_photo()) {
-				badMedia = MediaCheckResult::Empty;
-			} else {
-				switch (photo.vphoto.type()) {
-				case mtpc_photo: break;
-				case mtpc_photoEmpty: badMedia = MediaCheckResult::Empty; break;
-				default: badMedia = MediaCheckResult::Unsupported; break;
-				}
-			}
-		} break;
-		case mtpc_messageMediaDocument: {
-			auto &document = media.c_messageMediaDocument();
-			if (document.has_ttl_seconds()) {
-				badMedia = MediaCheckResult::HasTimeToLive;
-			} else if (!document.has_document()) {
-				badMedia = MediaCheckResult::Empty;
-			} else {
-				switch (document.vdocument.type()) {
-				case mtpc_document: break;
-				case mtpc_documentEmpty: badMedia = MediaCheckResult::Empty; break;
-				default: badMedia = MediaCheckResult::Unsupported; break;
-				}
-			}
-		} break;
-		case mtpc_messageMediaWebPage:
-			switch (media.c_messageMediaWebPage().vwebpage.type()) {
-			case mtpc_webPage:
-			case mtpc_webPageEmpty:
-			case mtpc_webPagePending: break;
-			case mtpc_webPageNotModified:
-			default: badMedia = MediaCheckResult::Unsupported; break;
-			}
-			break;
-		case mtpc_messageMediaGame:
-		switch (media.c_messageMediaGame().vgame.type()) {
-			case mtpc_game: break;
-			default: badMedia = MediaCheckResult::Unsupported; break;
-			}
-			break;
-		case mtpc_messageMediaInvoice:
-			break;
-		case mtpc_messageMediaUnsupported:
-		default: badMedia = MediaCheckResult::Unsupported; break;
-		}
-		if (badMedia == MediaCheckResult::Unsupported) {
+	return message.match([&](const MTPDmessage &data) -> HistoryItem* {
+		const auto checked = data.has_media()
+			? CheckMessageMedia(data.vmedia)
+			: MediaCheckResult::Good;
+		if (checked == MediaCheckResult::Unsupported) {
 			return CreateUnsupportedMessage(
 				history,
 				data.vid.v,
@@ -776,7 +811,7 @@ not_null<HistoryItem*> HistoryItem::Create(
 				data.vvia_bot_id.v,
 				data.vdate.v,
 				data.vfrom_id.v);
-		} else if (badMedia == MediaCheckResult::Empty) {
+		} else if (checked == MediaCheckResult::Empty) {
 			const auto text = HistoryService::PreparedText {
 				lang(lng_message_empty)
 			};
@@ -787,20 +822,19 @@ not_null<HistoryItem*> HistoryItem::Create(
 				text,
 				data.vflags.v,
 				data.has_from_id() ? data.vfrom_id.v : UserId(0));
-		} else if (badMedia == MediaCheckResult::HasTimeToLive) {
+		} else if (checked == MediaCheckResult::HasTimeToLive) {
 			return new HistoryService(history, data);
 		}
 		return new HistoryMessage(history, data);
-	} break;
-
-	case mtpc_messageService: {
-		auto &data = message.c_messageService();
+	}, [&](const MTPDmessageService &data) -> HistoryItem* {
 		if (data.vaction.type() == mtpc_messageActionPhoneCall) {
 			return new HistoryMessage(history, data);
 		}
 		return new HistoryService(history, data);
-	} break;
-	}
-
-	Unexpected("Type in HistoryItem::Create().");
+	}, [&](const MTPDmessageEmpty &data) -> HistoryItem* {
+		const auto text = HistoryService::PreparedText{
+			lang(lng_message_empty)
+		};
+		return new HistoryService(history, data.vid.v, TimeId(0), text);
+	});
 }

@@ -12,6 +12,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_peer_values.h"
 #include "data/data_session.h"
 #include "data/data_feed.h"
+#include "data/data_channel.h"
+#include "data/data_user.h"
 #include "ui/wrap/vertical_layout.h"
 #include "ui/wrap/padding_wrap.h"
 #include "ui/wrap/slide_wrap.h"
@@ -36,9 +38,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_peer_menu.h"
 #include "mainwidget.h"
 #include "auth_session.h"
-#include "messenger.h"
+#include "core/application.h"
 #include "apiwrap.h"
-#include "application.h"
 #include "styles/style_info.h"
 #include "styles/style_boxes.h"
 
@@ -288,10 +289,10 @@ object_ptr<Ui::RpWidget> DetailsFiller::setupInfo() {
 			std::move(linkText),
 			QString());
 		link->setClickHandlerFilter([peer = _peer](auto&&...) {
-			auto link = Messenger::Instance().createInternalLinkFull(
+			auto link = Core::App().createInternalLinkFull(
 				peer->userName());
 			if (!link.isEmpty()) {
-				Application::clipboard()->setText(link);
+				QApplication::clipboard()->setText(link);
 				Ui::Toast::Show(lang(lng_username_copied));
 			}
 			return false;
@@ -557,12 +558,12 @@ void ActionsFiller::addBotCommandActions(not_null<UserData*> user) {
 }
 
 void ActionsFiller::addReportAction() {
-	auto peer = _peer;
+	const auto peer = _peer;
 	AddActionButton(
 		_wrap,
 		Lang::Viewer(lng_profile_report),
 		rpl::single(true),
-		[peer] { Ui::show(Box<ReportBox>(peer)); },
+		[=] { Ui::show(Box<ReportBox>(peer)); },
 		st::infoBlockButton);
 }
 
@@ -573,12 +574,12 @@ void ActionsFiller::addBlockAction(not_null<UserData*> user) {
 	) | rpl::map([user] {
 		switch (user->blockStatus()) {
 		case UserData::BlockStatus::Blocked:
-			return Lang::Viewer(user->botInfo
+			return Lang::Viewer((user->isBot() && !user->isSupport())
 				? lng_profile_restart_bot
 				: lng_profile_unblock_user);
 		case UserData::BlockStatus::NotBlocked:
 		default:
-			return Lang::Viewer(user->botInfo
+			return Lang::Viewer((user->isBot() && !user->isSupport())
 				? lng_profile_block_bot
 				: lng_profile_block_user);
 		}
@@ -658,7 +659,7 @@ void ActionsFiller::fillUserActions(not_null<UserData*> user) {
 		_wrap->add(CreateSkipWidget(
 			_wrap,
 			st::infoBlockButtonSkip));
-		if (user->botInfo) {
+		if (user->isBot() && !user->isSupport()) {
 			addReportAction();
 		}
 		addBlockAction(user);

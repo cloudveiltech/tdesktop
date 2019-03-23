@@ -23,7 +23,7 @@ NumbersAnimation::NumbersAnimation(
 }
 
 void NumbersAnimation::setText(const QString &text, int value) {
-	if (_a_ready.animating(getms())) {
+	if (_a_ready.animating(crl::now())) {
 		_delayedText = text;
 		_delayedValue = value;
 	} else {
@@ -96,7 +96,7 @@ int NumbersAnimation::maxWidth() const {
 	return std::max(_fromWidth, _toWidth);
 }
 
-void NumbersAnimation::stepAnimation(TimeMs ms) {
+void NumbersAnimation::stepAnimation(crl::time ms) {
 	_a_ready.step(ms);
 }
 
@@ -158,7 +158,7 @@ LabelWithNumbers::LabelWithNumbers(
 , _textTop(textTop)
 , _before(GetBefore(value))
 , _after(GetAfter(value))
-, _numbers(_st.style.font, [this] { update(); })
+, _numbers(_st.style.font, [=] { update(); })
 , _beforeWidth(_st.style.font->width(_before))
 , _afterWidth(st.style.font->width(_after)) {
 	Expects((value.offset < 0) == (value.length == 0));
@@ -212,7 +212,7 @@ void LabelWithNumbers::finishAnimating() {
 void LabelWithNumbers::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
-	const auto ms = getms();
+	const auto ms = crl::now();
 	const auto beforeWidth = _beforeWidthAnimation.current(ms, _beforeWidth);
 	_numbers.stepAnimation(ms);
 
@@ -247,6 +247,9 @@ Ui::StringWithNumbers ReplaceTag<Ui::StringWithNumbers>::Call(
 		ushort tag,
 		const Ui::StringWithNumbers &replacement) {
 	original.offset = FindTagReplacementPosition(original.text, tag);
+	if (original.offset < 0) {
+		return std::move(original);
+	}
 	original.text = ReplaceTag<QString>::Call(
 		std::move(original.text),
 		tag,

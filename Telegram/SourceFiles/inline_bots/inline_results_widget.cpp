@@ -9,6 +9,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "data/data_photo.h"
 #include "data/data_document.h"
+#include "data/data_channel.h"
+#include "data/data_user.h"
+#include "data/data_session.h"
 #include "styles/style_chat_helpers.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/shadow.h"
@@ -56,7 +59,7 @@ Inner::Inner(QWidget *parent, not_null<Window::Controller*> controller) : TWidge
 			update();
 		}
 	});
-	subscribe(Notify::PeerUpdated(), Notify::PeerUpdatedHandler(Notify::PeerUpdate::Flag::ChannelRightsChanged, [this](const Notify::PeerUpdate &update) {
+	subscribe(Notify::PeerUpdated(), Notify::PeerUpdatedHandler(Notify::PeerUpdate::Flag::RightsChanged, [this](const Notify::PeerUpdate &update) {
 		if (update.peer == _inlineQueryPeer) {
 			auto isRestricted = (_restrictedLabel != nullptr);
 			if (isRestricted != isRestrictedView()) {
@@ -73,15 +76,18 @@ void Inner::visibleTopBottomUpdated(
 	_visibleBottom = visibleBottom;
 	if (_visibleTop != visibleTop) {
 		_visibleTop = visibleTop;
-		_lastScrolled = getms();
+		_lastScrolled = crl::now();
 	}
 }
 
 void Inner::checkRestrictedPeer() {
-	if (auto megagroup = _inlineQueryPeer ? _inlineQueryPeer->asMegagroup() : nullptr) {
-		if (megagroup->restricted(ChannelRestriction::f_send_inline)) {
+	if (_inlineQueryPeer) {
+		const auto errorKey = Data::RestrictionErrorKey(
+			_inlineQueryPeer,
+			ChatRestriction::f_send_inline);
+		if (errorKey) {
 			if (!_restrictedLabel) {
-				_restrictedLabel.create(this, lang(lng_restricted_send_inline), Ui::FlatLabel::InitType::Simple, st::stickersRestrictedLabel);
+				_restrictedLabel.create(this, lang(*errorKey), Ui::FlatLabel::InitType::Simple, st::stickersRestrictedLabel);
 				_restrictedLabel->show();
 				_restrictedLabel->move(st::inlineResultsLeft - st::buttonRadius, st::stickerPanPadding);
 				if (_switchPmButton) {
@@ -146,7 +152,7 @@ void Inner::paintInlineItems(Painter &p, const QRect &r) {
 		return;
 	}
 	auto gifPaused = _controller->isGifPausedAtLeastFor(Window::GifPauseReason::InlineResults);
-	InlineBots::Layout::PaintContext context(getms(), false, gifPaused, false);
+	InlineBots::Layout::PaintContext context(crl::now(), false, gifPaused, false);
 
 	auto top = st::stickerPanPadding;
 	if (_switchPmButton) {
@@ -564,7 +570,7 @@ void Inner::inlineItemLayoutChanged(const ItemBase *layout) {
 }
 
 void Inner::inlineItemRepaint(const ItemBase *layout) {
-	auto ms = getms();
+	auto ms = crl::now();
 	if (_lastScrolled + 100 <= ms) {
 		update();
 	} else {
@@ -695,7 +701,7 @@ void Inner::showPreview() {
 }
 
 void Inner::updateInlineItems() {
-	auto ms = getms();
+	auto ms = crl::now();
 	if (_lastScrolled + 100 <= ms) {
 		update();
 	} else {
@@ -798,7 +804,7 @@ void Widget::onWndActiveChanged() {
 void Widget::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
-	auto ms = getms();
+	auto ms = crl::now();
 
 	// This call can finish _a_show animation and destroy _showAnimation.
 	auto opacityAnimating = _a_opacity.animating(ms);
@@ -1025,7 +1031,7 @@ void Widget::inlineResultsDone(const MTPmessages_BotResults &result) {
 	auto adding = (it != _inlineCache.cend());
 	if (result.type() == mtpc_messages_botResults) {
 		auto &d = result.c_messages_botResults();
-		App::feedUsers(d.vusers);
+		Auth().data().processUsers(d.vusers);
 
 		auto &v = d.vresults.v;
 		auto queryId = d.vquery_id.v;

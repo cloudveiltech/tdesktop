@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "data/data_types.h"
+#include "ui/image/image.h"
 
 namespace Images {
 class Source;
@@ -18,6 +19,16 @@ namespace Cache {
 struct Key;
 } // namespace Cache
 } // namespace Storage
+
+namespace Media {
+namespace Streaming {
+class Loader;
+} // namespace Streaming
+} // namespace Media
+
+namespace Data {
+class Session;
+} // namespace Data
 
 class AuthSession;
 class mtpFileLoader;
@@ -75,94 +86,101 @@ class Document;
 
 class DocumentData {
 public:
-	DocumentData(DocumentId id, not_null<AuthSession*> session);
+	DocumentData(not_null<Data::Session*> owner, DocumentId id);
 
-	not_null<AuthSession*> session() const;
+	[[nodiscard]] Data::Session &owner() const;
+	[[nodiscard]] AuthSession &session() const;
 
 	void setattributes(
 		const QVector<MTPDocumentAttribute> &attributes);
 
 	void automaticLoad(
 		Data::FileOrigin origin,
-		const HistoryItem *item); // auto load sticker or video
+		const HistoryItem *item);
 	void automaticLoadSettingsChanged();
 
-	enum FilePathResolveType {
-		FilePathResolveCached,
-		FilePathResolveChecked,
-		FilePathResolveSaveFromData,
-		FilePathResolveSaveFromDataSilent,
+	enum class FilePathResolve {
+		Cached,
+		Checked,
+		SaveFromData,
+		SaveFromDataSilent,
 	};
-	bool loaded(
-		FilePathResolveType type = FilePathResolveCached) const;
-	bool loading() const;
-	QString loadingFilePath() const;
-	bool displayLoading() const;
+	[[nodiscard]] bool loaded(
+		FilePathResolve resolve = FilePathResolve::Cached) const;
+	[[nodiscard]] bool loading() const;
+	[[nodiscard]] QString loadingFilePath() const;
+	[[nodiscard]] bool displayLoading() const;
 	void save(
 		Data::FileOrigin origin,
 		const QString &toFile,
-		ActionOnLoad action = ActionOnLoadNone,
-		const FullMsgId &actionMsgId = FullMsgId(),
 		LoadFromCloudSetting fromCloud = LoadFromCloudOrLocal,
 		bool autoLoading = false);
 	void cancel();
-	float64 progress() const;
-	int32 loadOffset() const;
-	bool uploading() const;
+	[[nodiscard]] bool cancelled() const;
+	[[nodiscard]] float64 progress() const;
+	[[nodiscard]] int32 loadOffset() const;
+	[[nodiscard]] bool uploading() const;
 
 	void setWaitingForAlbum();
-	bool waitingForAlbum() const;
+	[[nodiscard]] bool waitingForAlbum() const;
 
-	QByteArray data() const;
-	const FileLocation &location(bool check = false) const;
+	[[nodiscard]] QByteArray data() const;
+	[[nodiscard]] const FileLocation &location(bool check = false) const;
 	void setLocation(const FileLocation &loc);
 
-	QString filepath(
-		FilePathResolveType type = FilePathResolveCached,
-		bool forceSavingAs = false) const;
+	[[nodiscard]] QString filepath(
+		FilePathResolve resolve = FilePathResolve::Cached) const;
 
-	bool saveToCache() const;
-
-	void performActionOnLoad();
+	[[nodiscard]] bool saveToCache() const;
 
 	void unload();
-	Image *getReplyPreview(Data::FileOrigin origin);
+	[[nodiscard]] Image *getReplyPreview(Data::FileOrigin origin);
 
-	StickerData *sticker() const;
-	void checkSticker();
-	void checkStickerThumb();
-	Image *getStickerThumb();
-	Image *getStickerImage();
-	Data::FileOrigin stickerSetOrigin() const;
-	Data::FileOrigin stickerOrGifOrigin() const;
-	bool isStickerSetInstalled() const;
-	SongData *song();
-	const SongData *song() const;
-	VoiceData *voice();
-	const VoiceData *voice() const;
+	[[nodiscard]] StickerData *sticker() const;
+	void checkStickerLarge();
+	void checkStickerSmall();
+	[[nodiscard]] Image *getStickerSmall();
+	[[nodiscard]] Image *getStickerLarge();
+	[[nodiscard]] Data::FileOrigin stickerSetOrigin() const;
+	[[nodiscard]] Data::FileOrigin stickerOrGifOrigin() const;
+	[[nodiscard]] bool isStickerSetInstalled() const;
+	[[nodiscard]] SongData *song();
+	[[nodiscard]] const SongData *song() const;
+	[[nodiscard]] VoiceData *voice();
+	[[nodiscard]] const VoiceData *voice() const;
 
-	bool isVoiceMessage() const;
-	bool isVideoMessage() const;
-	bool isSong() const;
-	bool isAudioFile() const;
-	bool isVideoFile() const;
-	bool isAnimation() const;
-	bool isGifv() const;
-	bool isTheme() const;
-	bool isSharedMediaMusic() const;
-	int32 duration() const;
-	bool isImage() const;
+	[[nodiscard]] bool isVoiceMessage() const;
+	[[nodiscard]] bool isVideoMessage() const;
+	[[nodiscard]] bool isSong() const;
+	[[nodiscard]] bool isAudioFile() const;
+	[[nodiscard]] bool isVideoFile() const;
+	[[nodiscard]] bool isAnimation() const;
+	[[nodiscard]] bool isGifv() const;
+	[[nodiscard]] bool isTheme() const;
+	[[nodiscard]] bool isSharedMediaMusic() const;
+	[[nodiscard]] TimeId getDuration() const;
+	[[nodiscard]] bool isImage() const;
 	void recountIsImage();
-	bool supportsStreaming() const;
+	[[nodiscard]] bool supportsStreaming() const;
+	void setNotSupportsStreaming();
 	void setData(const QByteArray &data) {
 		_data = data;
 	}
+	bool checkWallPaperProperties();
+	[[nodiscard]] bool isWallPaper() const;
+	[[nodiscard]] bool isPatternWallPaper() const;
 
-	bool hasGoodStickerThumb() const;
+	[[nodiscard]] bool hasThumbnail() const;
+	void loadThumbnail(Data::FileOrigin origin);
+	[[nodiscard]] Image *thumbnailInline() const;
+	[[nodiscard]] Image *thumbnail() const;
+	void updateThumbnails(
+		ImagePtr thumbnailInline,
+		ImagePtr thumbnail);
 
-	Image *goodThumbnail() const;
-	Storage::Cache::Key goodThumbnailCacheKey() const;
-	void setGoodThumbnail(QImage &&image, QByteArray &&bytes);
+	[[nodiscard]] Image *goodThumbnail() const;
+	[[nodiscard]] Storage::Cache::Key goodThumbnailCacheKey() const;
+	void setGoodThumbnailOnUpload(QImage &&image, QByteArray &&bytes);
 	void refreshGoodThumbnail();
 	void replaceGoodThumbnail(std::unique_ptr<Images::Source> &&source);
 
@@ -172,11 +190,11 @@ public:
 		const QByteArray &fileReference);
 	void setContentUrl(const QString &url);
 	void setWebLocation(const WebFileLocation &location);
-	bool hasRemoteLocation() const;
-	bool hasWebLocation() const;
-	bool isValid() const;
-	MTPInputDocument mtpInput() const;
-	QByteArray fileReference() const;
+	[[nodiscard]] bool hasRemoteLocation() const;
+	[[nodiscard]] bool hasWebLocation() const;
+	[[nodiscard]] bool isNull() const;
+	[[nodiscard]] MTPInputDocument mtpInput() const;
+	[[nodiscard]] QByteArray fileReference() const;
 	void refreshFileReference(const QByteArray &value);
 	void refreshStickerThumbFileReference();
 
@@ -184,22 +202,30 @@ public:
 	// (for example for displaying an external inline bot result)
 	// and it has downloaded data, we can collect that data from it
 	// to (this) received from the server "same" document.
-	void collectLocalData(DocumentData *local);
+	void collectLocalData(not_null<DocumentData*> local);
 
-	QString filename() const;
-	QString mimeString() const;
-	bool hasMimeType(QLatin1String mime) const;
+	[[nodiscard]] QString filename() const;
+	[[nodiscard]] QString mimeString() const;
+	[[nodiscard]] bool hasMimeType(QLatin1String mime) const;
 	void setMimeString(const QString &mime);
 
-	MediaKey mediaKey() const;
-	Storage::Cache::Key cacheKey() const;
-	uint8 cacheTag() const;
+	[[nodiscard]] MediaKey mediaKey() const;
+	[[nodiscard]] Storage::Cache::Key cacheKey() const;
+	[[nodiscard]] uint8 cacheTag() const;
 
-	static QString ComposeNameString(
+	[[nodiscard]] static QString ComposeNameString(
 		const QString &filename,
 		const QString &songTitle,
 		const QString &songPerformer);
-	QString composeNameString() const;
+	[[nodiscard]] QString composeNameString() const;
+
+	[[nodiscard]] bool canBePlayed() const;
+	[[nodiscard]] bool canBeStreamed() const;
+	[[nodiscard]] auto createStreamingLoader(Data::FileOrigin origin) const
+		-> std::unique_ptr<Media::Streaming::Loader>;
+
+	void setInappPlaybackFailed();
+	[[nodiscard]] bool inappPlaybackFailed() const;
 
 	~DocumentData();
 
@@ -207,7 +233,6 @@ public:
 	DocumentType type = FileDocument;
 	QSize dimensions;
 	int32 date = 0;
-	ImagePtr thumb;
 	int32 size = 0;
 
 	FileStatus status = FileReady;
@@ -215,12 +240,21 @@ public:
 	std::unique_ptr<Data::UploadState> uploadingData;
 
 private:
+	enum class SupportsStreaming : uchar {
+		Unknown,
+		MaybeYes,
+		MaybeNo,
+		No,
+	};
 	friend class Serialize::Document;
 
 	LocationType locationType() const;
 	void validateGoodThumbnail();
+	void setMaybeSupportsStreaming(bool supports);
 
 	void destroyLoader(mtpFileLoader *newValue = nullptr) const;
+
+	[[nodiscard]] bool thumbnailEnoughForSticker() const;
 
 	// Two types of location: from MTProto by dc+access or from web by url
 	int32 _dc = 0;
@@ -231,20 +265,21 @@ private:
 	QString _mimeString;
 	WebFileLocation _urlLocation;
 
+	ImagePtr _thumbnailInline;
+	ImagePtr _thumbnail;
 	std::unique_ptr<Image> _goodThumbnail;
-	std::unique_ptr<Image> _replyPreview;
+	Data::ReplyPreview _replyPreview;
 
-	not_null<AuthSession*> _session;
+	not_null<Data::Session*> _owner;
 
 	FileLocation _location;
 	QByteArray _data;
 	std::unique_ptr<DocumentAdditionalData> _additional;
 	int32 _duration = -1;
 	bool _isImage = false;
-	bool _supportsStreaming = false;
+	SupportsStreaming _supportsStreaming = SupportsStreaming::Unknown;
+	bool _inappPlaybackFailed = false;
 
-	ActionOnLoad _actionOnLoad = ActionOnLoadNone;
-	FullMsgId _actionOnLoadMsgId;
 	mutable FileLoader *_loader = nullptr;
 
 };
@@ -271,11 +306,16 @@ private:
 
 class DocumentSaveClickHandler : public DocumentClickHandler {
 public:
+	enum class Mode {
+		ToCacheOrFile,
+		ToFile,
+		ToNewFile,
+	};
 	using DocumentClickHandler::DocumentClickHandler;
 	static void Save(
 		Data::FileOrigin origin,
 		not_null<DocumentData*> document,
-		bool forceSavingAs = false);
+		Mode mode = Mode::ToCacheOrFile);
 
 protected:
 	void onClickImpl() const override;
@@ -288,8 +328,7 @@ public:
 	static void Open(
 		Data::FileOrigin origin,
 		not_null<DocumentData*> document,
-		HistoryItem *context,
-		ActionOnLoad action = ActionOnLoadOpen);
+		HistoryItem *context);
 
 protected:
 	void onClickImpl() const override;
@@ -305,9 +344,12 @@ protected:
 
 };
 
-class GifOpenClickHandler : public DocumentOpenClickHandler {
+class DocumentOpenWithClickHandler : public DocumentClickHandler {
 public:
-	using DocumentOpenClickHandler::DocumentOpenClickHandler;
+	using DocumentClickHandler::DocumentClickHandler;
+	static void Open(
+		Data::FileOrigin origin,
+		not_null<DocumentData*> document);
 
 protected:
 	void onClickImpl() const override;
@@ -324,6 +366,26 @@ protected:
 
 };
 
+class DocumentWrappedClickHandler : public DocumentClickHandler {
+public:
+	DocumentWrappedClickHandler(
+		ClickHandlerPtr wrapped,
+		not_null<DocumentData*> document,
+		FullMsgId context = FullMsgId())
+	: DocumentClickHandler(document, context)
+	, _wrapped(wrapped) {
+	}
+
+protected:
+	void onClickImpl() const override {
+		_wrapped->onClick({ Qt::LeftButton });
+	}
+
+private:
+	ClickHandlerPtr _wrapped;
+
+};
+
 QString FileNameForSave(
 	const QString &title,
 	const QString &filter,
@@ -337,5 +399,9 @@ namespace Data {
 QString FileExtension(const QString &filepath);
 bool IsValidMediaFile(const QString &filepath);
 bool IsExecutableName(const QString &filepath);
+base::binary_guard ReadImageAsync(
+	not_null<DocumentData*> document,
+	FnMut<QImage(QImage)> postprocess,
+	FnMut<void(QImage&&)> done);
 
 } // namespace Data

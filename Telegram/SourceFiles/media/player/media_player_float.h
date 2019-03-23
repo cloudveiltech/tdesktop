@@ -16,9 +16,9 @@ enum class Column;
 } // namespace Window
 
 namespace Media {
-namespace Clip {
-class Playback;
-} // namespace Clip
+namespace View {
+class PlaybackProgress;
+} // namespace View
 
 namespace Player {
 
@@ -70,7 +70,7 @@ protected:
 private:
 	float64 outRatio() const;
 	Clip::Reader *getReader() const;
-	Clip::Playback *getPlayback() const;
+	View::PlaybackProgress *getPlayback() const;
 	void repaintItem();
 	void prepareShadow();
 	bool hasFrame() const;
@@ -131,6 +131,8 @@ public:
 	-> rpl::producer<FloatPlayerFilterWheelEventRequest> {
 		return _filterWheelEvent.events();
 	}
+
+	virtual ~FloatDelegate() = default;
 
 protected:
 	void floatPlayerCheckVisibility() {

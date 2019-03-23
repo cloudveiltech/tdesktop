@@ -100,7 +100,10 @@ public:
 
 	void replaceSource(std::unique_ptr<Images::Source> &&source);
 
-	static ImagePtr Blank();
+	static not_null<Image*> Empty(); // 1x1 transparent
+	static not_null<Image*> BlankMedia(); // 1x1 black
+
+	QImage original() const;
 
 	const QPixmap &pix(
 		Data::FileOrigin origin,
@@ -171,11 +174,7 @@ public:
 		int32 w,
 		int32 h = 0) const;
 
-	void automaticLoad(Data::FileOrigin origin, const HistoryItem *item) {
-		if (!loaded()) {
-			_source->automaticLoad(origin, item);
-		}
-	}
+	void automaticLoad(Data::FileOrigin origin, const HistoryItem *item);
 	void automaticLoadSettingsChanged() {
 		_source->automaticLoadSettingsChanged();
 	}
@@ -200,6 +199,9 @@ public:
 	int height() const {
 		return _source->height();
 	}
+	QSize size() const {
+		return { width(), height() };
+	}
 	int bytesSize() const {
 		return _source->bytesSize();
 	}
@@ -207,21 +209,13 @@ public:
 		_source->setInformation(size, width, height);
 	}
 	void load(
-			Data::FileOrigin origin,
-			bool loadFirst = false,
-			bool prior = true) {
-		if (!loaded()) {
-			_source->load(origin, loadFirst, prior);
-		}
-	}
+		Data::FileOrigin origin,
+		bool loadFirst = false,
+		bool prior = true);
 	void loadEvenCancelled(
-			Data::FileOrigin origin,
-			bool loadFirst = false,
-			bool prior = true) {
-		if (!loaded()) {
-			_source->loadEvenCancelled(origin, loadFirst, prior);
-		}
-	}
+		Data::FileOrigin origin,
+		bool loadFirst = false,
+		bool prior = true);
 	const StorageImageLocation &location() const {
 		return _source->location();
 	}

@@ -476,7 +476,7 @@ void Templates::reload() {
 void Templates::load() {
 	if (_reloadAfterRead) {
 		return;
-	} else if (_reading.alive() || _updates) {
+	} else if (_reading || _updates) {
 		_reloadAfterRead = true;
 		return;
 	}
@@ -486,14 +486,10 @@ void Templates::load() {
 	crl::async([=, guard = std::move(right)]() mutable {
 		auto result = ReadFiles(cWorkingDir() + "TEMPLATES");
 		result.index = ComputeIndex(result.result);
-		crl::on_main([
+		crl::on_main(std::move(guard), [
 			=,
-			result = std::move(result),
-			guard = std::move(guard)
+			result = std::move(result)
 		]() mutable {
-			if (!guard.alive()) {
-				return;
-			}
 			setData(std::move(result.result));
 			_index = std::move(result.index);
 			_errors.fire(std::move(result.errors));

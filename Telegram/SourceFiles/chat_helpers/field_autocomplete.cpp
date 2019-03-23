@@ -8,17 +8,20 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/field_autocomplete.h"
 
 #include "data/data_document.h"
+#include "data/data_channel.h"
+#include "data/data_chat.h"
+#include "data/data_user.h"
 #include "data/data_peer_values.h"
 #include "mainwindow.h"
 #include "apiwrap.h"
 #include "storage/localstorage.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/image/image.h"
+#include "auth_session.h"
+#include "chat_helpers/stickers.h"
 #include "styles/style_history.h"
 #include "styles/style_widgets.h"
 #include "styles/style_chat_helpers.h"
-#include "auth_session.h"
-#include "chat_helpers/stickers.h"
 #include "cloudveil/GlobalSecuritySettings.h"
 
 FieldAutocomplete::FieldAutocomplete(QWidget *parent) : TWidget(parent)
@@ -45,7 +48,7 @@ FieldAutocomplete::FieldAutocomplete(QWidget *parent) : TWidget(parent)
 void FieldAutocomplete::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
-	auto opacity = _a_opacity.current(getms(), _hiding ? 0. : 1.);
+	auto opacity = _a_opacity.current(crl::now(), _hiding ? 0. : 1.);
 	if (opacity < 1.) {
 		if (opacity > 0.) {
 			p.setOpacity(opacity);
@@ -183,6 +186,7 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 					continue;
 				}
 				//CloudVeil end
+
 				if (!listAllSuggestions && filterNotPassedByUsername(user)) continue;
 				mrows.push_back(user);
 				++recentInlineBots;
@@ -197,7 +201,7 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 			if (_chat->noParticipantInfo()) {
 				Auth().api().requestFullPeer(_chat);
 			} else if (!_chat->participants.empty()) {
-				for (const auto [user, v] : _chat->participants) {
+				for (const auto user : _chat->participants) {
 					if (user->isInaccessible()) continue;
 					if (!listAllSuggestions && filterNotPassedByName(user)) continue;
 					if (indexOfInFirstN(mrows, user, recentInlineBots) >= 0) continue;
@@ -256,7 +260,7 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 			if (_chat->noParticipantInfo()) {
 				Auth().api().requestFullPeer(_chat);
 			} else if (!_chat->participants.empty()) {
-				for (const auto [user, version] : _chat->participants) {
+				for (const auto user : _chat->participants) {
 					if (!user->botInfo) continue;
 					if (!user->botInfo->inited) {
 						Auth().api().requestFullPeer(user);
@@ -564,7 +568,7 @@ void FieldAutocompleteInner::paintEvent(QPaintEvent *e) {
 					App::roundRect(p, QRect(tl, st::stickerPanSize), st::emojiPanHover, StickerHoverCorners);
 				}
 
-				document->checkStickerThumb();
+				document->checkStickerSmall();
 
 				float64 coef = qMin((st::stickerPanSize.width() - st::buttonRadius * 2) / float64(document->dimensions.width()), (st::stickerPanSize.height() - st::buttonRadius * 2) / float64(document->dimensions.height()));
 				if (coef > 1) coef = 1;
@@ -572,7 +576,7 @@ void FieldAutocompleteInner::paintEvent(QPaintEvent *e) {
 				if (w < 1) w = 1;
 				if (h < 1) h = 1;
 				QPoint ppos = pos + QPoint((st::stickerPanSize.width() - w) / 2, (st::stickerPanSize.height() - h) / 2);
-				if (const auto image = document->getStickerThumb()) {
+				if (const auto image = document->getStickerSmall()) {
 					p.drawPixmapLeft(ppos, width(), image->pix(document->stickerSetOrigin(), w, h));
 				}
 			}
@@ -688,13 +692,21 @@ void FieldAutocompleteInner::resizeEvent(QResizeEvent *e) {
 }
 
 void FieldAutocompleteInner::mouseMoveEvent(QMouseEvent *e) {
-	_mousePos = mapToGlobal(e->pos());
-	_mouseSel = true;
-	onUpdateSelected(true);
+	const auto globalPosition = e->globalPos();
+	if (!_lastMousePosition) {
+		_lastMousePosition = globalPosition;
+		return;
+	} else if (!_mouseSelection
+		&& *_lastMousePosition == globalPosition) {
+		return;
+	}
+	selectByMouse(globalPosition);
 }
 
 void FieldAutocompleteInner::clearSel(bool hidden) {
-	_mouseSel = _overDelete = false;
+	_overDelete = false;
+	_mouseSelection = false;
+	_lastMousePosition = std::nullopt;
 	setSel((_mrows->isEmpty() && _brows->isEmpty() && _hrows->isEmpty()) ? -1 : 0);
 	if (hidden) {
 		_down = -1;
@@ -703,7 +715,9 @@ void FieldAutocompleteInner::clearSel(bool hidden) {
 }
 
 bool FieldAutocompleteInner::moveSel(int key) {
-	_mouseSel = false;
+	_mouseSelection = false;
+	_lastMousePosition = std::nullopt;
+
 	int32 maxSel = (_mrows->isEmpty() ? (_hrows->isEmpty() ? (_brows->isEmpty() ? _srows->size() : _brows->size()) : _hrows->size()) : _mrows->size());
 	int32 direction = (key == Qt::Key_Up) ? -1 : (key == Qt::Key_Down ? 1 : 0);
 	if (!_srows->empty()) {
@@ -766,12 +780,9 @@ void FieldAutocompleteInner::setRecentInlineBotsInRows(int32 bots) {
 }
 
 void FieldAutocompleteInner::mousePressEvent(QMouseEvent *e) {
-	_mousePos = mapToGlobal(e->pos());
-	_mouseSel = true;
-	onUpdateSelected(true);
+	selectByMouse(e->globalPos());
 	if (e->button() == Qt::LeftButton) {
 		if (_overDelete && _sel >= 0 && _sel < (_mrows->isEmpty() ? _hrows->size() : _recentInlineBotsInRows)) {
-			_mousePos = mapToGlobal(e->pos());
 			bool removed = false;
 			if (_mrows->isEmpty()) {
 				QString toRemove = _hrows->at(_sel);
@@ -798,8 +809,7 @@ void FieldAutocompleteInner::mousePressEvent(QMouseEvent *e) {
 			}
 			_parent->updateFiltered();
 
-			_mouseSel = true;
-			onUpdateSelected(true);
+			selectByMouse(e->globalPos());
 		} else if (_srows->empty()) {
 			chooseSelected(FieldAutocomplete::ChooseMethod::ByClick);
 		} else {
@@ -815,9 +825,7 @@ void FieldAutocompleteInner::mouseReleaseEvent(QMouseEvent *e) {
 	int32 pressed = _down;
 	_down = -1;
 
-	_mousePos = mapToGlobal(e->pos());
-	_mouseSel = true;
-	onUpdateSelected(true);
+	selectByMouse(e->globalPos());
 
 	if (_previewShown) {
 		_previewShown = false;
@@ -831,14 +839,14 @@ void FieldAutocompleteInner::mouseReleaseEvent(QMouseEvent *e) {
 
 void FieldAutocompleteInner::enterEventHook(QEvent *e) {
 	setMouseTracking(true);
-	_mousePos = QCursor::pos();
-	onUpdateSelected(true);
 }
 
 void FieldAutocompleteInner::leaveEventHook(QEvent *e) {
 	setMouseTracking(false);
-	if (_sel >= 0) {
+	if (_mouseSelection) {
 		setSel(-1);
+		_mouseSelection = false;
+		_lastMousePosition = std::nullopt;
 	}
 }
 
@@ -868,11 +876,14 @@ void FieldAutocompleteInner::setSel(int sel, bool scroll) {
 	}
 }
 
-void FieldAutocompleteInner::onUpdateSelected(bool force) {
-	QPoint mouse(mapFromGlobal(_mousePos));
-	if ((!force && !rect().contains(mouse)) || !_mouseSel) return;
+void FieldAutocompleteInner::selectByMouse(QPoint globalPosition) {
+	_mouseSelection = true;
+	_lastMousePosition = globalPosition;
+	const auto mouse = mapFromGlobal(globalPosition);
 
-	if (_down >= 0 && !_previewShown) return;
+	if (_down >= 0 && !_previewShown) {
+		return;
+	}
 
 	int32 sel = -1, maxSel = 0;
 	if (!_srows->empty()) {
@@ -906,10 +917,12 @@ void FieldAutocompleteInner::onUpdateSelected(bool force) {
 }
 
 void FieldAutocompleteInner::onParentGeometryChanged() {
-	_mousePos = QCursor::pos();
-	if (rect().contains(mapFromGlobal(_mousePos))) {
+	const auto globalPosition = QCursor::pos();
+	if (rect().contains(mapFromGlobal(globalPosition))) {
 		setMouseTracking(true);
-		onUpdateSelected(true);
+		if (_mouseSelection) {
+			selectByMouse(globalPosition);
+		}
 	}
 }
 

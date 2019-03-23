@@ -26,7 +26,7 @@ namespace Export {
 namespace View {
 namespace {
 
-constexpr auto kSaveSettingsTimeout = TimeMs(1000);
+constexpr auto kSaveSettingsTimeout = crl::time(1000);
 
 class SuggestBox : public BoxContent {
 public:
@@ -124,7 +124,7 @@ void ResolveSettings(Settings &settings) {
 	}
 }
 
-PanelController::PanelController(not_null<ControllerWrap*> process)
+PanelController::PanelController(not_null<Controller*> process)
 : _process(process)
 , _settings(std::make_unique<Settings>(Local::ReadExportSettings()))
 , _saveSettingsTimer([=] { saveSettings(); }) {
@@ -301,7 +301,9 @@ void PanelController::stopWithConfirmation(FnMut<void()> callback) {
 	if (!_state.is<ProcessingState>()) {
 		LOG(("Export Info: Stop Panel Without Confirmation."));
 		stopExport();
-		callback();
+		if (callback) {
+			callback();
+		}
 		return;
 	}
 	auto stop = [=, callback = std::move(callback)]() mutable {

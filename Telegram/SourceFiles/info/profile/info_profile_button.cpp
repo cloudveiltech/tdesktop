@@ -51,15 +51,22 @@ Button *Button::toggleOn(rpl::producer<bool> &&toggled) {
 	return this;
 }
 
+bool Button::toggled() const {
+	return _toggle ? _toggle->checked() : false;
+}
+
+rpl::producer<bool> Button::toggledChanges() const {
+	if (_toggle) {
+		return _toggle->checkedChanges();
+	}
+	return rpl::never<bool>();
+}
+
 rpl::producer<bool> Button::toggledValue() const {
 	if (_toggle) {
 		return _toggle->checkedValue();
 	}
 	return rpl::never<bool>();
-}
-
-bool Button::toggled() const {
-	return _toggle ? _toggle->checked() : false;
 }
 
 void Button::setColorOverride(std::optional<QColor> textColorOverride) {
@@ -70,7 +77,7 @@ void Button::setColorOverride(std::optional<QColor> textColorOverride) {
 void Button::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
-	auto ms = getms();
+	auto ms = crl::now();
 	auto paintOver = (isOver() || isDown()) && !isDisabled();
 	p.fillRect(e->rect(), paintOver ? _st.textBgOver : _st.textBg);
 

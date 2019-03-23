@@ -21,13 +21,14 @@ constexpr int kWaitBeforeRevertMs = 15999;
 
 } // namespace
 
-WarningWidget::WarningWidget(QWidget *parent) : TWidget(parent)
+WarningWidget::WarningWidget(QWidget *parent)
+: TWidget(parent)
+, _timer([=] { handleTimer(); })
 , _secondsLeft(kWaitBeforeRevertMs / 1000)
 , _keepChanges(this, langFactory(lng_theme_keep_changes), st::defaultBoxButton)
 , _revert(this, langFactory(lng_theme_revert), st::defaultBoxButton) {
 	_keepChanges->setClickedCallback([] { Window::Theme::KeepApplied(); });
 	_revert->setClickedCallback([] { Window::Theme::Revert(); });
-	_timer.setTimeoutHandler([this] { handleTimer(); });
 	updateText();
 }
 
@@ -41,7 +42,7 @@ void WarningWidget::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
 	if (!_cache.isNull()) {
-		if (!_animation.animating(getms())) {
+		if (!_animation.animating(crl::now())) {
 			if (isHidden()) {
 				return;
 			}
@@ -51,8 +52,8 @@ void WarningWidget::paintEvent(QPaintEvent *e) {
 		if (!_animation.animating()) {
 			_cache = QPixmap();
 			showChildren();
-			_started = getms(true);
-			_timer.start(100);
+			_started = crl::now();
+			_timer.callOnce(100);
 		}
 		return;
 	}
@@ -87,7 +88,7 @@ void WarningWidget::refreshLang() {
 }
 
 void WarningWidget::handleTimer() {
-	auto msPassed = getms(true) - _started;
+	auto msPassed = crl::now() - _started;
 	setSecondsLeft((kWaitBeforeRevertMs - msPassed) / 1000);
 }
 
@@ -100,7 +101,7 @@ void WarningWidget::setSecondsLeft(int secondsLeft) {
 			updateText();
 			update();
 		}
-		_timer.start(100);
+		_timer.callOnce(100);
 	}
 }
 
@@ -119,7 +120,7 @@ void WarningWidget::hideAnimated() {
 }
 
 void WarningWidget::startAnimation(bool hiding) {
-	_timer.stop();
+	_timer.cancel();
 	_hiding = hiding;
 	if (_cache.isNull()) {
 		showChildren();

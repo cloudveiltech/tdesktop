@@ -22,7 +22,7 @@ bool GlobalSecuritySettings::loaded = false;
 
 
 GlobalSecuritySettings::GlobalSecuritySettings(QObject *parent) : QObject(parent), manager(this), timer(this), fileDownloader(this) {
-	lastResponse = SettingsResponse::loadFromCache();	
+	lastResponse = SettingsResponse::loadFromCache();
 
 	instance = this;
 	connect(&timer, SIGNAL(timeout()), SLOT(doServerRequest()));
@@ -120,21 +120,28 @@ void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerDa
 
 	row.userName = peer->userName();
 
-	if (peer->isChannel()) {
-		row.title = peer->asChannel()->name;
-		request.channels.append(row);
-	}
-	else if (peer->isChat()) {
+	if (peer->isChat()) {
 		row.title = peer->asChat()->name;
 		row.userName = row.title;
 		request.groups.append(row);
 	}
+	else if (peer->isChannel()) {
+		row.title = peer->asChannel()->name;
+		row.userName = peer->asChannel()->userName();
+
+		if (peer->isMegagroup()) {
+			request.groups.append(row);
+		}
+		else {
+			request.channels.append(row);
+		}
+	}
 	else if (peer->isUser()) {
 		row.title = peer->asUser()->name;
-		if (peer->asUser()->botInfo.get() != nullptr) {			
+		if (peer->asUser()->botInfo.get() != nullptr) {
 			request.bots.append(row);
 		}
-		else if(!peer->asUser()->isSelf()) {
+		else if (!peer->asUser()->isSelf()) {
 			request.users.append(row);
 		}
 	}
@@ -190,9 +197,9 @@ void GlobalSecuritySettings::sendRequest(SettingsRequest &settingsRequestBody) {
 	QNetworkRequest request(url);
 
 	request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-	
+
 	connect(&manager, SIGNAL(finished(QNetworkReply*)), this, SLOT(requestFinished(QNetworkReply*)));
-	
+
 	QJsonObject json;
 
 	settingsRequestBody.writeToJson(json);
@@ -210,7 +217,7 @@ void GlobalSecuritySettings::requestFinished(QNetworkReply *networkReply)
 	if (networkReply->error() == QNetworkReply::NoError)
 	{
 		qint32 httpStatusCode = networkReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-		
+
 		if (httpStatusCode >= 200 && httpStatusCode < 300) // OK
 		{
 			QJsonDocument json = QJsonDocument::fromJson(networkReply->readAll());

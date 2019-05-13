@@ -1494,7 +1494,12 @@ void HistoryWidget::showHistory(
 			QString title = peer->name;
 
 			if (peer->isChannel()) {
-				type = "channel";
+				if (peer->isMegagroup()) {
+					type = "megagroup";
+				}
+				else {
+					type = "channel";
+				}
 			}
 			else if (peer->isUser()) {
 				type = "user";

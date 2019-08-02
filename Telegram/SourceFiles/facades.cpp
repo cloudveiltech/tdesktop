@@ -11,8 +11,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/click_handler_types.h"
 #include "core/application.h"
 #include "media/clip/media_clip_reader.h"
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "history/history_item_components.h"
+#include "platform/platform_info.h"
 #include "data/data_peer.h"
 #include "data/data_user.h"
 #include "observer_peer.h"
@@ -21,6 +22,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 #include "auth_session.h"
 #include "boxes/confirm_box.h"
+#include "boxes/url_auth_box.h"
 #include "window/layer_widget.h"
 #include "lang/lang_keys.h"
 #include "base/observer.h"
@@ -62,15 +64,7 @@ void activateBotCommand(
 		not_null<const HistoryItem*> msg,
 		int row,
 		int column) {
-	const HistoryMessageMarkupButton *button = nullptr;
-	if (auto markup = msg->Get<HistoryMessageReplyMarkup>()) {
-		if (row < markup->rows.size()) {
-			auto &buttonRow = markup->rows[row];
-			if (column < buttonRow.size()) {
-				button = &buttonRow[column];
-			}
-		}
-	}
+	const auto button = HistoryMessageMarkupButton::Get(msg->fullId(), row, column);
 	if (!button) return;
 
 	using ButtonType = HistoryMessageMarkupButton::Type;
@@ -90,7 +84,7 @@ void activateBotCommand(
 	} break;
 
 	case ButtonType::Buy: {
-		Ui::show(Box<InformBox>(lang(lng_payments_not_supported)));
+		Ui::show(Box<InformBox>(tr::lng_payments_not_supported(tr::now)));
 	} break;
 
 	case ButtonType::Url: {
@@ -110,18 +104,18 @@ void activateBotCommand(
 
 	case ButtonType::RequestLocation: {
 		hideSingleUseKeyboard(msg);
-		Ui::show(Box<InformBox>(lang(lng_bot_share_location_unavailable)));
+		Ui::show(Box<InformBox>(tr::lng_bot_share_location_unavailable(tr::now)));
 	} break;
 
 	case ButtonType::RequestPhone: {
 		hideSingleUseKeyboard(msg);
 		const auto msgId = msg->id;
 		const auto history = msg->history();
-		Ui::show(Box<ConfirmBox>(lang(lng_bot_share_phone), lang(lng_bot_share_phone_confirm), [=] {
+		Ui::show(Box<ConfirmBox>(tr::lng_bot_share_phone(tr::now), tr::lng_bot_share_phone_confirm(tr::now), [=] {
 			Ui::showPeerHistory(history, ShowAtTheEndMsgId);
 			auto options = ApiWrap::SendOptions(history);
 			options.replyTo = msgId;
-			Auth().api().shareContact(Auth().user(), options);
+			history->session().api().shareContact(Auth().user(), options);
 		}));
 	} break;
 
@@ -147,6 +141,10 @@ void activateBotCommand(
 			}
 		}
 	} break;
+
+	case ButtonType::Auth:
+		UrlAuthBox::Activate(msg, row, column);
+		break;
 	}
 }
 
@@ -194,20 +192,6 @@ void showBox(
 
 } // namespace internal
 
-void showMediaPreview(
-		Data::FileOrigin origin,
-		not_null<DocumentData*> document) {
-	if (auto w = App::wnd()) {
-		w->ui_showMediaPreview(origin, document);
-	}
-}
-
-void showMediaPreview(Data::FileOrigin origin, not_null<PhotoData*> photo) {
-	if (auto w = App::wnd()) {
-		w->ui_showMediaPreview(origin, photo);
-	}
-}
-
 void hideLayer(anim::type animated) {
 	if (auto w = App::wnd()) {
 		w->ui_showBox(
@@ -229,8 +213,8 @@ bool isLayerShown() {
 }
 
 void showPeerProfile(const PeerId &peer) {
-	if (auto window = App::wnd()) {
-		if (auto controller = window->controller()) {
+	if (const auto window = App::wnd()) {
+		if (const auto controller = window->sessionController()) {
 			controller->showPeerInfo(peer);
 		}
 	}
@@ -391,6 +375,7 @@ struct Data {
 	int32 StickersRecentLimit = 30;
 	int32 StickersFavedLimit = 5;
 	int32 PinnedDialogsCountMax = 5;
+	int32 PinnedDialogsInFolderMax = 100;
 	QString InternalLinksDomain = qsl("https://t.me/");
 	int32 ChannelsReadMediaPeriod = 86400 * 7;
 	int32 CallReceiveTimeoutMs = 20000;
@@ -399,8 +384,8 @@ struct Data {
 	int32 CallPacketTimeoutMs = 10000;
 	int32 WebFileDcId = cTestMode() ? 2 : 4;
 	QString TxtDomainString = cTestMode()
-		? qsl("testapv2.stel.com")
-		: qsl("apv2.stel.com");
+		? qsl("tapv3.stel.com")
+		: qsl("apv3.stel.com");
 	bool PhoneCallsEnabled = true;
 	bool BlockedMode = false;
 	int32 CaptionLengthMax = 1024;
@@ -418,8 +403,6 @@ struct Data {
 	base::Observable<void> FeaturedStickerSetsUnreadCountChanged;
 	crl::time LastFeaturedStickersUpdate = 0;
 	Stickers::Order ArchivedStickerSetsOrder;
-
-	CircleMasksMap CircleMasks;
 
 	bool AskDownloadPath = false;
 	QString DownloadPath;
@@ -440,7 +423,7 @@ struct Data {
 	Notify::ScreenCorner NotificationsCorner = Notify::ScreenCorner::BottomRight;
 	bool NotificationsDemoIsShown = false;
 
-	bool TryIPv6 = (cPlatform() == dbipWindows) ? false : true;
+	bool TryIPv6 = !Platform::IsWindows();
 	std::vector<ProxyData> ProxiesList;
 	ProxyData SelectedProxy;
 	ProxyData::Settings ProxySettings = ProxyData::Settings::System;
@@ -527,6 +510,7 @@ DefineVar(Global, bool, RevokePrivateInbox);
 DefineVar(Global, int32, StickersRecentLimit);
 DefineVar(Global, int32, StickersFavedLimit);
 DefineVar(Global, int32, PinnedDialogsCountMax);
+DefineVar(Global, int32, PinnedDialogsInFolderMax);
 DefineVar(Global, QString, InternalLinksDomain);
 DefineVar(Global, int32, ChannelsReadMediaPeriod);
 DefineVar(Global, int32, CallReceiveTimeoutMs);
@@ -552,8 +536,6 @@ DefineVar(Global, int, FeaturedStickerSetsUnreadCount);
 DefineRefVar(Global, base::Observable<void>, FeaturedStickerSetsUnreadCountChanged);
 DefineVar(Global, crl::time, LastFeaturedStickersUpdate);
 DefineVar(Global, Stickers::Order, ArchivedStickerSetsOrder);
-
-DefineRefVar(Global, CircleMasksMap, CircleMasks);
 
 DefineVar(Global, bool, AskDownloadPath);
 DefineVar(Global, QString, DownloadPath);

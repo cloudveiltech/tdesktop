@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/timer.h"
 #include "ui/rp_widget.h"
+#include "ui/effects/animations.h"
 #include "ui/widgets/tooltip.h"
 #include "ui/widgets/scroll_area.h"
 #include "history/view/history_view_top_bar_widget.h"
@@ -27,7 +28,7 @@ class EmptyPainter;
 } // namespace HistoryView
 
 namespace Window {
-class Controller;
+class SessionController;
 } // namespace Window
 
 namespace Ui {
@@ -47,14 +48,14 @@ public:
 
 	HistoryInner(
 		not_null<HistoryWidget*> historyWidget,
-		not_null<Window::Controller*> controller,
+		not_null<Window::SessionController*> controller,
 		Ui::ScrollArea *scroll,
 		not_null<History*> history);
 
 	void messagesReceived(PeerData *peer, const QVector<MTPMessage> &messages);
 	void messagesReceivedDown(PeerData *peer, const QVector<MTPMessage> &messages);
 
-	TextWithEntities getSelectedText() const;
+	TextForMimeData getSelectedText() const;
 
 	void touchScrollUpdated(const QPoint &screenPos);
 
@@ -72,6 +73,10 @@ public:
 	MessageIdsList getSelectedItems() const;
 	void selectItem(not_null<HistoryItem*> item);
 	bool inSelectionMode() const;
+	bool elementIntersectsRange(
+		not_null<const Element*> view,
+		int from,
+		int till) const;
 
 	void updateBotInfo(bool recount = true);
 
@@ -189,6 +194,8 @@ private:
 	template <typename Method>
 	void enumerateDates(Method method);
 
+	ClickHandlerPtr hiddenUserpicLink(FullMsgId id);
+
 	void scrollDateCheck();
 	void scrollDateHideByTimer();
 	bool canHaveFromUserpics() const;
@@ -293,7 +300,9 @@ private:
 	// Does any of the shown histories has this flag set.
 	bool hasPendingResizedItems() const;
 
-	not_null<Window::Controller*> _controller;
+	static HistoryInner *Instance;
+
+	not_null<Window::SessionController*> _controller;
 
 	const not_null<PeerData*> _peer;
 	const not_null<History*> _history;
@@ -360,7 +369,7 @@ private:
 	int _visibleAreaBottom = 0;
 
 	bool _scrollDateShown = false;
-	Animation _scrollDateOpacity;
+	Ui::Animations::Simple _scrollDateOpacity;
 	SingleQueuedInvokation _scrollDateCheck;
 	base::Timer _scrollDateHideTimer;
 	Element *_scrollDateLastItem = nullptr;

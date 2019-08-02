@@ -61,7 +61,7 @@ void SeparatePanel::initControls() {
 			st::fadeWrapDuration);
 	}, _back->lifetime());
 	_back->hide(anim::type::instant);
-	_titleLeft.finish();
+	_titleLeft.stop();
 }
 
 void SeparatePanel::updateTitleGeometry(int newWidth) {
@@ -75,7 +75,7 @@ void SeparatePanel::updateTitlePosition() {
 	if (!_title) {
 		return;
 	}
-	const auto progress = _titleLeft.current(_back->toggled() ? 1. : 0.);
+	const auto progress = _titleLeft.value(_back->toggled() ? 1. : 0.);
 	const auto left = anim::interpolate(
 		st::separatePanelTitleLeft,
 		_back->width() + st::separatePanelTitleSkip,
@@ -285,7 +285,9 @@ void SeparatePanel::ensureLayerCreated() {
 		_layer->resize(size);
 	}, _layer->lifetime());
 	_layer->hideFinishEvents(
-	) | rpl::start_with_next([=]{
+	) | rpl::filter([=] {
+		return _layer != nullptr; // Last hide finish is sent from destructor.
+	}) | rpl::start_with_next([=] {
 		if (Ui::InFocusChain(_layer)) {
 			setFocus();
 		}
@@ -376,9 +378,7 @@ void SeparatePanel::updateControlsGeometry() {
 void SeparatePanel::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 	if (!_animationCache.isNull()) {
-		auto opacity = _opacityAnimation.current(
-			crl::now(),
-			_visible ? 1. : 0.);
+		auto opacity = _opacityAnimation.value(_visible ? 1. : 0.);
 		if (!_opacityAnimation.animating()) {
 			finishAnimating();
 			if (isHidden()) return;

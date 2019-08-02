@@ -21,15 +21,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_cursor_state.h"
 #include "chat_helpers/message_field.h"
 #include "boxes/sticker_set_box.h"
+#include "platform/platform_info.h"
 #include "mainwindow.h"
 #include "mainwidget.h"
 #include "core/application.h"
 #include "apiwrap.h"
 #include "layout.h"
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "auth_session.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/image/image.h"
+#include "ui/text/text_utilities.h"
 #include "core/file_utilities.h"
 #include "lang/lang_keys.h"
 #include "boxes/peers/edit_participant_box.h"
@@ -211,7 +213,7 @@ void InnerWidget::enumerateDates(Method method) {
 
 InnerWidget::InnerWidget(
 	QWidget *parent,
-	not_null<Window::Controller*> controller,
+	not_null<Window::SessionController*> controller,
 	not_null<ChannelData*> channel)
 : RpWidget(parent)
 , _controller(controller)
@@ -394,7 +396,7 @@ void InnerWidget::requestAdmins() {
 				list
 			) | ranges::view::transform([&](const MTPChannelParticipant &p) {
 				const auto userId = p.match([](const auto &data) {
-					return data.vuser_id.v;
+					return data.vuser_id().v;
 				});
 				const auto canEdit = p.match([](
 						const MTPDchannelParticipantAdmin &data) {
@@ -450,11 +452,17 @@ void InnerWidget::updateEmptyText() {
 	options.flags |= TextParseMarkdown;
 	auto hasSearch = !_searchQuery.isEmpty();
 	auto hasFilter = (_filter.flags != 0) || !_filter.allUsers;
-	auto text = TextWithEntities { lang((hasSearch || hasFilter) ? lng_admin_log_no_results_title : lng_admin_log_no_events_title) };
-	text.entities.append(EntityInText(EntityInTextBold, 0, text.text.size()));
+	auto text = Ui::Text::Bold((hasSearch || hasFilter)
+		? tr::lng_admin_log_no_results_title(tr::now)
+		: tr::lng_admin_log_no_events_title(tr::now));
 	auto description = hasSearch
-		? lng_admin_log_no_results_search_text(lt_query, TextUtilities::Clean(_searchQuery))
-		: lang(hasFilter ? lng_admin_log_no_results_text : lng_admin_log_no_events_text);
+		? tr::lng_admin_log_no_results_search_text(
+			tr::now,
+			lt_query,
+			TextUtilities::Clean(_searchQuery))
+		: hasFilter
+		? tr::lng_admin_log_no_results_text(tr::now)
+		: tr::lng_admin_log_no_events_text(tr::now);
 	text.text.append(qstr("\n\n") + description);
 	_emptyText.setMarkedText(st::defaultTextStyle, text, options);
 }
@@ -471,7 +479,7 @@ QString InnerWidget::tooltipText() const {
 		&& _mouseAction == MouseAction::None) {
 		if (const auto view = App::hoveredItem()) {
 			if (const auto forwarded = view->data()->Get<HistoryMessageForwarded>()) {
-				return forwarded->text.originalText(AllTextSelection, ExpandLinksNone);
+				return forwarded->text.toString();
 			}
 		}
 	} else if (const auto lnk = ClickHandler::getActive()) {
@@ -506,7 +514,7 @@ bool InnerWidget::elementUnderCursor(
 void InnerWidget::elementAnimationAutoplayAsync(
 		not_null<const HistoryView::Element*> view) {
 	crl::on_main(this, [this, msgId = view->data()->fullId()] {
-		if (const auto item = App::histItemById(msgId)) {
+		if (const auto item = Auth().data().message(msgId)) {
 			if (const auto view = viewForItem(item)) {
 				if (const auto media = view->media()) {
 					media->autoplayAnimation();
@@ -523,6 +531,17 @@ crl::time InnerWidget::elementHighlightTime(
 
 bool InnerWidget::elementInSelectionMode() {
 	return false;
+}
+
+bool InnerWidget::elementIntersectsRange(
+		not_null<const Element*> view,
+		int from,
+		int till) {
+	Expects(view->delegate() == this);
+
+	const auto top = itemTop(view);
+	const auto bottom = top + view->height();
+	return (top < till && bottom > from);
 }
 
 void InnerWidget::saveState(not_null<SectionMemento*> memento) {
@@ -603,10 +622,10 @@ void InnerWidget::preloadMore(Direction direction) {
 		requestId = 0;
 
 		auto &results = result.c_channels_adminLogResults();
-		_channel->owner().processUsers(results.vusers);
-		_channel->owner().processChats(results.vchats);
+		_channel->owner().processUsers(results.vusers());
+		_channel->owner().processChats(results.vchats());
 		if (!loadedFlag) {
-			addEvents(direction, results.vevents.v);
+			addEvents(direction, results.vevents().v);
 		}
 	}).fail([this, &requestId, &loadedFlag](const RPCError &error) {
 		requestId = 0;
@@ -637,7 +656,7 @@ void InnerWidget::addEvents(Direction direction, const QVector<MTPChannelAdminLo
 	addToItems.reserve(oldItemsCount + events.size() * 2);
 	for (const auto &event : events) {
 		event.match([&](const MTPDchannelAdminLogEvent &data) {
-			const auto id = data.vid.v;
+			const auto id = data.vid().v;
 			if (_eventIds.find(id) != _eventIds.end()) {
 				return;
 			}
@@ -801,7 +820,7 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 			});
 
 			auto dateHeight = st::msgServicePadding.bottom() + st::msgServiceFont->height + st::msgServicePadding.top();
-			auto scrollDateOpacity = _scrollDateOpacity.current(ms, _scrollDateShown ? 1. : 0.);
+			auto scrollDateOpacity = _scrollDateOpacity.value(_scrollDateShown ? 1. : 0.);
 			enumerateDates([&](not_null<Element*> view, int itemtop, int dateTop) {
 				// stop the enumeration if the date is above the painted rect
 				if (dateTop + dateHeight <= clip.top()) {
@@ -890,10 +909,10 @@ void InnerWidget::paintEmpty(Painter &p) {
 	_emptyText.draw(p, rect.x() + st::historyAdminLogEmptyPadding.left(), rect.y() + st::historyAdminLogEmptyPadding.top(), innerWidth, style::al_top);
 }
 
-TextWithEntities InnerWidget::getSelectedText() const {
+TextForMimeData InnerWidget::getSelectedText() const {
 	return _selectedItem
 		? _selectedItem->selectedText(_selectedText)
-		: TextWithEntities();
+		: TextForMimeData();
 }
 
 void InnerWidget::keyPressEvent(QKeyEvent *e) {
@@ -903,7 +922,7 @@ void InnerWidget::keyPressEvent(QKeyEvent *e) {
 		copySelectedText();
 #ifdef Q_OS_MAC
 	} else if (e->key() == Qt::Key_E && e->modifiers().testFlag(Qt::ControlModifier)) {
-		SetClipboardWithEntities(getSelectedText(), QClipboard::FindBuffer);
+		SetClipboardText(getSelectedText(), QClipboard::FindBuffer);
 #endif // Q_OS_MAC
 	} else {
 		e->ignore();
@@ -914,7 +933,7 @@ void InnerWidget::mouseDoubleClickEvent(QMouseEvent *e) {
 	mouseActionStart(e->globalPos(), e->button());
 	if (((_mouseAction == MouseAction::Selecting && _selectedItem != nullptr) || (_mouseAction == MouseAction::None)) && _mouseSelectType == TextSelectType::Letters && _mouseActionItem) {
 		StateRequest request;
-		request.flags |= Text::StateRequest::Flag::LookupSymbol;
+		request.flags |= Ui::Text::StateRequest::Flag::LookupSymbol;
 		auto dragState = _mouseActionItem->textState(_dragStartPosition, request);
 		if (dragState.cursor == CursorState::Text) {
 			_mouseTextSymbol = dragState.symbol;
@@ -956,7 +975,7 @@ void InnerWidget::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 				mapFromGlobal(_mousePosition),
 				App::mousedItem());
 			StateRequest request;
-			request.flags |= Text::StateRequest::Flag::LookupSymbol;
+			request.flags |= Ui::Text::StateRequest::Flag::LookupSymbol;
 			auto dragState = App::mousedItem()->textState(mousePos, request);
 			if (dragState.cursor == CursorState::Text
 				&& base::in_range(dragState.symbol, selFrom, selTo)) {
@@ -982,22 +1001,22 @@ void InnerWidget::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 	auto lnkIsAudio = lnkDocument ? lnkDocument->document()->isAudioFile() : false;
 	if (lnkPhoto || lnkDocument) {
 		if (isUponSelected > 0) {
-			_menu->addAction(lang(lng_context_copy_selected), [=] {
+			_menu->addAction(tr::lng_context_copy_selected(tr::now), [=] {
 				copySelectedText();
 			});
 		}
 		if (lnkPhoto) {
 			const auto photo = lnkPhoto->photo();
-			_menu->addAction(lang(lng_context_save_image), App::LambdaDelayed(st::defaultDropdownMenu.menu.ripple.hideDuration, this, [=] {
+			_menu->addAction(tr::lng_context_save_image(tr::now), App::LambdaDelayed(st::defaultDropdownMenu.menu.ripple.hideDuration, this, [=] {
 				savePhotoToFile(photo);
 			}));
-			_menu->addAction(lang(lng_context_copy_image), [=] {
+			_menu->addAction(tr::lng_context_copy_image(tr::now), [=] {
 				copyContextImage(photo);
 			});
 		} else {
 			auto document = lnkDocument->document();
 			if (document->loading()) {
-				_menu->addAction(lang(lng_context_cancel_download), [=] {
+				_menu->addAction(tr::lng_context_cancel_download(tr::now), [=] {
 					cancelContextDownload(document);
 				});
 			} else {
@@ -1006,17 +1025,17 @@ void InnerWidget::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 						const auto itemId = view
 							? view->data()->fullId()
 							: FullMsgId();
-						_menu->addAction(lang(lng_context_open_gif), [=] {
+						_menu->addAction(tr::lng_context_open_gif(tr::now), [=] {
 							openContextGif(itemId);
 						});
 					}
 				}
 				if (!document->filepath(DocumentData::FilePathResolve::Checked).isEmpty()) {
-					_menu->addAction(lang((cPlatform() == dbipMac || cPlatform() == dbipMacOld) ? lng_context_show_in_finder : lng_context_show_in_folder), [=] {
+					_menu->addAction(Platform::IsMac() ? tr::lng_context_show_in_finder(tr::now) : tr::lng_context_show_in_folder(tr::now), [=] {
 						showContextInFolder(document);
 					});
 				}
-				_menu->addAction(lang(lnkIsVideo ? lng_context_save_video : (lnkIsVoice ? lng_context_save_audio : (lnkIsAudio ? lng_context_save_audio_file : lng_context_save_file))), App::LambdaDelayed(st::defaultDropdownMenu.menu.ripple.hideDuration, this, [this, document] {
+				_menu->addAction(lnkIsVideo ? tr::lng_context_save_video(tr::now) : (lnkIsVoice ?  tr::lng_context_save_audio(tr::now) : (lnkIsAudio ?  tr::lng_context_save_audio_file(tr::now) :  tr::lng_context_save_file(tr::now))), App::LambdaDelayed(st::defaultDropdownMenu.menu.ripple.hideDuration, this, [this, document] {
 					saveDocumentToFile(document);
 				}));
 			}
@@ -1033,20 +1052,20 @@ void InnerWidget::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 
 		auto msg = dynamic_cast<HistoryMessage*>(item);
 		if (isUponSelected > 0) {
-			_menu->addAction(lang(lng_context_copy_selected), [this] { copySelectedText(); });
+			_menu->addAction(tr::lng_context_copy_selected(tr::now), [this] { copySelectedText(); });
 		} else {
 			if (item && !isUponSelected) {
 				const auto media = view->media();
 				const auto mediaHasTextForCopy = media && media->hasTextForCopy();
 				if (const auto document = media ? media->getDocument() : nullptr) {
 					if (document->sticker()) {
-						_menu->addAction(lang(lng_context_save_image), App::LambdaDelayed(st::defaultDropdownMenu.menu.ripple.hideDuration, this, [this, document] {
+						_menu->addAction(tr::lng_context_save_image(tr::now), App::LambdaDelayed(st::defaultDropdownMenu.menu.ripple.hideDuration, this, [this, document] {
 							saveDocumentToFile(document);
 						}));
 					}
 				}
 				if (msg && !link && (view->hasVisibleText() || mediaHasTextForCopy)) {
-					_menu->addAction(lang(lng_context_copy_text), [=] {
+					_menu->addAction(tr::lng_context_copy_text(tr::now), [=] {
 						copyContextText(itemId);
 					});
 				}
@@ -1065,7 +1084,7 @@ void InnerWidget::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 		}
 	}
 
-	if (_menu->actions().isEmpty()) {
+	if (_menu->actions().empty()) {
 		_menu = nullptr;
 	} else {
 		_menu->popup(e->globalPos());
@@ -1081,7 +1100,7 @@ void InnerWidget::savePhotoToFile(PhotoData *photo) {
 	auto filter = qsl("JPEG Image (*.jpg);;") + FileDialog::AllFilesFilter();
 	FileDialog::GetWritePath(
 		this,
-		lang(lng_save_photo),
+		tr::lng_save_photo(tr::now),
 		filter,
 		filedialogDefaultName(qsl("photo"), qsl(".jpg")),
 		crl::guard(this, [=](const QString &result) {
@@ -1105,11 +1124,11 @@ void InnerWidget::copyContextImage(PhotoData *photo) {
 }
 
 void InnerWidget::copySelectedText() {
-	SetClipboardWithEntities(getSelectedText());
+	SetClipboardText(getSelectedText());
 }
 
 void InnerWidget::showStickerPackInfo(not_null<DocumentData*> document) {
-	StickerSetBox::Show(document);
+	StickerSetBox::Show(_controller, document);
 }
 
 void InnerWidget::cancelContextDownload(not_null<DocumentData*> document) {
@@ -1125,9 +1144,9 @@ void InnerWidget::showContextInFolder(not_null<DocumentData*> document) {
 }
 
 void InnerWidget::openContextGif(FullMsgId itemId) {
-	if (const auto item = App::histItemById(itemId)) {
-		if (auto media = item->media()) {
-			if (auto document = media->document()) {
+	if (const auto item = Auth().data().message(itemId)) {
+		if (const auto media = item->media()) {
+			if (const auto document = media->document()) {
 				Core::App().showDocument(document, item);
 			}
 		}
@@ -1135,8 +1154,8 @@ void InnerWidget::openContextGif(FullMsgId itemId) {
 }
 
 void InnerWidget::copyContextText(FullMsgId itemId) {
-	if (const auto item = App::histItemById(itemId)) {
-		SetClipboardWithEntities(HistoryItemText(item));
+	if (const auto item = Auth().data().message(itemId)) {
+		SetClipboardText(HistoryItemText(item));
 	}
 }
 
@@ -1151,7 +1170,7 @@ void InnerWidget::suggestRestrictUser(not_null<UserData*> user) {
 			return;
 		}
 	}
-	_menu->addAction(lang(lng_context_restrict_user), [=] {
+	_menu->addAction(tr::lng_context_restrict_user(tr::now), [=] {
 		auto editRestrictions = [=](bool hasAdminRights, const MTPChatBannedRights &currentRights) {
 			auto weak = QPointer<InnerWidget>(this);
 			auto weakBox = std::make_shared<QPointer<EditRestrictedBox>>();
@@ -1180,11 +1199,11 @@ void InnerWidget::suggestRestrictUser(not_null<UserData*> user) {
 				Expects(result.type() == mtpc_channels_channelParticipant);
 
 				auto &participant = result.c_channels_channelParticipant();
-				_channel->owner().processUsers(participant.vusers);
-				auto type = participant.vparticipant.type();
+				_channel->owner().processUsers(participant.vusers());
+				auto type = participant.vparticipant().type();
 				if (type == mtpc_channelParticipantBanned) {
-					auto &banned = participant.vparticipant.c_channelParticipantBanned();
-					editRestrictions(false, banned.vbanned_rights);
+					auto &banned = participant.vparticipant().c_channelParticipantBanned();
+					editRestrictions(false, banned.vbanned_rights());
 				} else {
 					auto hasAdminRights = (type == mtpc_channelParticipantAdmin)
 						|| (type == mtpc_channelParticipantCreator);
@@ -1220,7 +1239,7 @@ void InnerWidget::restrictUser(
 
 void InnerWidget::restrictUserDone(not_null<UserData*> user, const MTPChatBannedRights &rights) {
 	Expects(rights.type() == mtpc_chatBannedRights);
-	if (rights.c_chatBannedRights().vflags.v) {
+	if (rights.c_chatBannedRights().vflags().v) {
 		_admins.erase(std::remove(_admins.begin(), _admins.end(), user), _admins.end());
 		_adminsCanEdit.erase(std::remove(_adminsCanEdit.begin(), _adminsCanEdit.end(), user), _adminsCanEdit.end());
 	}
@@ -1296,7 +1315,7 @@ void InnerWidget::mouseActionStart(const QPoint &screenPos, Qt::MouseButton butt
 		TextState dragState;
 		if (_trippleClickTimer.isActive() && (screenPos - _trippleClickPoint).manhattanLength() < QApplication::startDragDistance()) {
 			StateRequest request;
-			request.flags = Text::StateRequest::Flag::LookupSymbol;
+			request.flags = Ui::Text::StateRequest::Flag::LookupSymbol;
 			dragState = _mouseActionItem->textState(_dragStartPosition, request);
 			if (dragState.cursor == CursorState::Text) {
 				auto selection = TextSelection { dragState.symbol, dragState.symbol };
@@ -1310,7 +1329,7 @@ void InnerWidget::mouseActionStart(const QPoint &screenPos, Qt::MouseButton butt
 			}
 		} else if (App::pressedItem()) {
 			StateRequest request;
-			request.flags = Text::StateRequest::Flag::LookupSymbol;
+			request.flags = Ui::Text::StateRequest::Flag::LookupSymbol;
 			dragState = _mouseActionItem->textState(_dragStartPosition, request);
 		}
 		if (_mouseSelectType != TextSelectType::Paragraphs) {
@@ -1394,7 +1413,7 @@ void InnerWidget::mouseActionFinish(const QPoint &screenPos, Qt::MouseButton but
 
 #if defined Q_OS_LINUX32 || defined Q_OS_LINUX64
 	if (_selectedItem && _selectedText.from != _selectedText.to) {
-		SetClipboardWithEntities(
+		SetClipboardText(
 			_selectedItem->selectedText(_selectedText),
 			QClipboard::Selection);
 	}
@@ -1443,7 +1462,7 @@ void InnerWidget::updateSelected() {
 		}
 		StateRequest request;
 		if (_mouseAction == MouseAction::Selecting) {
-			request.flags |= Text::StateRequest::Flag::LookupSymbol;
+			request.flags |= Ui::Text::StateRequest::Flag::LookupSymbol;
 		} else {
 			selectingText = false;
 		}
@@ -1551,7 +1570,7 @@ void InnerWidget::performDrag() {
 	//		uponSelected = _selected.contains(_mouseActionItem);
 	//	} else {
 	//		StateRequest request;
-	//		request.flags |= Text::StateRequest::Flag::LookupSymbol;
+	//		request.flags |= Ui::Text::StateRequest::Flag::LookupSymbol;
 	//		auto dragState = _mouseActionItem->textState(_dragStartPosition.x(), _dragStartPosition.y(), request);
 	//		uponSelected = (dragState.cursor == CursorState::Text);
 	//		if (uponSelected) {

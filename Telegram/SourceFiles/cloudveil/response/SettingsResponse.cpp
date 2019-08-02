@@ -184,12 +184,11 @@ bool SettingsResponse::isDialogAllowed(PeerData *peer) {
 	if (!isInlineBot && !isDialogSecured(peer)) {//unknown dialogs assumed to be allowed
 		return true;
 	}
-
-	if (peer->isChannel()) {
-		return channels.contains(peer->bareId()) && channels[peer->bareId()];
+	if (peer->isChat() || peer->isMegagroup()) {
+		return groups.contains(peer->bareId()) && groups[peer->bareId()];
 	}
-	else if (peer->isChat()) {
-		return groups.contains(peer->bareId()) && groups[peer->bareId()];  
+	else if (peer->isChannel()) {
+		return channels.contains(peer->bareId()) && channels[peer->bareId()];
 	}
 	else if (peer->isUser()) {
 		if (peer->asUser()->botInfo == NULL) {

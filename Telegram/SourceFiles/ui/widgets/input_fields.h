@@ -41,20 +41,23 @@ enum class InputSubmitSettings {
 	None,
 };
 
-class FlatInput : public TWidgetHelper<QLineEdit>, private base::Subscriber {
+class FlatInput : public Ui::RpWidgetWrap<QLineEdit>, private base::Subscriber {
 	// The Q_OBJECT meta info is used for qobject_cast!
 	Q_OBJECT
 
+	using Parent = RpWidgetWrap<QLineEdit>;
 public:
 	FlatInput(
 		QWidget *parent,
 		const style::FlatInput &st,
-		Fn<QString()> placeholderFactory = nullptr,
+		rpl::producer<QString> placeholder = nullptr,
 		const QString &val = QString());
 
 	void updatePlaceholder();
-	void setPlaceholder(Fn<QString()> placeholderFactory);
+	void setPlaceholder(rpl::producer<QString> placeholder);
 	QRect placeholderRect() const;
+
+	void finishAnimations();
 
 	void setTextMrg(const QMargins &textMrg);
 	QRect getTextRect() const;
@@ -81,7 +84,7 @@ signals:
 	void blurred();
 
 protected:
-	bool event(QEvent *e) override;
+	bool eventHook(QEvent *e) override;
 	void touchEvent(QTouchEvent *e);
 	void paintEvent(QPaintEvent *e) override;
 	void focusInEvent(QFocusEvent *e) override;
@@ -101,18 +104,18 @@ protected:
 
 private:
 	void updatePalette();
-	void refreshPlaceholder();
+	void refreshPlaceholder(const QString &text);
 
 	QString _oldtext;
+	rpl::variable<QString> _placeholderFull;
 	QString _placeholder;
-	Fn<QString()> _placeholderFactory;
 
 	bool _customUpDown = false;
 
 	bool _focused = false;
 	bool _placeholderVisible = true;
-	Animations::Simple _a_placeholderFocused;
-	Animations::Simple _a_placeholderVisible;
+	Animations::Simple _placeholderFocusedAnimation;
+	Animations::Simple _placeholderVisibleAnimation;
 	bool _lastPreEditTextNotEmpty = false;
 
 	const style::FlatInput &_st;
@@ -129,6 +132,7 @@ class InputField : public RpWidget, private base::Subscriber {
 public:
 	enum class Mode {
 		SingleLine,
+		NoNewlines,
 		MultiLine,
 	};
 	using TagList = TextWithTags::Tags;
@@ -147,25 +151,27 @@ public:
 	};
 	static const QString kTagBold;
 	static const QString kTagItalic;
+	static const QString kTagUnderline;
+	static const QString kTagStrikeOut;
 	static const QString kTagCode;
 	static const QString kTagPre;
 
 	InputField(
 		QWidget *parent,
 		const style::InputField &st,
-		Fn<QString()> placeholderFactory,
+		rpl::producer<QString> placeholder,
 		const QString &value = QString());
 	InputField(
 		QWidget *parent,
 		const style::InputField &st,
 		Mode mode,
-		Fn<QString()> placeholderFactory,
+		rpl::producer<QString> placeholder,
 		const QString &value);
 	InputField(
 		QWidget *parent,
 		const style::InputField &st,
 		Mode mode = Mode::SingleLine,
-		Fn<QString()> placeholderFactory = nullptr,
+		rpl::producer<QString> placeholder = nullptr,
 		const TextWithTags &value = TextWithTags());
 
 	void showError();
@@ -237,7 +243,7 @@ public:
 		return _lastTextWithTags.text;
 	}
 	void setPlaceholder(
-		Fn<QString()> placeholderFactory,
+		rpl::producer<QString> placeholder,
 		int afterSymbols = 0);
 	void setPlaceholderHidden(bool forcePlaceholderHidden);
 	void setDisplayFocused(bool focused);
@@ -255,6 +261,10 @@ public:
 
 	bool isUndoAvailable() const;
 	bool isRedoAvailable() const;
+
+	bool isMarkdownEnabled() const {
+		return _markdownEnabled;
+	}
 
 	using SubmitSettings = InputSubmitSettings;
 	void setSubmitSettings(SubmitSettings settings);
@@ -335,7 +345,7 @@ private:
 	void handleTouchEvent(QTouchEvent *e);
 
 	void updatePalette();
-	void refreshPlaceholder();
+	void refreshPlaceholder(const QString &text);
 	int placeholderSkipWidth() const;
 
 	bool heightAutoupdated();
@@ -458,20 +468,20 @@ private:
 	bool _customUpDown = false;
 	bool _customTab = false;
 
+	rpl::variable<QString> _placeholderFull;
 	QString _placeholder;
-	Fn<QString()> _placeholderFactory;
 	int _placeholderAfterSymbols = 0;
-	Animation _a_placeholderShifted;
+	Ui::Animations::Simple _a_placeholderShifted;
 	bool _placeholderShifted = false;
 	QPainterPath _placeholderPath;
 
-	Animation _a_borderShown;
+	Ui::Animations::Simple _a_borderShown;
 	int _borderAnimationStart = 0;
-	Animation _a_borderOpacity;
+	Ui::Animations::Simple _a_borderOpacity;
 	bool _borderVisible = false;
 
-	Animation _a_focused;
-	Animation _a_error;
+	Ui::Animations::Simple _a_focused;
+	Ui::Animations::Simple _a_error;
 
 	bool _focused = false;
 	bool _error = false;
@@ -503,7 +513,11 @@ class MaskedInputField
 
 	using Parent = RpWidgetWrap<QLineEdit>;
 public:
-	MaskedInputField(QWidget *parent, const style::InputField &st, Fn<QString()> placeholderFactory = Fn<QString()>(), const QString &val = QString());
+	MaskedInputField(
+		QWidget *parent,
+		const style::InputField &st,
+		rpl::producer<QString> placeholder = nullptr,
+		const QString &val = QString());
 
 	void showError();
 
@@ -518,7 +532,7 @@ public:
 	const QString &getLastText() const {
 		return _oldtext;
 	}
-	void setPlaceholder(Fn<QString()> placeholderFactory);
+	void setPlaceholder(rpl::producer<QString> placeholder);
 	void setPlaceholderHidden(bool forcePlaceholderHidden);
 	void setDisplayFocused(bool focused);
 	void finishAnimating();
@@ -580,14 +594,14 @@ protected:
 	}
 	void setCorrectedText(QString &now, int &nowCursor, const QString &newText, int newPos);
 
-	virtual void paintAdditionalPlaceholder(Painter &p, crl::time ms) {
+	virtual void paintAdditionalPlaceholder(Painter &p) {
 	}
 
 	style::font phFont() {
 		return _st.font;
 	}
 
-	void placeholderAdditionalPrepare(Painter &p, crl::time ms);
+	void placeholderAdditionalPrepare(Painter &p);
 	QRect placeholderRect() const;
 
 	void setTextMargins(const QMargins &mrg);
@@ -595,7 +609,7 @@ protected:
 
 private:
 	void updatePalette();
-	void refreshPlaceholder();
+	void refreshPlaceholder(const QString &text);
 	void setErrorShown(bool error);
 
 	void setFocused(bool focused);
@@ -612,19 +626,19 @@ private:
 
 	bool _customUpDown = false;
 
+	rpl::variable<QString> _placeholderFull;
 	QString _placeholder;
-	Fn<QString()> _placeholderFactory;
-	Animation _a_placeholderShifted;
+	Ui::Animations::Simple _a_placeholderShifted;
 	bool _placeholderShifted = false;
 	QPainterPath _placeholderPath;
 
-	Animation _a_borderShown;
+	Ui::Animations::Simple _a_borderShown;
 	int _borderAnimationStart = 0;
-	Animation _a_borderOpacity;
+	Ui::Animations::Simple _a_borderOpacity;
 	bool _borderVisible = false;
 
-	Animation _a_focused;
-	Animation _a_error;
+	Ui::Animations::Simple _a_focused;
+	Ui::Animations::Simple _a_error;
 
 	bool _focused = false;
 	bool _error = false;
@@ -685,7 +699,7 @@ protected:
 		int wasCursor,
 		QString &now,
 		int &nowCursor) override;
-	void paintAdditionalPlaceholder(Painter &p, crl::time ms) override;
+	void paintAdditionalPlaceholder(Painter &p) override;
 
 private:
 	QVector<int> _pattern;
@@ -695,13 +709,13 @@ private:
 
 class PasswordInput : public MaskedInputField {
 public:
-	PasswordInput(QWidget *parent, const style::InputField &st, Fn<QString()> placeholderFactory = Fn<QString()>(), const QString &val = QString());
+	PasswordInput(QWidget *parent, const style::InputField &st, rpl::producer<QString> placeholder = nullptr, const QString &val = QString());
 
 };
 
 class PortInput : public MaskedInputField {
 public:
-	PortInput(QWidget *parent, const style::InputField &st, Fn<QString()> placeholderFactory, const QString &val);
+	PortInput(QWidget *parent, const style::InputField &st, rpl::producer<QString> placeholder, const QString &val);
 
 protected:
 	void correctValue(
@@ -714,7 +728,7 @@ protected:
 
 class HexInput : public MaskedInputField {
 public:
-	HexInput(QWidget *parent, const style::InputField &st, Fn<QString()> placeholderFactory, const QString &val);
+	HexInput(QWidget *parent, const style::InputField &st, rpl::producer<QString> placeholder, const QString &val);
 
 protected:
 	void correctValue(
@@ -727,7 +741,12 @@ protected:
 
 class UsernameInput : public MaskedInputField {
 public:
-	UsernameInput(QWidget *parent, const style::InputField &st, Fn<QString()> placeholderFactory, const QString &val, bool isLink);
+	UsernameInput(
+		QWidget *parent,
+		const style::InputField &st,
+		rpl::producer<QString> placeholder,
+		const QString &val,
+		bool isLink);
 
 	void setLinkPlaceholder(const QString &placeholder);
 
@@ -737,7 +756,7 @@ protected:
 		int wasCursor,
 		QString &now,
 		int &nowCursor) override;
-	void paintAdditionalPlaceholder(Painter &p, crl::time ms) override;
+	void paintAdditionalPlaceholder(Painter &p) override;
 
 private:
 	QString _linkPlaceholder;
@@ -746,7 +765,11 @@ private:
 
 class PhoneInput : public MaskedInputField {
 public:
-	PhoneInput(QWidget *parent, const style::InputField &st, Fn<QString()> placeholderFactory, const QString &val);
+	PhoneInput(
+		QWidget *parent,
+		const style::InputField &st,
+		rpl::producer<QString> placeholder,
+		const QString &val);
 
 	void clearText();
 
@@ -758,7 +781,7 @@ protected:
 		int wasCursor,
 		QString &now,
 		int &nowCursor) override;
-	void paintAdditionalPlaceholder(Painter &p, crl::time ms) override;
+	void paintAdditionalPlaceholder(Painter &p) override;
 
 private:
 	QVector<int> _pattern;

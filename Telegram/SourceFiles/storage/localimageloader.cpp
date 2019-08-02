@@ -8,10 +8,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/localimageloader.h"
 
 #include "data/data_document.h"
+#include "data/data_session.h"
 #include "core/file_utilities.h"
 #include "core/mime_type.h"
+#include "base/unixtime.h"
 #include "media/audio/media_audio.h"
 #include "media/clip/media_clip_reader.h"
+#include "lottie/lottie_animation.h"
 #include "history/history_item.h"
 #include "boxes/send_files_box.h"
 #include "boxes/confirm_box.h"
@@ -20,6 +23,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_media_prepare.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
+#include "auth_session.h"
 
 namespace {
 
@@ -34,7 +38,7 @@ struct PreparedFileThumbnail {
 	QString name;
 	QImage image;
 	QByteArray bytes;
-	MTPPhotoSize mtpSize = MTP_photoSizeEmpty(MTP_string(""));
+	MTPPhotoSize mtpSize = MTP_photoSizeEmpty(MTP_string());
 };
 
 PreparedFileThumbnail PrepareFileThumbnail(QImage &&original) {
@@ -64,12 +68,19 @@ PreparedFileThumbnail PrepareFileThumbnail(QImage &&original) {
 			Qt::SmoothTransformation)
 		: std::move(original);
 	result.mtpSize = MTP_photoSize(
-		MTP_string(""),
-		MTP_fileLocationUnavailable(MTP_long(0), MTP_int(0), MTP_long(0)),
+		MTP_string(),
+		MTP_fileLocationToBeDeprecated(MTP_long(0), MTP_int(0)),
 		MTP_int(result.image.width()),
 		MTP_int(result.image.height()),
 		MTP_int(0));
 	return result;
+}
+
+PreparedFileThumbnail PrepareAnimatedStickerThumbnail(
+		const QString &file,
+		const QByteArray &bytes) {
+	return PrepareFileThumbnail(
+		Lottie::ReadThumbnail(Lottie::ReadContent(bytes, file)));
 }
 
 bool FileThumbnailUploadRequired(const QString &filemime, int32 filesize) {
@@ -192,10 +203,7 @@ SendMediaReady PreparePeerPhoto(PeerId peerId, QImage &&image) {
 	const auto push = [&](const char *type, QImage &&image) {
 		photoSizes.push_back(MTP_photoSize(
 			MTP_string(type),
-			MTP_fileLocationUnavailable(
-				MTP_long(0),
-				MTP_int(0),
-				MTP_long(0)),
+			MTP_fileLocationToBeDeprecated(MTP_long(0), MTP_int(0)),
 			MTP_int(image.width()),
 			MTP_int(image.height()), MTP_int(0)));
 		photoThumbs.emplace(type[0], std::move(image));
@@ -209,9 +217,10 @@ SendMediaReady PreparePeerPhoto(PeerId peerId, QImage &&image) {
 		MTP_flags(0),
 		MTP_long(id),
 		MTP_long(0),
-		MTP_bytes(QByteArray()),
-		MTP_int(unixtime()),
-		MTP_vector<MTPPhotoSize>(photoSizes));
+		MTP_bytes(),
+		MTP_int(base::unixtime::now()),
+		MTP_vector<MTPPhotoSize>(photoSizes),
+		MTP_int(MTP::maindc()));
 
 	QString file, filename;
 	int32 filesize = 0;
@@ -252,10 +261,7 @@ SendMediaReady PrepareWallPaper(const QImage &image) {
 	const auto push = [&](const char *type, QImage &&image) {
 		sizes.push_back(MTP_photoSize(
 			MTP_string(type),
-			MTP_fileLocationUnavailable(
-				MTP_long(0),
-				MTP_int(0),
-				MTP_long(0)),
+			MTP_fileLocationToBeDeprecated(MTP_long(0), MTP_int(0)),
 			MTP_int(image.width()),
 			MTP_int(image.height()), MTP_int(0)));
 		thumbnails.emplace(type[0], std::move(image));
@@ -274,8 +280,8 @@ SendMediaReady PrepareWallPaper(const QImage &image) {
 		MTP_flags(0),
 		MTP_long(id),
 		MTP_long(0),
-		MTP_bytes(QByteArray()),
-		MTP_int(unixtime()),
+		MTP_bytes(),
+		MTP_int(base::unixtime::now()),
 		MTP_string("image/jpeg"),
 		MTP_int(jpeg.size()),
 		MTP_vector<MTPPhotoSize>(sizes),
@@ -466,7 +472,10 @@ void SendingAlbum::refreshMediaCaption(not_null<HistoryItem*> item) {
 		return;
 	}
 	i->media = i->media->match([&](const MTPDinputSingleMedia &data) {
-		return PrepareAlbumItemMedia(item, data.vmedia, data.vrandom_id.v);
+		return PrepareAlbumItemMedia(
+			item,
+			data.vmedia(),
+			data.vrandom_id().v);
 	});
 }
 
@@ -479,7 +488,7 @@ void SendingAlbum::removeItem(not_null<HistoryItem*> item) {
 	if (moveCaption) {
 		const auto caption = item->originalText();
 		const auto firstId = items.front().msgId;
-		if (const auto first = App::histItemById(firstId)) {
+		if (const auto first = Auth().data().message(firstId)) {
 			// We don't need to finishEdition() here, because the whole
 			// album will be rebuilt after one item was removed from it.
 			first->setText(caption);
@@ -533,7 +542,8 @@ FileLoadTask::FileLoadTask(
 	SendMediaType type,
 	const FileLoadTo &to,
 	const TextWithTags &caption,
-	std::shared_ptr<SendingAlbum> album)
+	std::shared_ptr<SendingAlbum> album,
+	MsgId msgIdToEdit)
 : _id(rand_value<uint64>())
 , _to(to)
 , _album(std::move(album))
@@ -541,7 +551,9 @@ FileLoadTask::FileLoadTask(
 , _content(content)
 , _information(std::move(information))
 , _type(type)
-, _caption(caption) {
+, _caption(caption)
+, _msgIdToEdit(msgIdToEdit) {
+	Expects(_msgIdToEdit == 0 || IsServerMsgId(_msgIdToEdit));
 }
 
 FileLoadTask::FileLoadTask(
@@ -611,7 +623,12 @@ bool FileLoadTask::CheckForSong(
 		qstr(".ogg"),
 		qstr(".flac"),
 	};
-	if (!CheckMimeOrExtensions(filepath, result->filemime, mimes, extensions)) {
+	if (!filepath.isEmpty()
+		&& !CheckMimeOrExtensions(
+			filepath,
+			result->filemime,
+			mimes,
+			extensions)) {
 		return false;
 	}
 
@@ -665,14 +682,23 @@ bool FileLoadTask::CheckForImage(
 		const QByteArray &content,
 		std::unique_ptr<FileMediaInformation> &result) {
 	auto animated = false;
-	auto image = ([&filepath, &content, &animated] {
+	auto image = [&] {
+		if (filepath.endsWith(qstr(".tgs"), Qt::CaseInsensitive)) {
+			auto image = Lottie::ReadThumbnail(
+				Lottie::ReadContent(content, filepath));
+			if (!image.isNull()) {
+				animated = true;
+				result->filemime = qstr("application/x-tgsticker");
+			}
+			return image;
+		}
 		if (!content.isEmpty()) {
 			return App::readImage(content, nullptr, false, &animated);
 		} else if (!filepath.isEmpty()) {
 			return App::readImage(filepath, nullptr, false, &animated);
 		}
 		return QImage();
-	})();
+	}();
 	return FillImageInformation(std::move(image), animated, result);
 }
 
@@ -694,6 +720,7 @@ bool FileLoadTask::FillImageInformation(
 
 void FileLoadTask::process() {
 	const auto stickerMime = qsl("image/webp");
+	const auto animatedStickerMime = qsl("application/x-tgsticker");
 
 	_result = std::make_shared<FileLoadResult>(
 		id(),
@@ -701,6 +728,8 @@ void FileLoadTask::process() {
 		_to,
 		_caption,
 		_album);
+
+	_result->edit = (_msgIdToEdit > 0);
 
 	QString filename, filemime;
 	qint64 filesize = 0;
@@ -734,7 +763,7 @@ void FileLoadTask::process() {
 		if (auto image = base::get_if<FileMediaInformation::Image>(
 				&_information->media)) {
 			fullimage = base::take(image->data);
-			if (auto opaque = (filemime != stickerMime)) {
+			if (filemime != stickerMime && filemime != animatedStickerMime) {
 				fullimage = Images::prepareOpaque(std::move(fullimage));
 			}
 			isAnimation = image->animated;
@@ -753,7 +782,7 @@ void FileLoadTask::process() {
 			}
 			const auto mimeType = Core::MimeTypeForData(_content);
 			filemime = mimeType.name();
-			if (filemime != stickerMime) {
+			if (filemime != stickerMime && filemime != animatedStickerMime) {
 				fullimage = Images::prepareOpaque(std::move(fullimage));
 			}
 			if (filemime == "image/jpeg") {
@@ -856,20 +885,40 @@ void FileLoadTask::process() {
 		attributes.push_back(MTP_documentAttributeImageSize(MTP_int(w), MTP_int(h)));
 
 		if (ValidateThumbDimensions(w, h)) {
-			if (isAnimation) {
+			isSticker = (filemime == stickerMime
+				|| filemime == animatedStickerMime)
+				&& (w > 0)
+				&& (h > 0)
+				&& (w <= StickerMaxSize)
+				&& (h <= StickerMaxSize)
+				&& (filesize < Storage::kMaxStickerInMemory);
+			if (isSticker) {
+				attributes.push_back(MTP_documentAttributeSticker(
+					MTP_flags(0),
+					MTP_string(),
+					MTP_inputStickerSetEmpty(),
+					MTPMaskCoords()));
+				if (isAnimation) {
+					goodThumbnail = fullimage;
+					{
+						QBuffer buffer(&goodThumbnailBytes);
+						goodThumbnail.save(&buffer, "WEBP", kThumbnailQuality);
+					}
+				}
+			} else if (isAnimation) {
 				attributes.push_back(MTP_documentAttributeAnimated());
 			} else if (_type != SendMediaType::File) {
 				auto thumb = (w > 100 || h > 100) ? fullimage.scaled(100, 100, Qt::KeepAspectRatio, Qt::SmoothTransformation) : fullimage;
 				photoThumbs.emplace('s', thumb);
-				photoSizes.push_back(MTP_photoSize(MTP_string("s"), MTP_fileLocationUnavailable(MTP_long(0), MTP_int(0), MTP_long(0)), MTP_int(thumb.width()), MTP_int(thumb.height()), MTP_int(0)));
+				photoSizes.push_back(MTP_photoSize(MTP_string("s"), MTP_fileLocationToBeDeprecated(MTP_long(0), MTP_int(0)), MTP_int(thumb.width()), MTP_int(thumb.height()), MTP_int(0)));
 
 				auto medium = (w > 320 || h > 320) ? fullimage.scaled(320, 320, Qt::KeepAspectRatio, Qt::SmoothTransformation) : fullimage;
 				photoThumbs.emplace('m', medium);
-				photoSizes.push_back(MTP_photoSize(MTP_string("m"), MTP_fileLocationUnavailable(MTP_long(0), MTP_int(0), MTP_long(0)), MTP_int(medium.width()), MTP_int(medium.height()), MTP_int(0)));
+				photoSizes.push_back(MTP_photoSize(MTP_string("m"), MTP_fileLocationToBeDeprecated(MTP_long(0), MTP_int(0)), MTP_int(medium.width()), MTP_int(medium.height()), MTP_int(0)));
 
 				auto full = (w > 1280 || h > 1280) ? fullimage.scaled(1280, 1280, Qt::KeepAspectRatio, Qt::SmoothTransformation) : fullimage;
 				photoThumbs.emplace('y', full);
-				photoSizes.push_back(MTP_photoSize(MTP_string("y"), MTP_fileLocationUnavailable(MTP_long(0), MTP_int(0), MTP_long(0)), MTP_int(full.width()), MTP_int(full.height()), MTP_int(0)));
+				photoSizes.push_back(MTP_photoSize(MTP_string("y"), MTP_fileLocationToBeDeprecated(MTP_long(0), MTP_int(0)), MTP_int(full.width()), MTP_int(full.height()), MTP_int(0)));
 
 				{
 					QBuffer buffer(&filedata);
@@ -880,28 +929,14 @@ void FileLoadTask::process() {
 					MTP_flags(0),
 					MTP_long(_id),
 					MTP_long(0),
-					MTP_bytes(QByteArray()),
-					MTP_int(unixtime()),
-					MTP_vector<MTPPhotoSize>(photoSizes));
+					MTP_bytes(),
+					MTP_int(base::unixtime::now()),
+					MTP_vector<MTPPhotoSize>(photoSizes),
+					MTP_int(MTP::maindc()));
 
 				if (filesize < 0) {
 					filesize = _result->filesize = filedata.size();
 				}
-			}
-
-			isSticker = !isAnimation
-				&& (filemime == stickerMime)
-				&& (w > 0)
-				&& (h > 0)
-				&& (w <= StickerMaxSize)
-				&& (h <= StickerMaxSize)
-				&& (filesize < Storage::kMaxStickerInMemory);
-			if (isSticker) {
-				attributes.push_back(MTP_documentAttributeSticker(
-					MTP_flags(0),
-					MTP_string(QString()),
-					MTP_inputStickerSetEmpty(),
-					MTPMaskCoords()));
 			}
 			thumbnail = PrepareFileThumbnail(std::move(fullimage));
 		}
@@ -924,8 +959,8 @@ void FileLoadTask::process() {
 			MTP_flags(0),
 			MTP_long(_id),
 			MTP_long(0),
-			MTP_bytes(QByteArray()),
-			MTP_int(unixtime()),
+			MTP_bytes(),
+			MTP_int(base::unixtime::now()),
 			MTP_string(filemime),
 			MTP_int(filesize),
 			MTP_vector<MTPPhotoSize>(1, thumbnail.mtpSize),
@@ -936,8 +971,8 @@ void FileLoadTask::process() {
 			MTP_flags(0),
 			MTP_long(_id),
 			MTP_long(0),
-			MTP_bytes(QByteArray()),
-			MTP_int(unixtime()),
+			MTP_bytes(),
+			MTP_int(base::unixtime::now()),
 			MTP_string(filemime),
 			MTP_int(filesize),
 			MTP_vector<MTPPhotoSize>(1, thumbnail.mtpSize),
@@ -970,17 +1005,23 @@ void FileLoadTask::process() {
 void FileLoadTask::finish() {
 	if (!_result || !_result->filesize || _result->filesize < 0) {
 		Ui::show(
-			Box<InformBox>(lng_send_image_empty(lt_name, _filepath)),
+			Box<InformBox>(
+				tr::lng_send_image_empty(tr::now, lt_name, _filepath)),
 			LayerOption::KeepOther);
 		removeFromAlbum();
 	} else if (_result->filesize > App::kFileSizeLimit) {
 		Ui::show(
 			Box<InformBox>(
-				lng_send_image_too_large(lt_name, _filepath)),
+				tr::lng_send_image_too_large(tr::now, lt_name, _filepath)),
 			LayerOption::KeepOther);
 		removeFromAlbum();
 	} else if (App::main()) {
-		App::main()->onSendFileConfirm(_result);
+		const auto fullId = _msgIdToEdit
+			? std::make_optional(FullMsgId(
+				peerToChannel(_to.peer),
+				_msgIdToEdit))
+			: std::nullopt;
+		App::main()->onSendFileConfirm(_result, fullId);
 	}
 }
 

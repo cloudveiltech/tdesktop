@@ -97,11 +97,6 @@ void showBox(
 
 } // namespace internal
 
-void showMediaPreview(
-	Data::FileOrigin origin,
-	not_null<DocumentData*> document);
-void showMediaPreview(Data::FileOrigin origin, not_null<PhotoData*> photo);
-
 template <typename BoxType>
 QPointer<BoxType> show(
 		object_ptr<BoxType> content,
@@ -248,6 +243,7 @@ DeclareVar(bool, RevokePrivateInbox);
 DeclareVar(int32, StickersRecentLimit);
 DeclareVar(int32, StickersFavedLimit);
 DeclareVar(int32, PinnedDialogsCountMax);
+DeclareVar(int32, PinnedDialogsInFolderMax);
 DeclareVar(QString, InternalLinksDomain);
 DeclareVar(int32, ChannelsReadMediaPeriod);
 DeclareVar(int32, CallReceiveTimeoutMs);
@@ -263,9 +259,6 @@ DeclareRefVar(base::Observable<void>, PhoneCallsEnabledChanged);
 
 typedef QMap<PeerId, MsgId> HiddenPinnedMessagesMap;
 DeclareVar(HiddenPinnedMessagesMap, HiddenPinnedMessages);
-
-typedef QMap<uint64, QPixmap> CircleMasksMap;
-DeclareRefVar(CircleMasksMap, CircleMasks);
 
 DeclareVar(bool, AskDownloadPath);
 DeclareVar(QString, DownloadPath);

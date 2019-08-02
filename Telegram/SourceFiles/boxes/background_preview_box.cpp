@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "data/data_user.h"
 #include "data/data_document.h"
+#include "base/unixtime.h"
 #include "boxes/confirm_box.h"
 #include "boxes/background_preview_box.h"
 #include "styles/style_history.h"
@@ -39,8 +40,7 @@ public:
 		Painter &p,
 		int left,
 		int top,
-		int outerWidth,
-		crl::time ms) override;
+		int outerWidth) override;
 	QImage prepareRippleMask() const override;
 	bool checkRippleStartPosition(QPoint position) const override;
 
@@ -241,14 +241,13 @@ void ServiceCheck::paint(
 		Painter &p,
 		int left,
 		int top,
-		int outerWidth,
-		crl::time ms) {
+		int outerWidth) {
 	Frames().paintFrame(
 		p,
 		left + _st.margin.left(),
 		top + _st.margin.top(),
 		&_st,
-		currentAnimationValue(ms));
+		currentAnimationValue());
 }
 
 QImage ServiceCheck::prepareRippleMask() const {
@@ -287,13 +286,13 @@ AdminLog::OwnedItem GenerateTextItem(
 		| (out ? Flag::f_out : Flag(0));
 	const auto replyTo = 0;
 	const auto viaBotId = 0;
-	const auto item = new HistoryMessage(
+	const auto item = history->owner().makeMessage(
 		history,
 		++id,
 		flags,
 		replyTo,
 		viaBotId,
-		unixtime(),
+		base::unixtime::now(),
 		out ? history->session().userId() : peerToUser(history->peer->id),
 		QString(),
 		TextWithEntities{ TextUtilities::Clean(text) });
@@ -390,27 +389,31 @@ BackgroundPreviewBox::BackgroundPreviewBox(
 	QWidget*,
 	const Data::WallPaper &paper)
 : _text1(GenerateTextItem(
-	this,
+	delegate(),
 	Auth().data().history(peerFromUser(PeerData::kServiceNotificationsId)),
-	lang(lng_background_text1),
+	tr::lng_background_text1(tr::now),
 	false))
 , _text2(GenerateTextItem(
-	this,
+	delegate(),
 	Auth().data().history(peerFromUser(PeerData::kServiceNotificationsId)),
-	lang(lng_background_text2),
+	tr::lng_background_text2(tr::now),
 	true))
 , _paper(paper)
-, _radial(animation(this, &BackgroundPreviewBox::step_radial)) {
+, _radial([=](crl::time now) { radialAnimationCallback(now); }) {
 	subscribe(Auth().downloaderTaskFinished(), [=] { update(); });
 }
 
-void BackgroundPreviewBox::prepare() {
-	setTitle(langFactory(lng_background_header));
+not_null<HistoryView::ElementDelegate*> BackgroundPreviewBox::delegate() {
+	return static_cast<HistoryView::ElementDelegate*>(this);
+}
 
-	addButton(langFactory(lng_background_apply), [=] { apply(); });
-	addButton(langFactory(lng_cancel), [=] { closeBox(); });
+void BackgroundPreviewBox::prepare() {
+	setTitle(tr::lng_background_header());
+
+	addButton(tr::lng_background_apply(), [=] { apply(); });
+	addButton(tr::lng_cancel(), [=] { closeBox(); });
 	if (_paper.hasShareUrl()) {
-		addLeftButton(langFactory(lng_background_share), [=] { share(); });
+		addLeftButton(tr::lng_background_share(), [=] { share(); });
 	}
 	updateServiceBg(_paper.backgroundColor());
 
@@ -437,7 +440,7 @@ void BackgroundPreviewBox::prepare() {
 void BackgroundPreviewBox::createBlurCheckbox() {
 	_blur.create(
 		this,
-		lang(lng_background_blur),
+		tr::lng_background_blur(tr::now),
 		st::backgroundCheckbox,
 		std::make_unique<ServiceCheck>(
 			st::backgroundCheck,
@@ -490,7 +493,7 @@ void BackgroundPreviewBox::apply() {
 
 void BackgroundPreviewBox::share() {
 	QApplication::clipboard()->setText(_paper.shareUrl());
-	Ui::Toast::Show(lang(lng_background_link_copied));
+	Ui::Toast::Show(tr::lng_background_link_copied(tr::now));
 }
 
 void BackgroundPreviewBox::paintEvent(QPaintEvent *e) {
@@ -503,20 +506,20 @@ void BackgroundPreviewBox::paintEvent(QPaintEvent *e) {
 	}
 	if (!color || _paper.isPattern()) {
 		if (!_scaled.isNull() || setScaledFromThumb()) {
-			paintImage(p, ms);
-			paintRadial(p, ms);
+			paintImage(p);
+			paintRadial(p);
 		} else if (!color) {
 			p.fillRect(e->rect(), st::boxBg);
 			return;
 		} else {
 			// Progress of pattern loading.
-			paintRadial(p, ms);
+			paintRadial(p);
 		}
 	}
 	paintTexts(p, ms);
 }
 
-void BackgroundPreviewBox::paintImage(Painter &p, crl::time ms) {
+void BackgroundPreviewBox::paintImage(Painter &p) {
 	Expects(!_scaled.isNull());
 
 	const auto master = _paper.isPattern()
@@ -532,7 +535,7 @@ void BackgroundPreviewBox::paintImage(Painter &p, crl::time ms) {
 		height() * factor);
 	const auto guard = gsl::finally([&] { p.setOpacity(1.); });
 
-	const auto fade = _fadeIn.current(ms, 1.);
+	const auto fade = _fadeIn.value(1.);
 	if (fade < 1. && !_fadeOutThumbnail.isNull()) {
 		p.drawPixmap(rect(), _fadeOutThumbnail, from);
 	}
@@ -544,14 +547,9 @@ void BackgroundPreviewBox::paintImage(Painter &p, crl::time ms) {
 	checkBlurAnimationStart();
 }
 
-void BackgroundPreviewBox::paintRadial(Painter &p, crl::time ms) {
-	bool radial = false;
-	float64 radialOpacity = 0;
-	if (_radial.animating()) {
-		_radial.step(ms);
-		radial = _radial.animating();
-		radialOpacity = _radial.opacity();
-	}
+void BackgroundPreviewBox::paintRadial(Painter &p) {
+	const auto radial = _radial.animating();
+	const auto radialOpacity = radial ? _radial.opacity() : 0.;
 	if (!radial) {
 		return;
 	}
@@ -619,7 +617,7 @@ void BackgroundPreviewBox::paintDate(Painter &p) {
 	p.drawText(bubbleLeft + st::msgServicePadding.left(), bubbleTop + st::msgServicePadding.top() + st::msgServiceFont->ascent, text);
 }
 
-void BackgroundPreviewBox::step_radial(crl::time ms, bool timer) {
+void BackgroundPreviewBox::radialAnimationCallback(crl::time now) {
 	Expects(_paper.document() != nullptr);
 
 	const auto document = _paper.document();
@@ -627,9 +625,8 @@ void BackgroundPreviewBox::step_radial(crl::time ms, bool timer) {
 	const auto updated = _radial.update(
 		document->progress(),
 		!document->loading(),
-		ms);
-	if (timer
-		&& (wasAnimating || _radial.animating())
+		now);
+	if ((wasAnimating || _radial.animating())
 		&& (!anim::Disabled() || updated)) {
 		update(radialRect());
 	}
@@ -707,13 +704,11 @@ void BackgroundPreviewBox::checkLoadedDocument() {
 		return;
 	}
 	const auto generateCallback = [=](QImage &&image) {
-		auto [left, right] = base::make_binary_guard();
-		_generating = std::move(left);
 		crl::async([
 			this,
 			image = std::move(image),
 			patternBackground = patternBackgroundColor(),
-			guard = std::move(right)
+			guard = _generating.make_guard()
 		]() mutable {
 			auto scaled = PrepareScaledFromFull(image, patternBackground);
 			const auto ms = crl::now();
@@ -748,45 +743,17 @@ bool BackgroundPreviewBox::Start(
 		return true;
 	}
 	if (!IsValidWallPaperSlug(slug)) {
-		Ui::show(Box<InformBox>(lang(lng_background_bad_link)));
+		Ui::show(Box<InformBox>(tr::lng_background_bad_link(tr::now)));
 		return false;
 	}
 	Auth().api().requestWallPaper(slug, [=](const Data::WallPaper &result) {
 		Ui::show(Box<BackgroundPreviewBox>(result.withUrlParams(params)));
 	}, [](const RPCError &error) {
-		Ui::show(Box<InformBox>(lang(lng_background_bad_link)));
+		Ui::show(Box<InformBox>(tr::lng_background_bad_link(tr::now)));
 	});
 	return true;
 }
 
 HistoryView::Context BackgroundPreviewBox::elementContext() {
 	return HistoryView::Context::ContactPreview;
-}
-
-std::unique_ptr<HistoryView::Element> BackgroundPreviewBox::elementCreate(
-		not_null<HistoryMessage*> message) {
-	return std::make_unique<HistoryView::Message>(this, message);
-}
-
-std::unique_ptr<HistoryView::Element> BackgroundPreviewBox::elementCreate(
-		not_null<HistoryService*> message) {
-	Unexpected("Service message in BackgroundPreviewBox.");
-}
-
-bool BackgroundPreviewBox::elementUnderCursor(
-		not_null<const Element*> view) {
-	return false;
-}
-
-void BackgroundPreviewBox::elementAnimationAutoplayAsync(
-	not_null<const Element*> element) {
-}
-
-crl::time BackgroundPreviewBox::elementHighlightTime(
-		not_null<const Element*> element) {
-	return crl::time(0);
-}
-
-bool BackgroundPreviewBox::elementInSelectionMode() {
-	return false;
 }

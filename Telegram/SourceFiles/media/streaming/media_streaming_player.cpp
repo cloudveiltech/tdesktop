@@ -13,7 +13,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_video_track.h"
 #include "media/audio/media_audio.h" // for SupportsSpeedControl()
 #include "data/data_document.h" // for DocumentData::duration()
-#include "core/sandbox.h" // for widgetUpdateRequests() producer
 
 namespace Media {
 namespace Streaming {
@@ -73,14 +72,17 @@ void SaveValidStartInformation(Information &to, Information &&from) {
 	if (from.video.state.duration != kTimeUnknown) {
 		SaveValidVideoInformation(to.video, std::move(from.video));
 	}
+	if (from.headerSize && !to.headerSize) {
+		to.headerSize = from.headerSize;
+	}
 }
 
 } // namespace
 
 Player::Player(
 	not_null<Data::Session*> owner,
-	std::unique_ptr<Loader> loader)
-: _file(std::make_unique<File>(owner, std::move(loader)))
+	std::shared_ptr<Reader> reader)
+: _file(std::make_unique<File>(owner, std::move(reader)))
 , _remoteLoader(_file->isRemoteLoader())
 , _renderFrameTimer([=] { checkNextFrameRender(); }) {
 }
@@ -109,7 +111,7 @@ void Player::checkNextFrameAvailability() {
 
 	_nextFrameTime = _video->nextFrameDisplayTime();
 	if (_nextFrameTime != kTimeUnknown) {
-		checkVideoStep();
+		checkNextFrameRender();
 	}
 }
 
@@ -172,7 +174,7 @@ void Player::trackSendReceivedTill(
 	Expects(state.duration != kTimeUnknown);
 	Expects(state.receivedTill != kTimeUnknown);
 
-	if (!_remoteLoader) {
+	if (!_remoteLoader || _fullInCacheSinceStart.value_or(false)) {
 		return;
 	}
 	const auto receivedTill = std::max(
@@ -210,12 +212,13 @@ void Player::videoPlayedTill(crl::time position) {
 	trackPlayedTill(*_video, _information.video.state, position);
 }
 
-bool Player::fileReady(Stream &&video, Stream &&audio) {
+bool Player::fileReady(int headerSize, Stream &&video, Stream &&audio) {
 	_waitingForData = false;
 
 	const auto weak = base::make_weak(&_sessionGuard);
 	const auto ready = [=](const Information &data) {
 		crl::on_main(weak, [=, data = data]() mutable {
+			data.headerSize = headerSize;
 			streamReady(std::move(data));
 		});
 	};
@@ -299,6 +302,15 @@ void Player::fileError(Error error) {
 	});
 }
 
+void Player::fileFullInCache(bool fullInCache) {
+	crl::on_main(&_sessionGuard, [=] {
+		if (!_fullInCacheSinceStart.has_value()) {
+			_fullInCacheSinceStart = fullInCache;
+		}
+		_fullInCache.fire_copy(fullInCache);
+	});
+}
+
 void Player::fileWaitingForData() {
 	if (_waitingForData) {
 		return;
@@ -312,7 +324,7 @@ void Player::fileWaitingForData() {
 	}
 }
 
-bool Player::fileProcessPacket(Packet &&packet) {
+bool Player::fileProcessPacket(FFmpeg::Packet &&packet) {
 	_waitingForData = false;
 
 	const auto &native = packet.fields();
@@ -325,14 +337,14 @@ bool Player::fileProcessPacket(Packet &&packet) {
 			crl::on_main(&_sessionGuard, [=] {
 				audioReceivedTill(till);
 			});
-			_audio->process(Packet());
+			_audio->process(FFmpeg::Packet());
 		}
 		if (_video) {
 			const auto till = _loopingShift + computeVideoDuration();
 			crl::on_main(&_sessionGuard, [=] {
 				videoReceivedTill(till);
 			});
-			_video->process(Packet());
+			_video->process(FFmpeg::Packet());
 		}
 	} else if (_audio && _audio->streamIndex() == native.stream_index) {
 		accumulate_max(
@@ -340,7 +352,7 @@ bool Player::fileProcessPacket(Packet &&packet) {
 			durationByPacket(*_audio, packet));
 
 		const auto till = _loopingShift + std::clamp(
-			PacketPosition(packet, _audio->streamTimeBase()),
+			FFmpeg::PacketPosition(packet, _audio->streamTimeBase()),
 			crl::time(0),
 			computeAudioDuration() - 1);
 		crl::on_main(&_sessionGuard, [=] {
@@ -353,7 +365,7 @@ bool Player::fileProcessPacket(Packet &&packet) {
 			durationByPacket(*_video, packet));
 
 		const auto till = _loopingShift + std::clamp(
-			PacketPosition(packet, _video->streamTimeBase()),
+			FFmpeg::PacketPosition(packet, _video->streamTimeBase()),
 			crl::time(0),
 			computeVideoDuration() - 1);
 		crl::on_main(&_sessionGuard, [=] {
@@ -392,7 +404,7 @@ void Player::streamFailed(Error error) {
 template <typename Track>
 int Player::durationByPacket(
 		const Track &track,
-		const Packet &packet) {
+		const FFmpeg::Packet &packet) {
 	// We've set this value on the first cycle.
 	if (_loopingShift || _totalDuration != kDurationUnavailable) {
 		return 0;
@@ -465,7 +477,7 @@ void Player::play(const PlaybackOptions &options) {
 
 	const auto previous = getCurrentReceivedTill(computeTotalDuration());
 
-	stop();
+	stop(true);
 	_lastFailure = std::nullopt;
 
 	savePreviousReceivedTill(options, previous);
@@ -541,6 +553,10 @@ void Player::resume() {
 
 	_pausedByUser = false;
 	updatePausedState();
+}
+
+void Player::stop() {
+	stop(false);
 }
 
 void Player::updatePausedState() {
@@ -621,8 +637,8 @@ void Player::start() {
 	const auto guard = base::make_weak(&_sessionGuard);
 
 	rpl::merge(
-		_audio ? _audio->waitingForData() : rpl::never(),
-		_video ? _video->waitingForData() : rpl::never()
+		_audio ? _audio->waitingForData() : nullptr,
+		_video ? _video->waitingForData() : nullptr
 	) | rpl::filter([=] {
 		return !bothReceivedEnough(kBufferFor);
 	}) | rpl::start_with_next([=] {
@@ -658,7 +674,7 @@ void Player::start() {
 			}
 		}, _sessionLifetime);
 
-		Core::Sandbox::Instance().widgetUpdateRequests(
+		crl::on_main_update_requests(
 		) | rpl::filter([=] {
 			return !_videoFinished;
 		}) | rpl::start_with_next([=] {
@@ -681,8 +697,8 @@ void Player::checkVideoStep() {
 	}
 }
 
-void Player::stop() {
-	_file->stop();
+void Player::stop(bool stillActive) {
+	_file->stop(stillActive);
 	_sessionLifetime = rpl::lifetime();
 	_stage = Stage::Uninitialized;
 	_audio = nullptr;
@@ -699,7 +715,9 @@ void Player::stop() {
 	_durationByPackets = 0;
 	_durationByLastAudioPacket = 0;
 	_durationByLastVideoPacket = 0;
+	const auto header = _information.headerSize;
 	_information = Information();
+	_information.headerSize = header;
 }
 
 std::optional<Error> Player::failed() const {
@@ -727,6 +745,10 @@ bool Player::finished() const {
 		&& (!_video || _videoFinished);
 }
 
+float64 Player::speed() const {
+	return _options.speed;
+}
+
 void Player::setSpeed(float64 speed) {
 	Expects(active());
 	Expects(speed >= 0.5 && speed <= 2.);
@@ -750,11 +772,20 @@ bool Player::active() const {
 }
 
 bool Player::ready() const {
-	return (_stage != Stage::Uninitialized) && (_stage != Stage::Initializing);
+	return (_stage != Stage::Uninitialized)
+		&& (_stage != Stage::Initializing);
 }
 
 rpl::producer<Update, Error> Player::updates() const {
 	return _updates.events();
+}
+
+rpl::producer<bool> Player::fullInCache() const {
+	return _fullInCache.events();
+}
+
+QSize Player::videoSize() const {
+	return _information.video.size;
 }
 
 QImage Player::frame(const FrameRequest &request) const {
@@ -775,6 +806,8 @@ Media::Player::TrackState Player::prepareLegacyState() const {
 		? State::StoppedAtError
 		: finished()
 		? State::StoppedAtEnd
+		: (_stage == Stage::Uninitialized)
+		? State::Stopped
 		: paused()
 		? State::Paused
 		: State::Playing;
@@ -787,10 +820,12 @@ Media::Player::TrackState Player::prepareLegacyState() const {
 	} else if (_options.loop && result.length > 0) {
 		result.position %= result.length;
 	}
-	result.receivedTill = _remoteLoader
+	result.receivedTill = (_remoteLoader
+		&& !_fullInCacheSinceStart.value_or(false))
 		? getCurrentReceivedTill(result.length)
 		: 0;
 	result.frequency = kMsFrequency;
+	result.fileHeaderSize = _information.headerSize;
 
 	if (result.length == kTimeUnknown) {
 		const auto document = _options.audioId.audio();
@@ -805,10 +840,15 @@ Media::Player::TrackState Player::prepareLegacyState() const {
 }
 
 crl::time Player::getCurrentReceivedTill(crl::time duration) const {
+	const auto forTrack = [&](const TrackState &state) {
+		return (state.duration > 0 && state.receivedTill == state.duration)
+			? std::max(state.receivedTill, duration)
+			: state.receivedTill;
+	};
 	const auto previous = std::max(_previousReceivedTill, crl::time(0));
 	const auto result = std::min(
-		std::max(_information.audio.state.receivedTill, previous),
-		std::max(_information.video.state.receivedTill, previous));
+		std::max(forTrack(_information.audio.state), previous),
+		std::max(forTrack(_information.video.state), previous));
 	return (result >= 0 && duration > 1 && _options.loop)
 		? (result % duration)
 		: result;

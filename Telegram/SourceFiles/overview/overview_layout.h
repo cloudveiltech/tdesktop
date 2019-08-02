@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "layout.h"
 #include "core/click_handler_types.h"
+#include "ui/effects/animations.h"
 #include "ui/effects/radial_animation.h"
 #include "styles/style_overview.h"
 
@@ -129,16 +130,19 @@ protected:
 		ClickHandlerPtr &&cancell);
 	void setDocumentLinks(not_null<DocumentData*> document);
 
-	void step_radial(crl::time ms, bool timer);
+	void radialAnimationCallback(crl::time now) const;
 
 	void ensureRadial();
-	void checkRadialFinished();
+	void checkRadialFinished() const;
 
-	bool isRadialAnimation(crl::time ms) const {
-		if (!_radial || !_radial->animating()) return false;
-
-		_radial->step(ms);
-		return _radial && _radial->animating();
+	bool isRadialAnimation() const {
+		if (_radial) {
+			if (_radial->animating()) {
+				return true;
+			}
+			checkRadialFinished();
+		}
+		return false;
 	}
 
 	virtual float64 dataProgress() const = 0;
@@ -148,8 +152,8 @@ protected:
 		return false;
 	}
 
-	std::unique_ptr<Ui::RadialAnimation> _radial;
-	Animation _a_iconOver;
+	mutable std::unique_ptr<Ui::RadialAnimation> _radial;
+	Ui::Animations::Simple _a_iconOver;
 
 };
 
@@ -243,6 +247,7 @@ private:
 
 	QString _duration;
 	QPixmap _pix;
+	bool _pixBlurred = true;
 
 	void updateStatusText();
 
@@ -277,7 +282,7 @@ private:
 
 	const style::OverviewFileLayout &_st;
 
-	Text _name, _details;
+	Ui::Text::String _name, _details;
 	int _nameVersion;
 
 	void updateName();
@@ -325,7 +330,7 @@ private:
 	bool _thumbLoaded = false;
 	QPixmap _thumb;
 
-	Text _name;
+	Ui::Text::String _name;
 	QString _date, _ext;
 	int32 _datew, _extw;
 	int32 _thumbw, _colorIndex;
@@ -359,7 +364,7 @@ private:
 	WebPageData *_page = nullptr;
 	int _pixw = 0;
 	int _pixh = 0;
-	Text _text = { st::msgMinWidth };
+	Ui::Text::String _text = { st::msgMinWidth };
 
 	struct LinkEntry {
 		LinkEntry() : width(0) {

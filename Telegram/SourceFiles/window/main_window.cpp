@@ -9,13 +9,18 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "storage/localstorage.h"
 #include "platform/platform_window_title.h"
+#include "platform/platform_info.h"
 #include "history/history.h"
 #include "window/themes/window_theme.h"
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "window/window_lock_widgets.h"
+#include "window/window_outdated_bar.h"
+#include "window/window_controller.h"
 #include "boxes/confirm_box.h"
+#include "main/main_account.h" // Account::authSessionValue.
 #include "core/click_handler_types.h"
 #include "core/application.h"
+#include "core/sandbox.h"
 #include "lang/lang_keys.h"
 #include "data/data_session.h"
 #include "auth_session.h"
@@ -25,9 +30,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_boxes.h"
 
 namespace Window {
+namespace {
 
 constexpr auto kInactivePressTimeout = crl::time(200);
 constexpr auto kSaveWindowPositionTimeout = crl::time(1000);
+
+} // namespace
 
 QImage LoadLogo() {
 	return QImage(qsl(":/gui/art/logo_256.png"));
@@ -85,27 +93,30 @@ void ConvertIconToBlack(QImage &image) {
 	}
 }
 
-QIcon CreateOfficialIcon() {
+QIcon CreateOfficialIcon(Main::Account *account) {
 	auto image = Core::IsAppLaunched() ? Core::App().logo() : LoadLogo();
-	if (AuthSession::Exists() && Auth().supportMode()) {
+	if (account
+		&& account->sessionExists()
+		&& account->session().supportMode()) {
 		ConvertIconToBlack(image);
 	}
 	return QIcon(App::pixmapFromImageInPlace(std::move(image)));
 }
 
-QIcon CreateIcon() {
-	auto result = CreateOfficialIcon();
-	if (cPlatform() == dbipLinux32 || cPlatform() == dbipLinux64) {
+QIcon CreateIcon(Main::Account *account) {
+	auto result = CreateOfficialIcon(account);
+	if (Platform::IsLinux()) {
 		return QIcon::fromTheme("telegram", result);
 	}
 	return result;
 }
 
 //CloudVeil change title
-MainWindow::MainWindow()
-: _positionUpdatedTimer([=] { savePosition(); })
+MainWindow::MainWindow(not_null<Controller*> controller)
+: _controller(controller)
+, _positionUpdatedTimer([=] { savePosition(); })
+, _outdated(CreateOutdatedBar(this))
 , _body(this)
-, _icon(CreateIcon())
 , _titleText(qsl("CloudVeil Messegner")) {
 	subscribe(Theme::Background(), [=](
 			const Theme::BackgroundUpdate &data) {
@@ -119,24 +130,39 @@ MainWindow::MainWindow()
 	subscribe(Global::RefWorkMode(), [=](DBIWorkMode mode) {
 		workmodeUpdated(mode);
 	});
-	subscribe(Core::App().authSessionChanged(), [=] {
-		checkAuthSession();
-		updateWindowIcon();
-	});
-	checkAuthSession();
 
 	Core::App().termsLockValue(
 	) | rpl::start_with_next([=] {
 		checkLockByTerms();
 	}, lifetime());
 
+	if (_outdated) {
+		_outdated->heightValue(
+		) | rpl::filter([=] {
+			return window()->windowHandle() != nullptr;
+		}) | rpl::start_with_next([=](int height) {
+			if (!height) {
+				crl::on_main(this, [=] { _outdated.destroy(); });
+			}
+			updateControlsGeometry();
+		}, _outdated->lifetime());
+	}
+
 	_isActiveTimer.setCallback([this] { updateIsActive(0); });
 	_inactivePressTimer.setCallback([this] { setInactivePress(false); });
 }
 
+Main::Account &MainWindow::account() const {
+	return _controller->account();
+}
+
+Window::SessionController *MainWindow::sessionController() const {
+	return _controller->sessionController();
+}
+
 void MainWindow::checkLockByTerms() {
 	const auto data = Core::App().termsLocked();
-	if (!data || !AuthSession::Exists()) {
+	if (!data || !account().sessionExists()) {
 		if (_termsBox) {
 			_termsBox->closeBox();
 		}
@@ -145,8 +171,8 @@ void MainWindow::checkLockByTerms() {
 	Ui::hideSettingsAndLayer(anim::type::instant);
 	const auto box = Ui::show(Box<TermsBox>(
 		*data,
-		langFactory(lng_terms_agree),
-		langFactory(lng_terms_decline)));
+		tr::lng_terms_agree(),
+		tr::lng_terms_decline()));
 
 	box->setCloseByEscape(false);
 	box->setCloseByOutsideClick(false);
@@ -155,8 +181,8 @@ void MainWindow::checkLockByTerms() {
 	box->agreeClicks(
 	) | rpl::start_with_next([=] {
 		const auto mention = box ? box->lastClickedMention() : QString();
-		if (AuthSession::Exists()) {
-			Auth().api().acceptTerms(id);
+		if (account().sessionExists()) {
+			account().session().api().acceptTerms(id);
 			if (!mention.isEmpty()) {
 				MentionClickHandler(mention).onClick({});
 			}
@@ -179,9 +205,9 @@ void MainWindow::checkLockByTerms() {
 void MainWindow::showTermsDecline() {
 	const auto box = Ui::show(
 		Box<Window::TermsBox>(
-			TextWithEntities{ lang(lng_terms_update_sorry) },
-			langFactory(lng_terms_decline_and_delete),
-			langFactory(lng_terms_back),
+			TextWithEntities{ tr::lng_terms_update_sorry(tr::now) },
+			tr::lng_terms_decline_and_delete(),
+			tr::lng_terms_back(),
 			true),
 		LayerOption::KeepOther);
 
@@ -203,12 +229,19 @@ void MainWindow::showTermsDecline() {
 
 void MainWindow::showTermsDelete() {
 	const auto box = std::make_shared<QPointer<BoxContent>>();
+	const auto deleteByTerms = [=] {
+		if (account().sessionExists()) {
+			account().session().termsDeleteNow();
+		} else {
+			Ui::hideLayer();
+		}
+	};
 	*box = Ui::show(
 		Box<ConfirmBox>(
-			lang(lng_terms_delete_warning),
-			lang(lng_terms_delete_now),
+			tr::lng_terms_delete_warning(tr::now),
+			tr::lng_terms_delete_now(tr::now),
 			st::attentionBoxButton,
-			[=] { Core::App().termsDeleteNow(); },
+			deleteByTerms,
 			[=] { if (*box) (*box)->closeBox(); }),
 		LayerOption::KeepOther);
 }
@@ -222,7 +255,7 @@ bool MainWindow::hideNoQuit() {
 			Ui::showChatsList();
 			return true;
 		}
-	} else if (cPlatform() == dbipMac || cPlatform() == dbipMacOld) {
+	} else if (Platform::IsMac()) {
 		closeWithoutDestroy();
 		updateIsActive(Global::OfflineBlurTimeout());
 		updateGlobalMenu();
@@ -251,9 +284,10 @@ bool MainWindow::computeIsActive() const {
 }
 
 void MainWindow::updateWindowIcon() {
-	const auto supportIcon = AuthSession::Exists() && Auth().supportMode();
-	if (supportIcon != _usingSupportIcon) {
-		_icon = CreateIcon();
+	const auto supportIcon = account().sessionExists()
+		&& account().session().supportMode();
+	if (supportIcon != _usingSupportIcon || _icon.isNull()) {
+		_icon = CreateIcon(&account());
 		_usingSupportIcon = supportIcon;
 	}
 	setWindowIcon(_icon);
@@ -267,8 +301,18 @@ void MainWindow::init() {
 	initHook();
 	updateWindowIcon();
 
-	connect(windowHandle(), &QWindow::activeChanged, this, [this] { handleActiveChanged(); }, Qt::QueuedConnection);
-	connect(windowHandle(), &QWindow::windowStateChanged, this, [this](Qt::WindowState state) { handleStateChanged(state); });
+	// Non-queued activeChanged handlers must use QtSignalProducer.
+	connect(
+		windowHandle(),
+		&QWindow::activeChanged,
+		this,
+		[=] { handleActiveChanged(); },
+		Qt::QueuedConnection);
+	connect(
+		windowHandle(),
+		&QWindow::windowStateChanged,
+		this,
+		[=](Qt::WindowState state) { handleStateChanged(state); });
 
 	updatePalette();
 
@@ -318,9 +362,21 @@ HitTestResult MainWindow::hitTest(const QPoint &p) const {
 	return Window::HitTestResult::None;
 }
 
+int MainWindow::computeMinHeight() const {
+	const auto title = _title ? _title->height() : 0;
+	const auto outdated = [&] {
+		if (!_outdated) {
+			return 0;
+		}
+		_outdated->resizeToWidth(st::windowMinWidth);
+		return _outdated->height();
+	}();
+	return title + outdated + st::windowMinHeight;
+}
+
 void MainWindow::initSize() {
 	setMinimumWidth(st::windowMinWidth);
-	setMinimumHeight((_title ? _title->height() : 0) + st::windowMinHeight);
+	setMinimumHeight(computeMinHeight());
 
 	auto position = cWindowPos();
 	DEBUG_LOG(("Window Pos: Initializing first %1, %2, %3, %4 (maximized %5)").arg(position.x).arg(position.y).arg(position.w).arg(position.h).arg(Logs::b(position.maximized)));
@@ -390,6 +446,17 @@ void MainWindow::setPositionInited() {
 	_positionInited = true;
 }
 
+void MainWindow::attachToTrayIcon(not_null<QSystemTrayIcon*> icon) {
+	icon->setToolTip(str_const_toString(AppName));
+	connect(icon, &QSystemTrayIcon::activated, this, [=](
+			QSystemTrayIcon::ActivationReason reason) {
+		Core::Sandbox::Instance().customEnterFromEventLoop([&] {
+			handleTrayIconActication(reason);
+		});
+	});
+	App::wnd()->updateTrayMenu();
+}
+
 void MainWindow::resizeEvent(QResizeEvent *e) {
 	updateControlsGeometry();
 }
@@ -409,6 +476,12 @@ void MainWindow::updateControlsGeometry() {
 		_title->setGeometry(0, bodyTop, width(), _title->height());
 		bodyTop += _title->height();
 	}
+	if (_outdated) {
+		Ui::SendPendingMoveResizeEvents(_outdated.data());
+		_outdated->resizeToWidth(width());
+		_outdated->moveToLeft(0, bodyTop);
+		bodyTop += _outdated->height();
+	}
 	if (_rightColumn) {
 		bodyWidth -= _rightColumn->width();
 		_rightColumn->setGeometry(bodyWidth, bodyTop, width() - bodyWidth, height() - bodyTop);
@@ -419,8 +492,8 @@ void MainWindow::updateControlsGeometry() {
 void MainWindow::updateUnreadCounter() {
 	if (!Global::started() || App::quitting()) return;
 
-	const auto counter = AuthSession::Exists()
-		? Auth().data().unreadBadge()
+	const auto counter = account().sessionExists()
+		? account().session().data().unreadBadge()
 		: 0;
 	_titleText = (counter > 0) ? qsl("Telegram (%1)").arg(counter) : qsl("Telegram");
 
@@ -575,14 +648,6 @@ void MainWindow::launchDrag(std::unique_ptr<QMimeData> data) {
 	}
 }
 
-void MainWindow::checkAuthSession() {
-	if (AuthSession::Exists()) {
-		_controller = std::make_unique<Window::Controller>(&Auth(), this);
-	} else {
-		_controller = nullptr;
-	}
-}
-
 void MainWindow::setInactivePress(bool inactive) {
 	_wasInactivePress = inactive;
 	if (_wasInactivePress) {
@@ -592,6 +657,9 @@ void MainWindow::setInactivePress(bool inactive) {
 	}
 }
 
-MainWindow::~MainWindow() = default;
+MainWindow::~MainWindow() {
+	// We want to delete all widgets before the _controller.
+	_body.destroy();
+}
 
 } // namespace Window

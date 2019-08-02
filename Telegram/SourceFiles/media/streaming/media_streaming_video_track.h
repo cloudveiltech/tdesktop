@@ -33,7 +33,7 @@ public:
 	[[nodiscard]] crl::time streamDuration() const;
 
 	// Called from the same unspecified thread.
-	void process(Packet &&packet);
+	void process(FFmpeg::Packet &&packet);
 	void waitForData();
 
 	// Called from the main thread.
@@ -59,13 +59,13 @@ private:
 	friend class VideoTrackObject;
 
 	struct Frame {
-		FramePointer decoded = MakeFramePointer();
+		FFmpeg::FramePointer decoded = FFmpeg::MakeFramePointer();
 		QImage original;
 		crl::time position = kTimeUnknown;
 		crl::time displayed = kTimeUnknown;
 		crl::time display = kTimeUnknown;
 
-		FrameRequest request;
+		FrameRequest request = FrameRequest::NonStrict();
 		QImage prepared;
 	};
 

@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_window.h"
 #include "platform/platform_notifications_manager.h"
 #include "platform/win/windows_dlls.h"
+#include "platform/win/windows_event_filter.h"
 #include "window/notifications_manager.h"
 #include "mainwindow.h"
 #include "core/application.h"
@@ -31,6 +32,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <windows.ui.notifications.h>
 
 #include <Windowsx.h>
+#include <VersionHelpers.h>
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
 #define max(a, b) ((a) < (b) ? (b) : (a))
@@ -128,7 +130,8 @@ public:
 		update(Change::Moved | Change::Resized);
 	}
 
-	bool init(QColor c) {
+	bool init(not_null<MainWindow*> window, QColor c) {
+		_window = window;
 		_fullsize = st::windowShadow.width();
 		_shift = st::windowShadowShift;
 		auto cornersImage = QImage(_fullsize, _fullsize, QImage::Format_ARGB32_Premultiplied);
@@ -185,7 +188,7 @@ public:
 		accumulate_max(max_h, st::titleHeight + st::windowMinHeight);
 
 		HINSTANCE appinst = (HINSTANCE)GetModuleHandle(0);
-		HWND hwnd = App::wnd() ? App::wnd()->psHwnd() : 0;
+		HWND hwnd = _window ? _window->psHwnd() : nullptr;
 
 		for (int i = 0; i < 4; ++i) {
 			QString cn = QString("TelegramShadow%1").arg(i);
@@ -319,7 +322,7 @@ public:
 	}
 
 	void update(Changes changes, WINDOWPOS *pos = 0) {
-		HWND hwnd = App::wnd() ? App::wnd()->psHwnd() : 0;
+		HWND hwnd = _window ? _window->psHwnd() : 0;
 		if (!hwnd || !hwnds[0]) return;
 
 		if (changes == Changes(Change::Activate)) {
@@ -338,7 +341,7 @@ public:
 			}
 			return;
 		}
-		if (!App::wnd()->positionInited()) return;
+		if (!_window->positionInited()) return;
 
 		int x = _x, y = _y, w = _w, h = _h;
 		if (pos && (!(pos->flags & SWP_NOMOVE) || !(pos->flags & SWP_NOSIZE) || !(pos->flags & SWP_NOREPOSITION))) {
@@ -496,12 +499,17 @@ public:
 		if (screenDC) ReleaseDC(0, screenDC);
 	}
 
+	MainWindow *window() const {
+		return _window;
+	}
+
 private:
 
 	int _x = 0, _y = 0, _w = 0, _h = 0;
 	int _metaSize = 0, _fullsize = 0, _size = 0, _shift = 0;
 	QVector<BYTE> _alphas, _colors;
 
+	MainWindow *_window = nullptr;
 	bool hidden = true;
 
 	HWND hwnds[4];
@@ -519,8 +527,10 @@ private:
 _PsShadowWindows _psShadowWindows;
 
 LRESULT CALLBACK _PsShadowWindows::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-	auto wnd = App::wnd();
-	if (!wnd || !wnd->shadowsWorking()) return DefWindowProc(hwnd, msg, wParam, lParam);
+	const auto window = _psShadowWindows.window();
+	if (!window || !window->shadowsWorking()) {
+		return DefWindowProc(hwnd, msg, wParam, lParam);
+	}
 
 	int i;
 	for (i = 0; i < 4; ++i) {
@@ -532,7 +542,7 @@ LRESULT CALLBACK _PsShadowWindows::wndProc(HWND hwnd, UINT msg, WPARAM wParam, L
 
 	switch (msg) {
 	case WM_CLOSE:
-	App::wnd()->close();
+		window->close();
 	break;
 
 	case WM_NCHITTEST: {
@@ -565,20 +575,20 @@ LRESULT CALLBACK _PsShadowWindows::wndProc(HWND hwnd, UINT msg, WPARAM wParam, L
 	case WM_NCPOINTERUPDATE:
 	case WM_NCPOINTERDOWN:
 	case WM_NCPOINTERUP:
-	if (App::wnd() && App::wnd()->psHwnd()) {
+	if (window && window->psHwnd()) {
 		if (msg == WM_NCLBUTTONDOWN) {
-			::SetForegroundWindow(App::wnd()->psHwnd());
+			::SetForegroundWindow(window->psHwnd());
 		}
-		LRESULT res = SendMessage(App::wnd()->psHwnd(), msg, wParam, lParam);
+		LRESULT res = SendMessage(window->psHwnd(), msg, wParam, lParam);
 		return res;
 	}
 	return 0;
 	break;
 	case WM_ACTIVATE:
-	if (App::wnd() && App::wnd()->psHwnd() && wParam == WA_ACTIVE) {
-		if ((HWND)lParam != App::wnd()->psHwnd()) {
+	if (window && window->psHwnd() && wParam == WA_ACTIVE) {
+		if ((HWND)lParam != window->psHwnd()) {
 			::SetForegroundWindow(hwnd);
-			::SetWindowPos(App::wnd()->psHwnd(), hwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+			::SetWindowPos(window->psHwnd(), hwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 		}
 	}
 	return DefWindowProc(hwnd, msg, wParam, lParam);
@@ -597,8 +607,12 @@ bool handleSessionNotification = false;
 
 UINT MainWindow::_taskbarCreatedMsgId = 0;
 
-MainWindow::MainWindow()
-: ps_tbHider_hWnd(createTaskbarHider()) {
+MainWindow::MainWindow(not_null<Window::Controller*> controller)
+: Window::MainWindow(controller)
+, ps_tbHider_hWnd(createTaskbarHider()) {
+	QCoreApplication::instance()->installNativeEventFilter(
+		EventFilter::CreateInstance(this));
+
 	if (!_taskbarCreatedMsgId) {
 		_taskbarCreatedMsgId = RegisterWindowMessage(L"TaskbarButtonCreated");
 	}
@@ -667,10 +681,8 @@ void MainWindow::psSetupTrayIcon() {
 		auto icon = QIcon(App::pixmapFromImageInPlace(Core::App().logoNoMargin()));
 
 		trayIcon->setIcon(icon);
-		trayIcon->setToolTip(str_const_toString(AppName));
-		connect(trayIcon, SIGNAL(activated(QSystemTrayIcon::ActivationReason)), this, SLOT(toggleTray(QSystemTrayIcon::ActivationReason)), Qt::UniqueConnection);
 		connect(trayIcon, SIGNAL(messageClicked()), this, SLOT(showFromTray()));
-		App::wnd()->updateTrayMenu();
+		attachToTrayIcon(trayIcon);
 	}
 	updateIconCounters();
 
@@ -679,7 +691,7 @@ void MainWindow::psSetupTrayIcon() {
 
 void MainWindow::showTrayTooltip() {
 	if (trayIcon && !cSeenTrayTooltip()) {
-		trayIcon->showMessage(str_const_toString(AppName), lang(lng_tray_icon_text), QSystemTrayIcon::Information, 10000);
+		trayIcon->showMessage(str_const_toString(AppName), tr::lng_tray_icon_text(tr::now), QSystemTrayIcon::Information, 10000);
 		cSetSeenTrayTooltip(true);
 		Local::writeSettings();
 	}
@@ -760,19 +772,24 @@ void MainWindow::updateIconCounters() {
 			iconOverlay.addPixmap(App::pixmapFromImageInPlace(iconWithCounter(-32, counter, bg, fg, false)));
 			ps_iconOverlay = createHIconFromQIcon(iconOverlay, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON));
 		}
-		auto description = (counter > 0) ? lng_unread_bar(lt_count, counter) : QString();
+		auto description = (counter > 0) ? tr::lng_unread_bar(tr::now, lt_count, counter) : QString();
 		taskbarList->SetOverlayIcon(ps_hWnd, ps_iconOverlay, description.toStdWString().c_str());
 	}
 	SetWindowPos(ps_hWnd, 0, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 void MainWindow::initHook() {
-	auto platformInterface = QGuiApplication::platformNativeInterface();
-	ps_hWnd = static_cast<HWND>(platformInterface->nativeResourceForWindow(QByteArrayLiteral("handle"), windowHandle()));
+	if (const auto native = QGuiApplication::platformNativeInterface()) {
+		ps_hWnd = static_cast<HWND>(native->nativeResourceForWindow(
+			QByteArrayLiteral("handle"),
+			windowHandle()));
+	}
+	if (!ps_hWnd) {
+		return;
+	}
 
-	if (!ps_hWnd) return;
-
-	handleSessionNotification = (Dlls::WTSRegisterSessionNotification != nullptr) && (Dlls::WTSUnRegisterSessionNotification != nullptr);
+	handleSessionNotification = (Dlls::WTSRegisterSessionNotification != nullptr)
+		&& (Dlls::WTSUnRegisterSessionNotification != nullptr);
 	if (handleSessionNotification) {
 		Dlls::WTSRegisterSessionNotification(ps_hWnd, NOTIFY_FOR_THIS_SESSION);
 	}
@@ -782,7 +799,7 @@ void MainWindow::initHook() {
 
 Q_DECLARE_METATYPE(QMargins);
 void MainWindow::psFirstShow() {
-	_psShadowWindows.init(st::windowShadowFg->c);
+	_psShadowWindows.init(this, st::windowShadowFg->c);
 	_shadowsWorking = true;
 
 	psUpdateMargins();
@@ -914,11 +931,15 @@ void MainWindow::psUpdateMargins() {
 		_deltaLeft = _deltaTop = _deltaRight = _deltaBottom = 0;
 	}
 
-	QPlatformNativeInterface *i = QGuiApplication::platformNativeInterface();
-	i->setWindowProperty(windowHandle()->handle(), qsl("WindowsCustomMargins"), QVariant::fromValue<QMargins>(margins));
+	if (const auto native = QGuiApplication::platformNativeInterface()) {
+		native->setWindowProperty(
+			windowHandle()->handle(),
+			qsl("WindowsCustomMargins"),
+			QVariant::fromValue<QMargins>(margins));
+	}
 	if (!_themeInited) {
 		_themeInited = true;
-		if (QSysInfo::WindowsVersion < QSysInfo::WV_WINDOWS8) {
+		if (!IsWindows8OrGreater()) {
 			if (Dlls::SetWindowTheme != nullptr) {
 				Dlls::SetWindowTheme(ps_hWnd, L" ", L" ");
 				QApplication::setStyle(QStyleFactory::create(qsl("Windows")));
@@ -953,19 +974,19 @@ void MainWindow::psDestroyIcons() {
 
 MainWindow::~MainWindow() {
 	if (handleSessionNotification) {
-		QPlatformNativeInterface *i = QGuiApplication::platformNativeInterface();
-		if (HWND hWnd = static_cast<HWND>(i->nativeResourceForWindow(QByteArrayLiteral("handle"), windowHandle()))) {
-			Dlls::WTSUnRegisterSessionNotification(hWnd);
-		}
+		Dlls::WTSUnRegisterSessionNotification(ps_hWnd);
 	}
-
-	if (taskbarList) taskbarList.Reset();
+	if (taskbarList) {
+		taskbarList.Reset();
+	}
 
 	_shadowsWorking = false;
 	if (ps_menu) DestroyMenu(ps_menu);
 	psDestroyIcons();
 	_psShadowWindows.destroy();
 	if (ps_tbHider_hWnd) DestroyWindow(ps_tbHider_hWnd);
+
+	EventFilter::Destroy();
 }
 
 } // namespace Platform

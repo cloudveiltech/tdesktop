@@ -45,7 +45,7 @@ public:
 		return _attach && _attach->dragItemByHandler(p);
 	}
 
-	TextWithEntities selectedText(TextSelection selection) const override;
+	TextForMimeData selectedText(TextSelection selection) const override;
 
 	void clickHandlerActiveChanged(const ClickHandlerPtr &p, bool active) override;
 	void clickHandlerPressedChanged(const ClickHandlerPtr &p, bool pressed) override;
@@ -107,7 +107,7 @@ private:
 	int _titleLines = 0;
 	int _descriptionLines = 0;
 
-	Text _title, _description;
+	Ui::Text::String _title, _description;
 	int _siteNameWidth = 0;
 
 	QString _duration;

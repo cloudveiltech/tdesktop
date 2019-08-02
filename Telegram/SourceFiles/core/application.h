@@ -11,8 +11,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/auth_key.h"
 #include "base/timer.h"
 
-class AuthSession;
 class AuthSessionSettings;
+class MainWindow;
 class MainWidget;
 class FileUploader;
 class Translator;
@@ -24,11 +24,20 @@ class Databases;
 
 namespace Window {
 struct TermsLock;
+class Controller;
 } // namespace Window
+
+namespace ChatHelpers {
+class EmojiKeywords;
+} // namespace ChatHelpers
 
 namespace App {
 void quit();
 } // namespace App
+
+namespace Main {
+class Account;
+} // namespace Main
 
 namespace Ui {
 namespace Animations {
@@ -64,15 +73,12 @@ namespace Core {
 class Launcher;
 struct LocalUrlHandler;
 
-class Application final
-	: public QObject
-	, public RPCSender
-	, private base::Subscriber {
+class Application final : public QObject, private base::Subscriber {
 public:
 	Application(not_null<Launcher*> launcher);
-
 	Application(const Application &other) = delete;
 	Application &operator=(const Application &other) = delete;
+	~Application();
 
 	not_null<Launcher*> launcher() const {
 		return _launcher;
@@ -85,7 +91,7 @@ public:
 	}
 
 	// Windows interface.
-	MainWindow *getActiveWindow() const;
+	Window::Controller *activeWindow() const;
 	bool closeActiveWindow();
 	bool minimizeActiveWindow();
 	QWidget *getFileDialogParent();
@@ -139,26 +145,21 @@ public:
 	}
 	void suggestMainDcId(MTP::DcId mainDcId);
 	void destroyStaleAuthorizationKeys();
+	void configUpdated();
+	[[nodiscard]] rpl::producer<> configUpdates() const;
 
-	// Databases
+	// Databases.
 	Storage::Databases &databases() {
 		return *_databases;
 	}
 
+	// Account component.
+	Main::Account &activeAccount() const {
+		return *_account;
+	}
+
 	// AuthSession component.
-	AuthSession *authSession() {
-		return _authSession.get();
-	}
-	Lang::Instance &langpack() {
-		return *_langpack;
-	}
-	Lang::CloudManager *langCloudManager() {
-		return _langCloudManager.get();
-	}
 	void authSessionCreate(const MTPUser &user);
-	base::Observable<void> &authSessionChanged() {
-		return _authSessionChanged;
-	}
 	int unreadBadge() const;
 	bool unreadBadgeMuted() const;
 	void logOut();
@@ -166,6 +167,17 @@ public:
 	// Media component.
 	Media::Audio::Instance &audio() {
 		return *_audio;
+	}
+
+	// Langpack and emoji keywords.
+	Lang::Instance &langpack() {
+		return *_langpack;
+	}
+	Lang::CloudManager *langCloudManager() {
+		return _langCloudManager.get();
+	}
+	ChatHelpers::EmojiKeywords &emojiKeywords() {
+		return *_emojiKeywords;
 	}
 
 	// Internal links.
@@ -188,7 +200,6 @@ public:
 	[[nodiscard]] std::optional<Window::TermsLock> termsLocked() const;
 	rpl::producer<bool> termsLockChanges() const;
 	rpl::producer<bool> termsLockValue() const;
-	void termsDeleteNow();
 
 	[[nodiscard]] bool locked() const;
 	rpl::producer<bool> lockChanges() const;
@@ -226,8 +237,6 @@ public:
 		_callDelayedTimer.call(duration, std::move(lambda));
 	}
 
-	~Application();
-
 protected:
 	bool eventFilter(QObject *object, QEvent *event) override;
 
@@ -264,16 +273,17 @@ private:
 
 	const std::unique_ptr<Storage::Databases> _databases;
 	const std::unique_ptr<Ui::Animations::Manager> _animationsManager;
-	std::unique_ptr<MainWindow> _window;
+	const std::unique_ptr<Main::Account> _account;
+	std::unique_ptr<Window::Controller> _window;
 	std::unique_ptr<Media::View::OverlayWidget> _mediaView;
 	const std::unique_ptr<Lang::Instance> _langpack;
 	std::unique_ptr<Lang::CloudManager> _langCloudManager;
+	const std::unique_ptr<ChatHelpers::EmojiKeywords> _emojiKeywords;
 	std::unique_ptr<Lang::Translator> _translator;
 	std::unique_ptr<MTP::DcOptions> _dcOptions;
 	std::unique_ptr<MTP::Instance> _mtproto;
 	std::unique_ptr<MTP::Instance> _mtprotoForKeysDestroy;
-	std::unique_ptr<AuthSession> _authSession;
-	base::Observable<void> _authSessionChanged;
+	rpl::event_stream<> _configUpdates;
 	base::Observable<void> _passcodedChanged;
 	QPointer<BoxContent> _badProxyDisableBox;
 

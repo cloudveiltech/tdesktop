@@ -14,10 +14,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/assertion.h"
 #include "base/bytes.h"
 
+#include <crl/crl_time.h>
 #include <QtCore/QReadWriteLock>
 #include <QtCore/QRegularExpression>
 #include <QtNetwork/QNetworkProxy>
-
 #include <cmath>
 #include <set>
 
@@ -35,44 +35,6 @@ inline constexpr D up_cast(T object) {
 		return nullptr;
 	}
 }
-
-// We need a custom comparator for std::set<std::unique_ptr<T>>::find to work with pointers.
-// thanks to http://stackoverflow.com/questions/18939882/raw-pointer-lookup-for-sets-of-unique-ptrs
-template <typename T>
-struct pointer_comparator {
-	using is_transparent = std::true_type;
-
-	// helper does some magic in order to reduce the number of
-	// pairs of types we need to know how to compare: it turns
-	// everything into a pointer, and then uses `std::less<T*>`
-	// to do the comparison:
-	struct helper {
-		T *ptr = nullptr;
-		helper() = default;
-		helper(const helper &other) = default;
-		helper(T *p) : ptr(p) {
-		}
-		template <typename ...Ts>
-		helper(const std::shared_ptr<Ts...> &other) : ptr(other.get()) {
-		}
-		template <typename ...Ts>
-		helper(const std::unique_ptr<Ts...> &other) : ptr(other.get()) {
-		}
-		bool operator<(helper other) const {
-			return std::less<T*>()(ptr, other.ptr);
-		}
-	};
-
-	// without helper, we'd need 2^n different overloads, where
-	// n is the number of types we want to support (so, 8 with
-	// raw pointers, unique pointers, and shared pointers).  That
-	// seems silly.
-	// && helps enforce rvalue use only
-	bool operator()(const helper &&lhs, const helper &&rhs) const {
-		return lhs < rhs;
-	}
-
-};
 
 template <typename T>
 using set_of_unique_ptr = std::set<std::unique_ptr<T>, base::pointer_comparator<T>>;
@@ -92,12 +54,6 @@ inline bool in_range(Value &&value, From &&from, Till &&till) {
 // if you have "QVector<T*> v" then "for (T * const p : v)" will still call QVector::detach(),
 // while "for_const (T *p, v)" won't and "for_const (T *&p, v)" won't compile
 #define for_const(range_declaration, range_expression) for (range_declaration : std::as_const(range_expression))
-
-template <typename Lambda>
-inline void InvokeQueued(QObject *context, Lambda &&lambda) {
-	QObject proxy;
-	QObject::connect(&proxy, &QObject::destroyed, context, std::forward<Lambda>(lambda), Qt::QueuedConnection);
-}
 
 static const int32 ScrollMax = INT_MAX;
 
@@ -139,14 +95,7 @@ inline QByteArray str_const_toByteArray(const str_const &str) {
 	return QByteArray::fromRawData(str.c_str(), str.size());
 }
 
-void unixtimeInit();
-void unixtimeSet(TimeId serverTime, bool force = false);
-TimeId unixtime();
-uint64 msgid();
 int GetNextRequestId();
-
-QDateTime ParseDateTime(TimeId serverTime);
-TimeId ServerTimeFromParsed(const QDateTime &date);
 
 inline void mylocaltime(struct tm * _Tm, const time_t * _Time) {
 #ifdef Q_OS_WIN
@@ -227,17 +176,6 @@ T rand_value() {
 	return result;
 }
 
-inline void memset_rand_bad(void *data, uint32 len) {
-	for (uchar *i = reinterpret_cast<uchar*>(data), *e = i + len; i != e; ++i) {
-		*i = uchar(rand() & 0xFF);
-	}
-}
-
-template <typename T>
-inline void memsetrnd_bad(T &value) {
-	memset_rand_bad(&value, sizeof(value));
-}
-
 class ReadLockerAttempt {
 public:
 	ReadLockerAttempt(not_null<QReadWriteLock*> lock) : _lock(lock), _locked(_lock->tryLockForRead()) {
@@ -314,6 +252,11 @@ struct ProxyData {
 		Http,
 		Mtproto,
 	};
+	enum class Status {
+		Valid,
+		Unsupported,
+		Invalid,
+	};
 
 	Type type = Type::None;
 	QString host;
@@ -323,16 +266,18 @@ struct ProxyData {
 	std::vector<QString> resolvedIPs;
 	crl::time resolvedExpireAt = 0;
 
-	bool valid() const;
-	bool supportsCalls() const;
-	bool tryCustomResolve() const;
-	bytes::vector secretFromMtprotoPassword() const;
-	explicit operator bool() const;
-	bool operator==(const ProxyData &other) const;
-	bool operator!=(const ProxyData &other) const;
+	[[nodiscard]] bool valid() const;
+	[[nodiscard]] Status status() const;
+	[[nodiscard]] bool supportsCalls() const;
+	[[nodiscard]] bool tryCustomResolve() const;
+	[[nodiscard]] bytes::vector secretFromMtprotoPassword() const;
+	[[nodiscard]] explicit operator bool() const;
+	[[nodiscard]] bool operator==(const ProxyData &other) const;
+	[[nodiscard]] bool operator!=(const ProxyData &other) const;
 
-	static bool ValidMtprotoPassword(const QString &secret);
-	static int MaxMtprotoPasswordLength();
+	[[nodiscard]] static bool ValidMtprotoPassword(const QString &password);
+	[[nodiscard]] static Status MtprotoPasswordStatus(
+		const QString &password);
 
 };
 
@@ -340,23 +285,6 @@ ProxyData ToDirectIpProxy(const ProxyData &proxy, int ipIndex = 0);
 QNetworkProxy ToNetworkProxy(const ProxyData &proxy);
 
 static const int MatrixRowShift = 40000;
-
-enum DBIPlatform {
-	dbipWindows = 0,
-	dbipMac = 1,
-	dbipLinux64 = 2,
-	dbipLinux32 = 3,
-	dbipMacOld = 4,
-};
-
-enum DBIPeerReportSpamStatus {
-	dbiprsNoButton = 0, // hidden, but not in the cloud settings yet
-	dbiprsUnknown = 1, // contacts not loaded yet
-	dbiprsShowButton = 2, // show report spam button, each show peer request setting from cloud
-	dbiprsReportSent = 3, // report sent, but the report spam panel is not hidden yet
-	dbiprsHidden = 4, // hidden in the cloud or not needed (bots, contacts, etc), no more requests
-	dbiprsRequesting = 5, // requesting the cloud setting right now
-};
 
 inline int rowscount(int fullCount, int countPerRow) {
 	return (fullCount + countPerRow - 1) / countPerRow;

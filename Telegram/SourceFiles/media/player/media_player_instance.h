@@ -15,8 +15,18 @@ namespace Media {
 namespace Audio {
 class Instance;
 } // namespace Audio
+} // namespace Media
+
+namespace Media {
+namespace View {
+class PlaybackProgress;
+} // namespace View
+} // namespace Media
+
+namespace Media {
 namespace Streaming {
-class Loader;
+class Player;
+class Reader;
 struct PlaybackOptions;
 struct Update;
 enum class Error;
@@ -68,30 +78,35 @@ public:
 
 	void play(const AudioMsgId &audioId);
 	void playPause(const AudioMsgId &audioId);
-	TrackState getState(AudioMsgId::Type type) const;
+	[[nodiscard]] TrackState getState(AudioMsgId::Type type) const;
 
-	AudioMsgId current(AudioMsgId::Type type) const {
-		if (auto data = getData(type)) {
+	[[nodiscard]] Streaming::Player *roundVideoPlayer(
+		HistoryItem *item) const;
+	[[nodiscard]] View::PlaybackProgress *roundVideoPlayback(
+		HistoryItem *item) const;
+
+	[[nodiscard]] AudioMsgId current(AudioMsgId::Type type) const {
+		if (const auto data = getData(type)) {
 			return data->current;
 		}
 		return AudioMsgId();
 	}
 
-	bool repeatEnabled(AudioMsgId::Type type) const {
-		if (auto data = getData(type)) {
+	[[nodiscard]] bool repeatEnabled(AudioMsgId::Type type) const {
+		if (const auto data = getData(type)) {
 			return data->repeatEnabled;
 		}
 		return false;
 	}
 	void toggleRepeat(AudioMsgId::Type type) {
-		if (auto data = getData(type)) {
+		if (const auto data = getData(type)) {
 			data->repeatEnabled = !data->repeatEnabled;
 			_repeatChangedNotifier.notify(type);
 		}
 	}
 
-	bool isSeeking(AudioMsgId::Type type) const {
-		if (auto data = getData(type)) {
+	[[nodiscard]] bool isSeeking(AudioMsgId::Type type) const {
+		if (const auto data = getData(type)) {
 			return (data->seeking == data->current);
 		}
 		return false;
@@ -100,8 +115,10 @@ public:
 	void finishSeeking(AudioMsgId::Type type, float64 progress);
 	void cancelSeeking(AudioMsgId::Type type);
 
-	bool nextAvailable(AudioMsgId::Type type) const;
-	bool previousAvailable(AudioMsgId::Type type) const;
+	void updateVoicePlaybackSpeed();
+
+	[[nodiscard]] bool nextAvailable(AudioMsgId::Type type) const;
+	[[nodiscard]] bool previousAvailable(AudioMsgId::Type type) const;
 
 	struct Switch {
 		AudioMsgId from;
@@ -113,9 +130,6 @@ public:
 	}
 	base::Observable<bool> &playerWidgetOver() {
 		return _playerWidgetOver;
-	}
-	base::Observable<TrackState> &updatedNotifier() {
-		return _updatedNotifier;
 	}
 	base::Observable<AudioMsgId::Type> &tracksFinishedNotifier() {
 		return _tracksFinishedNotifier;
@@ -129,9 +143,18 @@ public:
 
 	rpl::producer<> playlistChanges(AudioMsgId::Type type) const;
 
-	void documentLoadProgress(DocumentData *document);
+	void playerWidgetToggledNotify(bool toggled) {
+		_playerWidgetToggled.fire_copy({toggled});
+	}
+	rpl::producer<bool> playerWidgetToggled() const {
+		return _playerWidgetToggled.events();
+	}
+	rpl::producer<TrackState> updatedNotifier() const {
+		return _updatedNotifier.events();
+	}
 
-	void handleLogout();
+
+	void documentLoadProgress(DocumentData *document);
 
 private:
 	using SharedMediaType = Storage::SharedMediaType;
@@ -170,7 +193,7 @@ private:
 	void setupShortcuts();
 	void playStreamed(
 		const AudioMsgId &audioId,
-		std::unique_ptr<Streaming::Loader> loader);
+		std::shared_ptr<Streaming::Reader> reader);
 	Streaming::PlaybackOptions streamingOptions(
 		const AudioMsgId &audioId,
 		crl::time position = 0);
@@ -220,16 +243,21 @@ private:
 		return nullptr;
 	}
 
+	HistoryItem *roundVideoItem() const;
+	void requestRoundVideoResize() const;
+	void requestRoundVideoRepaint() const;
+
 	Data _songData;
 	Data _voiceData;
 
 	base::Observable<Switch> _switchToNextNotifier;
 	base::Observable<bool> _playerWidgetOver;
-	base::Observable<TrackState> _updatedNotifier;
 	base::Observable<AudioMsgId::Type> _tracksFinishedNotifier;
 	base::Observable<AudioMsgId::Type> _trackChangedNotifier;
 	base::Observable<AudioMsgId::Type> _repeatChangedNotifier;
 
+	rpl::event_stream<bool> _playerWidgetToggled;
+	rpl::event_stream<TrackState> _updatedNotifier;
 	rpl::lifetime _lifetime;
 
 };

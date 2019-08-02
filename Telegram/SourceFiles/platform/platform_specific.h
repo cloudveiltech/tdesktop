@@ -40,13 +40,13 @@ void RequestPermission(PermissionType type, Fn<void(PermissionStatus)> resultCal
 void OpenSystemSettingsForPermission(PermissionType type);
 bool OpenSystemSettings(SystemSettingsType type);
 
-[[nodiscard]] QString SystemLanguage();
-[[nodiscard]] QString SystemCountry();
-
 [[nodiscard]] std::optional<crl::time> LastUserInputTime();
 [[nodiscard]] inline bool LastUserInputTimeSupported() {
 	return LastUserInputTime().has_value();
 }
+
+[[nodiscard]] constexpr bool UseMainQueueGeneric();
+void DrainMainQueue(); // Needed only if UseMainQueueGeneric() is false.
 
 namespace ThirdParty {
 

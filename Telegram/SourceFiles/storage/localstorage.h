@@ -110,7 +110,8 @@ bool hasDraftCursors(const PeerId &peer);
 bool hasDraft(const PeerId &peer);
 
 void writeFileLocation(MediaKey location, const FileLocation &local);
-FileLocation readFileLocation(MediaKey location, bool check = true);
+FileLocation readFileLocation(MediaKey location);
+void removeFileLocation(MediaKey location);
 
 Storage::EncryptionKey cacheKey();
 QString cachePath();
@@ -167,12 +168,6 @@ void saveRecentSearchHashtags(const QString &text);
 
 void WriteExportSettings(const Export::Settings &settings);
 Export::Settings ReadExportSettings();
-
-void addSavedPeer(PeerData *peer, const QDateTime &position);
-void removeSavedPeer(PeerData *peer);
-void readSavedPeers();
-
-void writeReportSpamStatuses();
 
 void writeSelf();
 void readSelf(const QByteArray &serialized, int32 streamVersion);

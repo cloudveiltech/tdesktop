@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/dc_options.h"
 
 #include "storage/serialize_common.h"
+#include "mtproto/connection_tcp.h"
 
 namespace MTP {
 namespace {
@@ -87,6 +88,14 @@ private:
 
 };
 
+bool DcOptions::ValidateSecret(bytes::const_span secret) {
+	// See also TcpConnection::Protocol::Create.
+	return (secret.size() >= 21 && secret[0] == bytes::type(0xEE))
+		|| (secret.size() == 17 && secret[0] == bytes::type(0xDD))
+		|| (secret.size() == 16)
+		|| secret.empty();
+}
+
 void DcOptions::readBuiltInPublicKeys() {
 	for (const auto key : PublicRSAKeys) {
 		const auto keyBytes = bytes::make_span(key, strlen(key));
@@ -146,15 +155,13 @@ void DcOptions::processFromList(
 		}
 
 		auto &option = mtpOption.c_dcOption();
-		auto dcId = option.vid.v;
-		auto flags = option.vflags.v;
+		auto dcId = option.vid().v;
+		auto flags = option.vflags().v;
 		auto ip = std::string(
-			option.vip_address.v.constData(),
-			option.vip_address.v.size());
-		auto port = option.vport.v;
-		auto secret = option.has_secret()
-			? bytes::make_vector(option.vsecret.v)
-			: bytes::vector();
+			option.vip_address().v.constData(),
+			option.vip_address().v.size());
+		auto port = option.vport().v;
+		auto secret = bytes::make_vector(option.vsecret().value_or_empty());
 		ApplyOneOption(data, dcId, flags, ip, port, secret);
 	}
 
@@ -259,7 +266,7 @@ bool DcOptions::ApplyOneOption(
 				return false;
 			}
 		}
-		i->second.push_back(Endpoint(dcId, flags, ip, port, secret));
+		i->second.emplace_back(dcId, flags, ip, port, secret);
 	} else {
 		data.emplace(dcId, std::vector<Endpoint>(
 			1,
@@ -537,18 +544,18 @@ DcType DcOptions::dcType(ShiftedDcId shiftedDcId) const {
 void DcOptions::setCDNConfig(const MTPDcdnConfig &config) {
 	WriteLocker lock(this);
 	_cdnPublicKeys.clear();
-	for_const (auto &publicKey, config.vpublic_keys.v) {
+	for_const (auto &publicKey, config.vpublic_keys().v) {
 		Expects(publicKey.type() == mtpc_cdnPublicKey);
 		const auto &keyData = publicKey.c_cdnPublicKey();
-		const auto keyBytes = bytes::make_span(keyData.vpublic_key.v);
+		const auto keyBytes = bytes::make_span(keyData.vpublic_key().v);
 		auto key = internal::RSAPublicKey(keyBytes);
 		if (key.isValid()) {
-			_cdnPublicKeys[keyData.vdc_id.v].emplace(
+			_cdnPublicKeys[keyData.vdc_id().v].emplace(
 				key.getFingerPrint(),
 				std::move(key));
 		} else {
 			LOG(("MTP Error: could not read this public RSA key:"));
-			LOG((qs(keyData.vpublic_key)));
+			LOG((qs(keyData.vpublic_key())));
 		}
 	}
 }
@@ -597,6 +604,8 @@ auto DcOptions::lookup(
 				continue;
 			} else if (type != DcType::MediaDownload
 				&& (flags & Flag::f_media_only)) {
+				continue;
+			} else if (!ValidateSecret(endpoint.secret)) {
 				continue;
 			}
 			const auto address = (flags & Flag::f_ipv6)

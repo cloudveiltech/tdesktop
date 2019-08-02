@@ -25,8 +25,8 @@ WarningWidget::WarningWidget(QWidget *parent)
 : TWidget(parent)
 , _timer([=] { handleTimer(); })
 , _secondsLeft(kWaitBeforeRevertMs / 1000)
-, _keepChanges(this, langFactory(lng_theme_keep_changes), st::defaultBoxButton)
-, _revert(this, langFactory(lng_theme_revert), st::defaultBoxButton) {
+, _keepChanges(this, tr::lng_theme_keep_changes(), st::defaultBoxButton)
+, _revert(this, tr::lng_theme_revert(), st::defaultBoxButton) {
 	_keepChanges->setClickedCallback([] { Window::Theme::KeepApplied(); });
 	_revert->setClickedCallback([] { Window::Theme::Revert(); });
 	updateText();
@@ -42,12 +42,12 @@ void WarningWidget::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
 	if (!_cache.isNull()) {
-		if (!_animation.animating(crl::now())) {
+		if (!_animation.animating()) {
 			if (isHidden()) {
 				return;
 			}
 		}
-		p.setOpacity(_animation.current(_hiding ? 0. : 1.));
+		p.setOpacity(_animation.value(_hiding ? 0. : 1.));
 		p.drawPixmap(_outer.topLeft(), _cache);
 		if (!_animation.animating()) {
 			_cache = QPixmap();
@@ -63,7 +63,7 @@ void WarningWidget::paintEvent(QPaintEvent *e) {
 
 	p.setFont(st::boxTitleFont);
 	p.setPen(st::boxTitleFg);
-	p.drawTextLeft(_inner.x() + st::boxTitlePosition.x(), _inner.y() + st::boxTitlePosition.y(), width(), lang(lng_theme_sure_keep));
+	p.drawTextLeft(_inner.x() + st::boxTitlePosition.x(), _inner.y() + st::boxTitlePosition.y(), width(), tr::lng_theme_sure_keep(tr::now));
 
 	p.setFont(st::boxTextFont);
 	p.setPen(st::boxTextFg);
@@ -106,7 +106,7 @@ void WarningWidget::setSecondsLeft(int secondsLeft) {
 }
 
 void WarningWidget::updateText() {
-	_text = lng_theme_reverting(lt_count, _secondsLeft);
+	_text = tr::lng_theme_reverting(tr::now, lt_count, _secondsLeft);
 }
 
 void WarningWidget::showAnimated() {

@@ -16,12 +16,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history.h"
 #include "history/view/history_view_element.h"
 #include "history/view/history_view_cursor_state.h"
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "ui/empty_userpic.h"
 #include "ui/text_options.h"
 #include "data/data_session.h"
 #include "data/data_user.h"
 #include "data/data_media_types.h"
+#include "auth_session.h"
 #include "styles/style_history.h"
 
 namespace {
@@ -34,7 +35,7 @@ namespace {
 
 ClickHandlerPtr sendMessageClickHandler(PeerData *peer) {
 	return std::make_shared<LambdaClickHandler>([peer] {
-		App::wnd()->controller()->showPeerHistory(
+		App::wnd()->sessionController()->showPeerHistory(
 			peer->id,
 			Window::SectionShow::Way::Forward);
 	});
@@ -42,7 +43,7 @@ ClickHandlerPtr sendMessageClickHandler(PeerData *peer) {
 
 ClickHandlerPtr addContactClickHandler(not_null<HistoryItem*> item) {
 	return std::make_shared<LambdaClickHandler>([fullId = item->fullId()] {
-		if (const auto item = App::histItemById(fullId)) {
+		if (const auto item = Auth().data().message(fullId)) {
 			if (const auto media = item->media()) {
 				if (const auto contact = media->sharedContact()) {
 					Ui::show(Box<AddContactBox>(
@@ -72,7 +73,7 @@ HistoryContact::HistoryContact(
 
 	_name.setText(
 		st::semiboldTextStyle,
-		lng_full_name(lt_first_name, first, lt_last_name, last).trimmed(),
+		tr::lng_full_name(tr::now, lt_first_name, first, lt_last_name, last).trimmed(),
 		Ui::NameTextOptions());
 	_phonew = st::normalFont->width(_phone);
 }
@@ -99,17 +100,19 @@ QSize HistoryContact::countOptimalSize() {
 	if (_contact) {
 		_contact->loadUserpic();
 	} else {
+		const auto full = _name.toString();
 		_photoEmpty = std::make_unique<Ui::EmptyUserpic>(
-			Data::PeerUserpicColor(_userId ? _userId : _parent->data()->id),
-			_name.originalText());
+			Data::PeerUserpicColor(_userId
+				? peerFromUser(_userId)
+				: Data::FakePeerIdForJustName(full)),
+			full);
 	}
-	if (_contact
-		&& _contact->contactStatus() == UserData::ContactStatus::Contact) {
+	if (_contact && _contact->isContact()) {
 		_linkl = sendMessageClickHandler(_contact);
-		_link = lang(lng_profile_send_message).toUpper();
+		_link = tr::lng_profile_send_message(tr::now).toUpper();
 	} else if (_userId) {
 		_linkl = addContactClickHandler(_parent->data());
-		_link = lang(lng_profile_add_contact).toUpper();
+		_link = tr::lng_profile_add_contact(tr::now).toUpper();
 	}
 	_linkw = _link.isEmpty() ? 0 : st::semiboldFont->width(_link);
 

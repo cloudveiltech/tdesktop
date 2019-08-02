@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/media/info_media_list_widget.h"
 #include "history/history.h"
 #include "history/history_item.h"
+#include "data/data_session.h"
 #include "data/data_document.h"
 #include "data/data_media_types.h"
 #include "data/data_channel.h"
@@ -18,6 +19,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/shadow.h"
 #include "ui/widgets/scroll_area.h"
 #include "mainwindow.h"
+#include "auth_session.h"
 #include "styles/style_overview.h"
 #include "styles/style_widgets.h"
 #include "styles/style_media_player.h"
@@ -36,7 +38,7 @@ constexpr auto kDelayedHideTimeout = crl::time(3000);
 
 Panel::Panel(
 	QWidget *parent,
-	not_null<Window::Controller*> window)
+	not_null<Window::SessionController*> window)
 : RpWidget(parent)
 , AbstractController(window)
 , _showTimer([this] { startShow(); })
@@ -52,12 +54,6 @@ bool Panel::overlaps(const QRect &globalRect) {
 	auto marginLeft = rtl() ? contentRight() : contentLeft();
 	auto marginRight = rtl() ? contentLeft() : contentRight();
 	return rect().marginsRemoved(QMargins(marginLeft, contentTop(), marginRight, contentBottom())).contains(QRect(mapFromGlobal(globalRect.topLeft()), globalRect.size()));
-}
-
-void Panel::windowActiveChanged() {
-	if (!App::wnd()->windowHandle()->isActive() && !isHidden()) {
-		leaveEvent(nullptr);
-	}
 }
 
 void Panel::resizeEvent(QResizeEvent *e) {
@@ -138,9 +134,9 @@ void Panel::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
 	if (!_cache.isNull()) {
-		bool animating = _a_appearance.animating(crl::now());
+		bool animating = _a_appearance.animating();
 		if (animating) {
-			p.setOpacity(_a_appearance.current(_hiding ? 0. : 1.));
+			p.setOpacity(_a_appearance.value(_hiding ? 0. : 1.));
 		} else if (_hiding || isHidden()) {
 			hideFinished();
 			return;
@@ -168,12 +164,12 @@ void Panel::enterEventHook(QEvent *e) {
 	if (_ignoringEnterEvents || contentTooSmall()) return;
 
 	_hideTimer.cancel();
-	if (_a_appearance.animating(crl::now())) {
+	if (_a_appearance.animating()) {
 		startShow();
 	} else {
 		_showTimer.callOnce(0);
 	}
-	return TWidget::enterEventHook(e);
+	return RpWidget::enterEventHook(e);
 }
 
 void Panel::leaveEventHook(QEvent *e) {
@@ -181,17 +177,17 @@ void Panel::leaveEventHook(QEvent *e) {
 		return;
 	}
 	_showTimer.cancel();
-	if (_a_appearance.animating(crl::now())) {
+	if (_a_appearance.animating()) {
 		startHide();
 	} else {
 		_hideTimer.callOnce(300);
 	}
-	return TWidget::leaveEventHook(e);
+	return RpWidget::leaveEventHook(e);
 }
 
 void Panel::showFromOther() {
 	_hideTimer.cancel();
-	if (_a_appearance.animating(crl::now())) {
+	if (_a_appearance.animating()) {
 		startShow();
 	} else {
 		_showTimer.callOnce(300);
@@ -200,7 +196,7 @@ void Panel::showFromOther() {
 
 void Panel::hideFromOther() {
 	_showTimer.cancel();
-	if (_a_appearance.animating(crl::now())) {
+	if (_a_appearance.animating()) {
 		startHide();
 	} else {
 		_hideTimer.callOnce(0);
@@ -217,15 +213,12 @@ void Panel::ensureCreated() {
 	});
 	refreshList();
 
-	if (cPlatform() == dbipMac || cPlatform() == dbipMacOld) {
-		if (const auto window = App::wnd()) {
-			connect(
-				window->windowHandle(),
-				&QWindow::activeChanged,
-				this,
-				&Panel::windowActiveChanged);
-		}
-	}
+	macWindowDeactivateEvents(
+	) | rpl::filter([=] {
+		return !isHidden();
+	}) | rpl::start_with_next([=] {
+		leaveEvent(nullptr);
+	}, _refreshListLifetime);
 
 	_ignoringEnterEvents = false;
 }
@@ -234,7 +227,7 @@ void Panel::refreshList() {
 	const auto current = instance()->current(AudioMsgId::Type::Song);
 	const auto contextId = current.contextId();
 	const auto peer = [&]() -> PeerData* {
-		const auto item = contextId ? App::histItemById(contextId) : nullptr;
+		const auto item = contextId ? Auth().data().message(contextId) : nullptr;
 		const auto media = item ? item->media() : nullptr;
 		const auto document = media ? media->document() : nullptr;
 		if (!document || !document->isSharedMediaMusic()) {
@@ -306,16 +299,6 @@ void Panel::performDestroy() {
 	_scroll->takeWidget<QWidget>().destroy();
 	_listPeer = _listMigratedPeer = nullptr;
 	_refreshListLifetime.destroy();
-
-	if (cPlatform() == dbipMac || cPlatform() == dbipMacOld) {
-		if (const auto window = App::wnd()) {
-			disconnect(
-				window->windowHandle(),
-				&QWindow::activeChanged,
-				this,
-				&Panel::windowActiveChanged);
-		}
-	}
 }
 
 Info::Key Panel::key() const {

@@ -319,6 +319,11 @@ bool DebugEnabled() {
 #endif
 }
 
+QString ProfilePrefix() {
+	const auto now = crl::profile();
+	return '[' + QString::number(now / 1000., 'f', 3) + "] ";
+}
+
 void start(not_null<Core::Launcher*> launcher) {
 	Assert(LogsData == nullptr);
 
@@ -340,7 +345,7 @@ void start(not_null<Core::Launcher*> launcher) {
 			// or from the "-workdir" command line argument.
 			cForceWorkingDir(cWorkingDir());
 		} else {
-#ifdef _DEBUG
+#if defined _DEBUG && !defined OS_MAC_STORE
 			cForceWorkingDir(cExeDir());
 #else // _DEBUG
 			cForceWorkingDir(psAppDataPath());

@@ -9,10 +9,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/timer.h"
 #include "ui/rp_widget.h"
+#include "ui/effects/animations.h"
 #include "info/info_controller.h"
 
 namespace Window {
-class Controller;
+class SessionController;
 } // namespace Window
 
 namespace Ui {
@@ -29,7 +30,7 @@ class Panel : public Ui::RpWidget, private Info::AbstractController {
 public:
 	Panel(
 		QWidget *parent,
-		not_null<Window::Controller*> controller);
+		not_null<Window::SessionController*> controller);
 
 	bool overlaps(const QRect &globalRect);
 
@@ -59,7 +60,6 @@ private:
 	void listHeightUpdated(int newHeight);
 	int emptyInnerHeight() const;
 	bool contentTooSmall() const;
-	void windowActiveChanged();
 
 	void ensureCreated();
 	void performDestroy();
@@ -90,7 +90,7 @@ private:
 	bool _hiding = false;
 
 	QPixmap _cache;
-	Animation _a_appearance;
+	Ui::Animations::Simple _a_appearance;
 
 	bool _ignoringEnterEvents = false;
 

@@ -9,10 +9,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "data/data_document.h"
 #include "data/data_file_origin.h"
+#include "data/data_session.h"
 #include "ui/image/image_source.h"
 #include "ui/widgets/input_fields.h"
 #include "storage/cache/storage_cache_types.h"
 #include "base/openssl_help.h"
+#include "auth_session.h"
 
 namespace Data {
 namespace {
@@ -61,16 +63,9 @@ Storage::Cache::Key DocumentThumbCacheKey(int32 dcId, uint64 id) {
 	};
 }
 
-Storage::Cache::Key StorageCacheKey(const StorageImageLocation &location) {
-	const auto dcId = uint64(location.dc()) & 0xFFULL;
-	return Storage::Cache::Key{
-		Data::kStorageCacheTag | (dcId << 32) | uint32(location.local()),
-		location.volume()
-	};
-}
-
 Storage::Cache::Key WebDocumentCacheKey(const WebFileLocation &location) {
-	const auto dcId = uint64(location.dc()) & 0xFFULL;
+	const auto CacheDcId = cTestMode() ? 2 : 4;
+	const auto dcId = uint64(CacheDcId) & 0xFFULL;
 	const auto &url = location.url();
 	const auto hash = openssl::Sha256(bytes::make_span(url));
 	const auto bytes = bytes::make_span(hash);
@@ -214,19 +209,19 @@ void MessageCursor::applyTo(not_null<Ui::InputField*> field) {
 }
 
 HistoryItem *FileClickHandler::getActionItem() const {
-	return context()
-		? App::histItemById(context())
-		: nullptr;
+	return Auth().data().message(context());
 }
 
 PeerId PeerFromMessage(const MTPmessage &message) {
 	return message.match([](const MTPDmessageEmpty &) {
 		return PeerId(0);
 	}, [](const auto &message) {
-		auto from_id = message.has_from_id() ? peerFromUser(message.vfrom_id) : 0;
-		auto to_id = peerFromMTP(message.vto_id);
-		auto out = message.is_out();
-		return (out || !peerIsUser(to_id)) ? to_id : from_id;
+		const auto fromId = message.vfrom_id();
+		const auto toId = peerFromMTP(message.vto_id());
+		const auto out = message.is_out();
+		return (out || !fromId || !peerIsUser(toId))
+			? toId
+			: peerFromUser(*fromId);
 	});
 }
 
@@ -234,15 +229,15 @@ MTPDmessage::Flags FlagsFromMessage(const MTPmessage &message) {
 	return message.match([](const MTPDmessageEmpty &) {
 		return MTPDmessage::Flags(0);
 	}, [](const MTPDmessage &message) {
-		return message.vflags.v;
+		return message.vflags().v;
 	}, [](const MTPDmessageService &message) {
-		return mtpCastFlags(message.vflags.v);
+		return mtpCastFlags(message.vflags().v);
 	});
 }
 
 MsgId IdFromMessage(const MTPmessage &message) {
 	return message.match([](const auto &message) {
-		return message.vid.v;
+		return message.vid().v;
 	});
 }
 
@@ -250,6 +245,6 @@ TimeId DateFromMessage(const MTPmessage &message) {
 	return message.match([](const MTPDmessageEmpty &) {
 		return TimeId(0);
 	}, [](const auto &message) {
-		return message.vdate.v;
+		return message.vdate().v;
 	});
 }

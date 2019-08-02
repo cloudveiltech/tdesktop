@@ -30,7 +30,7 @@ protected:
 	void paintEvent(QPaintEvent *e) override;
 
 private:
-	void step(crl::time ms, bool timer);
+	void animationStep();
 
 	Ui::InfiniteRadialAnimation _animation;
 
@@ -38,7 +38,7 @@ private:
 
 Progress::Progress(QWidget *parent)
 : RpWidget(parent)
-, _animation(animation(this, &Progress::step), st::connectingRadial) {
+, _animation([=] { animationStep(); }, st::connectingRadial) {
 	setAttribute(Qt::WA_OpaquePaintEvent);
 	setAttribute(Qt::WA_TransparentForMouseEvents);
 	resize(st::connectingRadial.size);
@@ -58,8 +58,8 @@ void Progress::paintEvent(QPaintEvent *e) {
 		width());
 }
 
-void Progress::step(crl::time ms, bool timer) {
-	if (timer && !anim::Disabled()) {
+void Progress::animationStep() {
+	if (!anim::Disabled()) {
 		update();
 	}
 }
@@ -245,11 +245,11 @@ void ConnectionState::raise() {
 
 void ConnectionState::finishAnimating() {
 	if (_contentWidth.animating()) {
-		_contentWidth.finish();
+		_contentWidth.stop();
 		updateWidth();
 	}
 	if (_visibility.animating()) {
-		_visibility.finish();
+		_visibility.stop();
 		updateVisibility();
 	}
 }
@@ -376,14 +376,14 @@ void ConnectionState::refreshProgressVisibility() {
 void ConnectionState::updateVisibility() {
 	const auto value = currentVisibility();
 	if (value == 0. && _contentWidth.animating()) {
-		_contentWidth.finish();
+		_contentWidth.stop();
 		updateWidth();
 	}
 	_visibilityValues.fire_copy(value);
 }
 
 float64 ConnectionState::currentVisibility() const {
-	return _visibility.current(_currentLayout.visible ? 1. : 0.);
+	return _visibility.value(_currentLayout.visible ? 1. : 0.);
 }
 
 rpl::producer<float64> ConnectionState::visibility() const {
@@ -399,17 +399,17 @@ auto ConnectionState::computeLayout(const State &state) const -> Layout {
 		|| state.type == State::Type::Waiting;
 	switch (state.type) {
 	case State::Type::Connecting:
-		result.text = state.underCursor ? lang(lng_connecting) : QString();
+		result.text = state.underCursor ? tr::lng_connecting(tr::now) : QString();
 		break;
 
 	case State::Type::Waiting:
 		Assert(state.waitTillRetry > 0);
-		result.text = lng_reconnecting(lt_count, state.waitTillRetry);
+		result.text = tr::lng_reconnecting(tr::now, lt_count, state.waitTillRetry);
 		break;
 	}
 	result.textWidth = st::normalFont->width(result.text);
 	const auto maxTextWidth = (state.type == State::Type::Waiting)
-		? st::normalFont->width(lng_reconnecting(lt_count, 88))
+		? st::normalFont->width(tr::lng_reconnecting(tr::now, lt_count, 88))
 		: result.textWidth;
 	result.contentWidth = (result.textWidth > 0)
 		? (st::connectingTextPadding.left()
@@ -419,7 +419,7 @@ auto ConnectionState::computeLayout(const State &state) const -> Layout {
 	if (state.type == State::Type::Waiting) {
 		result.contentWidth += st::connectingRetryLink.padding.left()
 			+ st::connectingRetryLink.font->width(
-				lang(lng_reconnecting_try_now))
+				tr::lng_reconnecting_try_now(tr::now))
 			+ st::connectingRetryLink.padding.right();
 	}
 	result.hasRetry = (state.type == State::Type::Waiting);
@@ -427,7 +427,7 @@ auto ConnectionState::computeLayout(const State &state) const -> Layout {
 }
 
 void ConnectionState::updateWidth() {
-	const auto current = _contentWidth.current(_currentLayout.contentWidth);
+	const auto current = _contentWidth.value(_currentLayout.contentWidth);
 	const auto height = st::connectingLeft.height();
 	const auto desired = QRect(0, 0, current, height).marginsAdded(
 		style::margins(
@@ -576,7 +576,7 @@ void ConnectionState::Widget::refreshRetryLink(bool hasRetry) {
 	if (hasRetry && !_retry) {
 		_retry = base::make_unique_q<Ui::LinkButton>(
 			this,
-			lang(lng_reconnecting_try_now),
+			tr::lng_reconnecting_try_now(tr::now),
 			st::connectingRetryLink);
 		_retry->addClickHandler([=] {
 			MTP::restart();

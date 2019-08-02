@@ -9,8 +9,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 class HistoryItem;
 class HistoryMedia;
-class LocationCoords;
-struct LocationData;
 
 namespace base {
 template <typename Enum>
@@ -28,6 +26,9 @@ class Element;
 } // namespace HistoryView
 
 namespace Data {
+
+class LocationPoint;
+struct LocationThumbnail;
 
 enum class CallFinishReason : char {
 	Missed,
@@ -76,7 +77,7 @@ public:
 	virtual const Call *call() const;
 	virtual GameData *game() const;
 	virtual const Invoice *invoice() const;
-	virtual LocationData *location() const;
+	virtual LocationThumbnail *location() const;
 	virtual PollData *poll() const;
 
 	virtual bool uploading() const;
@@ -89,10 +90,11 @@ public:
 	virtual QString chatListText() const;
 	virtual QString notificationText() const = 0;
 	virtual QString pinnedTextSubstring() const = 0;
-	virtual TextWithEntities clipboardText() const = 0;
+	virtual TextForMimeData clipboardText() const = 0;
 	virtual bool allowsForward() const;
 	virtual bool allowsEdit() const;
 	virtual bool allowsEditCaption() const;
+	virtual bool allowsEditMedia() const;
 	virtual bool allowsRevoke() const;
 	virtual bool forwardedBecomesUnread() const;
 	virtual QString errorTextForForward(not_null<PeerData*> peer) const;
@@ -139,8 +141,9 @@ public:
 	QString chatListText() const override;
 	QString notificationText() const override;
 	QString pinnedTextSubstring() const override;
-	TextWithEntities clipboardText() const override;
+	TextForMimeData clipboardText() const override;
 	bool allowsEditCaption() const override;
+	bool allowsEditMedia() const override;
 	QString errorTextForForward(not_null<PeerData*> peer) const override;
 
 	bool updateInlineResultMedia(const MTPMessageMedia &media) override;
@@ -174,8 +177,9 @@ public:
 	QString chatListText() const override;
 	QString notificationText() const override;
 	QString pinnedTextSubstring() const override;
-	TextWithEntities clipboardText() const override;
+	TextForMimeData clipboardText() const override;
 	bool allowsEditCaption() const override;
+	bool allowsEditMedia() const override;
 	bool forwardedBecomesUnread() const override;
 	QString errorTextForForward(not_null<PeerData*> peer) const override;
 
@@ -206,7 +210,7 @@ public:
 	const SharedContact *sharedContact() const override;
 	QString notificationText() const override;
 	QString pinnedTextSubstring() const override;
-	TextWithEntities clipboardText() const override;
+	TextForMimeData clipboardText() const override;
 
 	bool updateInlineResultMedia(const MTPMessageMedia &media) override;
 	bool updateSentMedia(const MTPMessageMedia &media) override;
@@ -223,20 +227,20 @@ class MediaLocation : public Media {
 public:
 	MediaLocation(
 		not_null<HistoryItem*> parent,
-		const LocationCoords &coords);
+		const LocationPoint &point);
 	MediaLocation(
 		not_null<HistoryItem*> parent,
-		const LocationCoords &coords,
+		const LocationPoint &point,
 		const QString &title,
 		const QString &description);
 
 	std::unique_ptr<Media> clone(not_null<HistoryItem*> parent) override;
 
-	LocationData *location() const override;
+	LocationThumbnail *location() const override;
 	QString chatListText() const override;
 	QString notificationText() const override;
 	QString pinnedTextSubstring() const override;
-	TextWithEntities clipboardText() const override;
+	TextForMimeData clipboardText() const override;
 
 	bool updateInlineResultMedia(const MTPMessageMedia &media) override;
 	bool updateSentMedia(const MTPMessageMedia &media) override;
@@ -245,7 +249,7 @@ public:
 		not_null<HistoryItem*> realParent) override;
 
 private:
-	not_null<LocationData*> _location;
+	not_null<LocationThumbnail*> _location;
 	QString _title;
 	QString _description;
 
@@ -262,9 +266,8 @@ public:
 	const Call *call() const override;
 	QString notificationText() const override;
 	QString pinnedTextSubstring() const override;
-	TextWithEntities clipboardText() const override;
+	TextForMimeData clipboardText() const override;
 	bool allowsForward() const override;
-	bool allowsRevoke() const override;
 
 	bool updateInlineResultMedia(const MTPMessageMedia &media) override;
 	bool updateSentMedia(const MTPMessageMedia &media) override;
@@ -299,7 +302,7 @@ public:
 	QString chatListText() const override;
 	QString notificationText() const override;
 	QString pinnedTextSubstring() const override;
-	TextWithEntities clipboardText() const override;
+	TextForMimeData clipboardText() const override;
 	bool allowsEdit() const override;
 
 	bool updateInlineResultMedia(const MTPMessageMedia &media) override;
@@ -327,7 +330,7 @@ public:
 	Image *replyPreview() const override;
 	QString notificationText() const override;
 	QString pinnedTextSubstring() const override;
-	TextWithEntities clipboardText() const override;
+	TextForMimeData clipboardText() const override;
 	QString errorTextForForward(not_null<PeerData*> peer) const override;
 
 	bool consumeMessageText(const TextWithEntities &text) override;
@@ -362,7 +365,7 @@ public:
 	Image *replyPreview() const override;
 	QString notificationText() const override;
 	QString pinnedTextSubstring() const override;
-	TextWithEntities clipboardText() const override;
+	TextForMimeData clipboardText() const override;
 
 	bool updateInlineResultMedia(const MTPMessageMedia &media) override;
 	bool updateSentMedia(const MTPMessageMedia &media) override;
@@ -388,7 +391,7 @@ public:
 
 	QString notificationText() const override;
 	QString pinnedTextSubstring() const override;
-	TextWithEntities clipboardText() const override;
+	TextForMimeData clipboardText() const override;
 	QString errorTextForForward(not_null<PeerData*> peer) const override;
 
 	bool updateInlineResultMedia(const MTPMessageMedia &media) override;
@@ -402,8 +405,8 @@ private:
 
 };
 
-TextWithEntities WithCaptionClipboardText(
+TextForMimeData WithCaptionClipboardText(
 	const QString &attachType,
-	TextWithEntities &&caption);
+	TextForMimeData &&caption);
 
 } // namespace Data

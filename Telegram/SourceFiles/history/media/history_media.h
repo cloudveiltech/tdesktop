@@ -49,9 +49,9 @@ public:
 
 	[[nodiscard]] not_null<History*> history() const;
 
-	[[nodiscard]] virtual TextWithEntities selectedText(
+	[[nodiscard]] virtual TextForMimeData selectedText(
 			TextSelection selection) const {
-		return TextWithEntities();
+		return TextForMimeData();
 	}
 
 	[[nodiscard]] virtual bool isDisplayed() const;
@@ -220,6 +220,9 @@ public:
 		return true;
 	}
 
+	virtual void unloadHeavyPart() {
+	}
+
 	// Should be called only by Data::Session.
 	virtual void updateSharedContactUserId(UserId userId) {
 	}
@@ -233,7 +236,7 @@ protected:
 	using InfoDisplayType = HistoryView::InfoDisplayType;
 
 	QSize countCurrentSize(int newWidth) override;
-	Text createCaption(not_null<HistoryItem*> item) const;
+	Ui::Text::String createCaption(not_null<HistoryItem*> item) const;
 
 	virtual void playAnimation(bool autoplay) {
 	}

@@ -304,9 +304,9 @@ TextSelection HistoryGroupedMedia::adjustSelection(
 	return _caption.adjustSelection(selection, type);
 }
 
-TextWithEntities HistoryGroupedMedia::selectedText(
+TextForMimeData HistoryGroupedMedia::selectedText(
 		TextSelection selection) const {
-	return _caption.originalTextWithEntities(selection, ExpandLinksAll);
+	return _caption.toTextForMimeData(selection);
 }
 
 void HistoryGroupedMedia::clickHandlerActiveChanged(
@@ -390,19 +390,21 @@ HistoryMessageEdited *HistoryGroupedMedia::displayedEditBadge() const {
 }
 
 void HistoryGroupedMedia::updateNeedBubbleState() {
-	const auto hasCaption = [&] {
-		if (_parts.front().item->emptyText()) {
-			return false;
-		}
-		for (auto i = 1, count = int(_parts.size()); i != count; ++i) {
-			if (!_parts[i].item->emptyText()) {
-				return false;
+	const auto captionItem = [&]() -> HistoryItem* {
+		auto result = (HistoryItem*)nullptr;
+		for (const auto &part : _parts) {
+			if (!part.item->emptyText()) {
+				if (result) {
+					return nullptr;
+				} else {
+					result = part.item;
+				}
 			}
 		}
-		return true;
+		return result;
 	}();
-	if (hasCaption) {
-		_caption = createCaption(_parts.front().item);
+	if (captionItem) {
+		_caption = createCaption(captionItem);
 	}
 	_needBubble = computeNeedBubble();
 }

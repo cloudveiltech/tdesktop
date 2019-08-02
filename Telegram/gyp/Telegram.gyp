@@ -81,6 +81,9 @@
       'lib_base.gyp:lib_base',
       'lib_export.gyp:lib_export',
       'lib_storage.gyp:lib_storage',
+      'lib_lottie.gyp:lib_lottie',
+      'lib_ffmpeg.gyp:lib_ffmpeg',
+      'lib_mtproto.gyp:lib_mtproto',
     ],
 
     'defines': [
@@ -116,7 +119,7 @@
       '<@(style_files)',
       '<!@(<(list_sources_command) <(qt_moc_list_sources_arg))',
       'telegram_sources.txt',
-	  '<(res_loc)/langs/cloud_lang.strings',
+      '<(res_loc)/langs/cloud_lang.strings',
       '<(res_loc)/export_html/css/style.css',
       '<(res_loc)/export_html/js/script.js',
       '<(res_loc)/export_html/images/back.png',
@@ -129,15 +132,23 @@
       [ '"<(official_build_target)" != ""', {
         'defines': [
           'TDESKTOP_OFFICIAL_TARGET=<(official_build_target)',
+          'TDESKTOP_FORCE_GTK_FILE_DIALOG',
         ],
         'dependencies': [
           'utils.gyp:Packer',
         ],
       }], [ 'build_mac', {
+        'mac_hardened_runtime': 1,
         'mac_bundle': '1',
         'mac_bundle_resources': [
           '<!@(python -c "for s in \'<@(langpacks)\'.split(\' \'): print(\'<(res_loc)/langs/\' + s + \'.lproj/Localizable.strings\')")',
           '../Telegram/Images.xcassets',
+        ],
+        'xcode_settings': {
+          'ENABLE_HARDENED_RUNTIME': 'YES',
+        },
+        'sources': [
+          '../Telegram/Telegram.entitlements',
         ],
       }], [ 'build_macstore', {
         'mac_sandbox': 1,

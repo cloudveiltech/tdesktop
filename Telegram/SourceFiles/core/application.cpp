@@ -13,11 +13,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_user.h"
 #include "base/timer.h"
 #include "base/concurrent_timer.h"
+#include "base/unixtime.h"
 #include "core/update_checker.h"
 #include "core/shortcuts.h"
 #include "core/sandbox.h"
 #include "core/local_url_handlers.h"
 #include "core/launcher.h"
+#include "chat_helpers/emoji_keywords.h"
 #include "storage/localstorage.h"
 #include "platform/platform_specific.h"
 #include "mainwindow.h"
@@ -33,12 +35,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "observer_peer.h"
 #include "storage/storage_databases.h"
 #include "mainwidget.h"
+#include "main/main_account.h"
 #include "media/view/media_view_overlay_widget.h"
 #include "mtproto/dc_options.h"
 #include "mtproto/mtp_instance.h"
 #include "media/audio/media_audio.h"
 #include "media/audio/media_audio_track.h"
 #include "media/player/media_player_instance.h"
+#include "media/clip/media_clip_reader.h" // For Media::Clip::Finish().
 #include "window/notifications_manager.h"
 #include "window/themes/window_theme.h"
 #include "window/window_lock_widgets.h"
@@ -49,6 +53,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/emoji_config.h"
 #include "ui/effects/animations.h"
 #include "storage/serialize_common.h"
+#include "window/window_session_controller.h"
 #include "window/window_controller.h"
 #include "base/qthelp_regex.h"
 #include "base/qthelp_url.h"
@@ -82,7 +87,9 @@ Application::Application(not_null<Launcher*> launcher)
 , _private(std::make_unique<Private>())
 , _databases(std::make_unique<Storage::Databases>())
 , _animationsManager(std::make_unique<Ui::Animations::Manager>())
+, _account(std::make_unique<Main::Account>(cDataFile()))
 , _langpack(std::make_unique<Lang::Instance>())
+, _emojiKeywords(std::make_unique<ChatHelpers::EmojiKeywords>())
 , _audio(std::make_unique<Media::Audio::Instance>())
 , _logo(Window::LoadLogo())
 , _logoNoMargin(Window::LoadLogoNoMargin()) {
@@ -91,6 +98,43 @@ Application::Application(not_null<Launcher*> launcher)
 	Expects(Instance == nullptr);
 
 	Instance = this;
+}
+
+Application::~Application() {
+	_window.reset();
+	_mediaView.reset();
+
+	// This can call writeMap() that serializes AuthSession.
+	// In case it gets called after authSessionDestroy() we get missing data.
+	Local::finish();
+
+	// Some MTP requests can be cancelled from data clearing.
+	authSessionDestroy();
+
+	// The langpack manager should be destroyed before MTProto instance,
+	// because it is MTP::Sender and it may have pending requests.
+	_langCloudManager.reset();
+
+	_mtproto.reset();
+	_mtprotoForKeysDestroy.reset();
+
+	Shortcuts::Finish();
+
+	Ui::Emoji::Clear();
+	Media::Clip::Finish();
+
+	stopWebLoadManager();
+	App::deinitMedia();
+
+	Window::Theme::Unload();
+
+	Media::Player::finish(_audio.get());
+	style::stopManager();
+
+	Global::finish();
+	ThirdParty::finish();
+
+	Instance = nullptr;
 }
 
 void Application::run() {
@@ -116,15 +160,11 @@ void Application::run() {
 	QCoreApplication::instance()->installTranslator(_translator.get());
 
 	style::startManager();
-	anim::startManager();
 	Ui::InitTextOptions();
 	Ui::Emoji::Init();
 	Media::Player::start(_audio.get());
 
 	DEBUG_LOG(("Application Info: inited..."));
-
-	QCoreApplication::instance()->installNativeEventFilter(
-		psNativeEventFilter());
 
 	cChangeTimeFormat(QLocale::system().timeFormat(QLocale::ShortFormat));
 
@@ -133,12 +173,11 @@ void Application::run() {
 	// Create mime database, so it won't be slow later.
 	QMimeDatabase().mimeTypeForName(qsl("text/plain"));
 
-	_window = std::make_unique<MainWindow>();
-	_window->init();
+	_window = std::make_unique<Window::Controller>(&activeAccount());
 
-	auto currentGeometry = _window->geometry();
+	const auto currentGeometry = _window->widget()->geometry();
 	_mediaView = std::make_unique<Media::View::OverlayWidget>();
-	_window->setGeometry(currentGeometry);
+	_window->widget()->setGeometry(currentGeometry);
 
 	QCoreApplication::instance()->installEventFilter(this);
 	connect(
@@ -162,7 +201,7 @@ void Application::run() {
 		DEBUG_LOG(("Application Info: local map read..."));
 		startMtp();
 		DEBUG_LOG(("Application Info: MTP started..."));
-		if (AuthSession::Exists()) {
+		if (activeAccount().sessionExists()) {
 			_window->setupMain();
 		} else {
 			_window->setupIntro();
@@ -185,8 +224,8 @@ void Application::run() {
 bool Application::hideMediaView() {
 	if (_mediaView && !_mediaView->isHidden()) {
 		_mediaView->hide();
-		if (auto activeWindow = getActiveWindow()) {
-			activeWindow->reActivateWindow();
+		if (const auto window = activeWindow()) {
+			window->reActivate();
 		}
 		return true;
 	}
@@ -194,11 +233,12 @@ bool Application::hideMediaView() {
 }
 
 void Application::showPhoto(not_null<const PhotoOpenClickHandler*> link) {
-	const auto item = App::histItemById(link->context());
+	const auto photo = link->photo();
 	const auto peer = link->peer();
+	const auto item = photo->owner().message(link->context());
 	return (!item && peer)
-		? showPhoto(link->photo(), peer)
-		: showPhoto(link->photo(), item);
+		? showPhoto(photo, peer)
+		: showPhoto(photo, item);
 }
 
 void Application::showPhoto(not_null<PhotoData*> photo, HistoryItem *item) {
@@ -359,7 +399,9 @@ QByteArray Application::serializeMtpAuthorization() const {
 			QDataStream stream(&result, QIODevice::WriteOnly);
 			stream.setVersion(QDataStream::Qt_5_1);
 
-			auto currentUserId = _authSession ? _authSession->userId() : 0;
+			auto currentUserId = activeAccount().sessionExists()
+				? activeAccount().session().userId()
+				: 0;
 			stream << qint32(currentUserId) << qint32(mainDcId);
 			writeKeys(stream, keys);
 			writeKeys(stream, keysToDestroy);
@@ -379,7 +421,7 @@ QByteArray Application::serializeMtpAuthorization() const {
 }
 
 void Application::setAuthSessionUserId(UserId userId) {
-	Expects(!authSession());
+	Expects(!activeAccount().sessionExists());
 
 	_private->authSessionUserId = userId;
 }
@@ -388,7 +430,7 @@ void Application::setAuthSessionFromStorage(
 		std::unique_ptr<AuthSessionSettings> data,
 		QByteArray &&selfSerialized,
 		int32 selfStreamVersion) {
-	Expects(!authSession());
+	Expects(!activeAccount().sessionExists());
 
 	DEBUG_LOG(("authSessionUserSerialized set: %1"
 		).arg(selfSerialized.size()));
@@ -403,8 +445,8 @@ AuthSessionSettings *Application::getAuthSessionSettings() {
 		return _private->storedAuthSession
 			? _private->storedAuthSession.get()
 			: nullptr;
-	} else if (_authSession) {
-		return &_authSession->settings();
+	} else if (activeAccount().sessionExists()) {
+		return &activeAccount().session().settings();
 	}
 	return nullptr;
 }
@@ -504,8 +546,8 @@ void Application::startMtp() {
 			base::take(_private->authSessionUserStreamVersion));
 	}
 	if (_private->storedAuthSession) {
-		if (_authSession) {
-			_authSession->moveSettingsFrom(
+		if (activeAccount().sessionExists()) {
+			activeAccount().session().moveSettingsFrom(
 				std::move(*_private->storedAuthSession));
 		}
 		_private->storedAuthSession.reset();
@@ -518,12 +560,9 @@ void Application::startMtp() {
 		UpdateChecker().setMtproto(mtp());
 	}
 
-	if (_authSession) {
+	if (activeAccount().sessionExists()) {
 		// Skip all pending self updates so that we won't Local::writeSelf.
 		Notify::peerUpdatedSendDelayed();
-
-		Media::Player::mixer()->setVoicePlaybackDoubled(
-			Global::VoiceMsgPlaybackDoubled());
 	}
 }
 
@@ -560,7 +599,7 @@ void Application::allKeysDestroyed() {
 }
 
 void Application::suggestMainDcId(MTP::DcId mainDcId) {
-	Assert(_mtproto != nullptr);
+	Expects(_mtproto != nullptr);
 
 	_mtproto->suggestMainDcId(mainDcId);
 	if (_private->mtpConfig.mainDcId != MTP::Instance::Config::kNotSetMainDc) {
@@ -569,7 +608,7 @@ void Application::suggestMainDcId(MTP::DcId mainDcId) {
 }
 
 void Application::destroyStaleAuthorizationKeys() {
-	Assert(_mtproto != nullptr);
+	Expects(_mtproto != nullptr);
 
 	for (const auto &key : _mtproto->getKeysForWrite()) {
 		// Disable this for now.
@@ -581,6 +620,14 @@ void Application::destroyStaleAuthorizationKeys() {
 			return;
 		}
 	}
+}
+
+void Application::configUpdated() {
+	_configUpdates.fire({});
+}
+
+rpl::producer<> Application::configUpdates() const {
+	return _configUpdates.events();
 }
 
 void Application::resetAuthorizationKeys() {
@@ -601,11 +648,14 @@ void Application::startLocalStorage() {
 			}
 		}
 	});
-	subscribe(authSessionChanged(), [=] {
-		InvokeQueued(this, [=] {
-			const auto phone = AuthSession::Exists()
-				? Auth().user()->phone()
-				: QString();
+	activeAccount().sessionChanges(
+	) | rpl::start_with_next([=] {
+		crl::on_main(this, [=] {
+			const auto phone = activeAccount().sessionExists()
+					? activeAccount().session().user()->phone()
+					: QString();
+			const auto support = activeAccount().sessionExists()
+				&& activeAccount().session().supportMode();
 			if (cLoggedPhoneNumber() != phone) {
 				cSetLoggedPhoneNumber(phone);
 				if (_mtproto) {
@@ -616,17 +666,17 @@ void Application::startLocalStorage() {
 			if (_mtproto) {
 				_mtproto->requestConfig();
 			}
-			Platform::SetApplicationIcon(Window::CreateIcon());
-			Shortcuts::ToggleSupportShortcuts(
-				_authSession && _authSession->supportMode());
+			Platform::SetApplicationIcon(
+				Window::CreateIcon(&activeAccount()));
+			Shortcuts::ToggleSupportShortcuts(support);
 		});
-	});
+	}, _lifetime);
 }
 
 void Application::forceLogOut(const TextWithEntities &explanation) {
 	const auto box = Ui::show(Box<InformBox>(
 		explanation,
-		lang(lng_passcode_logout)));
+		tr::lng_passcode_logout(tr::now)));
 	box->setCloseByEscape(false);
 	box->setCloseByOutsideClick(false);
 	connect(box, &QObject::destroyed, [=] {
@@ -643,6 +693,7 @@ void Application::checkLocalTime() {
 	if (crl::adjust_time()) {
 		base::Timer::Adjust();
 		base::ConcurrentTimerEnvironment::Adjust();
+		base::unixtime::http_invalidate();
 		if (App::main()) App::main()->checkLastUpdate(true);
 	} else {
 		if (App::main()) App::main()->checkLastUpdate(false);
@@ -725,7 +776,6 @@ void Application::writeInstallBetaVersionsSetting() {
 void Application::authSessionCreate(const MTPUser &user) {
 	Expects(_mtproto != nullptr);
 
-	_authSession = std::make_unique<AuthSession>(user);
 	_mtproto->setUpdatesHandler(::rpcDone([](
 			const mtpPrime *from,
 			const mtpPrime *end) {
@@ -734,36 +784,39 @@ void Application::authSessionCreate(const MTPUser &user) {
 		}
 	}));
 	_mtproto->setGlobalFailHandler(::rpcFail([=](const RPCError &error) {
-		crl::on_main(_authSession.get(), [=] { logOut(); });
+		if (activeAccount().sessionExists()) {
+			crl::on_main(&activeAccount().session(), [=] { logOut(); });
+		}
 		return true;
 	}));
-	authSessionChanged().notify(true);
+
+	activeAccount().createSession(user);
 }
 
 void Application::authSessionDestroy() {
 	_private->storedAuthSession.reset();
 	_private->authSessionUserId = 0;
 	_private->authSessionUserSerialized = {};
-	if (_authSession) {
+	if (activeAccount().sessionExists()) {
 		unlockTerms();
 		_mtproto->clearGlobalHandlers();
 
-		// Must be called before Auth().data() is destroyed,
-		// because streaming media holds pointers to it.
-		Media::Player::instance()->handleLogout();
+		activeAccount().destroySession();
 
-		_authSession = nullptr;
-		authSessionChanged().notify(true);
 		Notify::unreadCounterUpdated();
 	}
 }
 
 int Application::unreadBadge() const {
-	return _authSession ? _authSession->data().unreadBadge() : 0;
+	return activeAccount().sessionExists()
+		? activeAccount().session().data().unreadBadge()
+		: 0;
 }
 
 bool Application::unreadBadgeMuted() const {
-	return _authSession ? _authSession->data().unreadBadgeMuted() : false;
+	return activeAccount().sessionExists()
+		? activeAccount().session().data().unreadBadgeMuted()
+		: false;
 }
 
 void Application::setInternalLinkDomain(const QString &domain) const {
@@ -807,7 +860,7 @@ QString Application::createInternalLinkFull(const QString &query) const {
 
 void Application::checkStartUrl() {
 	if (!cStartUrl().isEmpty() && !locked()) {
-		auto url = cStartUrl();
+		const auto url = cStartUrl();
 		cSetStartUrl(QString());
 		if (!openLocalUrl(url, {})) {
 			cSetStartUrl(url);
@@ -901,10 +954,6 @@ rpl::producer<bool> Application::termsLockValue() const {
 	) | rpl::then(termsLockChanges());
 }
 
-void Application::termsDeleteNow() {
-	MTP::send(MTPaccount_DeleteAccount(MTP_string("Decline ToS update")));
-}
-
 bool Application::locked() const {
 	return passcodeLocked() || termsLocked();
 }
@@ -921,7 +970,7 @@ rpl::producer<bool> Application::lockValue() const {
 		_1 || _2);
 }
 
-MainWindow *Application::getActiveWindow() const {
+Window::Controller *Application::activeWindow() const {
 	return _window.get();
 }
 
@@ -929,10 +978,8 @@ bool Application::closeActiveWindow() {
 	if (hideMediaView()) {
 		return true;
 	}
-	if (auto activeWindow = getActiveWindow()) {
-		if (!activeWindow->hideNoQuit()) {
-			activeWindow->close();
-		}
+	if (const auto window = activeWindow()) {
+		window->close();
 		return true;
 	}
 	return false;
@@ -940,19 +987,19 @@ bool Application::closeActiveWindow() {
 
 bool Application::minimizeActiveWindow() {
 	hideMediaView();
-	if (auto activeWindow = getActiveWindow()) {
-		if (Global::WorkMode().value() == dbiwmTrayOnly) {
-			activeWindow->minimizeToTray();
-		} else {
-			activeWindow->setWindowState(Qt::WindowMinimized);
-		}
+	if (const auto window = activeWindow()) {
+		window->minimize();
 		return true;
 	}
 	return false;
 }
 
 QWidget *Application::getFileDialogParent() {
-	return (_mediaView && _mediaView->isVisible()) ? (QWidget*)_mediaView.get() : (QWidget*)getActiveWindow();
+	return (_mediaView && _mediaView->isVisible())
+		? (QWidget*)_mediaView.get()
+		: activeWindow()
+		? (QWidget*)activeWindow()->widget()
+		: nullptr;
 }
 
 void Application::checkMediaViewActivation() {
@@ -987,13 +1034,12 @@ void Application::loggedOut() {
 	clearPasscodeLock();
 	Media::Player::mixer()->stopAndClear();
 	Global::SetVoiceMsgPlaybackDoubled(false);
-	Media::Player::mixer()->setVoicePlaybackDoubled(false);
-	if (const auto window = getActiveWindow()) {
+	if (const auto window = activeWindow()) {
 		window->tempDirDelete(Local::ClearManagerAll);
 		window->setupIntro();
 	}
-	if (const auto session = authSession()) {
-		session->data().clearLocalStorage();
+	if (activeAccount().sessionExists()) {
+		activeAccount().session().data().clearLocalStorage();
 		authSessionDestroy();
 	}
 	if (_mediaView) {
@@ -1007,12 +1053,8 @@ void Application::loggedOut() {
 }
 
 QPoint Application::getPointForCallPanelCenter() const {
-	if (auto activeWindow = getActiveWindow()) {
-		Assert(activeWindow->windowHandle() != nullptr);
-		if (activeWindow->isActive()) {
-			return activeWindow->geometry().center();
-		}
-		return activeWindow->windowHandle()->screen()->geometry().center();
+	if (const auto window = activeWindow()) {
+		return window->getPointForCallPanelCenter();
 	}
 	return QApplication::desktop()->screenGeometry().center();
 }
@@ -1020,10 +1062,10 @@ QPoint Application::getPointForCallPanelCenter() const {
 // macOS Qt bug workaround, sometimes no leaveEvent() gets to the nested widgets.
 void Application::registerLeaveSubscription(QWidget *widget) {
 #ifdef Q_OS_MAC
-	if (auto topLevel = widget->window()) {
-		if (topLevel == _window.get()) {
+	if (const auto topLevel = widget->window()) {
+		if (topLevel == _window->widget()) {
 			auto weak = make_weak(widget);
-			auto subscription = _window->leaveEvents(
+			auto subscription = _window->widget()->leaveEvents(
 			) | rpl::start_with_next([weak] {
 				if (const auto window = weak.data()) {
 					QEvent ev(QEvent::Leave);
@@ -1076,16 +1118,18 @@ void Application::preventWindowActivation() {
 
 void Application::QuitAttempt() {
 	auto prevents = false;
-	if (AuthSession::Exists() && !Sandbox::Instance().isSavingSession()) {
+	if (IsAppLaunched()
+		&& App().activeAccount().sessionExists()
+		&& !Sandbox::Instance().isSavingSession()) {
 		if (const auto mainwidget = App::main()) {
 			if (mainwidget->isQuitPrevent()) {
 				prevents = true;
 			}
 		}
-		if (Auth().api().isQuitPrevent()) {
+		if (App().activeAccount().session().api().isQuitPrevent()) {
 			prevents = true;
 		}
-		if (Auth().calls().isQuitPrevent()) {
+		if (App().activeAccount().session().calls().isQuitPrevent()) {
 			prevents = true;
 		}
 	}
@@ -1133,41 +1177,6 @@ void Application::startShortcuts() {
 			return closeActiveWindow();
 		});
 	}, _lifetime);
-}
-
-Application::~Application() {
-	_window.reset();
-	_mediaView.reset();
-
-	// Some MTP requests can be cancelled from data clearing.
-	authSessionDestroy();
-
-	// The langpack manager should be destroyed before MTProto instance,
-	// because it is MTP::Sender and it may have pending requests.
-	_langCloudManager.reset();
-
-	_mtproto.reset();
-	_mtprotoForKeysDestroy.reset();
-
-	Shortcuts::Finish();
-
-	Ui::Emoji::Clear();
-
-	anim::stopManager();
-
-	stopWebLoadManager();
-	App::deinitMedia();
-
-	Window::Theme::Unload();
-
-	Media::Player::finish(_audio.get());
-	style::stopManager();
-
-	Local::finish();
-	Global::finish();
-	ThirdParty::finish();
-
-	Instance = nullptr;
 }
 
 bool IsAppLaunched() {

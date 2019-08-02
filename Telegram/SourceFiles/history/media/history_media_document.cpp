@@ -25,6 +25,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace {
 
+constexpr auto kAudioVoiceMsgUpdateView = crl::time(100);
+
 using TextState = HistoryView::TextState;
 
 } // namespace
@@ -221,8 +223,8 @@ void HistoryDocument::draw(Painter &p, const QRect &r, TextSelection selection, 
 			_animation->radial.start(_data->progress());
 		}
 	}
-	bool showPause = updateStatusText();
-	bool radial = isRadialAnimation(ms);
+	const auto showPause = updateStatusText();
+	const auto radial = isRadialAnimation();
 
 	auto topMinus = isBubbleTop() ? 0 : st::msgFileTopMinus;
 	int nameleft = 0, nametop = 0, nameright = 0, statustop = 0, linktop = 0, bottom = 0;
@@ -241,8 +243,11 @@ void HistoryDocument::draw(Painter &p, const QRect &r, TextSelection selection, 
 		if (const auto normal = _data->thumbnail()) {
 			if (normal->loaded()) {
 				thumb = normal->pixSingle(_realParent->fullId(), thumbed->_thumbw, 0, st::msgFileThumbSize, st::msgFileThumbSize, roundRadius);
-			} else if (const auto blurred = _data->thumbnailInline()) {
-				thumb = blurred->pixBlurredSingle(_realParent->fullId(), thumbed->_thumbw, 0, st::msgFileThumbSize, st::msgFileThumbSize, roundRadius);
+			} else {
+				_data->loadThumbnail(_realParent->fullId());
+				if (const auto blurred = _data->thumbnailInline()) {
+					thumb = blurred->pixBlurredSingle(_realParent->fullId(), thumbed->_thumbw, 0, st::msgFileThumbSize, st::msgFileThumbSize, roundRadius);
+				}
 			}
 		}
 		p.drawPixmap(rthumb.topLeft(), thumb);
@@ -364,7 +369,7 @@ void HistoryDocument::draw(Painter &p, const QRect &r, TextSelection selection, 
 			if (voice->seeking()) {
 				return voice->seekingCurrent();
 			} else if (voice->_playback) {
-				return voice->_playback->a_progress.current();
+				return voice->_playback->progress.current();
 			}
 			return 0.;
 		})();
@@ -649,12 +654,12 @@ bool HistoryDocument::hasTextForCopy() const {
 	return Has<HistoryDocumentCaptioned>();
 }
 
-TextWithEntities HistoryDocument::selectedText(TextSelection selection) const {
+TextForMimeData HistoryDocument::selectedText(TextSelection selection) const {
 	if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
 		const auto &caption = captioned->_caption;
-		return caption.originalTextWithEntities(selection, ExpandLinksAll);
+		return captioned->_caption.toTextForMimeData(selection);
 	}
-	return TextWithEntities();
+	return TextForMimeData();
 }
 
 bool HistoryDocument::uploading() const {
@@ -670,15 +675,15 @@ void HistoryDocument::setStatusSize(int newSize, qint64 realDuration) const {
 	HistoryFileMedia::setStatusSize(newSize, _data->size, duration, realDuration);
 	if (auto thumbed = Get<HistoryDocumentThumbed>()) {
 		if (_statusSize == FileStatusSizeReady) {
-			thumbed->_link = lang(lng_media_download).toUpper();
+			thumbed->_link = tr::lng_media_download(tr::now).toUpper();
 		} else if (_statusSize == FileStatusSizeLoaded) {
-			thumbed->_link = lang(lng_media_open_with).toUpper();
+			thumbed->_link = tr::lng_media_open_with(tr::now).toUpper();
 		} else if (_statusSize == FileStatusSizeFailed) {
-			thumbed->_link = lang(lng_media_download).toUpper();
+			thumbed->_link = tr::lng_media_download(tr::now).toUpper();
 		} else if (_statusSize >= 0) {
-			thumbed->_link = lang(lng_media_cancel).toUpper();
+			thumbed->_link = tr::lng_media_cancel(tr::now).toUpper();
 		} else {
-			thumbed->_link = lang(lng_media_open_with).toUpper();
+			thumbed->_link = tr::lng_media_open_with(tr::now).toUpper();
 		}
 		thumbed->_linkw = st::semiboldFont->width(thumbed->_link);
 	}
@@ -707,15 +712,15 @@ bool HistoryDocument::updateStatusText() const {
 			if (auto voice = Get<HistoryDocumentVoice>()) {
 				bool was = (voice->_playback != nullptr);
 				voice->ensurePlayback(this);
-				if (!was || state.position != voice->_playback->_position) {
+				if (!was || state.position != voice->_playback->position) {
 					auto prg = state.length ? snap(float64(state.position) / state.length, 0., 1.) : 0.;
-					if (voice->_playback->_position < state.position) {
-						voice->_playback->a_progress.start(prg);
+					if (voice->_playback->position < state.position) {
+						voice->_playback->progress.start(prg);
 					} else {
-						voice->_playback->a_progress = anim::value(0., prg);
+						voice->_playback->progress = anim::value(0., prg);
 					}
-					voice->_playback->_position = state.position;
-					voice->_playback->_a_progress.start();
+					voice->_playback->position = state.position;
+					voice->_playback->progressAnimation.start();
 				}
 				voice->_lastDurationMs = static_cast<int>((state.length * 1000LL) / state.frequency); // Bad :(
 			}
@@ -759,24 +764,25 @@ bool HistoryDocument::hideForwardedFrom() const {
 	return _data->isSong();
 }
 
-void HistoryDocument::step_voiceProgress(float64 ms, bool timer) {
+bool HistoryDocument::voiceProgressAnimationCallback(crl::time now) {
 	if (anim::Disabled()) {
-		ms += (2 * AudioVoiceMsgUpdateView);
+		now += (2 * kAudioVoiceMsgUpdateView);
 	}
-	if (auto voice = Get<HistoryDocumentVoice>()) {
+	if (const auto voice = Get<HistoryDocumentVoice>()) {
 		if (voice->_playback) {
-			float64 dt = ms / (2 * AudioVoiceMsgUpdateView);
-			if (dt >= 1) {
-				voice->_playback->_a_progress.stop();
-				voice->_playback->a_progress.finish();
+			const auto dt = (now - voice->_playback->progressAnimation.started())
+				/ float64(2 * kAudioVoiceMsgUpdateView);
+			if (dt >= 1.) {
+				voice->_playback->progressAnimation.stop();
+				voice->_playback->progress.finish();
 			} else {
-				voice->_playback->a_progress.update(qMin(dt, 1.), anim::linear);
+				voice->_playback->progress.update(qMin(dt, 1.), anim::linear);
 			}
-			if (timer) {
-				history()->owner().requestViewRepaint(_parent);
-			}
+			history()->owner().requestViewRepaint(_parent);
+			return (dt < 1.);
 		}
 	}
+	return false;
 }
 
 void HistoryDocument::clickHandlerPressedChanged(const ClickHandlerPtr &p, bool pressed) {
@@ -793,8 +799,8 @@ void HistoryDocument::clickHandlerPressedChanged(const ClickHandlerPtr &p, bool 
 					currentProgress);
 
 				voice->ensurePlayback(this);
-				voice->_playback->_position = 0;
-				voice->_playback->a_progress = anim::value(currentProgress, currentProgress);
+				voice->_playback->position = 0;
+				voice->_playback->progress = anim::value(currentProgress, currentProgress);
 			}
 			voice->stopSeeking();
 		}
@@ -822,7 +828,7 @@ void HistoryDocument::refreshParentId(not_null<HistoryItem*> realParent) {
 void HistoryDocument::parentTextUpdated() {
 	auto caption = (_parent->media() == this)
 		? createCaption(_parent->data())
-		: Text();
+		: Ui::Text::String();
 	if (!caption.isEmpty()) {
 		AddComponents(HistoryDocumentCaptioned::Bit());
 		auto captioned = Get<HistoryDocumentCaptioned>();
@@ -835,7 +841,7 @@ void HistoryDocument::parentTextUpdated() {
 
 TextWithEntities HistoryDocument::getCaption() const {
 	if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
-		return captioned->_caption.originalTextWithEntities();
+		return captioned->_caption.toTextWithEntities();
 	}
 	return TextWithEntities();
 }

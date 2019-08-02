@@ -33,7 +33,7 @@ public:
 		~Item();
 
 		PeerData * const peer;
-		Text name;
+		Ui::Text::String name;
 		QString statusText;
 		bool statusHasOnlineColor = false;
 		enum class AdminState {
@@ -119,7 +119,7 @@ private:
 	void preloadPhotos();
 	int rowWidth() const;
 
-	void paintItem(Painter &p, int x, int y, Item *item, bool selected, bool selectedRemove, crl::time ms);
+	void paintItem(Painter &p, int x, int y, Item *item, bool selected, bool selectedRemove);
 
 	const style::PeerListItem &_st;
 

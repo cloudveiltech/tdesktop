@@ -13,11 +13,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/audio/media_audio.h"
 #include "history/history.h"
 #include "history/history_item_components.h"
-#include "history/feed/history_feed_section.h"
+//#include "history/feed/history_feed_section.h" // #feed
 #include "lang/lang_keys.h"
 #include "data/data_session.h"
 #include "data/data_channel.h"
-#include "window/window_controller.h"
+#include "base/unixtime.h"
+#include "window/window_session_controller.h"
 #include "core/application.h"
 #include "mainwindow.h"
 #include "mainwidget.h"
@@ -34,8 +35,8 @@ constexpr auto kWaitingForAllGroupedDelay = crl::time(1000);
 
 } // namespace
 
-System::System(AuthSession *session)
-: _authSession(session)
+System::System(not_null<AuthSession*> session)
+: _session(session)
 , _waitTimer([=] { showNext(); })
 , _waitForAllGroupedTimer([=] { showGrouped(); }) {
 	createManager();
@@ -98,7 +99,7 @@ void System::schedule(History *history, HistoryItem *item) {
 	}
 
 	auto delay = item->Has<HistoryMessageForwarded>() ? 500 : 100;
-	auto t = unixtime();
+	auto t = base::unixtime::now();
 	auto ms = crl::now();
 	bool isOnline = App::main()->lastWasOnline(), otherNotOld = ((cOtherOnline() * 1000LL) + Global::OnlineCloudTimeout() > t * 1000LL);
 	bool otherLaterThanMe = (cOtherOnline() * 1000LL + (ms - App::main()->lastSetOnline()) > t * 1000LL);
@@ -192,7 +193,7 @@ void System::checkDelayed() {
 			const auto fullId = FullMsgId(
 				history->channelId(),
 				i.value().msg);
-			if (const auto item = App::histItemById(fullId)) {
+			if (const auto item = Auth().data().message(fullId)) {
 				if (!item->notificationReady()) {
 					loaded = false;
 				}
@@ -214,7 +215,7 @@ void System::checkDelayed() {
 }
 
 void System::showGrouped() {
-	if (const auto lastItem = App::histItemById(_lastHistoryItemId)) {
+	if (const auto lastItem = Auth().data().message(_lastHistoryItemId)) {
 		_waitForAllGroupedTimer.cancel();
 		_manager->showNotification(lastItem, _lastForwardedCount);
 		_lastForwardedCount = 0;
@@ -229,7 +230,7 @@ void System::showNext() {
 		if (!_lastHistoryItemId || !item) {
 			return false;
 		}
-		if (const auto lastItem = App::histItemById(_lastHistoryItemId)) {
+		if (const auto lastItem = Auth().data().message(_lastHistoryItemId)) {
 			return (lastItem->groupId() == item->groupId() || lastItem->author() == item->author());
 		}
 		return false;
@@ -237,7 +238,7 @@ void System::showNext() {
 
 	auto ms = crl::now(), nextAlert = crl::time(0);
 	bool alert = false;
-	int32 now = unixtime();
+	int32 now = base::unixtime::now();
 	for (auto i = _whenAlerts.begin(); i != _whenAlerts.end();) {
 		while (!i.value().isEmpty() && i.value().begin().key() <= ms) {
 			const auto peer = i.key()->peer;
@@ -252,7 +253,7 @@ void System::showNext() {
 			if (peerAlert || fromAlert) {
 				alert = true;
 			}
-			
+
 			//CloudVeil start
 			if (!GlobalSecuritySettings::getSettings().isDialogAllowed(peer)) {
 				alert = false;
@@ -490,23 +491,23 @@ void Manager::openNotificationMessage(
 			|| !IsServerMsgId(messageId)) {
 			return false;
 		}
-		const auto item = App::histItemById(history->channelId(), messageId);
+		const auto item = Auth().data().message(history->channelId(), messageId);
 		if (!item || !item->mentionsMe()) {
 			return false;
 		}
 		return true;
 	}();
-	const auto messageFeed = [&] {
-		if (const auto channel = history->peer->asChannel()) {
-			return channel->feed();
-		}
-		return (Data::Feed*)nullptr;
-	}();
+	//const auto messageFeed = [&] { // #feed
+	//	if (const auto channel = history->peer->asChannel()) {
+	//		return channel->feed();
+	//	}
+	//	return (Data::Feed*)nullptr;
+	//}();
 	if (openExactlyMessage) {
 		Ui::showPeerHistory(history, messageId);
-	} else if (messageFeed) {
-		App::wnd()->controller()->showSection(
-			HistoryFeed::Memento(messageFeed));
+	//} else if (messageFeed) { // #feed
+	//	App::wnd()->sessionController()->showSection(
+	//		HistoryFeed::Memento(messageFeed));
 	} else {
 		Ui::showPeerHistory(history, ShowAtUnreadMsgId);
 	}
@@ -526,18 +527,23 @@ void Manager::notificationReplied(
 	message.replyTo = (msgId > 0 && !history->peer->isUser()) ? msgId : 0;
 	message.clearDraft = false;
 	Auth().api().sendMessage(std::move(message));
+
+	const auto item = history->owner().message(history->channelId(), msgId);
+	if (item && item->isUnreadMention() && !item->isUnreadMedia()) {
+		Auth().api().markMediaRead(item);
+	}
 }
 
 void NativeManager::doShowNotification(HistoryItem *item, int forwardedCount) {
 	const auto options = getNotificationOptions(item);
 
-	const auto title = options.hideNameAndPhoto ? qsl("CloudVeil Messenger") : item->history()->peer->name;
+	const auto title = options.hideNameAndPhoto ? qsl("Telegram Desktop") : item->history()->peer->name;
 	const auto subtitle = options.hideNameAndPhoto ? QString() : item->notificationHeader();
 	const auto text = options.hideMessageText
-		? lang(lng_notification_preview)
+		? tr::lng_notification_preview(tr::now)
 		: (forwardedCount < 2
-			? (item->groupId() ? lang(lng_in_dlg_album) : item->notificationText())
-			: lng_forward_messages(lt_count, forwardedCount));
+			? (item->groupId() ? tr::lng_in_dlg_album(tr::now) : item->notificationText())
+			: tr::lng_forward_messages(tr::now, lt_count, forwardedCount));
 
 	doShowNativeNotification(
 		item->history()->peer,

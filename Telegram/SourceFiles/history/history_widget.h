@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/field_autocomplete.h"
 #include "window/section_widget.h"
 #include "ui/widgets/input_fields.h"
+#include "ui/effects/animations.h"
 #include "ui/rp_widget.h"
 #include "base/flags.h"
 #include "base/timer.h"
@@ -22,7 +23,6 @@ struct SendingAlbum;
 enum class SendMediaType;
 enum class CompressConfirm;
 class MessageLinksParser;
-enum LangKey : int;
 
 namespace InlineBots {
 namespace Layout {
@@ -58,7 +58,7 @@ class RoundButton;
 } // namespace Ui
 
 namespace Window {
-class Controller;
+class SessionController;
 } // namespace Window
 
 namespace ChatHelpers {
@@ -77,6 +77,7 @@ struct UploadedThumbDocument;
 
 namespace HistoryView {
 class TopBarWidget;
+class ContactStatus;
 } // namespace HistoryView
 
 class DragArea;
@@ -86,37 +87,13 @@ class MessageField;
 class HistoryInner;
 struct HistoryMessageMarkupButton;
 
-class ReportSpamPanel : public TWidget {
-	Q_OBJECT
-
-public:
-	ReportSpamPanel(QWidget *parent);
-
-	void setReported(bool reported, PeerData *onPeer);
-
-signals:
-	void hideClicked();
-	void reportClicked();
-	void clearClicked();
-
-protected:
-	void resizeEvent(QResizeEvent *e) override;
-	void paintEvent(QPaintEvent *e) override;
-
-private:
-	object_ptr<Ui::FlatButton> _report;
-	object_ptr<Ui::FlatButton> _hide;
-	object_ptr<Ui::LinkButton> _clear;
-
-};
-
 class HistoryWidget final : public Window::AbstractSectionWidget, public RPCSender {
 	Q_OBJECT
 
 public:
 	using FieldHistoryAction = Ui::InputField::HistoryAction;
 
-	HistoryWidget(QWidget *parent, not_null<Window::Controller*> controller);
+	HistoryWidget(QWidget *parent, not_null<Window::SessionController*> controller);
 
 	void start();
 
@@ -152,14 +129,13 @@ public:
 
 	void updateRecentStickers();
 
-	void destroyData();
-
 	void updateFieldPlaceholder();
 	void updateStickersByEmoji();
 
 	bool confirmSendingFiles(const QStringList &files);
 	bool confirmSendingFiles(not_null<const QMimeData*> data);
-	void sendFileConfirmed(const std::shared_ptr<FileLoadResult> &file);
+	void sendFileConfirmed(const std::shared_ptr<FileLoadResult> &file,
+		const std::optional<FullMsgId> &oldId = std::nullopt);
 
 	void updateControlsVisibility();
 	void updateControlsGeometry();
@@ -186,7 +162,6 @@ public:
 
 	void enqueueMessageHighlight(not_null<HistoryView::Element*> view);
 	crl::time highlightStartTime(not_null<const HistoryItem*> item) const;
-	bool inSelectionMode() const;
 
 	MessageIdsList getSelectedItems() const;
 	void itemEdited(HistoryItem *item);
@@ -199,7 +174,6 @@ public:
 	void editMessage(not_null<HistoryItem*> item);
 	void pinMessage(FullMsgId itemId);
 	void unpinMessage(FullMsgId itemId);
-	void copyPostLink(FullMsgId itemId);
 
 	MsgId replyToId() const;
 	void messageDataReceived(ChannelData *channel, MsgId msgId);
@@ -219,10 +193,10 @@ public:
 	void updatePreview();
 	void previewCancel();
 
-	void step_recording(float64 ms, bool timer);
+	bool recordingAnimationCallback(crl::time now);
 	void stopRecording(bool send);
 
-	void onListEscapePressed();
+	void escape();
 
 	void sendBotCommand(PeerData *peer, UserData *bot, const QString &cmd, MsgId replyTo);
 	void hideSingleUseKeyboard(PeerData *peer, MsgId replyTo);
@@ -304,24 +278,9 @@ signals:
 	void cancelled();
 
 public slots:
-	void onCancel();
-	void onPinnedHide();
-	void onFieldBarCancel();
-
-	void onReportSpamClicked();
-	void onReportSpamHide();
-	void onReportSpamClear();
-
 	void onScroll();
 
-	void onUnblock();
-	void onBotStart();
-	void onJoinChannel();
-	void onMuteUnmute();
 	void onBroadcastSilentChange();
-
-	void onKbToggle(bool manual = true);
-	void onCmdStart();
 
 	void activate();
 	void onTextChange();
@@ -375,7 +334,6 @@ private:
 	void toggleTabbedSelectorMode();
 	void returnTabbedSelector(object_ptr<TabbedSelector> selector);
 	void recountChatWidth();
-	void setReportSpamStatus(DBIPeerReportSpamStatus status);
 	void historyDownClicked();
 	void showNextUnreadMention();
 	void handlePeerUpdate();
@@ -383,6 +341,19 @@ private:
 	void handleHistoryChange(not_null<const History*> history);
 	void refreshAboutProxyPromotion();
 	void unreadCountUpdated();
+
+	[[nodiscard]] int computeMaxFieldHeight() const;
+	void toggleMuteUnmute();
+	void toggleKeyboard(bool manual = true);
+	void startBotCommand();
+	void hidePinnedMessage();
+	void cancelFieldAreaState();
+	void unblockUser();
+	void sendBotStartCommand();
+	void joinChannel();
+	void goToDiscussionGroup();
+
+	[[nodiscard]] bool hasDiscussionGroup() const;
 
 	void supportInitAutocomplete();
 	void supportInsertText(const QString &text);
@@ -460,9 +431,20 @@ private:
 		const FullMsgId &msgId,
 		bool silent,
 		const MTPInputFile &file,
-		const MTPInputFile &thumb);
+		const MTPInputFile &thumb,
+		bool edit = false);
 	void documentProgress(const FullMsgId &msgId);
 	void documentFailed(const FullMsgId &msgId);
+
+	void documentEdited(
+		const FullMsgId &msgId,
+		bool silent,
+		const MTPInputFile &file);
+
+	void photoEdited(
+		const FullMsgId &msgId,
+		bool silent,
+		const MTPInputFile &file);
 
 	void itemRemoved(not_null<const HistoryItem*> item);
 
@@ -474,7 +456,7 @@ private:
 	void checkTabbedSelectorToggleTooltip();
 
 	bool canWriteMessage() const;
-	std::optional<LangKey> writeRestrictionKey() const;
+	std::optional<QString> writeRestriction() const;
 	void orderWidgets();
 
 	void clearInlineBot();
@@ -507,17 +489,17 @@ private:
 	void handlePeerMigration();
 
 	MsgId _replyToId = 0;
-	Text _replyToName;
+	Ui::Text::String _replyToName;
 	int _replyToNameVersion = 0;
 
 	HistoryItemsList _toForward;
-	Text _toForwardFrom, _toForwardText;
+	Ui::Text::String _toForwardFrom, _toForwardText;
 	int _toForwardNameVersion = 0;
 
 	MsgId _editMsgId = 0;
 
 	HistoryItem *_replyEditMsg = nullptr;
-	Text _replyEditMsgText;
+	Ui::Text::String _replyEditMsgText;
 	mutable base::Timer _updateEditTimeLeftDisplay;
 
 	object_ptr<Ui::IconButton> _fieldBarCancel;
@@ -530,7 +512,7 @@ private:
 
 		MsgId msgId = 0;
 		HistoryItem *msg = nullptr;
-		Text text;
+		Ui::Text::String text;
 		object_ptr<Ui::IconButton> cancel;
 		object_ptr<Ui::PlainShadow> shadow;
 	};
@@ -553,7 +535,7 @@ private:
 	void drawRecording(Painter &p, float64 recordActive);
 	void drawPinnedBar(Painter &p);
 	void drawRestrictedWrite(Painter &p, const QString &error);
-	bool paintShowAnimationFrame(crl::time ms);
+	bool paintShowAnimationFrame();
 
 	void updateMouseTracking();
 
@@ -565,18 +547,9 @@ private:
 	void saveEditMsgDone(History *history, const MTPUpdates &updates, mtpRequestId req);
 	bool saveEditMsgFail(History *history, const RPCError &error, mtpRequestId req);
 
-	void updateReportSpamStatus();
-	void requestReportSpamSetting();
-	void reportSpamSettingDone(const MTPPeerSettings &result, mtpRequestId req);
-	bool reportSpamSettingFail(const RPCError &error, mtpRequestId req);
-
 	void checkPreview();
 	void requestPreview();
 	void gotPreview(QString links, const MTPMessageMedia &media, mtpRequestId req);
-
-	static const mtpRequestId ReportSpamRequestNeeded = -1;
-	DBIPeerReportSpamStatus _reportSpamStatus = dbiprsUnknown;
-	mtpRequestId _reportSpamSettingRequestId = ReportSpamRequestNeeded;
 
 	QStringList _parsedLinks;
 	QString _previewLinks;
@@ -584,8 +557,8 @@ private:
 	typedef QMap<QString, WebPageId> PreviewCache;
 	PreviewCache _previewCache;
 	mtpRequestId _previewRequest = 0;
-	Text _previewTitle;
-	Text _previewDescription;
+	Ui::Text::String _previewTitle;
+	Ui::Text::String _previewDescription;
 	base::Timer _previewTimer;
 	bool _previewCancelled = false;
 
@@ -638,9 +611,6 @@ private:
 	// This one is syntetic.
 	void synteticScrollToY(int y);
 
-	void reportSpamDone(PeerData *peer, const MTPBool &result, mtpRequestId request);
-	bool reportSpamFail(const RPCError &error, mtpRequestId request);
-
 	void countHistoryShowFrom();
 
 	enum class TextUpdateEvent {
@@ -673,7 +643,7 @@ private:
 	int countAutomaticScrollTop();
 	void preloadHistoryByScroll();
 	void checkReplyReturns();
-	void scrollToAnimationCallback(FullMsgId attachToId);
+	void scrollToAnimationCallback(FullMsgId attachToId, int relativeTo);
 
 	bool readyToForward() const;
 	bool hasSilentToggle() const;
@@ -710,13 +680,13 @@ private:
 
 	crl::time _lastUserScrolled = 0;
 	bool _synteticScrollEvent = false;
-	Animation _scrollToAnimation;
+	Ui::Animations::Simple _scrollToAnimation;
 
-	Animation _historyDownShown;
+	Ui::Animations::Simple _historyDownShown;
 	bool _historyDownIsShown = false;
 	object_ptr<Ui::HistoryDownButton> _historyDown;
 
-	Animation _unreadMentionsShown;
+	Ui::Animations::Simple _unreadMentionsShown;
 	bool _unreadMentionsIsShown = false;
 	object_ptr<Ui::HistoryDownButton> _unreadMentions;
 
@@ -742,15 +712,15 @@ private:
 	bool showInlineBotCancel() const;
 	void refreshSilentToggle();
 
-	object_ptr<ReportSpamPanel> _reportSpamPanel = { nullptr };
+	std::unique_ptr<HistoryView::ContactStatus> _contactStatus;
 
 	object_ptr<Ui::SendButton> _send;
 	object_ptr<Ui::FlatButton> _unblock;
 	object_ptr<Ui::FlatButton> _botStart;
 	object_ptr<Ui::FlatButton> _joinChannel;
 	object_ptr<Ui::FlatButton> _muteUnmute;
+	object_ptr<Ui::FlatButton> _discuss;
 	object_ptr<Ui::RpWidget> _aboutProxyPromotion = { nullptr };
-	mtpRequestId _reportSpamRequest = 0;
 	object_ptr<Ui::IconButton> _attachToggle;
 	object_ptr<Ui::EmojiButton> _tabbedSelectorToggle;
 	object_ptr<Ui::ImportantTooltip> _tabbedSelectorToggleTooltip = { nullptr };
@@ -772,9 +742,9 @@ private:
 	rpl::lifetime _uploaderSubscriptions;
 
 	// This can animate for a very long time (like in music playing),
-	// so it should be a BasicAnimation, not an Animation.
-	BasicAnimation _a_recording;
-	anim::value a_recordingLevel;
+	// so it should be a Basic, not a Simple animation.
+	Ui::Animations::Basic _recordingAnimation;
+	anim::value _recordingLevel;
 
 	bool kbWasHidden() const;
 
@@ -800,7 +770,7 @@ private:
 
 	QString _confirmSource;
 
-	Animation _a_show;
+	Ui::Animations::Simple _a_show;
 	Window::SlideDirection _showDirection;
 	QPixmap _cacheUnder, _cacheOver;
 

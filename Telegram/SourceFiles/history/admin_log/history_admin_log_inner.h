@@ -10,8 +10,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_element.h"
 #include "history/admin_log/history_admin_log_item.h"
 #include "history/admin_log/history_admin_log_section.h"
-#include "ui/widgets/tooltip.h"
 #include "ui/rp_widget.h"
+#include "ui/effects/animations.h"
+#include "ui/widgets/tooltip.h"
 #include "mtproto/sender.h"
 #include "base/timer.h"
 
@@ -28,7 +29,7 @@ class PopupMenu;
 } // namespace Ui
 
 namespace Window {
-class Controller;
+class SessionController;
 } // namespace Window
 
 namespace AdminLog {
@@ -44,7 +45,7 @@ class InnerWidget final
 public:
 	InnerWidget(
 		QWidget *parent,
-		not_null<Window::Controller*> controller,
+		not_null<Window::SessionController*> controller,
 		not_null<ChannelData*> channel);
 
 	base::Observable<void> showSearchSignal;
@@ -88,6 +89,10 @@ public:
 	crl::time elementHighlightTime(
 		not_null<const HistoryView::Element*> element) override;
 	bool elementInSelectionMode() override;
+	bool elementIntersectsRange(
+		not_null<const HistoryView::Element*> view,
+		int from,
+		int till) override;
 
 	~InnerWidget();
 
@@ -152,7 +157,7 @@ private:
 	void openContextGif(FullMsgId itemId);
 	void copyContextText(FullMsgId itemId);
 	void copySelectedText();
-	TextWithEntities getSelectedText() const;
+	TextForMimeData getSelectedText() const;
 	void suggestRestrictUser(not_null<UserData*> user);
 	void restrictUser(not_null<UserData*> user, const MTPChatBannedRights &oldRights, const MTPChatBannedRights &newRights);
 	void restrictUserDone(not_null<UserData*> user, const MTPChatBannedRights &rights);
@@ -202,7 +207,7 @@ private:
 	template <typename Method>
 	void enumerateDates(Method method);
 
-	not_null<Window::Controller*> _controller;
+	not_null<Window::SessionController*> _controller;
 	not_null<ChannelData*> _channel;
 	not_null<History*> _history;
 	std::vector<OwnedItem> _items;
@@ -219,7 +224,7 @@ private:
 	int _visibleTopFromItem = 0;
 
 	bool _scrollDateShown = false;
-	Animation _scrollDateOpacity;
+	Ui::Animations::Simple _scrollDateOpacity;
 	SingleQueuedInvokation _scrollDateCheck;
 	base::Timer _scrollDateHideTimer;
 	Element *_scrollDateLastItem = nullptr;
@@ -235,7 +240,7 @@ private:
 	bool _upLoaded = true;
 	bool _downLoaded = true;
 	bool _filterChanged = false;
-	Text _emptyText;
+	Ui::Text::String _emptyText;
 
 	MouseAction _mouseAction = MouseAction::None;
 	TextSelectType _mouseSelectType = TextSelectType::Letters;

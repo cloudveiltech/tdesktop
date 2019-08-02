@@ -12,12 +12,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/section_memento.h"
 #include "window/window_slide_animation.h"
 #include "window/themes/window_theme.h"
+#include "window/window_session_controller.h"
 
 namespace Window {
 
+AuthSession &AbstractSectionWidget::session() const {
+	return _controller->session();
+}
+
 SectionWidget::SectionWidget(
 	QWidget *parent,
-	not_null<Window::Controller*> controller)
+	not_null<Window::SessionController*> controller)
 : AbstractSectionWidget(parent, controller) {
 }
 
@@ -72,10 +77,9 @@ void SectionWidget::showFast() {
 	showFinished();
 }
 
-void SectionWidget::PaintBackground(QWidget *widget, QPaintEvent *event) {
+void SectionWidget::PaintBackground(not_null<QWidget*> widget, QRect clip) {
 	Painter p(widget);
 
-	auto clip = event->rect();
 	auto fill = QRect(0, 0, widget->width(), App::main()->height());
 	if (const auto color = Window::Theme::Background()->colorForFill()) {
 		p.fillRect(fill, *color);

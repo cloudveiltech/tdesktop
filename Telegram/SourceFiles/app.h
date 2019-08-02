@@ -9,7 +9,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "data/data_types.h"
 
-enum NewMessageType : char;
 enum class ImageRoundRadius;
 class MainWindow;
 class MainWidget;
@@ -66,42 +65,9 @@ namespace App {
 
 	QString formatPhone(QString phone);
 
-	bool checkEntitiesAndViewsUpdate(const MTPDmessage &m); // returns true if item found and it is not detached
-	void updateEditedMessage(const MTPMessage &m);
 	void addSavedGif(DocumentData *doc);
 	void checkSavedGif(HistoryItem *item);
-	void feedMsgs(const QVector<MTPMessage> &msgs, NewMessageType type);
-	void feedMsgs(const MTPVector<MTPMessage> &msgs, NewMessageType type);
-	void feedInboxRead(const PeerId &peer, MsgId upTo);
-	void feedOutboxRead(const PeerId &peer, MsgId upTo, TimeId when);
-	void feedWereDeleted(ChannelId channelId, const QVector<MTPint> &msgsIds);
-	void feedUserLink(MTPint userId, const MTPContactLink &myLink, const MTPContactLink &foreignLink);
-
-	ImagePtr image(const MTPPhotoSize &size);
-
 	[[nodiscard]] QString peerName(const PeerData *peer, bool forDialogs = false);
-
-	[[nodiscard]] HistoryItem *histItemById(ChannelId channelId, MsgId itemId);
-	[[nodiscard]] HistoryItem *histItemById(
-		const ChannelData *channel,
-		MsgId itemId);
-	[[nodiscard]] inline HistoryItem *histItemById(const FullMsgId &msgId) {
-		return histItemById(msgId.channel, msgId.msg);
-	}
-	void historyRegItem(not_null<HistoryItem*> item);
-	void historyUnregItem(not_null<HistoryItem*> item);
-	void historyUpdateDependent(not_null<HistoryItem*> item);
-	void historyClearMsgs();
-	void historyClearItems();
-	void historyRegDependency(HistoryItem *dependent, HistoryItem *dependency);
-	void historyUnregDependency(HistoryItem *dependent, HistoryItem *dependency);
-
-	void historyRegRandom(uint64 randomId, const FullMsgId &itemId);
-	void historyUnregRandom(uint64 randomId);
-	FullMsgId histItemByRandom(uint64 randomId);
-	void historyRegSentData(uint64 randomId, const PeerId &peerId, const QString &text);
-	void historyUnregSentData(uint64 randomId);
-	void histSentDataByItem(uint64 randomId, PeerId &peerId, QString &text);
 
 	void hoveredItem(HistoryView::Element *item);
 	HistoryView::Element *hoveredItem();

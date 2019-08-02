@@ -31,7 +31,7 @@ public:
 		return !_caption.isEmpty();
 	}
 
-	TextWithEntities selectedText(TextSelection selection) const override;
+	TextForMimeData selectedText(TextSelection selection) const override;
 
 	DocumentData *getDocument() const override {
 		return _data;
@@ -55,7 +55,7 @@ public:
 	bool uploading() const override;
 
 	TextWithEntities getCaption() const override {
-		return _caption.originalTextWithEntities();
+		return _caption.toTextWithEntities();
 	}
 	bool needsBubble() const override;
 	bool customInfoLayout() const override {
@@ -95,7 +95,7 @@ private:
 	not_null<DocumentData*> _data;
 	int _thumbw = 1;
 	int _thumbh = 1;
-	Text _caption;
+	Ui::Text::String _caption;
 
 	QString _downloadSize;
 

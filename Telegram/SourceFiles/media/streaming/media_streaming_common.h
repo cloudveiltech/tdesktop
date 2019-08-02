@@ -9,9 +9,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Media {
 
-constexpr auto kTimeUnknown = std::numeric_limits<crl::time>::min();
-constexpr auto kDurationMax = crl::time(std::numeric_limits<int>::max());
-constexpr auto kDurationUnavailable = std::numeric_limits<crl::time>::max();
+inline constexpr auto kTimeUnknown = std::numeric_limits<crl::time>::min();
+inline constexpr auto kDurationMax = crl::time(std::numeric_limits<int>::max());
+inline constexpr auto kDurationUnavailable = std::numeric_limits<crl::time>::max();
 
 namespace Audio {
 bool SupportsSpeedControl();
@@ -63,6 +63,7 @@ struct AudioInformation {
 struct Information {
 	VideoInformation video;
 	AudioInformation audio;
+	int headerSize = 0;
 };
 
 template <typename Track>
@@ -114,6 +115,13 @@ struct FrameRequest {
 	QSize outer;
 	ImageRoundRadius radius = ImageRoundRadius();
 	RectParts corners = RectPart::AllCorners;
+	bool strict = true;
+
+	static FrameRequest NonStrict() {
+		auto result = FrameRequest();
+		result.strict = false;
+		return result;
+	}
 
 	bool empty() const {
 		return resize.isEmpty();

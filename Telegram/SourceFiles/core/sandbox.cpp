@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/sandbox.h"
 
-#include "platform/platform_specific.h"
+#include "platform/platform_info.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
 #include "storage/localstorage.h"
@@ -20,6 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/update_checker.h"
 #include "base/timer.h"
 #include "base/concurrent_timer.h"
+#include "base/invoke_queued.h"
 #include "base/qthelp_url.h"
 #include "base/qthelp_regex.h"
 #include "ui/effects/animations.h"
@@ -76,9 +77,9 @@ Sandbox::Sandbox(
 	not_null<Core::Launcher*> launcher,
 	int &argc,
 	char **argv)
-	: QApplication(argc, argv)
-	, _mainThreadId(QThread::currentThreadId())
-	, _launcher(launcher) {
+: QApplication(argc, argv)
+, _mainThreadId(QThread::currentThreadId())
+, _launcher(launcher) {
 }
 
 int Sandbox::start() {
@@ -121,10 +122,11 @@ int Sandbox::start() {
 		[=] { newInstanceConnected(); });
 
 	crl::on_main(this, [=] { checkForQuit(); });
-	connect(
-		this,
-		&QCoreApplication::aboutToQuit,
-		[=] { closeApplication(); });
+	connect(this, &QCoreApplication::aboutToQuit, [=] {
+		customEnterFromEventLoop([&] {
+			closeApplication();
+		});
+	});
 
 	if (cManyInstance()) {
 		LOG(("Many instance allowed, starting..."));
@@ -177,7 +179,7 @@ void Sandbox::setupScreenScale() {
 
 	const auto ratio = devicePixelRatio();
 	if (ratio > 1.) {
-		if ((cPlatform() != dbipMac && cPlatform() != dbipMacOld) || (ratio != 2.)) {
+		if (!Platform::IsMac() || (ratio != 2.)) {
 			LOG(("Found non-trivial Device Pixel Ratio: %1").arg(ratio));
 			LOG(("Environmental variables: QT_DEVICE_PIXEL_RATIO='%1'").arg(QString::fromLatin1(qgetenv("QT_DEVICE_PIXEL_RATIO"))));
 			LOG(("Environmental variables: QT_SCALE_FACTOR='%1'").arg(QString::fromLatin1(qgetenv("QT_SCALE_FACTOR"))));
@@ -493,25 +495,28 @@ void Sandbox::registerEnterFromEventLoop() {
 	}
 }
 
+bool Sandbox::notifyOrInvoke(QObject *receiver, QEvent *e) {
+	if (e->type() == base::InvokeQueuedEvent::kType) {
+		static_cast<base::InvokeQueuedEvent*>(e)->invoke();
+		return true;
+	}
+	return QApplication::notify(receiver, e);
+}
+
 bool Sandbox::notify(QObject *receiver, QEvent *e) {
 	if (QThread::currentThreadId() != _mainThreadId) {
-		return QApplication::notify(receiver, e);
+		return notifyOrInvoke(receiver, e);
 	}
 
 	const auto wrap = createEventNestingLevel();
-	const auto type = e->type();
-	if (type == QEvent::UpdateRequest) {
+	if (e->type() == QEvent::UpdateRequest) {
+		const auto weak = make_weak(receiver);
 		_widgetUpdateRequests.fire({});
-		// Profiling.
-		//const auto time = crl::now();
-		//LOG(("[%1] UPDATE STARTED").arg(time));
-		//const auto guard = gsl::finally([&] {
-		//	const auto now = crl::now();
-		//	LOG(("[%1] UPDATE FINISHED (%2)").arg(now).arg(now - time));
-		//});
-		//return QApplication::notify(receiver, e);
+		if (!weak) {
+			return true;
+		}
 	}
-	return QApplication::notify(receiver, e);
+	return notifyOrInvoke(receiver, e);
 }
 
 void Sandbox::processPostponedCalls(int level) {
@@ -597,3 +602,11 @@ void Sandbox::execExternal(const QString &cmd) {
 }
 
 } // namespace Core
+
+namespace crl {
+
+rpl::producer<> on_main_update_requests() {
+	return Core::Sandbox::Instance().widgetUpdateRequests();
+}
+
+} // namespace crl

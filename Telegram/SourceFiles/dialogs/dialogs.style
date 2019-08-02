@@ -34,6 +34,11 @@ dialogsPhotoSize: 46px;
 dialogsPhotoPadding: 12px;
 dialogsPadding: point(10px, 8px);
 
+dialogsOnlineBadgeStroke: 2px;
+dialogsOnlineBadgeSize: 10px;
+dialogsOnlineBadgeSkip: point(10px, 12px);
+dialogsOnlineBadgeDuration: 150;
+
 dialogsImportantBarHeight: 37px;
 
 dialogsSkip: 8px;
@@ -71,6 +76,15 @@ dialogsTextPaletteTakenOver: TextPalette(defaultTextPalette) {
 }
 dialogsTextPaletteTakenActive: TextPalette(defaultTextPalette) {
 	linkFg: dialogsDraftFgActive;
+}
+dialogsTextPaletteArchive: TextPalette(defaultTextPalette) {
+	linkFg: dialogsArchiveFg;
+}
+dialogsTextPaletteArchiveOver: TextPalette(defaultTextPalette) {
+	linkFg: dialogsArchiveFgOver;
+}
+dialogsTextPaletteArchiveActive: TextPalette(defaultTextPalette) {
+	linkFg: dialogsTextFgActive;
 }
 
 dialogsMenuToggle: IconButton {
@@ -151,9 +165,10 @@ dialogsChannelIconActive: icon {{ "dialogs_channel", dialogsChatIconFgActive, po
 dialogsBotIcon: icon {{ "dialogs_bot", dialogsChatIconFg, point(1px, 3px) }};
 dialogsBotIconOver: icon {{ "dialogs_bot", dialogsChatIconFgOver, point(1px, 3px) }};
 dialogsBotIconActive: icon {{ "dialogs_bot", dialogsChatIconFgActive, point(1px, 3px) }};
-dialogsFeedIcon: icon {{ "dialogs_feed", dialogsChatIconFg, point(4px, 4px) }};
-dialogsFeedIconOver: icon {{ "dialogs_feed", dialogsChatIconFgOver, point(4px, 4px) }};
-dialogsFeedIconActive: icon {{ "dialogs_feed", dialogsChatIconFgActive, point(4px, 4px) }};
+//dialogsFeedIcon: icon {{ "dialogs_feed", dialogsChatIconFg, point(4px, 4px) }}; // #feed
+//dialogsFeedIconOver: icon {{ "dialogs_feed", dialogsChatIconFgOver, point(4px, 4px) }};
+//dialogsFeedIconActive: icon {{ "dialogs_feed", dialogsChatIconFgActive, point(4px, 4px) }};
+dialogsArchiveUserpic: icon {{ "archive_userpic", historyPeerUserpicFg }};
 
 dialogsSendStateSkip: 20px;
 dialogsSendingIcon: icon {{ "dialogs_sending", dialogsSendingIconFg, point(8px, 4px) }};
@@ -253,3 +268,9 @@ dialogsSearchFromStyle: TextStyle(defaultTextStyle) {
 dialogsSearchFromPalette: TextPalette(defaultTextPalette) {
 	linkFg: dialogsNameFg;
 }
+
+dialogsScamPadding: margins(2px, 0px, 2px, 0px);
+dialogsScamFont: font(9px semibold);
+dialogsScamSkip: 4px;
+dialogsScamRadius: 2px;
+

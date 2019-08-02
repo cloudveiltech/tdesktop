@@ -93,8 +93,8 @@ QSize HistoryWebPage::countOptimalSize() {
 		_openl = nullptr;
 		_attach = nullptr;
 		_collage = PrepareCollageMedia(_parent->data(), _data->collage);
-		_title = Text(st::msgMinWidth - st::webPageLeft);
-		_description = Text(st::msgMinWidth - st::webPageLeft);
+		_title = Ui::Text::String(st::msgMinWidth - st::webPageLeft);
+		_description = Ui::Text::String(st::msgMinWidth - st::webPageLeft);
 		_siteNameWidth = 0;
 	}
 	auto lineHeight = unitedLineHeight();
@@ -118,7 +118,7 @@ QSize HistoryWebPage::countOptimalSize() {
 			const auto simplified = simplify(_data->url);
 			const auto full = _parent->data()->originalText();
 			for (const auto &entity : full.entities) {
-				if (entity.type() != EntityInTextUrl) {
+				if (entity.type() != EntityType::Url) {
 					continue;
 				}
 				const auto link = full.text.mid(
@@ -191,7 +191,7 @@ QSize HistoryWebPage::countOptimalSize() {
 		}
 		if (isLogEntryOriginal()) {
 			// Fix layout for small bubbles (narrow media caption edit log entries).
-			_description = Text(st::minPhotoSize
+			_description = Ui::Text::String(st::minPhotoSize
 				- st::msgPadding.left()
 				- st::msgPadding.right()
 				- st::webPageLeft);
@@ -561,7 +561,7 @@ TextState HistoryWebPage::textState(QPoint point, StateRequest request) const {
 	}
 	if (_titleLines) {
 		if (point.y() >= tshift && point.y() < tshift + _titleLines * lineHeight) {
-			Text::StateRequestElided titleRequest = request.forText();
+			Ui::Text::StateRequestElided titleRequest = request.forText();
 			titleRequest.lines = _titleLines;
 			result = TextState(_parent, _title.getStateElidedLeft(
 				point - QPoint(padding.left(), tshift),
@@ -577,7 +577,7 @@ TextState HistoryWebPage::textState(QPoint point, StateRequest request) const {
 		auto descriptionHeight = (_descriptionLines > 0) ? _descriptionLines * lineHeight : _description.countHeight(paintw);
 		if (point.y() >= tshift && point.y() < tshift + descriptionHeight) {
 			if (_descriptionLines > 0) {
-				Text::StateRequestElided descriptionRequest = request.forText();
+				Ui::Text::StateRequestElided descriptionRequest = request.forText();
 				descriptionRequest.lines = _descriptionLines;
 				result = TextState(_parent, _description.getStateElidedLeft(
 					point - QPoint(padding.left(), tshift),
@@ -685,22 +685,17 @@ bool HistoryWebPage::isDisplayed() const {
 		&& !item->Has<HistoryMessageLogEntryOriginal>();
 }
 
-TextWithEntities HistoryWebPage::selectedText(TextSelection selection) const {
-	auto titleResult = _title.originalTextWithEntities(
-		selection,
-		ExpandLinksAll);
-	auto descriptionResult = _description.originalTextWithEntities(
-		toDescriptionSelection(selection),
-		ExpandLinksAll);
-	if (titleResult.text.isEmpty()) {
+TextForMimeData HistoryWebPage::selectedText(TextSelection selection) const {
+	auto titleResult = _title.toTextForMimeData(selection);
+	auto descriptionResult = _description.toTextForMimeData(
+		toDescriptionSelection(selection));
+	if (titleResult.empty()) {
 		return descriptionResult;
-	} else if (descriptionResult.text.isEmpty()) {
+	} else if (descriptionResult.empty()) {
 		return titleResult;
 	}
 
-	titleResult.text += '\n';
-	TextUtilities::Append(titleResult, std::move(descriptionResult));
-	return titleResult;
+	return titleResult.append('\n').append(std::move(descriptionResult));
 }
 
 QMargins HistoryWebPage::inBubblePadding() const {
@@ -731,7 +726,7 @@ int HistoryWebPage::bottomInfoPadding() const {
 
 QString HistoryWebPage::displayedSiteName() const {
 	return (_data->document && _data->document->isWallPaper())
-		? lang(lng_media_chat_background)
+		? tr::lng_media_chat_background(tr::now)
 		: _data->siteName;
 }
 

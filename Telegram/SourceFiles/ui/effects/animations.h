@@ -15,6 +15,8 @@ class Manager;
 class Basic final {
 public:
 	Basic() = default;
+	Basic(const Basic &other) = delete;
+	Basic &operator=(const Basic &other) = delete;
 
 	template <typename Callback>
 	explicit Basic(Callback &&callback);
@@ -53,6 +55,10 @@ public:
 	void start(
 		Callback &&callback,
 		float64 from,
+		float64 to,
+		crl::time duration,
+		anim::transition transition = anim::linear);
+	void change(
 		float64 to,
 		crl::time duration,
 		anim::transition transition = anim::linear);
@@ -156,11 +162,13 @@ private:
 	void schedule();
 	void updateQueued();
 	void stopTimer();
+	not_null<const QObject*> delayedCallGuard() const;
 
 	crl::time _lastUpdateTime = 0;
 	int _timerId = 0;
 	bool _updating = false;
 	bool _scheduled = false;
+	bool _forceImmediateUpdate = false;
 	std::vector<ActiveBasicPointer> _active;
 	std::vector<ActiveBasicPointer> _starting;
 	rpl::lifetime _lifetime;
@@ -168,34 +176,44 @@ private:
 };
 
 template <typename Callback>
+Fn<bool(crl::time)> Basic__PrepareCrlTime(Callback &&callback) {
+	using Return = decltype(callback(crl::time(0)));
+	if constexpr (std::is_convertible_v<Return, bool>) {
+		return std::forward<Callback>(callback);
+	} else if constexpr (std::is_same_v<Return, void>) {
+		return [callback = std::forward<Callback>(callback)](
+			crl::time time) {
+			callback(time);
+			return true;
+		};
+	} else {
+		static_assert(false_t(callback), "Expected void or bool.");
+	}
+}
+
+template <typename Callback>
+Fn<bool(crl::time)> Basic__PreparePlain(Callback &&callback) {
+	using Return = decltype(callback());
+	if constexpr (std::is_convertible_v<Return, bool>) {
+		return [callback = std::forward<Callback>(callback)](crl::time) {
+			return callback();
+		};
+	} else if constexpr (std::is_same_v<Return, void>) {
+		return [callback = std::forward<Callback>(callback)](crl::time) {
+			callback();
+			return true;
+		};
+	} else {
+		static_assert(false_t(callback), "Expected void or bool.");
+	}
+}
+
+template <typename Callback>
 inline Fn<bool(crl::time)> Basic::Prepare(Callback &&callback) {
 	if constexpr (rpl::details::is_callable_plain_v<Callback, crl::time>) {
-		using Return = decltype(callback(crl::time(0)));
-		if constexpr (std::is_convertible_v<Return, bool>) {
-			return std::forward<Callback>(callback);
-		} else if constexpr (std::is_same_v<Return, void>) {
-			return [callback = std::forward<Callback>(callback)](
-					crl::time time) {
-				callback(time);
-				return true;
-			};
-		} else {
-			static_assert(false_t(callback), "Expected void or bool.");
-		}
+		return Basic__PrepareCrlTime(std::forward<Callback>(callback));
 	} else if constexpr (rpl::details::is_callable_plain_v<Callback>) {
-		using Return = decltype(callback());
-		if constexpr (std::is_convertible_v<Return, bool>) {
-			return [callback = std::forward<Callback>(callback)](crl::time) {
-				return callback();
-			};
-		} else if constexpr (std::is_same_v<Return, void>) {
-			return [callback = std::forward<Callback>(callback)](crl::time) {
-				callback();
-				return true;
-			};
-		} else {
-			static_assert(false_t(callback), "Expected void or bool.");
-		}
+		return Basic__PreparePlain(std::forward<Callback>(callback));
 	} else {
 		static_assert(false_t(callback), "Expected crl::time or no args.");
 	}
@@ -220,8 +238,11 @@ TG_FORCE_INLINE bool Basic::animating() const {
 }
 
 TG_FORCE_INLINE bool Basic::call(crl::time now) const {
+	Expects(_started >= 0);
+
+	// _started may be greater than now if we called restart while iterating.
 	const auto onstack = _callback;
-	return onstack(now);
+	return onstack(std::max(_started, now));
 }
 
 inline Basic::~Basic() {
@@ -229,34 +250,44 @@ inline Basic::~Basic() {
 }
 
 template <typename Callback>
+decltype(auto) Simple__PrepareFloat64(Callback &&callback) {
+	using Return = decltype(callback(float64(0.)));
+	if constexpr (std::is_convertible_v<Return, bool>) {
+		return std::forward<Callback>(callback);
+	} else if constexpr (std::is_same_v<Return, void>) {
+		return [callback = std::forward<Callback>(callback)](
+			float64 value) {
+			callback(value);
+			return true;
+		};
+	} else {
+		static_assert(false_t(callback), "Expected void or float64.");
+	}
+}
+
+template <typename Callback>
+decltype(auto) Simple__PreparePlain(Callback &&callback) {
+	using Return = decltype(callback());
+	if constexpr (std::is_convertible_v<Return, bool>) {
+		return [callback = std::forward<Callback>(callback)](float64) {
+			return callback();
+		};
+	} else if constexpr (std::is_same_v<Return, void>) {
+		return [callback = std::forward<Callback>(callback)](float64) {
+			callback();
+			return true;
+		};
+	} else {
+		static_assert(false_t(callback), "Expected void or bool.");
+	}
+}
+
+template <typename Callback>
 decltype(auto) Simple::Prepare(Callback &&callback) {
 	if constexpr (rpl::details::is_callable_plain_v<Callback, float64>) {
-		using Return = decltype(callback(float64(0.)));
-		if constexpr (std::is_convertible_v<Return, bool>) {
-			return std::forward<Callback>(callback);
-		} else if constexpr (std::is_same_v<Return, void>) {
-			return [callback = std::forward<Callback>(callback)](
-					float64 value) {
-				callback(value);
-				return true;
-			};
-		} else {
-			static_assert(false_t(callback), "Expected void or float64.");
-		}
+		return Simple__PrepareFloat64(std::forward<Callback>(callback));
 	} else if constexpr (rpl::details::is_callable_plain_v<Callback>) {
-		using Return = decltype(callback());
-		if constexpr (std::is_convertible_v<Return, bool>) {
-			return [callback = std::forward<Callback>(callback)](float64) {
-				return callback();
-			};
-		} else if constexpr (std::is_same_v<Return, void>) {
-			return [callback = std::forward<Callback>(callback)](float64) {
-				callback();
-				return true;
-			};
-		} else {
-			static_assert(false_t(callback), "Expected void or bool.");
-		}
+		return Simple__PreparePlain(std::forward<Callback>(callback));
 	} else {
 		static_assert(false_t(callback), "Expected float64 or no args.");
 	}
@@ -274,7 +305,9 @@ inline void Simple::start(
 		that = _data.get(),
 		callback = Prepare(std::forward<Callback>(callback))
 	](crl::time now) {
-		const auto time = (now - that->animation.started());
+		const auto time = anim::Disabled()
+			? that->duration
+			: (now - that->animation.started());
 		const auto finished = (time >= that->duration);
 		const auto progress = finished
 			? that->delta
@@ -296,6 +329,16 @@ inline void Simple::start(
 		}
 		return result;
 	});
+	startPrepared(to, duration, transition);
+}
+
+inline void Simple::change(
+		float64 to,
+		crl::time duration,
+		anim::transition transition) {
+	Expects(_data != nullptr);
+
+	prepare(0. /* ignored */, duration);
 	startPrepared(to, duration, transition);
 }
 

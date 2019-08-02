@@ -64,7 +64,7 @@ Context ComputeContext(const SharedMediaWithLastSlice &slice, int index) {
 		}
 		return std::nullopt;
 	} else if (const auto msgId = base::get_if<FullMsgId>(&value)) {
-		if (const auto item = App::histItemById(*msgId)) {
+		if (const auto item = Auth().data().message(*msgId)) {
 			if (!item->toHistoryMessage()) {
 				return item->history()->peer->id;
 			} else if (const auto groupId = item->groupId()) {
@@ -518,7 +518,7 @@ auto GroupThumbs::createThumb(Key key)
 		const auto photo = Auth().data().photo(*photoId);
 		return createThumb(key, photo->thumbnail());
 	} else if (const auto msgId = base::get_if<FullMsgId>(&key)) {
-		if (const auto item = App::histItemById(*msgId)) {
+		if (const auto item = Auth().data().message(*msgId)) {
 			if (const auto media = item->media()) {
 				if (const auto photo = media->photo()) {
 					return createThumb(key, photo->thumbnail());
@@ -530,7 +530,7 @@ auto GroupThumbs::createThumb(Key key)
 		return createThumb(key, nullptr);
 	} else if (const auto collageKey = base::get_if<CollageKey>(&key)) {
 		if (const auto itemId = base::get_if<FullMsgId>(&_context)) {
-			if (const auto item = App::histItemById(*itemId)) {
+			if (const auto item = Auth().data().message(*itemId)) {
 				if (const auto media = item->media()) {
 					if (const auto page = media->webpage()) {
 						return createThumb(
@@ -624,7 +624,7 @@ void GroupThumbs::clear() {
 }
 
 void GroupThumbs::startDelayedAnimation() {
-	_animation.finish();
+	_animation.stop();
 	_waitingForAnimationStart = true;
 	countUpdatedRect();
 }
@@ -661,15 +661,10 @@ void GroupThumbs::update() {
 	_updateRequests.fire_copy(_updatedRect);
 }
 
-void GroupThumbs::paint(
-		Painter &p,
-		int x,
-		int y,
-		int outerWidth,
-		crl::time ms) {
+void GroupThumbs::paint(Painter &p, int x, int y, int outerWidth) {
 	const auto progress = _waitingForAnimationStart
 		? 0.
-		: _animation.current(ms, 1.);
+		: _animation.value(1.);
 	x += (_width / 2);
 	y += st::mediaviewGroupPadding.top();
 	for (auto i = _cache.begin(); i != _cache.end();) {

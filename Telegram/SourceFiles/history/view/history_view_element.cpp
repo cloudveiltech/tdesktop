@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_element.h"
 
 #include "history/view/history_view_service_message.h"
+#include "history/view/history_view_message.h"
 #include "history/history_item_components.h"
 #include "history/history_item.h"
 #include "history/media/history_media.h"
@@ -26,7 +27,62 @@ namespace {
 // A new message from the same sender is attached to previous within 15 minutes.
 constexpr int kAttachMessageToPreviousSecondsDelta = 900;
 
+bool IsAttachedToPreviousInSavedMessages(
+		not_null<HistoryItem*> previous,
+		not_null<HistoryItem*> item) {
+	const auto forwarded = previous->Has<HistoryMessageForwarded>();
+	const auto sender = previous->senderOriginal();
+	if (forwarded != item->Has<HistoryMessageForwarded>()) {
+		return false;
+	} else if (sender != item->senderOriginal()) {
+		return false;
+	} else if (!forwarded || sender) {
+		return true;
+	}
+	const auto previousInfo = previous->hiddenForwardedInfo();
+	const auto itemInfo = item->hiddenForwardedInfo();
+	Assert(previousInfo != nullptr);
+	Assert(itemInfo != nullptr);
+	return (*previousInfo == *itemInfo);
+}
+
 } // namespace
+
+
+std::unique_ptr<HistoryView::Element> SimpleElementDelegate::elementCreate(
+		not_null<HistoryMessage*> message) {
+	return std::make_unique<HistoryView::Message>(this, message);
+}
+
+std::unique_ptr<HistoryView::Element> SimpleElementDelegate::elementCreate(
+		not_null<HistoryService*> message) {
+	return std::make_unique<HistoryView::Service>(this, message);
+}
+
+bool SimpleElementDelegate::elementUnderCursor(
+		not_null<const Element*> view) {
+	return false;
+}
+
+void SimpleElementDelegate::elementAnimationAutoplayAsync(
+	not_null<const Element*> element) {
+}
+
+crl::time SimpleElementDelegate::elementHighlightTime(
+	not_null<const Element*> element) {
+	return crl::time(0);
+}
+
+bool SimpleElementDelegate::elementInSelectionMode() {
+	return false;
+}
+
+bool SimpleElementDelegate::elementIntersectsRange(
+		not_null<const Element*> view,
+		int from,
+		int till) {
+	return true;
+}
 
 TextSelection UnshiftItemSelection(
 		TextSelection selection,
@@ -46,13 +102,13 @@ TextSelection ShiftItemSelection(
 
 TextSelection UnshiftItemSelection(
 		TextSelection selection,
-		const Text &byText) {
+		const Ui::Text::String &byText) {
 	return UnshiftItemSelection(selection, byText.length());
 }
 
 TextSelection ShiftItemSelection(
 		TextSelection selection,
-		const Text &byText) {
+		const Ui::Text::String &byText) {
 	return ShiftItemSelection(selection, byText.length());
 }
 
@@ -61,9 +117,9 @@ void UnreadBar::init(int newCount) {
 		return;
 	}
 	count = newCount;
-	text = (count == kCountUnknown)
-		? lang(lng_unread_bar_some)
-		: lng_unread_bar(lt_count, count);
+	text = /*(count == kCountUnknown) // #feed
+		? tr::lng_unread_bar_some(tr::now)
+		: */tr::lng_unread_bar(tr::now, lt_count, count);
 	width = st::semiboldFont->width(text);
 }
 
@@ -302,18 +358,23 @@ void Element::refreshDataId() {
 }
 
 bool Element::computeIsAttachToPrevious(not_null<Element*> previous) {
+	const auto mayBeAttached = [](not_null<HistoryItem*> item) {
+		return !item->serviceMsg()
+			&& !item->isEmpty()
+			&& !item->isPost()
+			&& (item->from() != item->history()->peer
+				|| !item->from()->isChannel());
+	};
 	const auto item = data();
 	if (!Has<DateBadge>() && !Has<UnreadBar>()) {
 		const auto prev = previous->data();
-		const auto possible = !item->serviceMsg() && !prev->serviceMsg()
-			&& !item->isEmpty() && !prev->isEmpty()
-			&& (std::abs(prev->date() - item->date()) < kAttachMessageToPreviousSecondsDelta)
-			&& (_context == Context::Feed
-				|| (!item->isPost() && !prev->isPost()));
+		const auto possible = (std::abs(prev->date() - item->date())
+				< kAttachMessageToPreviousSecondsDelta)
+			&& mayBeAttached(item)
+			&& mayBeAttached(prev);
 		if (possible) {
 			if (item->history()->peer->isSelf()) {
-				return prev->senderOriginal() == item->senderOriginal()
-					&& (prev->Has<HistoryMessageForwarded>() == item->Has<HistoryMessageForwarded>());
+				return IsAttachedToPreviousInSavedMessages(prev, item);
 			} else {
 				return prev->from() == item->from();
 			}
@@ -505,6 +566,12 @@ TimeId Element::displayedEditDate() const {
 
 bool Element::hasVisibleText() const {
 	return false;
+}
+
+void Element::unloadHeavyPart() {
+	if (_media) {
+		_media->unloadHeavyPart();
+	}
 }
 
 HistoryBlock *Element::block() {

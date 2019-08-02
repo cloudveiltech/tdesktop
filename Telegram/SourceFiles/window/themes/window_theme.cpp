@@ -17,6 +17,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/parse_helper.h"
 #include "base/zlib_help.h"
 #include "data/data_session.h"
+#include "main/main_account.h" // Account::sessionValue.
 #include "ui/image/image.h"
 #include "boxes/background_box.h"
 #include "core/application.h"
@@ -48,6 +49,20 @@ Applying GlobalApplying;
 inline bool AreTestingTheme() {
 	return !GlobalApplying.paletteForRevert.isEmpty();
 };
+
+bool CalculateIsMonoColorImage(const QImage &image) {
+	if (!image.isNull()) {
+		const auto bits = reinterpret_cast<const uint32*>(image.constBits());
+		const auto first = bits[0];
+		for (auto i = 0; i < image.width() * image.height(); i++) {
+			if (first != bits[i]) {
+				return false;
+			}
+		}
+		return true;
+	}
+	return false;
+}
 
 QByteArray readThemeContent(const QString &path) {
 	QFile file(path);
@@ -377,23 +392,20 @@ void ChatBackground::setThemeData(QImage &&themeImage, bool themeTile) {
 }
 
 void ChatBackground::start() {
-	if (Data::details::IsUninitializedWallPaper(_paper)) {
-		if (!Local::readBackground()) {
-			set(Data::ThemeWallPaper());
-		}
-		refreshSession();
-		subscribe(Core::App().authSessionChanged(), [=] {
-			refreshSession();
-		});
+	if (!Data::details::IsUninitializedWallPaper(_paper)) {
+		return;
 	}
-}
+	if (!Local::readBackground()) {
+		set(Data::ThemeWallPaper());
+	}
 
-void ChatBackground::refreshSession() {
-	const auto session = AuthSession::Exists() ? &Auth() : nullptr;
-	if (_session != session) {
+	Core::App().activeAccount().sessionValue(
+	) | rpl::filter([=](AuthSession *session) {
+		return session != _session;
+	}) | rpl::start_with_next([=](AuthSession *session) {
 		_session = session;
 		checkUploadWallPaper();
-	}
+	}, _lifetime);
 }
 
 void ChatBackground::checkUploadWallPaper() {
@@ -438,7 +450,7 @@ void ChatBackground::checkUploadWallPaper() {
 			result.match([&](const MTPDwallPaper &data) {
 				_session->data().documentConvert(
 					_session->data().document(documentId),
-					data.vdocument);
+					data.vdocument());
 			});
 			if (const auto paper = Data::WallPaper::Create(result)) {
 				setPaper(*paper);
@@ -580,6 +592,7 @@ void ChatBackground::preparePixmaps(QImage image) {
 		}
 		_pixmapForTiled = App::pixmapFromImageInPlace(std::move(imageForTiled));
 	}
+	_isMonoColorImage = CalculateIsMonoColorImage(image);
 	_pixmap = App::pixmapFromImageInPlace(std::move(image));
 	if (!isSmallForTiled) {
 		_pixmapForTiled = _pixmap;
@@ -669,6 +682,10 @@ bool ChatBackground::tileNight() const {
 		}
 	}
 	return _tileNightValue;
+}
+
+bool ChatBackground::isMonoColorImage() const {
+	return _isMonoColorImage;
 }
 
 void ChatBackground::ensureStarted() {

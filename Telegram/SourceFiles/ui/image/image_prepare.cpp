@@ -14,29 +14,29 @@ TG_FORCE_INLINE uint64 blurGetColors(const uchar *p) {
 	return (uint64)p[0] + ((uint64)p[1] << 16) + ((uint64)p[2] << 32) + ((uint64)p[3] << 48);
 }
 
-const QPixmap &circleMask(int width, int height) {
+const QImage &circleMask(QSize size) {
 	Assert(Global::started());
 
-	uint64 key = uint64(uint32(width)) << 32 | uint64(uint32(height));
+	uint64 key = (uint64(uint32(size.width())) << 32)
+		| uint64(uint32(size.height()));
 
-	Global::CircleMasksMap &masks(Global::RefCircleMasks());
-	auto i = masks.constFind(key);
-	if (i == masks.cend()) {
-		QImage mask(width, height, QImage::Format_ARGB32_Premultiplied);
-		{
-			Painter p(&mask);
-			PainterHighQualityEnabler hq(p);
-
-			p.setCompositionMode(QPainter::CompositionMode_Source);
-			p.fillRect(0, 0, width, height, Qt::transparent);
-			p.setBrush(Qt::white);
-			p.setPen(Qt::NoPen);
-			p.drawEllipse(0, 0, width, height);
-		}
-		mask.setDevicePixelRatio(cRetinaFactor());
-		i = masks.insert(key, App::pixmapFromImageInPlace(std::move(mask)));
+	static auto masks = base::flat_map<uint64, QImage>();
+	const auto i = masks.find(key);
+	if (i != end(masks)) {
+		return i->second;
 	}
-	return i.value();
+	auto mask = QImage(
+		size,
+		QImage::Format_ARGB32_Premultiplied);
+	mask.fill(Qt::transparent);
+	{
+		Painter p(&mask);
+		PainterHighQualityEnabler hq(p);
+		p.setBrush(Qt::white);
+		p.setPen(Qt::NoPen);
+		p.drawEllipse(QRect(QPoint(), size));
+	}
+	return masks.emplace(key, std::move(mask)).first->second;
 }
 
 } // namespace
@@ -387,14 +387,14 @@ QImage BlurLargeImage(QImage image, int radius) {
 void prepareCircle(QImage &img) {
 	Assert(!img.isNull());
 
-	img.setDevicePixelRatio(cRetinaFactor());
 	img = img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
 	Assert(!img.isNull());
 
-	QPixmap mask = circleMask(img.width(), img.height());
 	Painter p(&img);
 	p.setCompositionMode(QPainter::CompositionMode_DestinationIn);
-	p.drawPixmap(0, 0, mask);
+	p.drawImage(
+		QRect(QPoint(), img.size() / img.devicePixelRatio()),
+		circleMask(img.size()));
 }
 
 void prepareRound(
@@ -463,6 +463,7 @@ void prepareRound(
 		Assert((corners & RectPart::AllCorners) == RectPart::AllCorners);
 		Assert(target.isNull());
 		prepareCircle(image);
+		return;
 	}
 	Assert(!image.isNull());
 
@@ -475,15 +476,24 @@ void prepareRound(
 }
 
 QImage prepareColored(style::color add, QImage image) {
-	auto format = image.format();
+	return prepareColored(add->c, std::move(image));
+}
+
+QImage prepareColored(QColor add, QImage image) {
+	const auto format = image.format();
 	if (format != QImage::Format_RGB32 && format != QImage::Format_ARGB32_Premultiplied) {
 		image = std::move(image).convertToFormat(QImage::Format_ARGB32_Premultiplied);
 	}
 
-	if (auto pix = image.bits()) {
-		int ca = int(add->c.alphaF() * 0xFF), cr = int(add->c.redF() * 0xFF), cg = int(add->c.greenF() * 0xFF), cb = int(add->c.blueF() * 0xFF);
-		const int w = image.width(), h = image.height(), size = w * h * 4;
-		for (auto i = index_type(); i < size; i += 4) {
+	if (const auto pix = image.bits()) {
+		const auto ca = int(add.alphaF() * 0xFF);
+		const auto cr = int(add.redF() * 0xFF);
+		const auto cg = int(add.greenF() * 0xFF);
+		const auto cb = int(add .blueF() * 0xFF);
+		const auto w = image.width();
+		const auto h = image.height();
+		const auto size = w * h * 4;
+		for (auto i = index_type(); i != size; i += 4) {
 			int b = pix[i], g = pix[i + 1], r = pix[i + 2], a = pix[i + 3], aca = a * ca;
 			pix[i + 0] = uchar(b + ((aca * (cb - b)) >> 16));
 			pix[i + 1] = uchar(g + ((aca * (cg - g)) >> 16));

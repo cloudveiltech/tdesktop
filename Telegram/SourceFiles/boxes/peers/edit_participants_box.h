@@ -15,7 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/profile/info_profile_members_controllers.h"
 
 namespace Window {
-class Navigation;
+class SessionNavigation;
 } // namespace Window
 
 Fn<void(
@@ -104,6 +104,7 @@ private:
 	UserData *applyBanned(const MTPDchannelParticipantBanned &data);
 	void fillFromChat(not_null<ChatData*> chat);
 	void fillFromChannel(not_null<ChannelData*> channel);
+	void subscribeToCreatorChange(not_null<ChannelData*> channel);
 
 	not_null<PeerData*> _peer;
 	Role _role = Role::Members;
@@ -135,12 +136,12 @@ public:
 	using Role = ParticipantsRole;
 
 	static void Start(
-		not_null<Window::Navigation*> navigation,
+		not_null<Window::SessionNavigation*> navigation,
 		not_null<PeerData*> peer,
 		Role role);
 
 	ParticipantsBoxController(
-		not_null<Window::Navigation*> navigation,
+		not_null<Window::SessionNavigation*> navigation,
 		not_null<PeerData*> peer,
 		Role role);
 
@@ -226,8 +227,10 @@ private:
 
 	void subscribeToMigration();
 	void migrate(not_null<ChannelData*> channel);
+	void subscribeToCreatorChange(not_null<ChannelData*> channel);
+	void fullListRefresh();
 
-	not_null<Window::Navigation*> _navigation;
+	not_null<Window::SessionNavigation*> _navigation;
 	not_null<PeerData*> _peer;
 	Role _role = Role::Admins;
 	int _offset = 0;
@@ -237,6 +240,7 @@ private:
 	std::unique_ptr<ParticipantsOnlineSorter> _onlineSorter;
 	BoxPointer _editBox;
 	BoxPointer _addBox;
+	QPointer<BoxContent> _editParticipantBox;
 
 };
 

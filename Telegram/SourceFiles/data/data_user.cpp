@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/localstorage.h"
 #include "data/data_session.h"
 #include "ui/text_options.h"
+#include "apiwrap.h"
 #include "lang/lang_keys.h"
 
 namespace {
@@ -32,13 +33,13 @@ BotCommand::BotCommand(
 bool BotCommand::setDescription(const QString &description) {
 	if (_description != description) {
 		_description = description;
-		_descriptionText = Text();
+		_descriptionText = Ui::Text::String();
 		return true;
 	}
 	return false;
 }
 
-const Text &BotCommand::descriptionText() const {
+const Ui::Text::String &BotCommand::descriptionText() const {
 	if (_descriptionText.isEmpty() && !_description.isEmpty()) {
 		_descriptionText.setText(
 			st::defaultTextStyle,
@@ -57,21 +58,15 @@ bool UserData::canShareThisContact() const {
 		|| !owner().findContactPhone(peerToUser(id)).isEmpty();
 }
 
-void UserData::setContactStatus(ContactStatus status) {
+void UserData::setIsContact(bool is) {
+	const auto status = is
+		? ContactStatus::Contact
+		: ContactStatus::NotContact;
 	if (_contactStatus != status) {
-		const auto changed = (_contactStatus == ContactStatus::Contact)
-			!= (status == ContactStatus::Contact);
 		_contactStatus = status;
-		if (changed) {
-			Notify::peerUpdatedDelayed(
-				this,
-				Notify::PeerUpdate::Flag::UserIsContact);
-		}
-	}
-	if (_contactStatus == ContactStatus::Contact
-		&& cReportSpamStatuses().value(id, dbiprsHidden) != dbiprsHidden) {
-		cRefReportSpamStatuses().insert(id, dbiprsHidden);
-		Local::writeReportSpamStatuses();
+		Notify::peerUpdatedDelayed(
+			this,
+			Notify::PeerUpdate::Flag::UserIsContact);
 	}
 }
 
@@ -79,7 +74,7 @@ void UserData::setContactStatus(ContactStatus status) {
 void UserData::setPhoto(const MTPUserProfilePhoto &photo) {
 	if (photo.type() == mtpc_userProfilePhoto) {
 		const auto &data = photo.c_userProfilePhoto();
-		updateUserpic(data.vphoto_id.v, data.vphoto_small);
+		updateUserpic(data.vphoto_id().v, data.vdc_id().v, data.vphoto_small());
 	} else {
 		clearUserpic();
 	}
@@ -118,7 +113,7 @@ void UserData::setName(const QString &newFirstName, const QString &newLastName, 
 			firstName = newFirstName;
 			lastName = newLastName;
 		}
-		newFullName = lastName.isEmpty() ? firstName : lng_full_name(lt_first_name, firstName, lt_last_name, lastName);
+		newFullName = lastName.isEmpty() ? firstName : tr::lng_full_name(tr::now, lt_first_name, firstName, lt_last_name, lastName);
 	}
 	updateNameDelayed(newFullName, newPhoneName, newUsername);
 }
@@ -158,35 +153,36 @@ void UserData::setBotInfo(const MTPBotInfo &info) {
 	switch (info.type()) {
 	case mtpc_botInfo: {
 		const auto &d(info.c_botInfo());
-		if (peerFromUser(d.vuser_id.v) != id || !botInfo) return;
+		if (peerFromUser(d.vuser_id().v) != id || !botInfo) return;
 
-		QString desc = qs(d.vdescription);
+		QString desc = qs(d.vdescription());
 		if (botInfo->description != desc) {
 			botInfo->description = desc;
-			botInfo->text = Text(st::msgMinWidth);
+			botInfo->text = Ui::Text::String(st::msgMinWidth);
 		}
 
-		auto &v = d.vcommands.v;
+		auto &v = d.vcommands().v;
 		botInfo->commands.reserve(v.size());
 		auto changedCommands = false;
 		int32 j = 0;
-		for (int32 i = 0, l = v.size(); i < l; ++i) {
-			if (v.at(i).type() != mtpc_botCommand) continue;
-
-			QString cmd = qs(v.at(i).c_botCommand().vcommand), desc = qs(v.at(i).c_botCommand().vdescription);
-			if (botInfo->commands.size() <= j) {
-				botInfo->commands.push_back(BotCommand(cmd, desc));
-				changedCommands = true;
-			} else {
-				if (botInfo->commands[j].command != cmd) {
-					botInfo->commands[j].command = cmd;
+		for (const auto &command : v) {
+			command.match([&](const MTPDbotCommand &data) {
+				const auto cmd = qs(data.vcommand());
+				const auto desc = qs(data.vdescription());
+				if (botInfo->commands.size() <= j) {
+					botInfo->commands.push_back(BotCommand(cmd, desc));
 					changedCommands = true;
+				} else {
+					if (botInfo->commands[j].command != cmd) {
+						botInfo->commands[j].command = cmd;
+						changedCommands = true;
+					}
+					if (botInfo->commands[j].setDescription(desc)) {
+						changedCommands = true;
+					}
 				}
-				if (botInfo->commands[j].setDescription(desc)) {
-					changedCommands = true;
-				}
-			}
-			++j;
+				++j;
+			});
 		}
 		while (j < botInfo->commands.size()) {
 			botInfo->commands.pop_back();
@@ -234,9 +230,17 @@ void UserData::setAccessHash(uint64 accessHash) {
 	}
 }
 
-void UserData::setBlockStatus(BlockStatus blockStatus) {
-	if (blockStatus != _blockStatus) {
-		_blockStatus = blockStatus;
+void UserData::setIsBlocked(bool is) {
+	const auto status = is
+		? BlockStatus::Blocked
+		: BlockStatus::NotBlocked;
+	if (_blockStatus != status) {
+		_blockStatus = status;
+		if (is) {
+			_fullFlags.add(MTPDuserFull::Flag::f_blocked);
+		} else {
+			_fullFlags.remove(MTPDuserFull::Flag::f_blocked);
+		}
 		Notify::peerUpdatedDelayed(this, UpdateFlag::UserIsBlocked);
 	}
 }
@@ -252,3 +256,44 @@ bool UserData::hasCalls() const {
 	return (callsStatus() != CallsStatus::Disabled)
 		&& (callsStatus() != CallsStatus::Unknown);
 }
+
+namespace Data {
+
+void ApplyUserUpdate(not_null<UserData*> user, const MTPDuserFull &update) {
+	user->owner().processUser(update.vuser());
+	if (const auto photo = update.vprofile_photo()) {
+		user->owner().processPhoto(*photo);
+	}
+	const auto settings = update.vsettings().match([&](
+			const MTPDpeerSettings &data) {
+		return data.vflags().v;
+	});
+	user->setSettings(settings);
+	user->session().api().applyNotifySettings(
+		MTP_inputNotifyPeer(user->input),
+		update.vnotify_settings());
+
+	if (const auto info = update.vbot_info()) {
+		user->setBotInfo(*info);
+	} else {
+		user->setBotInfoVersion(-1);
+	}
+	if (const auto pinned = update.vpinned_msg_id()) {
+		user->setPinnedMessageId(pinned->v);
+	} else {
+		user->clearPinnedMessage();
+	}
+	user->setFullFlags(update.vflags().v);
+	user->setIsBlocked(update.is_blocked());
+	user->setCallsStatus(update.is_phone_calls_private()
+		? UserData::CallsStatus::Private
+		: update.is_phone_calls_available()
+		? UserData::CallsStatus::Enabled
+		: UserData::CallsStatus::Disabled);
+	user->setAbout(qs(update.vabout().value_or_empty()));
+	user->setCommonChatsCount(update.vcommon_chats_count().v);
+	user->checkFolder(update.vfolder_id().value_or_empty());
+	user->fullUpdated();
+}
+
+} // namespace Data

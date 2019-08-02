@@ -91,7 +91,7 @@ void ItemBase::preload() const {
 	}
 }
 
-void ItemBase::update() {
+void ItemBase::update() const {
 	if (_position >= 0) {
 		context()->inlineItemRepaint(this);
 	}
@@ -189,7 +189,9 @@ ClickHandlerPtr ItemBase::getResultUrlHandler() const {
 
 ClickHandlerPtr ItemBase::getResultContentUrlHandler() const {
 	if (!_result->_content_url.isEmpty()) {
-		return std::make_shared<UrlClickHandler>(_result->_content_url);
+		return std::make_shared<UrlClickHandler>(
+			_result->_content_url,
+			false);
 	}
 	return ClickHandlerPtr();
 }

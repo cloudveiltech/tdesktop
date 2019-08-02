@@ -27,7 +27,7 @@ struct TextState;
 
 enum class Context : char {
 	History,
-	Feed,
+	//Feed, // #feed
 	AdminLog,
 	ContactPreview
 };
@@ -46,7 +46,29 @@ public:
 	virtual crl::time elementHighlightTime(
 		not_null<const Element*> element) = 0;
 	virtual bool elementInSelectionMode() = 0;
+	virtual bool elementIntersectsRange(
+		not_null<const Element*> view,
+		int from,
+		int till) = 0;
 
+};
+
+class SimpleElementDelegate : public ElementDelegate {
+public:
+	std::unique_ptr<Element> elementCreate(
+		not_null<HistoryMessage*> message) override;
+	std::unique_ptr<Element> elementCreate(
+		not_null<HistoryService*> message) override;
+	bool elementUnderCursor(not_null<const Element*> view) override;
+	void elementAnimationAutoplayAsync(
+		not_null<const Element*> element) override;
+	crl::time elementHighlightTime(
+		not_null<const Element*> element) override;
+	bool elementInSelectionMode() override;
+	bool elementIntersectsRange(
+		not_null<const Element*> view,
+		int from,
+		int till) override;
 };
 
 TextSelection UnshiftItemSelection(
@@ -57,10 +79,10 @@ TextSelection ShiftItemSelection(
 	uint16 byLength);
 TextSelection UnshiftItemSelection(
 	TextSelection selection,
-	const Text &byText);
+	const Ui::Text::String &byText);
 TextSelection ShiftItemSelection(
 	TextSelection selection,
-	const Text &byText);
+	const Ui::Text::String &byText);
 
 // Any HistoryView::Element can have this Component for
 // displaying the unread messages bar above the message.
@@ -195,7 +217,7 @@ public:
 		int bottom,
 		QPoint point,
 		InfoDisplayType type) const;
-	virtual TextWithEntities selectedText(
+	virtual TextForMimeData selectedText(
 		TextSelection selection) const = 0;
 	[[nodiscard]] virtual TextSelection adjustSelection(
 		TextSelection selection,
@@ -231,6 +253,8 @@ public:
 	virtual bool displayEditedBadge() const;
 	virtual TimeId displayedEditDate() const;
 	virtual bool hasVisibleText() const;
+
+	virtual void unloadHeavyPart();
 
 	// Legacy blocks structure.
 	HistoryBlock *block();

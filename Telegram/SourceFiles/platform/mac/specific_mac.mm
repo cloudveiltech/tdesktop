@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwidget.h"
 #include "history/history_widget.h"
 #include "core/crash_reports.h"
+#include "core/sandbox.h"
 #include "storage/localstorage.h"
 #include "mainwindow.h"
 #include "history/history_location_manager.h"
@@ -28,24 +29,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <mach-o/dyld.h>
 #include <AVFoundation/AVFoundation.h>
 
+extern "C" {
+void _dispatch_main_queue_callback_4CF(mach_msg_header_t *msg);
+} // extern "C"
+
 namespace {
 
 QStringList _initLogs;
-
-class _PsEventFilter : public QAbstractNativeEventFilter {
-public:
-	_PsEventFilter() {
-	}
-
-	bool nativeEventFilter(const QByteArray &eventType, void *message, long *result) {
-		auto wnd = App::wnd();
-		if (!wnd) return false;
-
-		return wnd->psFilterNativeEvent(message);
-	}
-};
-
-_PsEventFilter *_psEventFilter = nullptr;
 
 };
 
@@ -71,12 +61,6 @@ void psShowOverAll(QWidget *w, bool canFocus) {
 
 void psBringToBack(QWidget *w) {
 	objc_bringToBack(w->winId());
-}
-
-QAbstractNativeEventFilter *psNativeEventFilter() {
-	delete _psEventFilter;
-	_psEventFilter = new _PsEventFilter();
-	return _psEventFilter;
 }
 
 void psWriteDump() {
@@ -136,9 +120,6 @@ void start() {
 }
 
 void finish() {
-	delete _psEventFilter;
-	_psEventFilter = nullptr;
-
 	objc_finish();
 }
 
@@ -148,27 +129,6 @@ void StartTranslucentPaint(QPainter &p, QPaintEvent *e) {
 	p.fillRect(e->rect(), Qt::transparent);
 	p.setCompositionMode(QPainter::CompositionMode_SourceOver);
 #endif // OS_MAC_OLD
-}
-
-QString SystemCountry() {
-	NSLocale *currentLocale = [NSLocale currentLocale];  // get the current locale.
-	NSString *countryCode = [currentLocale objectForKey:NSLocaleCountryCode];
-	return countryCode ? NS2QString(countryCode) : QString();
-}
-
-QString SystemLanguage() {
-	if (auto currentLocale = [NSLocale currentLocale]) { // get the current locale.
-		if (NSString *collator = [currentLocale objectForKey:NSLocaleCollatorIdentifier]) {
-			return NS2QString(collator);
-		}
-		if (NSString *identifier = [currentLocale objectForKey:NSLocaleIdentifier]) {
-			return NS2QString(identifier);
-		}
-		if (NSString *language = [currentLocale objectForKey:NSLocaleLanguageCode]) {
-			return NS2QString(language);
-		}
-	}
-	return QString();
 }
 
 QString CurrentExecutablePath(int argc, char *argv[]) {
@@ -181,6 +141,10 @@ void RemoveQuarantine(const QString &path) {
 	DEBUG_LOG(("Removing quarantine attribute: %1").arg(path));
 	const auto local = QFile::encodeName(path);
 	removexattr(local.data(), kQuarantineAttribute, 0);
+}
+
+void DrainMainQueue() {
+	_dispatch_main_queue_callback_4CF(nullptr);
 }
 
 void RegisterCustomScheme() {
@@ -332,8 +296,8 @@ QByteArray psPathBookmark(const QString &path) {
 	return objc_pathBookmark(path);
 }
 
-bool psLaunchMaps(const LocationCoords &coords) {
-	return QDesktopServices::openUrl(qsl("https://maps.apple.com/?q=Point&z=16&ll=%1,%2").arg(coords.latAsString()).arg(coords.lonAsString()));
+bool psLaunchMaps(const Data::LocationPoint &point) {
+	return QDesktopServices::openUrl(qsl("https://maps.apple.com/?q=Point&z=16&ll=%1,%2").arg(point.latAsString()).arg(point.lonAsString()));
 }
 
 QString strNotificationAboutThemeChange() {

@@ -16,8 +16,8 @@ namespace Intro {
 
 StartWidget::StartWidget(QWidget *parent, Widget::Data *data) : Step(parent, data, true) {
 	setMouseTracking(true);
-	setTitleText([] { return qsl("CloudVeil Messenger"); });
-	setDescriptionText(langFactory(lng_intro_about));
+	setTitleText(rpl::single(qsl("CloudVeil Messenger")));
+	setDescriptionText(tr::lng_intro_about());
 	show();
 }
 
@@ -25,8 +25,8 @@ void StartWidget::submit() {
 	goNext(new Intro::PhoneWidget(parentWidget(), getData()));
 }
 
-QString StartWidget::nextButtonText() const {
-	return lang(lng_start_msgs);
+rpl::producer<QString> StartWidget::nextButtonText() const {
+	return tr::lng_start_msgs();
 }
 
 } // namespace Intro

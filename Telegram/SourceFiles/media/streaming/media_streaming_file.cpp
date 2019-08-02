@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "media/streaming/media_streaming_loader.h"
 #include "media/streaming/media_streaming_file_delegate.h"
+#include "ffmpeg/ffmpeg_utility.h"
 
 namespace Media {
 namespace Streaming {
@@ -55,11 +56,14 @@ int File::Context::read(bytes::span buffer) {
 		_semaphore.acquire();
 		if (_interrupted) {
 			return -1;
-		} else if (const auto error = _reader->failed()) {
+		} else if (const auto error = _reader->streamingError()) {
 			fail(*error);
 			return -1;
 		}
 	}
+
+	sendFullInCache();
+
 	_offset += amount;
 	return amount;
 }
@@ -82,26 +86,30 @@ int64_t File::Context::seek(int64_t offset, int whence) {
 
 void File::Context::logError(QLatin1String method) {
 	if (!unroll()) {
-		LogError(method);
+		FFmpeg::LogError(method);
 	}
 }
 
-void File::Context::logError(QLatin1String method, AvErrorWrap error) {
+void File::Context::logError(
+		QLatin1String method,
+		FFmpeg::AvErrorWrap error) {
 	if (!unroll()) {
-		LogError(method, error);
+		FFmpeg::LogError(method, error);
 	}
 }
 
 void File::Context::logFatal(QLatin1String method) {
 	if (!unroll()) {
-		LogError(method);
+		FFmpeg::LogError(method);
 		fail(_format ? Error::InvalidData : Error::OpenFailed);
 	}
 }
 
-void File::Context::logFatal(QLatin1String method, AvErrorWrap error) {
+void File::Context::logFatal(
+		QLatin1String method,
+		FFmpeg::AvErrorWrap error) {
 	if (!unroll()) {
-		LogError(method, error);
+		FFmpeg::LogError(method, error);
 		fail(_format ? Error::InvalidData : Error::OpenFailed);
 	}
 }
@@ -123,8 +131,8 @@ Stream File::Context::initStream(
 
 	const auto info = format->streams[index];
 	if (type == AVMEDIA_TYPE_VIDEO) {
-		result.rotation = ReadRotationFromMetadata(info);
-		result.aspect = ValidateAspectRatio(info->sample_aspect_ratio);
+		result.rotation = FFmpeg::ReadRotationFromMetadata(info);
+		result.aspect = FFmpeg::ValidateAspectRatio(info->sample_aspect_ratio);
 	} else if (type == AVMEDIA_TYPE_AUDIO) {
 		result.frequency = info->codecpar->sample_rate;
 		if (!result.frequency) {
@@ -132,21 +140,21 @@ Stream File::Context::initStream(
 		}
 	}
 
-	result.codec = MakeCodecPointer(info);
+	result.codec = FFmpeg::MakeCodecPointer(info);
 	if (!result.codec) {
 		return result;
 	}
 
-	result.frame = MakeFramePointer();
+	result.frame = FFmpeg::MakeFramePointer();
 	if (!result.frame) {
 		result.codec = nullptr;
 		return result;
 	}
 	result.timeBase = info->time_base;
 	result.duration = (info->duration != AV_NOPTS_VALUE)
-		? PtsToTime(info->duration, result.timeBase)
-		: PtsToTime(format->duration, kUniversalTimeBase);
-	if (!result.duration) {
+		? FFmpeg::PtsToTime(info->duration, result.timeBase)
+		: FFmpeg::PtsToTime(format->duration, FFmpeg::kUniversalTimeBase);
+	if (result.duration <= 0) {
 		result.codec = nullptr;
 	} else if (result.duration == kTimeUnknown) {
 		result.duration = kDurationUnavailable;
@@ -164,7 +172,7 @@ void File::Context::seekToPosition(
 		not_null<AVFormatContext*> format,
 		const Stream &stream,
 		crl::time position) {
-	auto error = AvErrorWrap();
+	auto error = FFmpeg::AvErrorWrap();
 
 	if (!position) {
 		return;
@@ -189,7 +197,7 @@ void File::Context::seekToPosition(
 	error = av_seek_frame(
 		format,
 		stream.index,
-		TimeToPts(
+		FFmpeg::TimeToPts(
 			std::clamp(position, crl::time(0), stream.duration - 1),
 			stream.timeBase),
 		AVSEEK_FLAG_BACKWARD);
@@ -199,13 +207,13 @@ void File::Context::seekToPosition(
 	return logFatal(qstr("av_seek_frame"), error);
 }
 
-base::variant<Packet, AvErrorWrap> File::Context::readPacket() {
-	auto error = AvErrorWrap();
+base::variant<FFmpeg::Packet, FFmpeg::AvErrorWrap> File::Context::readPacket() {
+	auto error = FFmpeg::AvErrorWrap();
 
-	auto result = Packet();
+	auto result = FFmpeg::Packet();
 	error = av_read_frame(_format.get(), &result.fields());
 	if (unroll()) {
-		return AvErrorWrap();
+		return FFmpeg::AvErrorWrap();
 	} else if (!error) {
 		return std::move(result);
 	} else if (error.code() != AVERROR_EOF) {
@@ -215,12 +223,12 @@ base::variant<Packet, AvErrorWrap> File::Context::readPacket() {
 }
 
 void File::Context::start(crl::time position) {
-	auto error = AvErrorWrap();
+	auto error = FFmpeg::AvErrorWrap();
 
 	if (unroll()) {
 		return;
 	}
-	auto format = MakeFormatPointer(
+	auto format = FFmpeg::MakeFormatPointer(
 		static_cast<void *>(this),
 		&Context::Read,
 		nullptr,
@@ -244,6 +252,9 @@ void File::Context::start(crl::time position) {
 	}
 
 	_reader->headerDone();
+	if (_reader->isRemoteLoader()) {
+		sendFullInCache(true);
+	}
 	if (video.codec || audio.codec) {
 		seekToPosition(format.get(), video.codec ? video : audio, position);
 	}
@@ -251,36 +262,50 @@ void File::Context::start(crl::time position) {
 		return;
 	}
 
-	if (!_delegate->fileReady(std::move(video), std::move(audio))) {
+	const auto header = _reader->headerSize();
+	if (!_delegate->fileReady(header, std::move(video), std::move(audio))) {
 		return fail(Error::OpenFailed);
 	}
 	_format = std::move(format);
+}
+
+void File::Context::sendFullInCache(bool force) {
+	const auto started = _fullInCache.has_value();
+	if (force || started) {
+		const auto nowFullInCache = _reader->fullInCache();
+		if (!started || *_fullInCache != nowFullInCache) {
+			_fullInCache = nowFullInCache;
+			_delegate->fileFullInCache(nowFullInCache);
+		}
+	}
 }
 
 void File::Context::readNextPacket() {
 	auto result = readPacket();
 	if (unroll()) {
 		return;
-	} else if (const auto packet = base::get_if<Packet>(&result)) {
+	} else if (const auto packet = base::get_if<FFmpeg::Packet>(&result)) {
 		const auto more = _delegate->fileProcessPacket(std::move(*packet));
 		if (!more) {
 			do {
+				_reader->startSleep(&_semaphore);
 				_semaphore.acquire();
+				_reader->stopSleep();
 			} while (!unroll() && !_delegate->fileReadMore());
 		}
 	} else {
 		// Still trying to read by drain.
-		Assert(result.is<AvErrorWrap>());
-		Assert(result.get<AvErrorWrap>().code() == AVERROR_EOF);
+		Assert(result.is<FFmpeg::AvErrorWrap>());
+		Assert(result.get<FFmpeg::AvErrorWrap>().code() == AVERROR_EOF);
 		handleEndOfFile();
 	}
 }
 
 void File::Context::handleEndOfFile() {
-	const auto more = _delegate->fileProcessPacket(Packet());
+	const auto more = _delegate->fileProcessPacket(FFmpeg::Packet());
 	if (_delegate->fileReadMore()) {
 		_readTillEnd = false;
-		auto error = AvErrorWrap(av_seek_frame(
+		auto error = FFmpeg::AvErrorWrap(av_seek_frame(
 			_format.get(),
 			-1, // stream_index
 			0, // timestamp
@@ -327,14 +352,15 @@ bool File::Context::finished() const {
 
 File::File(
 	not_null<Data::Session*> owner,
-	std::unique_ptr<Loader> loader)
-: _reader(owner, std::move(loader)) {
+	std::shared_ptr<Reader> reader)
+: _reader(std::move(reader)) {
 }
 
 void File::start(not_null<FileDelegate*> delegate, crl::time position) {
-	stop();
+	stop(true);
 
-	_context.emplace(delegate, &_reader);
+	_reader->startStreaming();
+	_context.emplace(delegate, _reader.get());
 	_thread = std::thread([=, context = &*_context] {
 		context->start(position);
 		while (!context->finished()) {
@@ -349,17 +375,17 @@ void File::wake() {
 	_context->wake();
 }
 
-void File::stop() {
+void File::stop(bool stillActive) {
 	if (_thread.joinable()) {
 		_context->interrupt();
 		_thread.join();
 	}
-	_reader.stop();
+	_reader->stopStreaming(stillActive);
 	_context.reset();
 }
 
 bool File::isRemoteLoader() const {
-	return _reader.isRemoteLoader();
+	return _reader->isRemoteLoader();
 }
 
 File::~File() {

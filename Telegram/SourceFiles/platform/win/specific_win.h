@@ -7,9 +7,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "platform/platform_specific.h"
 #include "platform/win/wrapper_windows_h.h"
 
-class LocationCoords;
+namespace Data {
+class LocationPoint;
+} // namespace Data
 
 namespace Platform {
 
@@ -36,10 +39,13 @@ inline void ReInitOnTopPanel(QWidget *panel) {
 
 QString CurrentExecutablePath(int argc, char *argv[]);
 
+inline constexpr bool UseMainQueueGeneric() {
+	return true;
+}
+
 namespace ThirdParty {
 
-inline void start() {
-}
+void start();
 
 inline void finish() {
 }
@@ -74,8 +80,6 @@ void psBringToBack(QWidget *w);
 int psCleanup();
 int psFixPrevious();
 
-QAbstractNativeEventFilter *psNativeEventFilter();
-
 void psNewVersion();
 
 void psUpdateOverlayed(TWidget *widget);
@@ -109,4 +113,4 @@ public:
 
 };
 
-bool psLaunchMaps(const LocationCoords &coords);
+bool psLaunchMaps(const Data::LocationPoint &point);

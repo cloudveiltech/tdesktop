@@ -15,11 +15,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_channel.h"
 #include "data/data_chat.h"
 #include "data/data_user.h"
+#include "data/data_folder.h"
 #include "apiwrap.h"
 #include "mainwidget.h"
 #include "lang/lang_keys.h"
 #include "history/history.h"
-#include "dialogs/dialogs_indexed_list.h"
+#include "dialogs/dialogs_main_list.h"
 #include "styles/style_boxes.h"
 #include "styles/style_profile.h"
 
@@ -37,10 +38,10 @@ void ShareBotGame(not_null<UserData*> bot, not_null<PeerData*> chat) {
 				MTP_inputGameShortName(
 					bot->inputUser,
 					MTP_string(bot->botInfo->shareGameShortName))),
-			MTP_string(""),
+			MTP_string(),
 			MTP_long(randomId),
-			MTPnullMarkup,
-			MTPnullEntities),
+			MTPReplyMarkup(),
+			MTPVector<MTPMessageEntity>()),
 		App::main()->rpcDone(&MainWidget::sentUpdatesReceived),
 		App::main()->rpcFail(&MainWidget::sendMessageFail),
 		0,
@@ -122,7 +123,6 @@ QMargins PeerListRowWithLink::actionMargins() const {
 
 void PeerListRowWithLink::paintAction(
 		Painter &p,
-		crl::time ms,
 		int x,
 		int y,
 		int outerWidth,
@@ -182,8 +182,8 @@ void PeerListGlobalSearchController::searchDone(
 	auto &contacts = result.c_contacts_found();
 	auto query = _query;
 	if (requestId) {
-		Auth().data().processUsers(contacts.vusers);
-		Auth().data().processChats(contacts.vchats);
+		Auth().data().processUsers(contacts.vusers());
+		Auth().data().processChats(contacts.vchats());
 		auto it = _queries.find(requestId);
 		if (it != _queries.cend()) {
 			query = it->second;
@@ -200,8 +200,8 @@ void PeerListGlobalSearchController::searchDone(
 	};
 	if (_requestId == requestId) {
 		_requestId = 0;
-		feedList(contacts.vmy_results);
-		feedList(contacts.vresults);
+		feedList(contacts.vmy_results());
+		feedList(contacts.vresults());
 		delegate()->peerListSearchRefreshRows();
 	}
 }
@@ -221,23 +221,29 @@ ChatsListBoxController::ChatsListBoxController(
 }
 
 void ChatsListBoxController::prepare() {
-	setSearchNoResultsText(lang(lng_blocked_list_not_found));
+	setSearchNoResultsText(tr::lng_blocked_list_not_found(tr::now));
 	delegate()->peerListSetSearchMode(PeerListSearchMode::Enabled);
 
 	prepareViewHook();
 
-	rebuildRows();
+	if (!Auth().data().chatsListLoaded()) {
+		Auth().data().chatsListLoadedEvents(
+		) | rpl::filter([=](Data::Folder *folder) {
+			return !folder;
+		}) | rpl::start_with_next([=] {
+			checkForEmptyRows();
+		}, lifetime());
+	}
 
-	auto &sessionData = Auth().data();
-	subscribe(sessionData.contactsLoaded(), [this](bool loaded) {
+	Auth().data().chatsListChanges(
+	) | rpl::start_with_next([=] {
 		rebuildRows();
-	});
-	subscribe(sessionData.moreChatsLoaded(), [this] {
+	}, lifetime());
+
+	Auth().data().contactsLoaded().value(
+	) | rpl::start_with_next([=] {
 		rebuildRows();
-	});
-	subscribe(sessionData.allChatsLoaded(), [this](bool loaded) {
-		checkForEmptyRows();
-	});
+	}, lifetime());
 }
 
 void ChatsListBoxController::rebuildRows() {
@@ -259,13 +265,17 @@ void ChatsListBoxController::rebuildRows() {
 			++added;
 		}
 	}
-	added += appendList(App::main()->dialogsList());
-	added += appendList(App::main()->contactsNoDialogsList());
+	added += appendList(Auth().data().chatsList()->indexed());
+	const auto id = Data::Folder::kId;
+	if (const auto folder = Auth().data().folderLoaded(id)) {
+		added += appendList(folder->chatsList()->indexed());
+	}
+	added += appendList(Auth().data().contactsNoChatsList());
 	if (!wasEmpty && added > 0) {
 		// Place dialogs list before contactsNoDialogs list.
 		delegate()->peerListPartitionRows([](const PeerListRow &a) {
-			auto history = static_cast<const Row&>(a).history();
-			return history->inChatList(Dialogs::Mode::All);
+			const auto history = static_cast<const Row&>(a).history();
+			return history->inChatList();
 		});
 		if (respectSavedMessagesChat()) {
 			delegate()->peerListPartitionRows([](const PeerListRow &a) {
@@ -281,14 +291,14 @@ void ChatsListBoxController::checkForEmptyRows() {
 	if (delegate()->peerListFullRowsCount()) {
 		setDescriptionText(QString());
 	} else {
-		auto &sessionData = Auth().data();
-		auto loaded = sessionData.contactsLoaded().value() && sessionData.allChatsLoaded().value();
-		setDescriptionText(loaded ? emptyBoxText() : lang(lng_contacts_loading));
+		const auto loaded = Auth().data().contactsLoaded().current()
+			&& Auth().data().chatsListLoaded();
+		setDescriptionText(loaded ? emptyBoxText() : tr::lng_contacts_loading(tr::now));
 	}
 }
 
 QString ChatsListBoxController::emptyBoxText() const {
-	return lang(lng_contacts_not_found);
+	return tr::lng_contacts_not_found(tr::now);
 }
 
 std::unique_ptr<PeerListRow> ChatsListBoxController::createSearchRow(not_null<PeerData*> peer) {
@@ -313,22 +323,20 @@ ContactsBoxController::ContactsBoxController(
 }
 
 void ContactsBoxController::prepare() {
-	setSearchNoResultsText(lang(lng_blocked_list_not_found));
+	setSearchNoResultsText(tr::lng_blocked_list_not_found(tr::now));
 	delegate()->peerListSetSearchMode(PeerListSearchMode::Enabled);
-	delegate()->peerListSetTitle(langFactory(lng_contacts_header));
+	delegate()->peerListSetTitle(tr::lng_contacts_header());
 
 	prepareViewHook();
 
-	rebuildRows();
-
-	auto &sessionData = Auth().data();
-	subscribe(sessionData.contactsLoaded(), [this](bool loaded) {
+	Auth().data().contactsLoaded().value(
+	) | rpl::start_with_next([=] {
 		rebuildRows();
-	});
+	}, lifetime());
 }
 
 void ContactsBoxController::rebuildRows() {
-	auto appendList = [this](auto chats) {
+	const auto appendList = [&](auto chats) {
 		auto count = 0;
 		for (const auto row : chats->all()) {
 			if (const auto history = row->history()) {
@@ -341,19 +349,17 @@ void ContactsBoxController::rebuildRows() {
 		}
 		return count;
 	};
-	appendList(App::main()->contactsList());
+	appendList(Auth().data().contactsList());
 	checkForEmptyRows();
 	delegate()->peerListRefreshRows();
 }
 
 void ContactsBoxController::checkForEmptyRows() {
-	if (delegate()->peerListFullRowsCount()) {
-		setDescriptionText(QString());
-	} else {
-		auto &sessionData = Auth().data();
-		auto loaded = sessionData.contactsLoaded().value();
-		setDescriptionText(lang(loaded ? lng_contacts_not_found : lng_contacts_loading));
-	}
+	setDescriptionText(delegate()->peerListFullRowsCount()
+		? QString()
+		: Auth().data().contactsLoaded().current()
+		? tr::lng_contacts_not_found(tr::now)
+		: tr::lng_contacts_loading(tr::now));
 }
 
 std::unique_ptr<PeerListRow> ContactsBoxController::createSearchRow(
@@ -386,7 +392,7 @@ std::unique_ptr<PeerListRow> ContactsBoxController::createRow(not_null<UserData*
 
 void AddBotToGroupBoxController::Start(not_null<UserData*> bot) {
 	auto initBox = [=](not_null<PeerListBox*> box) {
-		box->addButton(langFactory(lng_cancel), [box] { box->closeBox(); });
+		box->addButton(tr::lng_cancel(), [box] { box->closeBox(); });
 	};
 	Ui::show(Box<PeerListBox>(std::make_unique<AddBotToGroupBoxController>(bot), std::move(initBox)));
 }
@@ -412,9 +418,9 @@ void AddBotToGroupBoxController::shareBotGame(not_null<PeerData*> chat) {
 	});
 	auto confirmText = [chat] {
 		if (chat->isUser()) {
-			return lng_bot_sure_share_game(lt_user, App::peerName(chat));
+			return tr::lng_bot_sure_share_game(tr::now, lt_user, App::peerName(chat));
 		}
-		return lng_bot_sure_share_game_group(lt_group, chat->name);
+		return tr::lng_bot_sure_share_game_group(tr::now, lt_group, chat->name);
 	}();
 	Ui::show(
 		Box<ConfirmBox>(confirmText, std::move(send)),
@@ -425,7 +431,7 @@ void AddBotToGroupBoxController::addBotToGroup(not_null<PeerData*> chat) {
 	if (const auto megagroup = chat->asMegagroup()) {
 		if (!megagroup->canAddMembers()) {
 			Ui::show(
-				Box<InformBox>(lang(lng_error_cant_add_member)),
+				Box<InformBox>(tr::lng_error_cant_add_member(tr::now)),
 				LayerOption::KeepOther);
 			return;
 		}
@@ -433,7 +439,7 @@ void AddBotToGroupBoxController::addBotToGroup(not_null<PeerData*> chat) {
 	auto send = crl::guard(this, [bot = _bot, chat] {
 		AddBotToGroup(bot, chat);
 	});
-	auto confirmText = lng_bot_sure_invite(lt_group, chat->name);
+	auto confirmText = tr::lng_bot_sure_invite(tr::now, lt_group, chat->name);
 	Ui::show(
 		Box<ConfirmBox>(confirmText, send),
 		LayerOption::KeepOther);
@@ -474,15 +480,19 @@ bool AddBotToGroupBoxController::sharingBotGame() const {
 }
 
 QString AddBotToGroupBoxController::emptyBoxText() const {
-	return lang(Auth().data().allChatsLoaded().value()
-		? (sharingBotGame() ? lng_bot_no_chats : lng_bot_no_groups)
-		: lng_contacts_loading);
+	return !Auth().data().chatsListLoaded()
+		? tr::lng_contacts_loading(tr::now)
+		: sharingBotGame()
+		? tr::lng_bot_no_chats(tr::now)
+		: tr::lng_bot_no_groups(tr::now);
 }
 
 QString AddBotToGroupBoxController::noResultsText() const {
-	return lang(Auth().data().allChatsLoaded().value()
-		? (sharingBotGame() ? lng_bot_chats_not_found : lng_bot_groups_not_found)
-		: lng_contacts_loading);
+	return !Auth().data().chatsListLoaded()
+		? tr::lng_contacts_loading(tr::now)
+		: sharingBotGame()
+		? tr::lng_bot_chats_not_found(tr::now)
+		: tr::lng_bot_groups_not_found(tr::now);
 }
 
 void AddBotToGroupBoxController::updateLabels() {
@@ -490,11 +500,16 @@ void AddBotToGroupBoxController::updateLabels() {
 }
 
 void AddBotToGroupBoxController::prepareViewHook() {
-	delegate()->peerListSetTitle(langFactory(sharingBotGame()
-		? lng_bot_choose_chat
-		: lng_bot_choose_group));
+	delegate()->peerListSetTitle(sharingBotGame()
+		? tr::lng_bot_choose_chat()
+		: tr::lng_bot_choose_group());
 	updateLabels();
-	subscribe(Auth().data().allChatsLoaded(), [this](bool) { updateLabels(); });
+	Auth().data().chatsListLoadedEvents(
+	) | rpl::filter([=](Data::Folder *folder) {
+		return !folder;
+	}) | rpl::start_with_next([=] {
+		updateLabels();
+	}, lifetime());
 }
 
 ChooseRecipientBoxController::ChooseRecipientBoxController(
@@ -503,7 +518,7 @@ ChooseRecipientBoxController::ChooseRecipientBoxController(
 }
 
 void ChooseRecipientBoxController::prepareViewHook() {
-	delegate()->peerListSetTitle(langFactory(lng_forward_choose));
+	delegate()->peerListSetTitle(tr::lng_forward_choose());
 }
 
 void ChooseRecipientBoxController::rowClicked(not_null<PeerListRow*> row) {

@@ -53,8 +53,9 @@ enum class MTPDmessage_ClientFlag : uint32 {
 	//// message is attached to previous one when displaying the history
 	//f_attach_to_previous = (1U << 25),
 
-	//// message is attached to next one when displaying the history
-	//f_attach_to_next = (1U << 24),
+	// message's edited media is generated on the client
+	// and should not update media from server
+	f_is_local_update_media = (1U << 24),
 
 	// message was sent from inline bot, need to re-set media when sent
 	f_from_inline_bot = (1U << 23),
@@ -68,11 +69,8 @@ enum class MTPDmessage_ClientFlag : uint32 {
 	// message has an admin badge in supergroup
 	f_has_admin_badge = (1U << 20),
 
-	// message is unsupported by a current version of client
-	f_is_unsupported = (1U << 19),
-
 	// update this when adding new client side flags
-	MIN_FIELD = (1U << 19),
+	MIN_FIELD = (1U << 20),
 };
 DEFINE_MTP_CLIENT_FLAGS(MTPDmessage)
 
@@ -95,9 +93,6 @@ enum class MTPDreplyKeyboardMarkup_ClientFlag : uint32 {
 DEFINE_MTP_CLIENT_FLAGS(MTPDreplyKeyboardMarkup)
 
 enum class MTPDstickerSet_ClientFlag : uint32 {
-	// old value for sticker set is not yet loaded flag
-	f_not_loaded__old = (1U << 31),
-
 	// sticker set is not yet loaded
 	f_not_loaded = (1U << 30),
 
@@ -141,7 +136,3 @@ enum class MTPDchannel_ClientFlag : uint32 {
 	MIN_FIELD = (1U << 31),
 };
 DEFINE_MTP_CLIENT_FLAGS(MTPDchannel)
-
-extern const MTPReplyMarkup MTPnullMarkup;
-extern const MTPVector<MTPMessageEntity> MTPnullEntities;
-extern const MTPMessageFwdHeader MTPnullFwdHeader;

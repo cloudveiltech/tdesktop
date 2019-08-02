@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "mainwindow.h"
 #include "core/application.h"
+#include "platform/platform_info.h"
 
 namespace Fonts {
 namespace {
@@ -134,7 +135,7 @@ void CreateWidgetStateRecursive(not_null<QWidget*> target) {
 		if (!target->isWindow()) {
 			CreateWidgetStateRecursive(target->parentWidget());
 			WidgetCreator::Create(target);
-		} else if (!cIsSnowLeopard()) {
+		} else if (!Platform::IsMac() || Platform::IsMac10_7OrGreater()) {
 			WidgetCreator::Create(target);
 		}
 	}
@@ -187,6 +188,15 @@ void SendPendingMoveResizeEvents(not_null<QWidget*> target) {
 	SendPendingEventsRecursive(target, !target->isVisible());
 }
 
+void MarkDirtyOpaqueChildrenRecursive(not_null<QWidget*> target) {
+	target->resize(target->size()); // Calls setDirtyOpaqueRegion().
+	for (const auto child : target->children()) {
+		if (const auto widget = qobject_cast<QWidget*>(child)) {
+			MarkDirtyOpaqueChildrenRecursive(widget);
+		}
+	}
+}
+
 QPixmap GrabWidget(not_null<QWidget*> target, QRect rect, QColor bg) {
 	SendPendingMoveResizeEvents(target);
 	if (rect.isNull()) {
@@ -198,16 +208,15 @@ QPixmap GrabWidget(not_null<QWidget*> target, QRect rect, QColor bg) {
 	if (!target->testAttribute(Qt::WA_OpaquePaintEvent)) {
 		result.fill(bg);
 	}
-	target->render(
-		&result,
-		QPoint(0, 0),
-		rect,
-		QWidget::DrawChildren | QWidget::IgnoreMask);
+	{
+		QPainter p(&result);
+		RenderWidget(p, target, QPoint(), rect);
+	}
 	return result;
 }
 
 QImage GrabWidgetToImage(not_null<QWidget*> target, QRect rect, QColor bg) {
-	Ui::SendPendingMoveResizeEvents(target);
+	SendPendingMoveResizeEvents(target);
 	if (rect.isNull()) {
 		rect = target->rect();
 	}
@@ -219,12 +228,24 @@ QImage GrabWidgetToImage(not_null<QWidget*> target, QRect rect, QColor bg) {
 	if (!target->testAttribute(Qt::WA_OpaquePaintEvent)) {
 		result.fill(bg);
 	}
-	target->render(
-		&result,
-		QPoint(0, 0),
-		rect,
-		QWidget::DrawChildren | QWidget::IgnoreMask);
+	{
+		QPainter p(&result);
+		RenderWidget(p, target, QPoint(), rect);
+	}
 	return result;
+}
+
+void RenderWidget(
+		QPainter &painter,
+		not_null<QWidget*> source,
+		const QPoint &targetOffset,
+		const QRegion &sourceRegion,
+		QWidget::RenderFlags renderFlags) {
+	const auto visible = source->isVisible();
+	source->render(&painter, targetOffset, sourceRegion, renderFlags);
+	if (!visible) {
+		MarkDirtyOpaqueChildrenRecursive(source);
+	}
 }
 
 void ForceFullRepaint(not_null<QWidget*> widget) {

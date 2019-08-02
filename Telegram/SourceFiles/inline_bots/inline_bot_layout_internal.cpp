@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_chat_helpers.h"
 #include "styles/style_widgets.h"
 #include "inline_bots/inline_bot_result.h"
+#include "lottie/lottie_single_player.h"
 #include "media/audio/media_audio.h"
 #include "media/clip/media_clip_reader.h"
 #include "media/player/media_player_instance.h"
@@ -146,14 +147,14 @@ void Gif::paint(Painter &p, const QRect &clip, const PaintContext *context) cons
 		if (_gif) _gif->setAutoplay();
 	}
 
-	bool animating = (_gif && _gif->started());
+	const auto animating = (_gif && _gif->started());
 	if (displayLoading) {
 		ensureAnimation();
 		if (!_animation->radial.animating()) {
 			_animation->radial.start(document->progress());
 		}
 	}
-	bool radial = isRadialAnimation(context->ms);
+	const auto radial = isRadialAnimation();
 
 	int32 height = st::inlineMediaHeight;
 	QSize frame = countFrameSize();
@@ -174,8 +175,8 @@ void Gif::paint(Painter &p, const QRect &clip, const PaintContext *context) cons
 
 	if (radial || _gif.isBad() || (!_gif && !loaded && !loading)) {
 		auto radialOpacity = (radial && loaded) ? _animation->radial.opacity() : 1.;
-		if (_animation && _animation->_a_over.animating(context->ms)) {
-			auto over = _animation->_a_over.current();
+		if (_animation && _animation->_a_over.animating()) {
+			auto over = _animation->_a_over.value(1.);
 			p.fillRect(r, anim::brush(st::msgDateImgBg, st::msgDateImgBgOver, over));
 		} else {
 			auto over = (_state & StateFlag::Over);
@@ -321,34 +322,36 @@ void Gif::prepareThumbnail(QSize size, QSize frame) const {
 
 void Gif::ensureAnimation() const {
 	if (!_animation) {
-		_animation = std::make_unique<AnimationData>(animation(const_cast<Gif*>(this), &Gif::step_radial));
+		_animation = std::make_unique<AnimationData>([=](crl::time now) {
+			radialAnimationCallback(now);
+		});
 	}
 }
 
-bool Gif::isRadialAnimation(crl::time ms) const {
-	if (!_animation || !_animation->radial.animating()) return false;
-
-	_animation->radial.step(ms);
-	return _animation && _animation->radial.animating();
+bool Gif::isRadialAnimation() const {
+	if (_animation) {
+		if (_animation->radial.animating()) {
+			return true;
+		} else if (getShownDocument()->loaded()) {
+			_animation = nullptr;
+		}
+	}
+	return false;
 }
 
-void Gif::step_radial(crl::time ms, bool timer) {
+void Gif::radialAnimationCallback(crl::time now) const {
 	const auto document = getShownDocument();
-	const auto updateRadial = [&] {
+	const auto updated = [&] {
 		return _animation->radial.update(
 			document->progress(),
 			!document->loading() || document->loaded(),
-			ms);
-	};
-	if (timer) {
-		if (!anim::Disabled() || updateRadial()) {
-			update();
-		}
-	} else {
-		updateRadial();
-		if (!_animation->radial.animating() && document->loaded()) {
-			_animation.reset();
-		}
+			now);
+	}();
+	if (!anim::Disabled() || updated) {
+		update();
+	}
+	if (!_animation->radial.animating() && document->loaded()) {
+		_animation = nullptr;
 	}
 }
 
@@ -385,6 +388,8 @@ Sticker::Sticker(not_null<Context*> context, Result *result)
 : FileBase(context, result) {
 }
 
+Sticker::~Sticker() = default;
+
 void Sticker::initDimensions() {
 	_maxw = st::stickerPanSize.width();
 	_minh = st::stickerPanSize.height();
@@ -401,7 +406,7 @@ void Sticker::preload() const {
 void Sticker::paint(Painter &p, const QRect &clip, const PaintContext *context) const {
 	bool loaded = getShownDocument()->loaded();
 
-	auto over = _a_over.current(context->ms, _active ? 1. : 0.);
+	auto over = _a_over.value(_active ? 1. : 0.);
 	if (over > 0) {
 		p.setOpacity(over);
 		App::roundRect(p, QRect(QPoint(0, 0), st::stickerPanSize), st::emojiPanHover, StickerHoverCorners);
@@ -409,7 +414,17 @@ void Sticker::paint(Painter &p, const QRect &clip, const PaintContext *context) 
 	}
 
 	prepareThumbnail();
-	if (!_thumb.isNull()) {
+	if (_lottie && _lottie->ready()) {
+		const auto frame = _lottie->frame();
+		_lottie->markFrameShown();
+		const auto size = frame.size() / cIntRetinaFactor();
+		const auto pos = QPoint(
+			(st::stickerPanSize.width() - size.width()) / 2,
+			(st::stickerPanSize.height() - size.height()) / 2);
+		p.drawImage(
+			QRect(pos, size),
+			frame);
+	} else if (!_thumb.isNull()) {
 		int w = _thumb.width() / cIntRetinaFactor(), h = _thumb.height() / cIntRetinaFactor();
 		QPoint pos = QPoint((st::stickerPanSize.width() - w) / 2, (st::stickerPanSize.height() - h) / 2);
 		p.drawPixmap(pos, _thumb);
@@ -448,11 +463,31 @@ QSize Sticker::getThumbSize() const {
 	return QSize(qMax(w, 1), qMax(h, 1));
 }
 
+void Sticker::setupLottie(not_null<DocumentData*> document) const {
+	_lottie = Stickers::LottiePlayerFromDocument(
+		document,
+		Stickers::LottieSize::InlineResults,
+		QSize(
+			st::stickerPanSize.width() - st::buttonRadius * 2,
+			st::stickerPanSize.height() - st::buttonRadius * 2
+		) * cIntRetinaFactor());
+
+	_lottie->updates(
+	) | rpl::start_with_next([=] {
+		update();
+	}, _lifetime);
+}
+
 void Sticker::prepareThumbnail() const {
 	if (const auto document = getShownDocument()) {
+		if (document->sticker()->animated
+			&& !_lottie
+			&& document->loaded()) {
+			setupLottie(document);
+		}
 		document->checkStickerSmall();
 		if (const auto sticker = document->getStickerSmall()) {
-			if (!_thumbLoaded && sticker->loaded()) {
+			if (!_lottie && !_thumbLoaded && sticker->loaded()) {
 				const auto thumbSize = getThumbSize();
 				_thumb = sticker->pix(
 					document->stickerSetOrigin(),
@@ -606,7 +641,7 @@ void Video::initDimensions() {
 	TextParseOptions titleOpts = { 0, _maxw, 2 * st::semiboldFont->height, Qt::LayoutDirectionAuto };
 	auto title = TextUtilities::SingleLine(_result->getLayoutTitle());
 	if (title.isEmpty()) {
-		title = lang(lng_media_video);
+		title = tr::lng_media_video(tr::now);
 	}
 	_title.setText(st::semiboldTextStyle, title, titleOpts);
 	int32 titleHeight = qMin(_title.countHeight(_maxw), 2 * st::semiboldFont->height);
@@ -751,13 +786,13 @@ void File::paint(Painter &p, const QRect &clip, const PaintContext *context) con
 			_animation->radial.start(_document->progress());
 		}
 	}
-	bool showPause = updateStatusText();
-	bool radial = isRadialAnimation(context->ms);
+	const auto showPause = updateStatusText();
+	const auto radial = isRadialAnimation();
 
 	auto inner = rtlrect(0, st::inlineRowMargin, st::msgFileSize, st::msgFileSize, _width);
 	p.setPen(Qt::NoPen);
-	if (isThumbAnimation(context->ms)) {
-		auto over = _animation->a_thumbOver.current();
+	if (isThumbAnimation()) {
+		auto over = _animation->a_thumbOver.value(1.);
 		p.setBrush(anim::brush(st::msgFileInBg, st::msgFileInBgOver, over));
 	} else {
 		bool over = ClickHandler::showAsActive(_document->loading() ? _cancel : _open);
@@ -845,28 +880,26 @@ void File::thumbAnimationCallback() {
 	update();
 }
 
-void File::step_radial(crl::time ms, bool timer) {
-	const auto updateRadial = [&] {
+void File::radialAnimationCallback(crl::time now) const {
+	const auto updated = [&] {
 		return _animation->radial.update(
 			_document->progress(),
 			!_document->loading() || _document->loaded(),
-			ms);
-	};
-	if (timer) {
-		if (!anim::Disabled() || updateRadial()) {
-			update();
-		}
-	} else {
-		updateRadial();
-		if (!_animation->radial.animating()) {
-			checkAnimationFinished();
-		}
+			now);
+	}();
+	if (!anim::Disabled() || updated) {
+		update();
+	}
+	if (!_animation->radial.animating()) {
+		checkAnimationFinished();
 	}
 }
 
 void File::ensureAnimation() const {
 	if (!_animation) {
-		_animation = std::make_unique<AnimationData>(animation(const_cast<File*>(this), &File::step_radial));
+		_animation = std::make_unique<AnimationData>([=](crl::time now) {
+			return radialAnimationCallback(now);
+		});
 	}
 }
 
@@ -926,7 +959,7 @@ void File::setStatusSize(int32 newSize, int32 fullSize, int32 duration, qint64 r
 	} else if (_statusSize == FileStatusSizeLoaded) {
 		_statusText = (duration >= 0) ? formatDurationText(duration) : (duration < -1 ? qsl("GIF") : formatSizeText(fullSize));
 	} else if (_statusSize == FileStatusSizeFailed) {
-		_statusText = lang(lng_attach_failed);
+		_statusText = tr::lng_attach_failed(tr::now);
 	} else if (_statusSize >= 0) {
 		_statusText = formatDownloadText(_statusSize, fullSize);
 	} else {
@@ -1025,9 +1058,10 @@ Article::Article(not_null<Context*> context, Result *result, bool withThumb) : I
 , _withThumb(withThumb)
 , _title(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineThumbSize - st::inlineThumbSkip)
 , _description(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineThumbSize - st::inlineThumbSkip) {
-	LocationCoords location;
-	if (!_link && result->getLocationCoords(&location)) {
-		_link = std::make_shared<LocationClickHandler>(location);
+	if (!_link) {
+		if (const auto point = result->getLocationPoint()) {
+			_link = std::make_shared<LocationClickHandler>(*point);
+		}
 	}
 	_thumbLetter = getResultThumbLetter();
 }
@@ -1251,13 +1285,15 @@ void Game::paint(Painter &p, const QRect &clip, const PaintContext *context) con
 		bool animating = (_gif && _gif->started());
 		if (displayLoading) {
 			if (!_radial) {
-				_radial = std::make_unique<Ui::RadialAnimation>(animation(const_cast<Game*>(this), &Game::step_radial));
+				_radial = std::make_unique<Ui::RadialAnimation>([=](crl::time now) {
+					return radialAnimationCallback(now);
+				});
 			}
 			if (!_radial->animating()) {
 				_radial->start(document->progress());
 			}
 		}
-		radial = isRadialAnimation(context->ms);
+		radial = isRadialAnimation();
 
 		if (animating) {
 			if (!_thumb.isNull()) _thumb = QPixmap();
@@ -1360,30 +1396,30 @@ void Game::validateThumbnail(Image *image, QSize size, bool good) const {
 		size.height());
 }
 
-bool Game::isRadialAnimation(crl::time ms) const {
-	if (!_radial || !_radial->animating()) return false;
-
-	_radial->step(ms);
-	return _radial && _radial->animating();
+bool Game::isRadialAnimation() const {
+	if (_radial) {
+		if (_radial->animating()) {
+			return true;
+		} else if (getResultDocument()->loaded()) {
+			_radial = nullptr;
+		}
+	}
+	return false;
 }
 
-void Game::step_radial(crl::time ms, bool timer) {
+void Game::radialAnimationCallback(crl::time now) const {
 	const auto document = getResultDocument();
-	const auto updateRadial = [&] {
+	const auto updated = [&] {
 		return _radial->update(
 			document->progress(),
 			!document->loading() || document->loaded(),
-			ms);
-	};
-	if (timer) {
-		if (!anim::Disabled() || updateRadial()) {
-			update();
-		}
-	} else {
-		updateRadial();
-		if (!_radial->animating() && document->loaded()) {
-			_radial.reset();
-		}
+			now);
+	}();
+	if (!anim::Disabled() || updated) {
+		update();
+	}
+	if (!_radial->animating() && document->loaded()) {
+		_radial = nullptr;
 	}
 }
 

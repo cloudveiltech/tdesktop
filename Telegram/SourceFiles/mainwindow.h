@@ -44,7 +44,7 @@ class MainWindow : public Platform::MainWindow {
 	Q_OBJECT
 
 public:
-	MainWindow();
+	explicit MainWindow(not_null<Window::Controller*> controller);
 	~MainWindow();
 
 	void firstShow();
@@ -109,12 +109,13 @@ public:
 	void ui_hideSettingsAndLayer(anim::type animated);
 	void ui_removeLayerBlackout();
 	bool ui_isLayerShown();
-	void ui_showMediaPreview(
+	void showMediaPreview(
 		Data::FileOrigin origin,
 		not_null<DocumentData*> document);
-	void ui_showMediaPreview(
+	void showMediaPreview(
 		Data::FileOrigin origin,
 		not_null<PhotoData*> photo);
+	void hideMediaPreview();
 
 protected:
 	bool eventFilter(QObject *o, QEvent *e) override;
@@ -132,7 +133,6 @@ public slots:
 
 	void quitFromTray();
 	void showFromTray(QSystemTrayIcon::ActivationReason reason = QSystemTrayIcon::Unknown);
-	void toggleTray(QSystemTrayIcon::ActivationReason reason = QSystemTrayIcon::Unknown);
 	void toggleDisplayNotifyFromTray();
 
 	void onClearFinished(int task, void *manager);
@@ -150,7 +150,9 @@ signals:
 private:
 	[[nodiscard]] bool skipTrayClick() const;
 
-	void hideMediaPreview();
+	void handleTrayIconActication(
+		QSystemTrayIcon::ActivationReason reason) override;
+
 	void ensureLayerCreated();
 	void destroyLayer();
 

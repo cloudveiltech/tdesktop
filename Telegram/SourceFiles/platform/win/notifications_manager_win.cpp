@@ -459,14 +459,11 @@ bool Manager::Private::showNotification(PeerData *peer, MsgId msgId, const QStri
 	hr = SetAudioSilent(toastXml.Get());
 	if (!SUCCEEDED(hr)) return false;
 
-	StorageKey key;
-	if (hideNameAndPhoto) {
-		key = StorageKey(0, 0);
-	} else {
-		key = peer->userpicUniqueKey();
-	}
-	auto userpicPath = _cachedUserpics.get(key, peer);
-	auto userpicPathWide = QDir::toNativeSeparators(userpicPath).toStdWString();
+	const auto key = hideNameAndPhoto
+		? InMemoryKey()
+		: peer->userpicUniqueKey();
+	const auto userpicPath = _cachedUserpics.get(key, peer);
+	const auto userpicPathWide = QDir::toNativeSeparators(userpicPath).toStdWString();
 
 	hr = SetImageSrc(userpicPathWide.c_str(), toastXml.Get());
 	if (!SUCCEEDED(hr)) return false;
@@ -668,14 +665,15 @@ void querySystemNotificationSettings() {
 bool SkipAudio() {
 	querySystemNotificationSettings();
 
-	if (UserNotificationState == QUNS_NOT_PRESENT || UserNotificationState == QUNS_PRESENTATION_MODE) {
+	if (UserNotificationState == QUNS_NOT_PRESENT
+		|| UserNotificationState == QUNS_PRESENTATION_MODE
+		|| QuietHoursEnabled) {
 		return true;
 	}
-	if (QuietHoursEnabled) {
-		return true;
-	}
-	if (EventFilter::getInstance()->sessionLoggedOff()) {
-		return true;
+	if (const auto filter = EventFilter::GetInstance()) {
+		if (filter->sessionLoggedOff()) {
+			return true;
+		}
 	}
 	return false;
 }
@@ -683,10 +681,10 @@ bool SkipAudio() {
 bool SkipToast() {
 	querySystemNotificationSettings();
 
-	if (UserNotificationState == QUNS_PRESENTATION_MODE || UserNotificationState == QUNS_RUNNING_D3D_FULL_SCREEN/* || UserNotificationState == QUNS_BUSY*/) {
-		return true;
-	}
-	if (QuietHoursEnabled) {
+	if (UserNotificationState == QUNS_PRESENTATION_MODE
+		|| UserNotificationState == QUNS_RUNNING_D3D_FULL_SCREEN
+		//|| UserNotificationState == QUNS_BUSY
+		|| QuietHoursEnabled) {
 		return true;
 	}
 	return false;

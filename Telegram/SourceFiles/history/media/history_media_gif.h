@@ -17,10 +17,12 @@ namespace Media {
 namespace View {
 class PlaybackProgress;
 } // namespace View
+} // namespace Media
 
-namespace Player {
-class RoundController;
-} // namespace Player
+namespace Media {
+namespace Streaming {
+class Player;
+} // namespace Streaming
 } // namespace Media
 
 class HistoryGif : public HistoryFileMedia {
@@ -44,7 +46,7 @@ public:
 		return !_caption.isEmpty();
 	}
 
-	TextWithEntities selectedText(TextSelection selection) const override;
+	TextForMimeData selectedText(TextSelection selection) const override;
 
 	bool uploading() const override;
 
@@ -55,7 +57,7 @@ public:
 	void stopAnimation() override;
 
 	TextWithEntities getCaption() const override {
-		return _caption.originalTextWithEntities();
+		return _caption.toTextWithEntities();
 	}
 	bool needsBubble() const override;
 	bool customInfoLayout() const override {
@@ -86,8 +88,8 @@ private:
 	void playAnimation(bool autoplay) override;
 	QSize countOptimalSize() override;
 	QSize countCurrentSize(int newWidth) override;
-	Media::Player::RoundController *activeRoundVideo() const;
-	Media::Clip::Reader *activeRoundPlayer() const;
+	QSize videoSize() const;
+	Media::Streaming::Player *activeRoundPlayer() const;
 	Media::Clip::Reader *currentReader() const;
 	Media::View::PlaybackProgress *videoPlayback() const;
 	void clipCallback(Media::Clip::Notification notification);
@@ -104,7 +106,7 @@ private:
 	not_null<DocumentData*> _data;
 	int _thumbw = 1;
 	int _thumbh = 1;
-	Text _caption;
+	Ui::Text::String _caption;
 	Media::Clip::ReaderPointer _gif;
 
 	void setStatusSize(int newSize) const;

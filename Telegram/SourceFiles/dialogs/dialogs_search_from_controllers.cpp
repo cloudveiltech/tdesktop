@@ -19,7 +19,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Dialogs {
 
 void ShowSearchFromBox(
-		not_null<Window::Navigation*> navigation,
+		not_null<Window::SessionNavigation*> navigation,
 		not_null<PeerData*> peer,
 		Fn<void(not_null<UserData*>)> callback,
 		Fn<void()> closedCallback) {
@@ -39,7 +39,7 @@ void ShowSearchFromBox(
 	if (auto controller = createController()) {
 		auto subscription = std::make_shared<rpl::lifetime>();
 		auto box = Ui::show(Box<PeerListBox>(std::move(controller), [subscription](not_null<PeerListBox*> box) {
-			box->addButton(langFactory(lng_cancel), [box, subscription] {
+			box->addButton(tr::lng_cancel(), [box, subscription] {
 				box->closeBox();
 			});
 		}), LayerOption::KeepOther);
@@ -50,7 +50,7 @@ void ShowSearchFromBox(
 }
 
 SearchFromController::SearchFromController(
-	not_null<Window::Navigation*> navigation,
+	not_null<Window::SessionNavigation*> navigation,
 	not_null<PeerData*> peer,
 	Fn<void(not_null<UserData*>)> callback)
 : ParticipantsBoxController(
@@ -62,7 +62,7 @@ SearchFromController::SearchFromController(
 
 void SearchFromController::prepare() {
 	ParticipantsBoxController::prepare();
-	delegate()->peerListSetTitle(langFactory(lng_search_messages_from));
+	delegate()->peerListSetTitle(tr::lng_search_messages_from());
 }
 
 void SearchFromController::rowClicked(not_null<PeerListRow*> row) {

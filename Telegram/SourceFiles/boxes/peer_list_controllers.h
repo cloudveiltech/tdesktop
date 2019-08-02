@@ -42,7 +42,6 @@ private:
 	QMargins actionMargins() const override;
 	void paintAction(
 		Painter &p,
-		crl::time ms,
 		int x,
 		int y,
 		int outerWidth,
@@ -77,9 +76,7 @@ private:
 
 };
 
-class ChatsListBoxController
-	: public PeerListController
-	, protected base::Subscriber {
+class ChatsListBoxController : public PeerListController {
 public:
 	ChatsListBoxController(
 		std::unique_ptr<PeerListSearchController> searchController
@@ -114,9 +111,7 @@ private:
 
 };
 
-class ContactsBoxController
-	: public PeerListController
-	, protected base::Subscriber {
+class ContactsBoxController : public PeerListController {
 public:
 	ContactsBoxController(
 		std::unique_ptr<PeerListSearchController> searchController

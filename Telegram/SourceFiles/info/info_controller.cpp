@@ -20,7 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_chat.h"
 #include "data/data_session.h"
 #include "auth_session.h"
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 
 namespace Info {
 namespace {
@@ -40,8 +40,8 @@ not_null<PeerData*> CorrectPeer(PeerId peerId) {
 Key::Key(not_null<PeerData*> peer) : _value(peer) {
 }
 
-Key::Key(not_null<Data::Feed*> feed) : _value(feed) {
-}
+//Key::Key(not_null<Data::Feed*> feed) : _value(feed) { // #feed
+//}
 
 Key::Key(Settings::Tag settings) : _value(settings) {
 }
@@ -53,12 +53,12 @@ PeerData *Key::peer() const {
 	return nullptr;
 }
 
-Data::Feed *Key::feed() const {
-	if (const auto feed = base::get_if<not_null<Data::Feed*>>(&_value)) {
-		return *feed;
-	}
-	return nullptr;
-}
+//Data::Feed *Key::feed() const { // #feed
+//	if (const auto feed = base::get_if<not_null<Data::Feed*>>(&_value)) {
+//		return *feed;
+//	}
+//	return nullptr;
+//}
 
 UserData *Key::settingsSelf() const {
 	if (const auto tag = base::get_if<Settings::Tag>(&_value)) {
@@ -86,8 +86,9 @@ rpl::producer<QString> AbstractController::mediaSourceQueryValue() const {
 	return rpl::single(QString());
 }
 
-AbstractController::AbstractController(not_null<Window::Controller*> parent)
-: Navigation(&parent->session())
+AbstractController::AbstractController(
+	not_null<Window::SessionController*> parent)
+: SessionNavigation(&parent->session())
 , _parent(parent) {
 }
 
@@ -118,7 +119,7 @@ void AbstractController::showBackFromStack(
 
 Controller::Controller(
 	not_null<WrapWidget*> widget,
-	not_null<Window::Controller*> window,
+	not_null<Window::SessionController*> window,
 	not_null<ContentMemento*> memento)
 : AbstractController(window)
 , _widget(widget)
@@ -167,7 +168,7 @@ bool Controller::validateMementoPeer(
 		not_null<ContentMemento*> memento) const {
 	return memento->peerId() == peerId()
 		&& memento->migratedPeerId() == migratedPeerId()
-		&& memento->feed() == feed()
+		//&& memento->feed() == feed() // #feed
 		&& memento->settingsSelf() == settingsSelf();
 }
 
@@ -190,8 +191,8 @@ void Controller::updateSearchControllers(
 		= (type == Type::CommonGroups);
 	auto hasMembersSearch
 		= (type == Type::Members
-			|| type == Type::Profile
-			|| type == Type::Channels);
+			|| type == Type::Profile/* // #feed
+			|| type == Type::Channels*/);
 	auto searchQuery = memento->searchFieldQuery();
 	if (isMedia) {
 		_searchController

@@ -11,7 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/info_controller.h"
 #include "lang/lang_keys.h"
 #include "mtproto/sender.h"
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/search_field_controller.h"
 #include "data/data_user.h"
@@ -81,9 +81,9 @@ std::unique_ptr<PeerListRow> ListController::createRow(
 }
 
 void ListController::prepare() {
-	setSearchNoResultsText(lang(lng_bot_groups_not_found));
+	setSearchNoResultsText(tr::lng_bot_groups_not_found(tr::now));
 	delegate()->peerListSetSearchMode(PeerListSearchMode::Enabled);
-	delegate()->peerListSetTitle(langFactory(lng_profile_common_groups_section));
+	delegate()->peerListSetTitle(tr::lng_profile_common_groups_section());
 }
 
 void ListController::loadMoreRows() {
@@ -99,7 +99,7 @@ void ListController::loadMoreRows() {
 		_preloadGroupId = 0;
 		_allLoaded = true;
 		const auto &chats = result.match([](const auto &data) {
-			return data.vchats.v;
+			return data.vchats().v;
 		});
 		if (!chats.empty()) {
 			for (const auto &chat : chats) {
@@ -240,11 +240,10 @@ object_ptr<InnerWidget::ListWidget> InnerWidget::setupList(
 	return result;
 }
 
-void InnerWidget::peerListSetTitle(Fn<QString()> title) {
+void InnerWidget::peerListSetTitle(rpl::producer<QString> title) {
 }
 
-void InnerWidget::peerListSetAdditionalTitle(
-		Fn<QString()> title) {
+void InnerWidget::peerListSetAdditionalTitle(rpl::producer<QString> title) {
 }
 
 bool InnerWidget::peerListIsRowSelected(not_null<PeerData*> peer) {

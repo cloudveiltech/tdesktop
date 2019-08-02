@@ -7,30 +7,30 @@
 {
   'conditions': [
     [ 'build_win', {
-	  'libraries': [
+      'libraries': [
         '-llibeay32',
         '-lssleay32',
         '-lCrypt32',
-	  ],
+      ],
       'configurations': {
         'Debug': {
           'include_dirs': [
-            '<(libs_loc)/openssl/Debug/include',
+            '<(libs_loc)/openssl/inc32',
           ],
           'library_dirs': [
-            '<(libs_loc)/openssl/Debug/lib',
+            '<(libs_loc)/openssl/out32.dbg',
           ],
         },
         'Release': {
           'include_dirs': [
-            '<(libs_loc)/openssl/Release/include',
+            '<(libs_loc)/openssl/inc32',
           ],
           'library_dirs': [
-            '<(libs_loc)/openssl/Release/lib',
+            '<(libs_loc)/openssl/out32',
           ],
         },
       },
-	}], [ 'build_macold', {
+    }], [ 'build_macold', {
       'xcode_settings': {
         'OTHER_LDFLAGS': [
           '<(libs_loc)/macold/openssl/libssl.a',

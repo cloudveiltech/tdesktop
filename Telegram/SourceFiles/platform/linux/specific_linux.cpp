@@ -118,17 +118,6 @@ QString CurrentExecutablePath(int argc, char *argv[]) {
 
 namespace {
 
-class _PsEventFilter : public QAbstractNativeEventFilter {
-public:
-	bool nativeEventFilter(const QByteArray &eventType, void *message, long *result) {
-		//auto wnd = App::wnd();
-		//if (!wnd) return false;
-
-		return false;
-	}
-};
-_PsEventFilter *_psEventFilter = nullptr;
-
 QRect _monitorRect;
 auto _monitorLastGot = 0LL;
 
@@ -147,12 +136,6 @@ void psShowOverAll(QWidget *w, bool canFocus) {
 }
 
 void psBringToBack(QWidget *w) {
-}
-
-QAbstractNativeEventFilter *psNativeEventFilter() {
-	delete _psEventFilter;
-	_psEventFilter = new _PsEventFilter();
-	return _psEventFilter;
 }
 
 void psWriteDump() {
@@ -255,42 +238,29 @@ void start() {
 
 void finish() {
 	Notifications::Finish();
-
-	delete _psEventFilter;
-	_psEventFilter = nullptr;
 }
 
 bool TranslucentWindowsSupported(QPoint globalPosition) {
-	if (auto app = static_cast<QGuiApplication*>(QCoreApplication::instance())) {
-		if (auto native = app->platformNativeInterface()) {
-			if (auto desktop = QApplication::desktop()) {
-				auto index = desktop->screenNumber(globalPosition);
-				auto screens = QGuiApplication::screens();
-				if (auto screen = (index >= 0 && index < screens.size()) ? screens[index] : QGuiApplication::primaryScreen()) {
-					if (native->nativeResourceForScreen(QByteArray("compositingEnabled"), screen)) {
-						return true;
-					}
-
-					static OrderedSet<int> WarnedAbout;
-					if (!WarnedAbout.contains(index)) {
-						WarnedAbout.insert(index);
-						LOG(("WARNING: Compositing is disabled for screen index %1 (for position %2,%3)").arg(index).arg(globalPosition.x()).arg(globalPosition.y()));
-					}
-				} else {
-					LOG(("WARNING: Could not get screen for index %1 (for position %2,%3)").arg(index).arg(globalPosition.x()).arg(globalPosition.y()));
+	if (const auto native = QGuiApplication::platformNativeInterface()) {
+		if (const auto desktop = QApplication::desktop()) {
+			const auto index = desktop->screenNumber(globalPosition);
+			const auto screens = QGuiApplication::screens();
+			if (const auto screen = (index >= 0 && index < screens.size()) ? screens[index] : QGuiApplication::primaryScreen()) {
+				if (native->nativeResourceForScreen(QByteArray("compositingEnabled"), screen)) {
+					return true;
 				}
+
+				static auto WarnedAbout = base::flat_set<int>();
+				if (!WarnedAbout.contains(index)) {
+					WarnedAbout.insert(index);
+					LOG(("WARNING: Compositing is disabled for screen index %1 (for position %2,%3)").arg(index).arg(globalPosition.x()).arg(globalPosition.y()));
+				}
+			} else {
+				LOG(("WARNING: Could not get screen for index %1 (for position %2,%3)").arg(index).arg(globalPosition.x()).arg(globalPosition.y()));
 			}
 		}
 	}
 	return false;
-}
-
-QString SystemCountry() {
-	return QString();
-}
-
-QString SystemLanguage() {
-	return QString();
 }
 
 void RegisterCustomScheme() {
@@ -508,6 +478,6 @@ bool linuxMoveFile(const char *from, const char *to) {
 	return true;
 }
 
-bool psLaunchMaps(const LocationCoords &coords) {
+bool psLaunchMaps(const Data::LocationPoint &point) {
 	return false;
 }

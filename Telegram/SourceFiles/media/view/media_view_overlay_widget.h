@@ -32,7 +32,6 @@ namespace Notify {
 struct PeerUpdate;
 } // namespace Notify
 
-
 namespace Media {
 namespace Player {
 struct TrackState;
@@ -217,6 +216,7 @@ private:
 
 	Data::FileOrigin fileOrigin() const;
 
+	void refreshFromLabel(HistoryItem *item);
 	void refreshCaption(HistoryItem *item);
 	void refreshMediaViewer();
 	void refreshNavVisibility();
@@ -228,7 +228,6 @@ private:
 	void updateActions();
 	void resizeCenteredControls();
 	void resizeContentByScreenSize();
-	void checkLoadingWhileStreaming();
 
 	void displayPhoto(not_null<PhotoData*> photo, HistoryItem *item);
 	void displayDocument(DocumentData *document, HistoryItem *item);
@@ -273,9 +272,11 @@ private:
 	void updateHeader();
 	void snapXY();
 
-	void step_state(crl::time ms);
-	void step_radial(crl::time ms, bool timer);
-	void step_waiting(crl::time ms, bool timer);
+	void clearControlsState();
+	bool stateAnimationCallback(crl::time ms);
+	bool radialAnimationCallback(crl::time now);
+	void waitingAnimationCallback();
+	bool updateControlsAnimation(crl::time now);
 
 	void zoomIn();
 	void zoomOut();
@@ -335,7 +336,6 @@ private:
 	QString _headerText;
 
 	bool _streamingStartPaused = false;
-	bool _streamingPauseMusic = false;
 	bool _fullScreenVideo = false;
 	int _fullScreenZoomCache = 0;
 
@@ -344,7 +344,7 @@ private:
 	int _groupThumbsAvailableWidth = 0;
 	int _groupThumbsLeft = 0;
 	int _groupThumbsTop = 0;
-	Text _caption;
+	Ui::Text::String _caption;
 	QRect _captionRect;
 
 	int _width = 0;
@@ -387,7 +387,8 @@ private:
 	bool _firstOpenedPeerPhoto = false;
 
 	PeerData *_from = nullptr;
-	Text _fromName;
+	QString _fromName;
+	Ui::Text::String _fromNameLabel;
 
 	std::optional<int> _index; // Index in current _sharedMedia data.
 	std::optional<int> _fullIndex; // Index in full shared media.
@@ -403,7 +404,7 @@ private:
 	QPoint _lastAction, _lastMouseMovePos;
 	bool _ignoringDropdown = false;
 
-	Ui::Animations::Basic _a_state;
+	Ui::Animations::Basic _stateAnimation;
 
 	enum ControlsState {
 		ControlsShowing,
@@ -414,7 +415,7 @@ private:
 	ControlsState _controlsState = ControlsShown;
 	crl::time _controlsAnimStarted = 0;
 	QTimer _controlsHideTimer;
-	anim::value a_cOpacity;
+	anim::value _controlsOpacity;
 	bool _mousePressed = false;
 
 	Ui::PopupMenu *_menu = nullptr;
@@ -429,7 +430,9 @@ private:
 
 	bool _receiveMouse = true;
 
-	bool _touchPress = false, _touchMove = false, _touchRightButton = false;
+	bool _touchPress = false;
+	bool _touchMove = false;
+	bool _touchRightButton = false;
 	QTimer _touchTimer;
 	QPoint _touchStart;
 	QPoint _accumScroll;
@@ -439,12 +442,10 @@ private:
 	anim::value _saveMsgOpacity;
 	QRect _saveMsg;
 	QTimer _saveMsgUpdater;
-	Text _saveMsgText;
+	Ui::Text::String _saveMsgText;
 
-	typedef QMap<OverState, crl::time> Showing;
-	Showing _animations;
-	typedef QMap<OverState, anim::value> ShowingOpacities;
-	ShowingOpacities _animOpacities;
+	base::flat_map<OverState, crl::time> _animations;
+	base::flat_map<OverState, anim::value> _animationOpacities;
 
 	int _verticalWheelDelta = 0;
 

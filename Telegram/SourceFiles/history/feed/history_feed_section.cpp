@@ -230,7 +230,7 @@ void Widget::updateScrollDownPosition() {
 	auto top = anim::interpolate(
 		0,
 		_scrollDown->height() + st::historyToDownPosition.y(),
-		_scrollDownShown.current(_scrollDownIsShown ? 1. : 0.));
+		_scrollDownShown.value(_scrollDownIsShown ? 1. : 0.));
 	_scrollDown->moveToRight(
 		st::historyToDownPosition.x(),
 		_scroll->height() - top);
@@ -241,7 +241,7 @@ void Widget::updateScrollDownPosition() {
 }
 
 void Widget::scrollDownAnimationFinish() {
-	_scrollDownShown.finish();
+	_scrollDownShown.stop();
 	updateScrollDownPosition();
 }
 
@@ -536,10 +536,7 @@ void Widget::paintEvent(QPaintEvent *e) {
 	//	updateListSize();
 	//}
 
-	const auto ms = crl::now();
-	_scrollDownShown.step(ms);
-
-	SectionWidget::PaintBackground(this, e);
+	SectionWidget::PaintBackground(this, e->rect());
 
 	if (_emptyTextView) {
 		Painter p(this);

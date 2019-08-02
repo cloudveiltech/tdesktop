@@ -126,6 +126,7 @@ public:
 	[[nodiscard]] bool tile() const;
 	[[nodiscard]] bool tileDay() const;
 	[[nodiscard]] bool tileNight() const;
+	[[nodiscard]] bool isMonoColorImage() const;
 
 private:
 	struct AdjustableColor {
@@ -153,7 +154,6 @@ private:
 	void keepApplied(const QString &path, bool write);
 	[[nodiscard]] bool isNonDefaultThemeOrBackground();
 	[[nodiscard]] bool isNonDefaultBackground();
-	void refreshSession();
 	void checkUploadWallPaper();
 	[[nodiscard]] bool testingPalette() const;
 
@@ -174,6 +174,8 @@ private:
 	bool _tileDayValue = false;
 	bool _tileNightValue = true;
 
+	bool _isMonoColorImage = false;
+
 	QString _themeAbsolutePath;
 	QImage _themeImage;
 	bool _themeTile = false;
@@ -187,6 +189,8 @@ private:
 	FullMsgId _wallPaperUploadId;
 	mtpRequestId _wallPaperRequestId = 0;
 	rpl::lifetime _wallPaperUploadLifetime;
+
+	rpl::lifetime _lifetime;
 
 };
 

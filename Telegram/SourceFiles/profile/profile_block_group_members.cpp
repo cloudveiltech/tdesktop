@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/confirm_box.h"
 #include "boxes/peers/edit_participant_box.h"
 #include "boxes/peers/edit_participants_box.h"
+#include "base/unixtime.h"
 #include "ui/widgets/popup_menu.h"
 #include "data/data_peer_values.h"
 #include "data/data_channel.h"
@@ -41,7 +42,7 @@ GroupMembersWidget::GroupMembersWidget(
 	QWidget *parent,
 	PeerData *peer,
 	const style::PeerListItem &st)
-: PeerListWidget(parent, peer, QString(), st, lang(lng_profile_kick)) {
+: PeerListWidget(parent, peer, QString(), st, tr::lng_profile_kick(tr::now)) {
 	_updateOnlineTimer.setSingleShot(true);
 	connect(&_updateOnlineTimer, SIGNAL(timeout()), this, SLOT(onUpdateOnlineDisplay()));
 
@@ -72,7 +73,7 @@ void GroupMembersWidget::removePeer(PeerData *selectedPeer) {
 	auto user = selectedPeer->asUser();
 	Assert(user != nullptr);
 
-	auto text = lng_profile_sure_kick(lt_user, user->firstName);
+	auto text = tr::lng_profile_sure_kick(tr::now, lt_user, user->firstName);
 	auto currentRestrictedRights = [&]() -> MTPChatBannedRights {
 		if (auto channel = peer()->asMegagroup()) {
 			auto it = channel->mgInfo->lastRestricted.find(user);
@@ -82,7 +83,7 @@ void GroupMembersWidget::removePeer(PeerData *selectedPeer) {
 		}
 		return MTP_chatBannedRights(MTP_flags(0), MTP_int(0));
 	}();
-	Ui::show(Box<ConfirmBox>(text, lang(lng_box_remove), [user, currentRestrictedRights, peer = peer()] {
+	Ui::show(Box<ConfirmBox>(text, tr::lng_box_remove(tr::now), [user, currentRestrictedRights, peer = peer()] {
 		Ui::hideLayer();
 		if (const auto chat = peer->asChat()) {
 			Auth().api().kickParticipant(chat, user);
@@ -128,7 +129,7 @@ void GroupMembersWidget::refreshUserOnline(UserData *user) {
 	auto it = _membersByUser.find(user);
 	if (it == _membersByUser.cend()) return;
 
-	_now = unixtime();
+	_now = base::unixtime::now();
 
 	auto member = getMember(it.value());
 	member->statusHasOnlineColor = !user->botInfo && Data::OnlineTextActive(user->onlineTill, _now);
@@ -160,7 +161,9 @@ void GroupMembersWidget::updateItemStatusText(Item *item) {
 	if (member->statusText.isEmpty() || (member->onlineTextTill <= _now)) {
 		if (user->botInfo) {
 			auto seesAllMessages = (user->botInfo->readsAllHistory || (member->adminState != Item::AdminState::None));
-			member->statusText = lang(seesAllMessages ? lng_status_bot_reads_all : lng_status_bot_not_reads_all);
+			member->statusText = seesAllMessages
+				? tr::lng_status_bot_reads_all(tr::now)
+				: tr::lng_status_bot_not_reads_all(tr::now);
 			member->onlineTextTill = _now + 86400;
 		} else {
 			member->statusHasOnlineColor = Data::OnlineTextActive(member->onlineTill, _now);
@@ -178,7 +181,7 @@ void GroupMembersWidget::updateItemStatusText(Item *item) {
 }
 
 void GroupMembersWidget::refreshMembers() {
-	_now = unixtime();
+	_now = base::unixtime::now();
 	if (const auto chat = peer()->asChat()) {
 		checkSelfAdmin(chat);
 		if (chat->noParticipantInfo()) {
@@ -419,7 +422,7 @@ auto GroupMembersWidget::computeMember(not_null<UserData*> user)
 
 void GroupMembersWidget::onUpdateOnlineDisplay() {
 	if (_sortByOnline) {
-		_now = unixtime();
+		_now = base::unixtime::now();
 
 		bool changed = false;
 		for_const (auto item, items()) {

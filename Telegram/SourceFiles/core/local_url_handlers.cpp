@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_cloud_manager.h"
 #include "lang/lang_keys.h"
 #include "core/update_checker.h"
+#include "core/application.h"
 #include "boxes/confirm_phone_box.h"
 #include "boxes/background_preview_box.h"
 #include "boxes/confirm_box.h"
@@ -19,11 +20,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/connection_box.h"
 #include "boxes/sticker_set_box.h"
 #include "passport/passport_form_controller.h"
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "data/data_session.h"
+#include "data/data_channel.h"
 #include "mainwindow.h"
 #include "mainwidget.h"
-#include "core/application.h"
 #include "auth_session.h"
 #include "apiwrap.h"
 
@@ -44,8 +45,8 @@ bool JoinGroupByHash(const Match &match, const QVariant &context) {
 				Auth().api().importChatInvite(hash);
 			}));
 		}, [=](const MTPDchatInviteAlready &data) {
-			if (const auto chat = Auth().data().processChat(data.vchat)) {
-				App::wnd()->controller()->showPeerHistory(
+			if (const auto chat = Auth().data().processChat(data.vchat())) {
+				App::wnd()->sessionController()->showPeerHistory(
 					chat,
 					Window::SectionShow::Way::Forward);
 			}
@@ -55,7 +56,7 @@ bool JoinGroupByHash(const Match &match, const QVariant &context) {
 			return;
 		}
 		Core::App().hideMediaView();
-		Ui::show(Box<InformBox>(lang(lng_group_invite_bad_link)));
+		Ui::show(Box<InformBox>(tr::lng_group_invite_bad_link(tr::now)));
 	});
 	return true;
 }
@@ -66,6 +67,7 @@ bool ShowStickerSet(const Match &match, const QVariant &context) {
 	}
 	Core::App().hideMediaView();
 	Ui::show(Box<StickerSetBox>(
+		App::wnd()->sessionController(),
 		MTP_inputStickerSetShortName(MTP_string(match->captured(1)))));
 	return true;
 }
@@ -144,7 +146,7 @@ bool ShowPassportForm(const QMap<QString, QString> &params) {
 		QString());
 	const auto errors = params.value("errors", QString());
 	if (const auto window = App::wnd()) {
-		if (const auto controller = window->controller()) {
+		if (const auto controller = window->sessionController()) {
 			controller->showPassportForm(Passport::FormRequest(
 				botId,
 				scope,
@@ -205,12 +207,14 @@ bool ResolveUsername(const Match &match, const QVariant &context) {
 			start = QString();
 		}
 	}
-	auto post = (start == qsl("startgroup")) ? ShowAtProfileMsgId : ShowAtUnreadMsgId;
+	auto post = (start == qsl("startgroup"))
+		? ShowAtProfileMsgId
+		: ShowAtUnreadMsgId;
 	auto postParam = params.value(qsl("post"));
 	if (auto postId = postParam.toInt()) {
 		post = postId;
 	}
-	auto gameParam = params.value(qsl("game"));
+	const auto gameParam = params.value(qsl("game"));
 	if (!gameParam.isEmpty() && valid(gameParam)) {
 		startToken = gameParam;
 		post = ShowAtGameShareMsgId;
@@ -224,6 +228,51 @@ bool ResolveUsername(const Match &match, const QVariant &context) {
 	return true;
 }
 
+bool ResolvePrivatePost(const Match &match, const QVariant &context) {
+	if (!AuthSession::Exists()) {
+		return false;
+	}
+	const auto params = url_parse_params(
+		match->captured(1),
+		qthelp::UrlParamNameTransform::ToLower);
+	const auto channelId = params.value(qsl("channel")).toInt();
+	const auto msgId = params.value(qsl("post")).toInt();
+	if (!channelId || !IsServerMsgId(msgId)) {
+		return false;
+	}
+	const auto done = [=](not_null<PeerData*> peer) {
+		App::wnd()->sessionController()->showPeerHistory(
+			peer->id,
+			Window::SectionShow::Way::Forward,
+			msgId);
+	};
+	const auto fail = [=] {
+		Ui::show(Box<InformBox>(tr::lng_error_post_link_invalid(tr::now)));
+	};
+	const auto auth = &Auth();
+	if (const auto channel = auth->data().channelLoaded(channelId)) {
+		done(channel);
+		return true;
+	}
+	auth->api().request(MTPchannels_GetChannels(
+		MTP_vector<MTPInputChannel>(
+			1,
+			MTP_inputChannel(MTP_int(channelId), MTP_long(0)))
+	)).done([=](const MTPmessages_Chats &result) {
+		result.match([&](const auto &data) {
+			const auto peer = auth->data().processChats(data.vchats());
+			if (peer && peer->id == peerFromChannel(channelId)) {
+				done(peer);
+			} else {
+				fail();
+			}
+		});
+	}).fail([=](const RPCError &error) {
+		fail();
+	}).send();
+	return true;
+}
+
 bool HandleUnknown(const Match &match, const QVariant &context) {
 	if (!AuthSession::Exists()) {
 		return false;
@@ -231,10 +280,9 @@ bool HandleUnknown(const Match &match, const QVariant &context) {
 	const auto request = match->captured(1);
 	const auto callback = [=](const MTPDhelp_deepLinkInfo &result) {
 		const auto text = TextWithEntities{
-			qs(result.vmessage),
-			(result.has_entities()
-				? TextUtilities::EntitiesFromMTP(result.ventities.v)
-				: EntitiesInText())
+			qs(result.vmessage()),
+			TextUtilities::EntitiesFromMTP(
+				result.ventities().value_or_empty())
 		};
 		if (result.is_update_app()) {
 			const auto box = std::make_shared<QPointer<BoxContent>>();
@@ -244,7 +292,7 @@ bool HandleUnknown(const Match &match, const QVariant &context) {
 			};
 			*box = Ui::show(Box<ConfirmBox>(
 				text,
-				lang(lng_menu_update),
+				tr::lng_menu_update(tr::now),
 				callback));
 		} else {
 			Ui::show(Box<InformBox>(text));
@@ -301,6 +349,10 @@ const std::vector<LocalUrlHandler> &LocalUrlHandlers() {
 		{
 			qsl("^resolve/?\\?(.+)(#|$)"),
 			ResolveUsername
+		},
+		{
+			qsl("^privatepost/?\\?(.+)(#|$)"),
+			ResolvePrivatePost
 		},
 		{
 			qsl("^([^\\?]+)(\\?|#|$)"),

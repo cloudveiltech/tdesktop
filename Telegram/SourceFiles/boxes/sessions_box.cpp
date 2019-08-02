@@ -11,9 +11,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/localstorage.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
-#include "countries.h"
 #include "auth_session.h"
 #include "data/data_session.h"
+#include "base/unixtime.h"
 #include "boxes/confirm_box.h"
 #include "info/profile/info_profile_button.h"
 #include "settings/settings_common.h"
@@ -80,9 +80,9 @@ SessionsBox::SessionsBox(QWidget*)
 }
 
 void SessionsBox::prepare() {
-	setTitle(langFactory(lng_sessions_other_header));
+	setTitle(tr::lng_sessions_other_header());
 
-	addButton(langFactory(lng_close), [=] { closeBox(); });
+	addButton(tr::lng_close(), [=] { closeBox(); });
 
 	setDimensions(st::boxWideWidth, st::sessionsHeight);
 
@@ -131,7 +131,7 @@ void SessionsBox::paintEvent(QPaintEvent *e) {
 		p.setPen(st::noContactsColor);
 		p.drawText(
 			QRect(0, 0, width(), st::noContactsHeight),
-			lang(lng_contacts_loading),
+			tr::lng_contacts_loading(tr::now),
 			style::al_center);
 	}
 }
@@ -142,7 +142,7 @@ void SessionsBox::got(const MTPaccount_Authorizations &result) {
 	_data = Full();
 
 	result.match([&](const MTPDaccount_authorizations &data) {
-		const auto &list = data.vauthorizations.v;
+		const auto &list = data.vauthorizations().v;
 		for (const auto &auth : list) {
 			auth.match([&](const MTPDauthorization &data) {
 				auto entry = ParseEntry(data);
@@ -171,14 +171,14 @@ void SessionsBox::got(const MTPaccount_Authorizations &result) {
 SessionsBox::Entry SessionsBox::ParseEntry(const MTPDauthorization &data) {
 	auto result = Entry();
 
-	result.hash = data.is_current() ? 0 : data.vhash.v;
+	result.hash = data.is_current() ? 0 : data.vhash().v;
 	result.incomplete = data.is_password_pending();
 
 	auto appName = QString();
-	auto appVer = qs(data.vapp_version);
-	const auto systemVer = qs(data.vsystem_version);
-	const auto deviceModel = qs(data.vdevice_model);
-	const auto apiId = data.vapi_id.v;
+	auto appVer = qs(data.vapp_version());
+	const auto systemVer = qs(data.vsystem_version());
+	const auto deviceModel = qs(data.vdevice_model());
+	const auto apiId = data.vapi_id().v;
 	if (apiId == 2040 || apiId == 17349) {
 		appName = (apiId == 2040)
 			? qstr("CloudVeil Messenger")
@@ -202,7 +202,7 @@ SessionsBox::Entry SessionsBox::ParseEntry(const MTPDauthorization &data) {
 		//	appVer = QString();
 		}
 	} else {
-		appName = qs(data.vapp_name);// +qsl(" for ") + qs(d.vplatform);
+		appName = qs(data.vapp_name());// +qsl(" for ") + qs(d.vplatform());
 		if (appVer.indexOf('(') >= 0) {
 			appVer = appVer.mid(appVer.indexOf('('));
 		}
@@ -212,25 +212,25 @@ SessionsBox::Entry SessionsBox::ParseEntry(const MTPDauthorization &data) {
 		result.name += ' ' + appVer;
 	}
 
-	const auto country = qs(data.vcountry);
-	const auto platform = qs(data.vplatform);
+	const auto country = qs(data.vcountry());
+	const auto platform = qs(data.vplatform());
 	//const auto &countries = countriesByISO2();
 	//const auto j = countries.constFind(country);
 	//if (j != countries.cend()) {
 	//	country = QString::fromUtf8(j.value()->name);
 	//}
 
-	result.activeTime = data.vdate_active.v
-		? data.vdate_active.v
-		: data.vdate_created.v;
-	result.info = qs(data.vdevice_model) + qstr(", ") + (platform.isEmpty() ? QString() : platform + ' ') + qs(data.vsystem_version);
-	result.ip = qs(data.vip) + (country.isEmpty() ? QString() : QString::fromUtf8(" \xe2\x80\x93 ") + country);
+	result.activeTime = data.vdate_active().v
+		? data.vdate_active().v
+		: data.vdate_created().v;
+	result.info = qs(data.vdevice_model()) + qstr(", ") + (platform.isEmpty() ? QString() : platform + ' ') + qs(data.vsystem_version());
+	result.ip = qs(data.vip()) + (country.isEmpty() ? QString() : QString::fromUtf8(" \xe2\x80\x93 ") + country);
 	if (!result.hash) {
-		result.active = lang(lng_status_online);
-		result.activeWidth = st::sessionWhenFont->width(lang(lng_status_online));
+		result.active = tr::lng_status_online(tr::now);
+		result.activeWidth = st::sessionWhenFont->width(tr::lng_status_online(tr::now));
 	} else {
 		const auto now = QDateTime::currentDateTime();
-		const auto lastTime = ParseDateTime(result.activeTime);
+		const auto lastTime = base::unixtime::parse(result.activeTime);
 		const auto nowDate = now.date();
 		const auto lastDate = lastTime.date();
 		if (lastDate == nowDate) {
@@ -315,8 +315,8 @@ void SessionsBox::terminateOne(uint64 hash) {
 	});
 	_terminateBox = Ui::show(
 		Box<ConfirmBox>(
-			lang(lng_settings_reset_one_sure),
-			lang(lng_settings_reset_button),
+			tr::lng_settings_reset_one_sure(tr::now),
+			tr::lng_settings_reset_button(tr::now),
 			st::attentionBoxButton,
 			callback),
 		LayerOption::KeepOther);
@@ -341,8 +341,8 @@ void SessionsBox::terminateAll() {
 	});
 	_terminateBox = Ui::show(
 		Box<ConfirmBox>(
-			lang(lng_settings_reset_sure),
-			lang(lng_settings_reset_button),
+			tr::lng_settings_reset_sure(tr::now),
+			tr::lng_settings_reset_button(tr::now),
 			st::attentionBoxButton,
 			callback),
 		LayerOption::KeepOther);
@@ -359,7 +359,7 @@ void SessionsBox::Inner::setupContent() {
 
 	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
 
-	AddSubsectionTitle(content, lng_sessions_header);
+	AddSubsectionTitle(content, tr::lng_sessions_header());
 	_current = content->add(object_ptr<List>(content));
 	const auto terminateWrap = content->add(
 		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
@@ -369,12 +369,10 @@ void SessionsBox::Inner::setupContent() {
 	_terminateAll = terminateInner->add(
 		object_ptr<Info::Profile::Button>(
 			terminateInner,
-			Lang::Viewer(lng_sessions_terminate_all),
+			tr::lng_sessions_terminate_all(),
 			st::terminateSessionsButton));
 	AddSkip(terminateInner);
-	AddDividerText(
-		terminateInner,
-		Lang::Viewer(lng_sessions_terminate_all_about));
+	AddDividerText(terminateInner, tr::lng_sessions_terminate_all_about());
 
 	const auto incompleteWrap = content->add(
 		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
@@ -382,12 +380,10 @@ void SessionsBox::Inner::setupContent() {
 			object_ptr<Ui::VerticalLayout>(content)))->setDuration(0);
 	const auto incompleteInner = incompleteWrap->entity();
 	AddSkip(incompleteInner);
-	AddSubsectionTitle(incompleteInner, lng_sessions_incomplete);
+	AddSubsectionTitle(incompleteInner, tr::lng_sessions_incomplete());
 	_incomplete = incompleteInner->add(object_ptr<List>(incompleteInner));
 	AddSkip(incompleteInner);
-	AddDividerText(
-		incompleteInner,
-		Lang::Viewer(lng_sessions_incomplete_about));
+	AddDividerText(incompleteInner, tr::lng_sessions_incomplete_about());
 
 	const auto listWrap = content->add(
 		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
@@ -395,7 +391,7 @@ void SessionsBox::Inner::setupContent() {
 			object_ptr<Ui::VerticalLayout>(content)))->setDuration(0);
 	const auto listInner = listWrap->entity();
 	AddSkip(listInner);
-	AddSubsectionTitle(listInner, lng_sessions_other_header);
+	AddSubsectionTitle(listInner, tr::lng_sessions_other_header());
 	_list = listInner->add(object_ptr<List>(listInner));
 	AddSkip(listInner);
 
@@ -404,7 +400,7 @@ void SessionsBox::Inner::setupContent() {
 			content,
 			object_ptr<Ui::FlatLabel>(
 				content,
-				Lang::Viewer(lng_sessions_other_desc),
+				tr::lng_sessions_other_desc(),
 				st::boxDividerLabel),
 			st::settingsDividerLabelPadding))->setDuration(0);
 

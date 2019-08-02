@@ -20,7 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "info/info_memento.h"
 #include "info/info_controller.h"
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "mainwindow.h"
 #include "core/crash_reports.h"
 
@@ -47,7 +47,7 @@ void SharedMediaShowOverview(
 		Storage::SharedMediaType type,
 		not_null<History*> history) {
 	if (SharedMediaOverviewType(type)) {
-		App::wnd()->controller()->showSection(Info::Memento(
+		App::wnd()->sessionController()->showSection(Info::Memento(
 			history->peer->id,
 			Info::Section(type)));
 	}
@@ -331,7 +331,7 @@ std::optional<bool> SharedMediaWithLastSlice::IsLastIsolated(
 		return false;
 	}
 	return LastFullMsgId(ending ? *ending : slice)
-		| [](FullMsgId msgId) {	return App::histItemById(msgId); }
+		| [](FullMsgId msgId) {	return Auth().data().message(msgId); }
 		| [](HistoryItem *item) { return item ? item->media() : nullptr; }
 		| [](Data::Media *media) { return media ? media->photo() : nullptr; }
 		| [](PhotoData *photo) { return photo ? photo->id : 0; }

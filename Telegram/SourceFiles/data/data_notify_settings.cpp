@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_notify_settings.h"
 
+#include "base/unixtime.h"
+
 namespace Data {
 namespace {
 
@@ -55,21 +57,23 @@ NotifySettingsValue::NotifySettingsValue(
 }
 
 bool NotifySettingsValue::change(const MTPDpeerNotifySettings &data) {
-	return change(data.has_mute_until()
-		? base::make_optional(data.vmute_until.v)
-		: std::nullopt, data.has_sound()
-		? base::make_optional(qs(data.vsound))
-		: std::nullopt, data.has_show_previews()
-		? base::make_optional(mtpIsTrue(data.vshow_previews))
-		: std::nullopt, data.has_silent()
-		? base::make_optional(mtpIsTrue(data.vsilent))
-		: std::nullopt);
+	const auto mute = data.vmute_until();
+	const auto sound = data.vsound();
+	const auto showPreviews = data.vshow_previews();
+	const auto silent = data.vsilent();
+	return change(
+		mute ? std::make_optional(mute->v) : std::nullopt,
+		sound ? std::make_optional(qs(*sound)) : std::nullopt,
+		(showPreviews
+			? std::make_optional(mtpIsTrue(*showPreviews))
+			: std::nullopt),
+		silent ? std::make_optional(mtpIsTrue(*silent)) : std::nullopt);
 }
 
 bool NotifySettingsValue::change(
 		std::optional<int> muteForSeconds,
 		std::optional<bool> silentPosts) {
-	const auto now = unixtime();
+	const auto now = base::unixtime::now();
 	const auto notMuted = muteForSeconds
 		? !(*muteForSeconds)
 		: (!_mute || *_mute <= now);
@@ -139,7 +143,7 @@ bool NotifySettings::change(const MTPPeerNotifySettings &settings) {
 	Expects(settings.type() == mtpc_peerNotifySettings);
 
 	auto &data = settings.c_peerNotifySettings();
-	const auto empty = !data.vflags.v;
+	const auto empty = !data.vflags().v;
 	if (empty) {
 		if (!_known || _value) {
 			_known = true;
@@ -168,13 +172,13 @@ bool NotifySettings::change(
 	const auto flags = (muteForSeconds ? Flag::f_mute_until : Flag(0))
 		| (silentPosts ? Flag::f_silent : Flag(0));
 	const auto muteUntil = muteForSeconds
-		? (unixtime() + *muteForSeconds)
+		? (base::unixtime::now() + *muteForSeconds)
 		: 0;
 	return change(MTP_peerNotifySettings(
 		MTP_flags(flags),
 		MTPBool(),
 		silentPosts ? MTP_bool(*silentPosts) : MTPBool(),
-		muteForSeconds ? MTP_int(unixtime() + *muteForSeconds) : MTPint(),
+		muteForSeconds ? MTP_int(base::unixtime::now() + *muteForSeconds) : MTPint(),
 		MTPstring()));
 }
 

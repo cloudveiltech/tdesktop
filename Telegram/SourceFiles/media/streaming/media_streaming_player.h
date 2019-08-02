@@ -25,7 +25,7 @@ struct TrackState;
 namespace Media {
 namespace Streaming {
 
-class Loader;
+class Reader;
 class File;
 class AudioTrack;
 class VideoTrack;
@@ -33,7 +33,7 @@ class VideoTrack;
 class Player final : private FileDelegate {
 public:
 	// Public interfaces is used from the main thread.
-	Player(not_null<Data::Session*> owner, std::unique_ptr<Loader> loader);
+	Player(not_null<Data::Session*> owner, std::shared_ptr<Reader> reader);
 
 	// Because we remember 'this' in calls to crl::on_main.
 	Player(const Player &other) = delete;
@@ -57,9 +57,10 @@ public:
 	[[nodiscard]] bool finished() const;
 
 	[[nodiscard]] rpl::producer<Update, Error> updates() const;
+	[[nodiscard]] rpl::producer<bool> fullInCache() const;
 
+	[[nodiscard]] QSize videoSize() const;
 	[[nodiscard]] QImage frame(const FrameRequest &request) const;
-	//[[nodiscard]] int videoRotation() const;
 
 	[[nodiscard]] Media::Player::TrackState prepareLegacyState() const;
 
@@ -79,16 +80,18 @@ private:
 	not_null<FileDelegate*> delegate();
 
 	// FileDelegate methods are called only from the File thread.
-	bool fileReady(Stream &&video, Stream &&audio) override;
+	bool fileReady(int headerSize, Stream &&video, Stream &&audio) override;
 	void fileError(Error error) override;
 	void fileWaitingForData() override;
-	bool fileProcessPacket(Packet &&packet) override;
+	void fileFullInCache(bool fullInCache) override;
+	bool fileProcessPacket(FFmpeg::Packet &&packet) override;
 	bool fileReadMore() override;
 
 	// Called from the main thread.
 	void streamReady(Information &&information);
 	void streamFailed(Error error);
 	void start();
+	void stop(bool stillActive);
 	void provideStartInformation();
 	void fail(Error error);
 	void checkVideoStep();
@@ -114,7 +117,7 @@ private:
 	[[nodiscard]] crl::time loadInAdvanceFor() const;
 
 	template <typename Track>
-	int durationByPacket(const Track &track, const Packet &packet);
+	int durationByPacket(const Track &track, const FFmpeg::Packet &packet);
 
 	// Valid after fileReady call ends. Thread-safe.
 	[[nodiscard]] crl::time computeAudioDuration() const;
@@ -175,6 +178,8 @@ private:
 	crl::time _nextFrameTime = kTimeUnknown;
 	base::Timer _renderFrameTimer;
 	rpl::event_stream<Update, Error> _updates;
+	rpl::event_stream<bool> _fullInCache;
+	std::optional<bool> _fullInCacheSinceStart;
 
 	crl::time _totalDuration = kTimeUnknown;
 	crl::time _loopingShift = 0;

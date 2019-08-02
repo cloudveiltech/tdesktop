@@ -157,22 +157,7 @@ DeclareSetting(QString, StartUrl);
 DeclareSetting(float64, RetinaFactor);
 DeclareSetting(int32, IntRetinaFactor);
 
-DeclareReadSetting(DBIPlatform, Platform);
-DeclareReadSetting(QString, PlatformString);
-DeclareReadSetting(bool, IsElCapitan);
-DeclareReadSetting(bool, IsSnowLeopard);
-
 DeclareSetting(int, OtherOnline);
-
-class PeerData;
-typedef QMap<PeerData*, QDateTime> SavedPeers;
-typedef QMultiMap<QDateTime, PeerData*> SavedPeersByTime;
-DeclareRefSetting(SavedPeers, SavedPeers);
-DeclareRefSetting(SavedPeersByTime, SavedPeersByTime);
-
-typedef QMap<uint64, DBIPeerReportSpamStatus> ReportSpamStatuses;
-DeclareRefSetting(ReportSpamStatuses, ReportSpamStatuses);
-
 DeclareSetting(bool, AutoPlayGif);
 
 constexpr auto kInterfaceScaleAuto = 0;

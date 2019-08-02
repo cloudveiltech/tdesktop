@@ -7,16 +7,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/update_checker.h"
 
-#include "platform/platform_specific.h"
+#include "platform/platform_info.h"
 #include "base/timer.h"
 #include "base/bytes.h"
+#include "base/unixtime.h"
 #include "storage/localstorage.h"
 #include "core/application.h"
 #include "mainwindow.h"
 #include "core/click_handler_types.h"
 #include "info/info_memento.h"
 #include "info/settings/info_settings_widget.h"
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "settings/settings_intro.h"
 
 extern "C" {
@@ -495,14 +496,19 @@ bool ParseCommonMap(
 	}
 	const auto platforms = document.object();
 	const auto platform = [&] {
-		switch (cPlatform()) {
-		case dbipWindows: return "win";
-		case dbipMac: return "mac";
-		case dbipMacOld: return "mac32";
-		case dbipLinux64: return "linux";
-		case dbipLinux32: return "linux32";
+		if (Platform::IsWindows()) {
+			return "win";
+		} else if (Platform::IsMacOldBuild()) {
+			return "mac32";
+		} else if (Platform::IsMac()) {
+			return "mac";
+		} else if (Platform::IsLinux32Bit()) {
+			return "linux32";
+		} else if (Platform::IsLinux64Bit()) {
+			return "linux";
+		} else {
+			Unexpected("Platform in ParseCommonMap.");
 		}
-		Unexpected("Platform in ParseCommonMap.");
 	}();
 	const auto it = platforms.constFind(platform);
 	if (it == platforms.constEnd()) {
@@ -629,7 +635,7 @@ void HttpChecker::gotResponse() {
 		return;
 	}
 
-	cSetLastUpdateCheck(unixtime());
+	cSetLastUpdateCheck(base::unixtime::now());
 	const auto response = _reply->readAll();
 	clearSentRequest();
 
@@ -891,8 +897,8 @@ void MtpChecker::start() {
 		_mtp.send(
 			MTPmessages_GetHistory(
 				MTP_inputPeerChannel(
-					channel.c_inputChannel().vchannel_id,
-					channel.c_inputChannel().vaccess_hash),
+					channel.c_inputChannel().vchannel_id(),
+					channel.c_inputChannel().vaccess_hash()),
 				MTP_int(0),  // offset_id
 				MTP_int(0),  // offset_date
 				MTP_int(0),  // add_offset
@@ -931,7 +937,7 @@ auto MtpChecker::parseMessage(const MTPmessages_Messages &result) const
 		LOG(("Update Error: MTP feed message not found."));
 		return std::nullopt;
 	}
-	return parseText(message->c_message().vmessage.v);
+	return parseText(message->c_message().vmessage().v);
 }
 
 auto MtpChecker::parseText(const QByteArray &text) const
@@ -1131,7 +1137,7 @@ void Updater::handleReady() {
 	stop();
 	_action = Action::Ready;
 	if (!App::quitting()) {
-		cSetLastUpdateCheck(unixtime());
+		cSetLastUpdateCheck(base::unixtime::now());
 		Local::writeSettings();
 	}
 }
@@ -1159,7 +1165,7 @@ void Updater::handleProgress() {
 void Updater::scheduleNext() {
 	stop();
 	if (!App::quitting()) {
-		cSetLastUpdateCheck(unixtime());
+		cSetLastUpdateCheck(base::unixtime::now());
 		Local::writeSettings();
 		start(true);
 	}
@@ -1205,7 +1211,7 @@ void Updater::start(bool forceWait) {
 	const auto updateInSecs = cLastUpdateCheck()
 		+ constDelay
 		+ int(rand() % randDelay)
-		- unixtime();
+		- base::unixtime::now();
 	auto sendRequest = (updateInSecs <= 0)
 		|| (updateInSecs > constDelay + randDelay);
 	if (!sendRequest && !forceWait) {
@@ -1574,7 +1580,7 @@ void UpdateApplication() {
 	} else {
 		cSetAutoUpdate(true);
 		if (const auto window = App::wnd()) {
-			if (const auto controller = window->controller()) {
+			if (const auto controller = window->sessionController()) {
 				controller->showSection(
 					Info::Memento(
 						Info::Settings::Tag{ Auth().user() },

@@ -10,7 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <rpl/never.h>
 #include <rpl/combine.h>
 #include <rpl/range.h>
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/input_fields.h"
 #include "ui/wrap/padding_wrap.h"
@@ -262,8 +262,8 @@ void ContentWidget::refreshSearchField(bool shown) {
 Key ContentMemento::key() const {
 	if (const auto peerId = this->peerId()) {
 		return Key(Auth().data().peer(peerId));
-	} else if (const auto feed = this->feed()) {
-		return Key(feed);
+	//} else if (const auto feed = this->feed()) { // #feed
+	//	return Key(feed);
 	} else {
 		return Settings::Tag{ settingsSelf() };
 	}

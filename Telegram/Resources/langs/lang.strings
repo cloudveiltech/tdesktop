@@ -2110,7 +2110,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_mac_not_known_app" = "It's not known if this application can open \"{file}\".";
 
 "lng_mac_menu_services" = "Services";
-"lng_mac_menu_hide_telegram" = "Hide {CloudVeil Messenger}";
+"lng_mac_menu_hide_telegram" = "Hide {telegram}";
 "lng_mac_menu_hide_others" = "Hide Others";
 "lng_mac_menu_show_all" = "Show All";
 "lng_mac_menu_preferences" = "Preferences...";
@@ -2134,5 +2134,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_mac_menu_show" = "Show Telegram";
 
 "lng_mac_touchbar_favorite_stickers" = "Favorite stickers";
+"lng_dialog_forbidden" = "This channel/group/bot is blocked by our server policy. Please contact CloudVeil Support at support@cloudveil.org to request it be unblocked.";
+"lng_feature_forbidden" = "This feature is blocked by our server policy. Please contact CloudVeil Support at support@cloudveil.org to request it be unblocked.";
+"lng_blocked_for_protection" = "Content blocked for your protection.";
+"lng_download_click" = "Download";
+"lng_contact" = "Contact";
+
 
 // Keys finished

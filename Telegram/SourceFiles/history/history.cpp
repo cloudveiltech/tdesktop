@@ -1662,7 +1662,9 @@ void History::setUnreadCount(int newUnreadCount) {
 
 	//CloudVeil start
 	if (!GlobalSecuritySettings::getSettings().isDialogAllowed(this)) {
-		Auth().data().unreadIncrement(-newUnreadCount, mute());
+		//if (App::wnd()->doWeReadServerHistory()) {
+		//	session().api().readServerHistoryForce(this);
+		//}
 		Notify::unreadCounterUpdated();
 		return;
 	}

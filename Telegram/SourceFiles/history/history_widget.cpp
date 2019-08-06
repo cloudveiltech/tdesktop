@@ -1552,11 +1552,11 @@ void HistoryWidget::showHistory(
 	//CloudVeil start
 	if (!GlobalSecuritySettings::getSettings().isDialogAllowed(Auth().data().peer(peerId))) {
 		Ui::showChatsList();
-		Ui::show(Box<InformBox>(lang(lng_dialog_forbidden)));
+		Ui::show(Box<InformBox>(tr::lng_dialog_forbidden(tr::now)));
 		Ui::show(Box<ConfirmBox>(
-			lang(lng_dialog_forbidden),
-			lang(lng_contact),
-			lang(lng_cancel),
+			tr::lng_dialog_forbidden(tr::now),
+			tr::lng_contact(tr::now),
+			tr::lng_cancel(tr::now),
 			[=] {
 
 			PeerData* peer = Auth().data().peer(peerId);
@@ -1591,7 +1591,7 @@ void HistoryWidget::showHistory(
 
 	bool inList = true;
 	if (!GlobalSecuritySettings::getSettings().isDialogSecured(Auth().data().peer(peerId))) {
-		Ui::show(Box<InformBox>(lang(lng_blocked_for_protection)));
+		Ui::show(Box<InformBox>(tr::lng_blocked_for_protection(tr::now)));
 
 		GlobalSecuritySettings::getInstance()->addAdditionalDataToRequest(Auth().data().peer(peerId));
 		GlobalSecuritySettings::getInstance()->updateFromServer();

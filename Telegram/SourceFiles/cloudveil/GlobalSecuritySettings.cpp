@@ -69,8 +69,8 @@ void GlobalSecuritySettings::imageReady()
 }
 
 void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
-	Dialogs::IndexedList* dialogs = App::main()->dialogsList();
-	for (auto i = dialogs->begin(); i != dialogs->end(); ++i) {
+	Dialogs::IndexedList* chats = App::main()->session().data().chatsList()->indexed();
+	for (auto i = chats->begin(); i != chats->end(); ++i) {
 		PeerData* peer = (*i)->history()->peer;
 		addDialogToRequest(request, peer);
 	}
@@ -156,12 +156,12 @@ void GlobalSecuritySettings::addStickerToRequest(SettingsRequest &request, Stick
 }
 
 void GlobalSecuritySettings::gotStickersSet(const MTPmessages_StickerSet &set) {
-	auto additionalSticker = &set.c_messages_stickerSet().vset.c_stickerSet();
+	auto additionalSticker = &set.c_messages_stickerSet().vset().c_stickerSet();
 
 	SettingsRequest::Row<uint64> row;
-	row.id = additionalSticker->vid.v;
-	row.userName = qs(additionalSticker->vshort_name);
-	row.title = qs(additionalSticker->vtitle);
+	row.id = additionalSticker->vid().v;
+	row.userName = qs(additionalSticker->vshort_name());
+	row.title = qs(additionalSticker->vtitle());
 	for (int i = 0; i < additionalStickers.size(); i++) {
 		if (additionalStickers[i].id == row.id) {
 			return;

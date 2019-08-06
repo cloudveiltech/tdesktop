@@ -237,8 +237,8 @@ bool SettingsResponse::isStickerSetAllowed(DocumentData *data) {
 
 bool SettingsResponse::isStickerSetAllowed(StickerData *stickerData) {
 	if (stickerData) {
-		if (stickerData->set.type() == mtpc_inputStickerSetID) {
-			uint64 id = stickerData->set.c_inputStickerSetID().vid.v;
+		if (stickerData->set.type() == mtpc_inputStickerSetID) {			
+			uint64 id = stickerData->set.c_inputStickerSetID().vid().v;
 			return isStickerSetAllowed(id);
 		}
 		else {
@@ -253,7 +253,7 @@ bool SettingsResponse::isStickerSetKnown(DocumentData *data) {
 	StickerData *stickerData = data->sticker();
 	if (stickerData) {
 		if (stickerData->set.type() == mtpc_inputStickerSetID) {
-			uint64 id = stickerData->set.c_inputStickerSetID().vid.v;
+			uint64 id = stickerData->set.c_inputStickerSetID().vid().v;
 			return stickers.contains(id);
 		}
 		else {//id unknown - forbid it

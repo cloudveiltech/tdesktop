@@ -507,7 +507,7 @@ MainWidget::MainWidget(
 
 //CloudVeil start
 void MainWidget::simpleUpdateReceived(UpdateResponse* response) {
-	Ui::show(Box<ConfirmBox>(response->message, lang(lng_download_click), [response] {
+	Ui::show(Box<ConfirmBox>(response->message, tr::lng_download_click(tr::now), [response] {
 		Ui::hideLayer();
 		QDesktopServices::openUrl(response->url);
 	}), LayerOption::KeepOther);

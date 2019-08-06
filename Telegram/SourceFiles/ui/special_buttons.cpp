@@ -29,6 +29,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 #include "mainwidget.h"
 #include "observer_peer.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace Ui {
 namespace {
@@ -527,6 +528,12 @@ void UserpicButton::uploadNewPeerPhoto() {
 void UserpicButton::openPeerPhoto() {
 	Expects(_peer != nullptr);
 	Expects(_controller != nullptr);
+
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableProfilePhoto) {
+		return;
+	}
+	//CloudVeil end
 
 	if (_changeOverlayEnabled && _cursorInChangeOverlay) {
 		uploadNewPeerPhoto();

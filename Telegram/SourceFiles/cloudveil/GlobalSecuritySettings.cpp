@@ -71,8 +71,16 @@ void GlobalSecuritySettings::imageReady()
 void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 	Dialogs::IndexedList* chats = App::main()->session().data().chatsList()->indexed();
 	for (auto i = chats->begin(); i != chats->end(); ++i) {
-		PeerData* peer = (*i)->history()->peer;
-		addDialogToRequest(request, peer);
+		auto row = (*i);
+		if (row) {
+			auto history = row->history();
+			if (history) {
+				PeerData* peer = history->peer;
+				if (peer) {
+					addDialogToRequest(request, peer);
+				}
+			}
+		}
 	}
 
 	if (cRecentInlineBots().isEmpty()) {

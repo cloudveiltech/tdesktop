@@ -26,7 +26,7 @@ public:
 	QVector<Row<int32>> users;
 
 	void writeToJson(QJsonObject &json);
-
+	
 	SettingsRequest();
 	~SettingsRequest();
 

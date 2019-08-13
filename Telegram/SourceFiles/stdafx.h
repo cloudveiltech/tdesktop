@@ -36,15 +36,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma warning(pop)
 #endif // __clang__ || _MSC_VER >= 1914
 
-//CloudVeil start
-#define Q_OS_MAC
-#define TDESKTOP_DISABLE_CRASH_REPORTS
-#endif
-//CloudVeil end
 
 #ifdef OS_MAC_STORE
 #define MAC_USE_BREAKPAD
 #endif // OS_MAC_STORE
+
+//CloudVeil start
+#ifdef Q_OS_MAC
+#define TDESKTOP_DISABLE_CRASH_REPORTS
+#endif
+//CloudVeil end
 
 #include <QtWidgets/QtWidgets>
 #include <QtNetwork/QtNetwork>
@@ -98,5 +99,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_types.h"
 #include "app.h"
 #include "facades.h"
+
 
 #endif // __cplusplus

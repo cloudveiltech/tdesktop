@@ -36,6 +36,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma warning(pop)
 #endif // __clang__ || _MSC_VER >= 1914
 
+//CloudVeil start
+#define Q_OS_MAC
+#define TDESKTOP_DISABLE_CRASH_REPORTS
+#endif
+//CloudVeil end
+
 #ifdef OS_MAC_STORE
 #define MAC_USE_BREAKPAD
 #endif // OS_MAC_STORE

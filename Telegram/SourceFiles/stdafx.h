@@ -51,7 +51,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtNetwork/QtNetwork>
 
 #include <array>
-#include <vector>
+#include <vector>//
 #include <set>
 #include <map>
 #include <unordered_map>

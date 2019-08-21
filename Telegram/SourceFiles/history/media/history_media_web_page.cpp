@@ -172,12 +172,15 @@ QSize HistoryWebPage::countOptimalSize() {
 
 	// init attach
 	if (!_attach && !_asArticle) {
+        //CloudVeil disable previews
+        /*
 		_attach = CreateAttach(
 			_parent,
 			_data->document,
 			_data->photo,
 			_collage,
 			_data->url);
+         */
 	}
 
 	auto textFloatsAroundInfo = !_asArticle && !_attach && isBubbleBottom();

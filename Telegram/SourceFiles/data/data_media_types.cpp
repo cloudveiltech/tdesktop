@@ -39,6 +39,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "layout.h"
 #include "storage/file_upload.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace Data {
 namespace {
@@ -1038,6 +1039,9 @@ WebPageData *MediaWebPage::webpage() const {
 }
 
 bool MediaWebPage::hasReplyPreview() const {
+    //CloudVeil start
+    return false;//disabled reply preview
+    //CloudVeil end
 	if (const auto document = MediaWebPage::document()) {
 		return document->hasThumbnail() && !document->isPatternWallPaper();
 	} else if (const auto photo = MediaWebPage::photo()) {

@@ -111,19 +111,19 @@ VMatrix TransformData::matrix(int frameNo, bool autoOrient) const
 {
     VMatrix m;
     VPointF position;
-    if (mSeparate) {
-        position.setX(mX.value(frameNo));
-        position.setY(mY.value(frameNo));
+    if (mExtra && mExtra->mSeparate) {
+        position.setX(mExtra->mSeparateX.value(frameNo));
+        position.setY(mExtra->mSeparateY.value(frameNo));
     } else {
         position = mPosition.value(frameNo);
     }
 
     float angle = autoOrient ? mPosition.angle(frameNo) : 0;
-    if (m3D) {
+    if (mExtra && mExtra->m3DData) {
         m.translate(position)
-            .rotate(m3D->mRz.value(frameNo) + angle)
-            .rotate(m3D->mRy.value(frameNo), VMatrix::Axis::Y)
-            .rotate(m3D->mRx.value(frameNo), VMatrix::Axis::X)
+            .rotate(mExtra->m3DRz.value(frameNo) + angle)
+            .rotate(mExtra->m3DRy.value(frameNo), VMatrix::Axis::Y)
+            .rotate(mExtra->m3DRx.value(frameNo), VMatrix::Axis::X)
             .scale(mScale.value(frameNo) / 100.f)
             .translate(-mAnchor.value(frameNo));
     } else {
@@ -135,43 +135,27 @@ VMatrix TransformData::matrix(int frameNo, bool autoOrient) const
     return m;
 }
 
-int LOTStrokeData::getDashInfo(int frameNo, float *array) const
+void LOTDashProperty::getDashInfo(int frameNo, std::vector<float>& result) const
 {
-    if (!mDash.mDashCount) return 0;
-    // odd case
-    if (mDash.mDashCount % 2) {
-        for (int i = 0; i < mDash.mDashCount; i++) {
-            array[i] = mDash.mDashArray[i].value(frameNo);
-        }
-        return mDash.mDashCount;
-    } else {  // even case when last gap info is not provided.
-        int i;
-        for (i = 0; i < mDash.mDashCount - 1; i++) {
-            array[i] = mDash.mDashArray[i].value(frameNo);
-        }
-        array[i] = array[i - 1];
-        array[i + 1] = mDash.mDashArray[i].value(frameNo);
-        return mDash.mDashCount + 1;
-    }
-}
+    result.clear();
 
-int LOTGStrokeData::getDashInfo(int frameNo, float *array) const
-{
-    if (!mDash.mDashCount) return 0;
-    // odd case
-    if (mDash.mDashCount % 2) {
-        for (int i = 0; i < mDash.mDashCount; i++) {
-            array[i] = mDash.mDashArray[i].value(frameNo);
-        }
-        return mDash.mDashCount;
-    } else {  // even case when last gap info is not provided.
-        int i;
-        for (i = 0; i < mDash.mDashCount - 1; i++) {
-            array[i] = mDash.mDashArray[i].value(frameNo);
-        }
-        array[i] = array[i - 1];
-        array[i + 1] = mDash.mDashArray[i].value(frameNo);
-        return mDash.mDashCount + 1;
+    if (mData.empty()) return;
+
+    if (result.capacity() < mData.size()) result.reserve(mData.size() + 1);
+
+    for (const auto &elm : mData)
+        result.push_back(elm.value(frameNo));
+
+    // if the size is even then we are missing last
+    // gap information which is same as the last dash value
+    // copy it from the last dash value.
+    // NOTE: last value is the offset and last-1 is the last dash value.
+    auto size = result.size();
+    if ((size % 2) == 0) {
+        //copy offset value to end.
+        result.push_back(result.back());
+        // copy dash value to gap.
+        result[size-1] = result[size-2];
     }
 }
 
@@ -198,16 +182,16 @@ int LOTGStrokeData::getDashInfo(int frameNo, float *array) const
 void LOTGradient::populate(VGradientStops &stops, int frameNo)
 {
     LottieGradient gradData = mGradient.value(frameNo);
-    int            size = gradData.mGradient.size();
+    auto            size = gradData.mGradient.size();
     float *        ptr = gradData.mGradient.data();
     int            colorPoints = mColorPoints;
     if (colorPoints == -1) {  // for legacy bodymovin (ref: lottie-android)
-        colorPoints = size / 4;
+        colorPoints = int(size / 4);
     }
-    int    opacityArraySize = size - colorPoints * 4;
+    auto    opacityArraySize = size - colorPoints * 4;
     float *opacityPtr = ptr + (colorPoints * 4);
     stops.clear();
-    int j = 0;
+    size_t j = 0;
     for (int i = 0; i < colorPoints; i++) {
         float       colorStop = ptr[0];
         LottieColor color = LottieColor(ptr[1], ptr[2], ptr[3]);

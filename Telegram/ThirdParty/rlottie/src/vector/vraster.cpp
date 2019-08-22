@@ -17,6 +17,7 @@
  */
 
 #include "vraster.h"
+#include <climits>
 #include <cstring>
 #include <memory>
 #include "config.h"
@@ -71,7 +72,7 @@ public:
     SW_FT_Stroker_LineCap   ftCap;
     SW_FT_Stroker_LineJoin  ftJoin;
     SW_FT_Fixed             ftWidth;
-    SW_FT_Fixed             ftMeterLimit;
+    SW_FT_Fixed             ftMiterLimit;
     dyn_array<SW_FT_Vector> mPointMemory{100};
     dyn_array<char>         mTagMemory{100};
     dyn_array<short>        mContourMemory{10};
@@ -129,7 +130,7 @@ void FTOutline::convert(const VPath &path)
 }
 
 void FTOutline::convert(CapStyle cap, JoinStyle join, float width,
-                        float meterLimit)
+                        float miterLimit)
 {
     // map strokeWidth to freetype. It uses as the radius of the pen not the
     // diameter
@@ -138,7 +139,7 @@ void FTOutline::convert(CapStyle cap, JoinStyle join, float width,
     // IMP: stroker takes radius in 26.6 co-ordinate
     ftWidth = SW_FT_Fixed(width * (1 << 6));
     // IMP: stroker takes meterlimit in 16.16 co-ordinate
-    ftMeterLimit = SW_FT_Fixed(meterLimit * (1 << 16));
+    ftMiterLimit = SW_FT_Fixed(miterLimit * (1 << 16));
 
     // map to freetype capstyle
     switch (cap) {
@@ -167,6 +168,8 @@ void FTOutline::convert(CapStyle cap, JoinStyle join, float width,
 
 void FTOutline::moveTo(const VPointF &pt)
 {
+    assert(ft.n_points <= SHRT_MAX - 1);
+
     ft.points[ft.n_points].x = TO_FT_COORD(pt.x());
     ft.points[ft.n_points].y = TO_FT_COORD(pt.y());
     ft.tags[ft.n_points] = SW_FT_CURVE_TAG_ON;
@@ -183,6 +186,8 @@ void FTOutline::moveTo(const VPointF &pt)
 
 void FTOutline::lineTo(const VPointF &pt)
 {
+    assert(ft.n_points <= SHRT_MAX - 1);
+
     ft.points[ft.n_points].x = TO_FT_COORD(pt.x());
     ft.points[ft.n_points].y = TO_FT_COORD(pt.y());
     ft.tags[ft.n_points] = SW_FT_CURVE_TAG_ON;
@@ -192,6 +197,8 @@ void FTOutline::lineTo(const VPointF &pt)
 void FTOutline::cubicTo(const VPointF &cp1, const VPointF &cp2,
                         const VPointF ep)
 {
+    assert(ft.n_points <= SHRT_MAX - 3);
+
     ft.points[ft.n_points].x = TO_FT_COORD(cp1.x());
     ft.points[ft.n_points].y = TO_FT_COORD(cp1.y());
     ft.tags[ft.n_points] = SW_FT_CURVE_TAG_CUBIC;
@@ -209,6 +216,8 @@ void FTOutline::cubicTo(const VPointF &cp1, const VPointF &cp2,
 }
 void FTOutline::close()
 {
+    assert(ft.n_points <= SHRT_MAX - 1);
+
     // mark the contour as a close path.
     ft.contours_flag[ft.n_contours] = 0;
 
@@ -233,6 +242,8 @@ void FTOutline::close()
 
 void FTOutline::end()
 {
+    assert(ft.n_contours <= SHRT_MAX - 1);
+
     if (ft.n_points) {
         ft.contours[ft.n_contours] = ft.n_points - 1;
         ft.n_contours++;
@@ -292,7 +303,7 @@ struct VRleTask {
     SharedRle mRle;
     VPath     mPath;
     float     mStrokeWidth;
-    float     mMeterLimit;
+    float     mMiterLimit;
     VRect     mClip;
     FillRule  mFillRule;
     CapStyle  mCap;
@@ -311,14 +322,14 @@ struct VRleTask {
     }
 
     void update(VPath path, CapStyle cap, JoinStyle join, float width,
-                float meterLimit, const VRect &clip)
+                float miterLimit, const VRect &clip)
     {
         mRle.reset();
         mPath = std::move(path);
         mCap = cap;
         mJoin = join;
         mStrokeWidth = width;
-        mMeterLimit = meterLimit;
+        mMiterLimit = miterLimit;
         mClip = clip;
         mGenerateStroke = true;
     }
@@ -348,14 +359,19 @@ struct VRleTask {
 
     void operator()(FTOutline &outRef, SW_FT_Stroker &stroker)
     {
+        if (mPath.points().size() > SHRT_MAX ||
+            mPath.points().size() + mPath.segments() > SHRT_MAX) {
+            return;
+        }
+
         if (mGenerateStroke) {  // Stroke Task
             outRef.convert(mPath);
-            outRef.convert(mCap, mJoin, mStrokeWidth, mMeterLimit);
+            outRef.convert(mCap, mJoin, mStrokeWidth, mMiterLimit);
 
             uint points, contors;
 
             SW_FT_Stroker_Set(stroker, outRef.ftWidth, outRef.ftCap,
-                              outRef.ftJoin, outRef.ftMeterLimit);
+                              outRef.ftJoin, outRef.ftMiterLimit);
             SW_FT_Stroker_ParseOutline(stroker, &outRef.ft);
             SW_FT_Stroker_GetCounts(stroker, &points, &contors);
 
@@ -467,7 +483,7 @@ public:
 
 class RleTaskScheduler {
 public:
-    FTOutline     outlineRef;
+    FTOutline     outlineRef{};
     SW_FT_Stroker stroker;
 
 public:
@@ -521,14 +537,14 @@ void VRasterizer::rasterize(VPath path, FillRule fillRule, const VRect &clip)
 }
 
 void VRasterizer::rasterize(VPath path, CapStyle cap, JoinStyle join,
-                            float width, float meterLimit, const VRect &clip)
+                            float width, float miterLimit, const VRect &clip)
 {
     init();
     if (path.empty() || vIsZero(width)) {
         d->rle().reset();
         return;
     }
-    d->task().update(std::move(path), cap, join, width, meterLimit, clip);
+    d->task().update(std::move(path), cap, join, width, miterLimit, clip);
     updateRequest();
 }
 

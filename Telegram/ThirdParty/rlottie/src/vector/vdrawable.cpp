@@ -26,10 +26,10 @@ void VDrawable::preprocess(const VRect &clip)
         if (mStroke.enable) {
             if (mStroke.mDash.size()) {
                 VDasher dasher(mStroke.mDash.data(), mStroke.mDash.size());
-                mPath = dasher.dashed(mPath);
+                mPath.clone(dasher.dashed(mPath));
             }
             mRasterizer.rasterize(std::move(mPath), mStroke.cap, mStroke.join,
-                                  mStroke.width, mStroke.meterLimit, clip);
+                                  mStroke.width, mStroke.miterLimit, clip);
         } else {
             mRasterizer.rasterize(std::move(mPath), mFillRule, clip);
         }
@@ -43,29 +43,29 @@ VRle VDrawable::rle()
     return mRasterizer.rle();
 }
 
-void VDrawable::setStrokeInfo(CapStyle cap, JoinStyle join, float meterLimit,
+void VDrawable::setStrokeInfo(CapStyle cap, JoinStyle join, float miterLimit,
                               float strokeWidth)
 {
     if ((mStroke.cap == cap) && (mStroke.join == join) &&
-        vCompare(mStroke.meterLimit, meterLimit) &&
+        vCompare(mStroke.miterLimit, miterLimit) &&
         vCompare(mStroke.width, strokeWidth))
         return;
 
     mStroke.enable = true;
     mStroke.cap = cap;
     mStroke.join = join;
-    mStroke.meterLimit = meterLimit;
+    mStroke.miterLimit = miterLimit;
     mStroke.width = strokeWidth;
     mFlag |= DirtyState::Path;
 }
 
-void VDrawable::setDashInfo(float *array, uint size)
+void VDrawable::setDashInfo(std::vector<float> &dashInfo)
 {
     bool hasChanged = false;
 
-    if (mStroke.mDash.size() == size) {
-        for (uint i = 0; i < size; i++) {
-            if (!vCompare(mStroke.mDash[i], array[i])) {
+    if (mStroke.mDash.size() == dashInfo.size()) {
+        for (uint i = 0; i < dashInfo.size(); i++) {
+            if (!vCompare(mStroke.mDash[i], dashInfo[i])) {
                 hasChanged = true;
                 break;
             }
@@ -76,11 +76,8 @@ void VDrawable::setDashInfo(float *array, uint size)
 
     if (!hasChanged) return;
 
-    mStroke.mDash.clear();
+    mStroke.mDash = dashInfo;
 
-    for (uint i = 0; i < size; i++) {
-        mStroke.mDash.push_back(array[i]);
-    }
     mFlag |= DirtyState::Path;
 }
 

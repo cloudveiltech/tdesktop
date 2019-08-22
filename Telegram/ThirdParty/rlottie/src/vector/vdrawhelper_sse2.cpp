@@ -210,7 +210,8 @@ void Vcomp_func_solid_Source_sse2(uint32_t* dest, int length, uint32_t color,
     }
 }
 
-void Vcomp_func_solid_SourceOver_sse2(uint32_t* dest, int length, uint32_t color,
+void Vcomp_func_solid_SourceOver_sse2(uint32_t* dest, int length,
+                                      uint32_t color,
                                      uint32_t const_alpha)
 {
     int ialpha;
@@ -244,7 +245,7 @@ void Vcomp_func_Source_sse2(uint32_t* dest, const uint32_t* src, int length,
     }
 }
 
-void Vcomp_func_SourceOver_sse2_1(uint32_t* dest, const uint32_t* src,
+void comp_func_SourceOver_sse2_1(uint32_t* dest, const uint32_t* src,
                                  int length, uint32_t const_alpha)
 {
     uint32_t s, sia;

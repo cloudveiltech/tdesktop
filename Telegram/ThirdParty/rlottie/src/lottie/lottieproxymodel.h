@@ -294,11 +294,13 @@ public:
         }
         return _modelData->strokeWidth(frame);
     }
-    float meterLimit() const {return _modelData->meterLimit();}
+    float miterLimit() const {return _modelData->miterLimit();}
     CapStyle capStyle() const {return _modelData->capStyle();}
     JoinStyle joinStyle() const {return _modelData->joinStyle();}
     bool hasDashInfo() const { return _modelData->hasDashInfo();}
-    int getDashInfo(int frameNo, float *array) const {return _modelData->getDashInfo(frameNo, array);}
+    void getDashInfo(int frameNo, std::vector<float>& result) const {
+        return _modelData->getDashInfo(frameNo, result);
+    }
 
 private:
     T                         *_modelData;

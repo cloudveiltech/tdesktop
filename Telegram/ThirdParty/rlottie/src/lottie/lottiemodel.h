@@ -22,7 +22,8 @@
 #include<vector>
 #include<memory>
 #include<unordered_map>
-#include <algorithm>
+#include<algorithm>
+#include <cmath>
 #include"vpoint.h"
 #include"vrect.h"
 #include"vinterpolator.h"
@@ -51,7 +52,7 @@ class LottieShapeData;
 class LOTPolystarData;
 class LOTMaskData;
 
-enum class MatteType
+enum class MatteType: uchar
 {
     None = 0,
     Alpha = 1,
@@ -60,7 +61,8 @@ enum class MatteType
     LumaInv
 };
 
-enum class LayerType {
+enum class LayerType: uchar
+{
     Precomp = 0,
     Solid = 1,
     Image = 2,
@@ -74,7 +76,10 @@ class LottieColor
 public:
     LottieColor() = default;
     LottieColor(float red, float green , float blue):r(red), g(green),b(blue){}
-    VColor toColor(float a=1){ return VColor((255 * r), (255 * g), (255 * b), (255 * a));}
+    VColor toColor(float a=1){ return VColor(uchar(255 * r),
+                                             uchar(255 * g),
+                                             uchar(255 * b),
+                                             uchar(255 * a));}
     friend inline LottieColor operator+(const LottieColor &c1, const LottieColor &c2);
     friend inline LottieColor operator-(const LottieColor &c1, const LottieColor &c2);
 public:
@@ -101,7 +106,7 @@ inline const LottieColor operator*(float m, const LottieColor &c)
 class LottieShapeData
 {
 public:
-    void reserve(int size) {
+    void reserve(size_t size) {
         mPoints.reserve(mPoints.size() + size);
     }
     void toPath(VPath& path) {
@@ -109,23 +114,23 @@ public:
 
         if (mPoints.empty()) return;
 
-        int size = mPoints.size();
-        const VPointF *points = mPoints.data();
+        auto size = mPoints.size();
+        auto points = mPoints.data();
         /* reserve exact memory requirement at once
          * ptSize = size + 1(size + close)
          * elmSize = size/3 cubic + 1 move + 1 close
          */
         path.reserve(size + 1 , size/3 + 2);
         path.moveTo(points[0]);
-        for (int i = 1 ; i < size; i+=3) {
+        for (size_t i = 1 ; i < size; i+=3) {
            path.cubicTo(points[i], points[i+1], points[i+2]);
         }
         if (mClosed)
           path.close();
     }
 public:
-    std::vector<VPointF>    mPoints;
-    bool                     mClosed = false;   /* "c" */
+    std::vector<VPointF> mPoints;
+    bool                 mClosed = false;   /* "c" */
 };
 
 
@@ -179,9 +184,8 @@ struct LOTKeyFrameValue<VPointF>
                                        mEndValue + mInTangent, mEndValue);
             return b.pointAt(b.tAtLength(t * b.length()));
 
-        } else {
-            return lerp(mStartValue, mEndValue, t);
         }
+        return lerp(mStartValue, mEndValue, t);
     }
 
     float angle(float t) const {
@@ -246,15 +250,11 @@ public:
     }
 
     bool changed(int prevFrame, int curFrame) const {
-        int first = mKeyFrames.front().mStartFrame;
-        int last = mKeyFrames.back().mEndFrame;
+        auto first = mKeyFrames.front().mStartFrame;
+        auto last = mKeyFrames.back().mEndFrame;
 
-        if ((first > prevFrame  && first > curFrame) ||
-            (last < prevFrame  && last < curFrame)) {
-            return false;
-        }
-
-        return true;
+        return !((first > prevFrame  && first > curFrame) ||
+                 (last < prevFrame  && last < curFrame));
     }
 
 public:
@@ -287,9 +287,17 @@ public:
         return impl.mValue;
     }
 
+    LOTAnimatable(LOTAnimatable &&other) noexcept {
+        if (!other.mStatic) {
+            construct(impl.mAnimInfo, std::move(other.impl.mAnimInfo));
+            mStatic = false;
+        } else {
+            construct(impl.mValue, std::move(other.impl.mValue));
+            mStatic = true;
+        }
+    }
     // delete special member functions
     LOTAnimatable(const LOTAnimatable &) = delete;
-    LOTAnimatable(LOTAnimatable &&) = delete;
     LOTAnimatable& operator=(const LOTAnimatable&) = delete;
     LOTAnimatable& operator=(LOTAnimatable&&) = delete;
 
@@ -326,13 +334,17 @@ private:
     union details {
         std::unique_ptr<LOTAnimInfo<T>>   mAnimInfo;
         T                                 mValue;
-        details(){}
-        ~details(){}
+        details(){};
+        details(const details&) = delete;
+        details(details&&) = delete;
+        details& operator=(details&&) = delete;
+        details& operator=(const details&) = delete;
+        ~details(){};
     }impl;
     bool                                 mStatic{true};
 };
 
-enum class LottieBlendMode
+enum class LottieBlendMode: uchar
 {
     Normal = 0,
     Multiply = 1,
@@ -411,37 +423,40 @@ struct LOTAsset
     VBitmap                                   mBitmap;
 };
 
-struct LOT3DData
+struct TransformDataExtra
 {
-    LOTAnimatable<float>     mRx{0};
-    LOTAnimatable<float>     mRy{0};
-    LOTAnimatable<float>     mRz{0};
+    LOTAnimatable<float>     m3DRx{0};
+    LOTAnimatable<float>     m3DRy{0};
+    LOTAnimatable<float>     m3DRz{0};
+    LOTAnimatable<float>     mSeparateX{0};
+    LOTAnimatable<float>     mSeparateY{0};
+    bool                     mSeparate{false};
+    bool                     m3DData{false};
 };
 
 struct TransformData
 {
     VMatrix matrix(int frameNo, bool autoOrient = false) const;
     float opacity(int frameNo) const { return mOpacity.value(frameNo)/100.0f; }
-    bool isStatic() const { return mStatic;}
-    std::unique_ptr<LOT3DData>    m3D;
-    LOTAnimatable<float>          mRotation{0};  /* "r" */
-    LOTAnimatable<VPointF>        mScale{{100, 100}};     /* "s" */
-    LOTAnimatable<VPointF>        mPosition;  /* "p" */
-    LOTAnimatable<float>          mX{0};
-    LOTAnimatable<float>          mY{0};
-    LOTAnimatable<VPointF>        mAnchor;    /* "a" */
-    LOTAnimatable<float>          mOpacity{100};   /* "o" */
-    bool                          mSeparate{false};
-    bool                          mStatic{false};
+    void createExtraData()
+    {
+        if (!mExtra) mExtra = std::make_unique<TransformDataExtra>();
+    }
+    LOTAnimatable<float>                   mRotation{0};  /* "r" */
+    LOTAnimatable<VPointF>                 mScale{{100, 100}};     /* "s" */
+    LOTAnimatable<VPointF>                 mPosition;  /* "p" */
+    LOTAnimatable<VPointF>                 mAnchor;    /* "a" */
+    LOTAnimatable<float>                   mOpacity{100};   /* "o" */
+    std::unique_ptr<TransformDataExtra>    mExtra;
 };
 
 class LOTTransformData : public LOTData
 {
 public:
     LOTTransformData():LOTData(LOTData::Type::Transform){}
-    void set(std::unique_ptr<TransformData> data)
+    void set(std::unique_ptr<TransformData> data, bool staticFlag)
     {
-        setStatic(data->isStatic());
+        setStatic(staticFlag);
         if (isStatic()) {
             new (&impl.mStaticData) static_data(data->matrix(0), data->opacity(0));
         } else {
@@ -458,7 +473,9 @@ public:
         if (isStatic()) return impl.mStaticData.mOpacity;
         return impl.mData->opacity(frameNo);
     }
-
+    LOTTransformData(const LOTTransformData&) = delete;
+    LOTTransformData(LOTTransformData&&) = delete;
+    LOTTransformData& operator=(LOTTransformData&) = delete;
     LOTTransformData& operator=(LOTTransformData&&) = delete;
     ~LOTTransformData() {destroy();}
 
@@ -480,9 +497,23 @@ private:
     union details {
         std::unique_ptr<TransformData>   mData;
         static_data                      mStaticData;
-        details(){}
-        ~details(){}
+        details(){};
+        details(const details&) = delete;
+        details(details&&) = delete;
+        details& operator=(details&&) = delete;
+        details& operator=(const details&) = delete;
+        ~details(){};
     }impl;
+};
+
+struct ExtraLayerData
+{
+    LottieColor                mSolidColor;
+    std::string                mPreCompRefId;
+    LOTAnimatable<float>       mTimeRemap;  /* "tm" */
+    LOTCompositionData        *mCompRef{nullptr};
+    std::shared_ptr<LOTAsset>  mAsset;
+    std::vector<std::shared_ptr<LOTMaskData>>  mMasks;
 };
 
 class LOTLayerData : public LOTGroupData
@@ -498,9 +529,7 @@ public:
     int inFrame() const noexcept{return mInFrame;}
     int outFrame() const noexcept{return mOutFrame;}
     int startFrame() const noexcept{return mStartFrame;}
-    int solidWidth() const noexcept{return mSolidLayer.mWidth;}
-    int solidHeight() const noexcept{return mSolidLayer.mHeight;}
-    LottieColor solidColor() const noexcept{return mSolidLayer.mColor;}
+    LottieColor solidColor() const noexcept{return mExtra->mSolidColor;}
     bool autoOrient() const noexcept{return mAutoOrient;}
     int timeRemap(int frameNo) const;
     VSize layerSize() const {return mLayerSize;}
@@ -513,34 +542,32 @@ public:
     {
         return mTransform ? mTransform->opacity(frameNo) : 1.0f;
     }
+    LOTAsset* asset() const
+    {
+        return (mExtra && mExtra->mAsset) ? mExtra->mAsset.get() : nullptr;
+    }
 public:
-    struct SolidLayer {
-        int            mWidth{0};
-        int            mHeight{0};
-        LottieColor    mColor;
-    };
-
+    ExtraLayerData* extra()
+    {
+        if (!mExtra) mExtra = std::make_unique<ExtraLayerData>();
+        return mExtra.get();
+    }
     MatteType            mMatteType{MatteType::None};
-    LayerType            mLayerType{LayerType::Null}; //lottie layer type  (solid/shape/precomp)
-    int                  mParentId{-1}; // Lottie the id of the parent in the composition
-    int                  mId{-1};  // Lottie the group id  used for parenting.
-    long                 mInFrame{0};
-    long                 mOutFrame{0};
-    long                 mStartFrame{0};
-    VSize                mLayerSize;
+    LayerType            mLayerType{LayerType::Null};
     LottieBlendMode      mBlendMode{LottieBlendMode::Normal};
-    float                mTimeStreatch{1.0f};
-    std::string          mPreCompRefId;
-    LOTAnimatable<float> mTimeRemap;  /* "tm" */
-    SolidLayer           mSolidLayer;
     bool                 mHasPathOperator{false};
     bool                 mHasMask{false};
     bool                 mHasRepeater{false};
     bool                 mHasGradient{false};
     bool                 mAutoOrient{false};
-    std::vector<std::shared_ptr<LOTMaskData>>  mMasks;
-    LOTCompositionData   *mCompRef{nullptr};
-    std::shared_ptr<LOTAsset> mAsset;
+    VSize                mLayerSize;
+    int                  mParentId{-1}; // Lottie the id of the parent in the composition
+    int                  mId{-1};  // Lottie the group id  used for parenting.
+    float                mTimeStreatch{1.0f};
+    int                  mInFrame{0};
+    int                  mOutFrame{0};
+    int                  mStartFrame{0};
+    std::unique_ptr<ExtraLayerData> mExtra{nullptr};
 };
 
 using LayerInfo = std::tuple<std::string, int , int>;
@@ -556,10 +583,10 @@ public:
     size_t frameAtPos(double pos) const {
         if (pos < 0) pos = 0;
         if (pos > 1) pos = 1;
-        return pos * frameDuration();
+        return size_t(pos * frameDuration());
     }
     long frameAtTime(double timeInSec) const {
-        return frameAtPos(timeInSec / duration());
+        return long(frameAtPos(timeInSec / duration()));
     }
     size_t totalFrame() const {return mEndFrame - mStartFrame;}
     long frameDuration() const {return mEndFrame - mStartFrame -1;}
@@ -597,15 +624,17 @@ inline int LOTLayerData::timeRemap(int frameNo) const
      * when a layer has timeremap bodymovin updates the startFrame()
      * of all child layer so we don't have to take care of it.
      */
-    frameNo = mTimeRemap.isStatic() ? frameNo - startFrame():
-              mCompRef->frameAtTime(mTimeRemap.value(frameNo));
+    if (!mExtra || mExtra->mTimeRemap.isStatic())
+        frameNo = frameNo - startFrame();
+    else
+        frameNo = mExtra->mCompRef->frameAtTime(mExtra->mTimeRemap.value(frameNo));
     /* Apply time streatch if it has any.
      * Time streatch is just a factor by which the animation will speedup or slow
      * down with respect to the overal animation.
      * Time streach factor is already applied to the layers inFrame and outFrame.
      * @TODO need to find out if timestreatch also affects the in and out frame of the
      * child layers or not. */
-    return frameNo / mTimeStreatch;
+    return int(frameNo / mTimeStreatch);
 }
 
 class LOTFillData : public LOTData
@@ -624,9 +653,15 @@ public:
 
 struct LOTDashProperty
 {
-    LOTAnimatable<float>     mDashArray[5]; /* "d" "g" "o"*/
-    int                      mDashCount{0};
-    bool                     mStatic{true};
+    std::vector<LOTAnimatable<float>> mData;
+    bool empty() const {return mData.empty();}
+    size_t size() const {return mData.size();}
+    bool isStatic() const {
+        for(const auto &elm : mData)
+            if (!elm.isStatic()) return false;
+        return true;
+    }
+    void getDashInfo(int frameNo, std::vector<float>& result) const;
 };
 
 class LOTStrokeData : public LOTData
@@ -638,16 +673,19 @@ public:
     float strokeWidth(int frameNo) const {return mWidth.value(frameNo);}
     CapStyle capStyle() const {return mCapStyle;}
     JoinStyle joinStyle() const {return mJoinStyle;}
-    float meterLimit() const{return mMeterLimit;}
-    bool hasDashInfo() const { return !(mDash.mDashCount == 0);}
-    int getDashInfo(int frameNo, float *array) const;
+    float miterLimit() const{return mMiterLimit;}
+    bool  hasDashInfo() const {return !mDash.empty();}
+    void getDashInfo(int frameNo, std::vector<float>& result) const
+    {
+        return mDash.getDashInfo(frameNo, result);
+    }
 public:
     LOTAnimatable<LottieColor>        mColor;      /* "c" */
     LOTAnimatable<float>              mOpacity{100};    /* "o" */
     LOTAnimatable<float>              mWidth{0};      /* "w" */
     CapStyle                          mCapStyle{CapStyle::Flat};   /* "lc" */
     JoinStyle                         mJoinStyle{JoinStyle::Miter};  /* "lj" */
-    float                             mMeterLimit{0}; /* "ml" */
+    float                             mMiterLimit{0}; /* "ml" */
     LOTDashProperty                   mDash;
     bool                              mEnabled{true}; /* "fillEnabled" */
 };
@@ -745,14 +783,17 @@ public:
     float width(int frameNo) const {return mWidth.value(frameNo);}
     CapStyle capStyle() const {return mCapStyle;}
     JoinStyle joinStyle() const {return mJoinStyle;}
-    float meterLimit() const{return mMeterLimit;}
-    bool hasDashInfo() const { return !(mDash.mDashCount == 0);}
-    int getDashInfo(int frameNo, float *array) const;
+    float miterLimit() const{return mMiterLimit;}
+    bool  hasDashInfo() const {return !mDash.empty();}
+    void getDashInfo(int frameNo, std::vector<float>& result) const
+    {
+        return mDash.getDashInfo(frameNo, result);
+    }
 public:
     LOTAnimatable<float>           mWidth;       /* "w" */
     CapStyle                       mCapStyle{CapStyle::Flat};    /* "lc" */
     JoinStyle                      mJoinStyle{JoinStyle::Miter};   /* "lj" */
-    float                          mMeterLimit{0};  /* "ml" */
+    float                          mMiterLimit{0};  /* "ml" */
     LOTDashProperty                mDash;
 };
 
@@ -760,8 +801,10 @@ class LOTPath : public LOTData
 {
 public:
     explicit LOTPath(LOTData::Type  type):LOTData(type){}
-    VPath::Direction direction() { if (mDirection == 3) return VPath::Direction::CCW;
-                                   else return VPath::Direction::CW;}
+    VPath::Direction direction() {
+        return (mDirection == 3) ?
+               VPath::Direction::CCW : VPath::Direction::CW;
+    }
 public:
     int                                    mDirection{1};
 };
@@ -785,7 +828,7 @@ public:
       Intersect,
       Difference
     };
-    float opacity(int frameNo) const {return mOpacity.value(frameNo)/100.0;}
+    float opacity(int frameNo) const {return mOpacity.value(frameNo)/100.0f;}
     bool isStatic() const {return mIsStatic;}
 public:
     LOTAnimatable<LottieShapeData>    mShape;
@@ -823,7 +866,7 @@ public:
     };
     LOTPolystarData():LOTPath(LOTData::Type::Polystar){}
 public:
-    LOTPolystarData::PolyType     mType{PolyType::Polygon};
+    LOTPolystarData::PolyType     mPolyType{PolyType::Polygon};
     LOTAnimatable<VPointF>        mPos;
     LOTAnimatable<float>          mPointCount{0};
     LOTAnimatable<float>          mInnerRadius{0};
@@ -839,8 +882,8 @@ public:
     struct Segment {
         float start{0};
         float end{0};
-        Segment() {}
-        Segment(float s, float e):start(s), end(e) {}
+        Segment() = default;
+        explicit Segment(float s, float e):start(s), end(e) {}
     };
     enum class TrimType {
         Simultaneously,
@@ -855,9 +898,9 @@ public:
     Segment segment(int frameNo) const {
         float start = mStart.value(frameNo)/100.0f;
         float end = mEnd.value(frameNo)/100.0f;
-        float offset = fmod(mOffset.value(frameNo), 360.0f)/ 360.0f;
+        float offset = std::fmod(mOffset.value(frameNo), 360.0f)/ 360.0f;
 
-        float diff = fabs(start - end);
+        float diff = std::abs(start - end);
         if (vCompare(diff, 0.0f)) return Segment(0, 0);
         if (vCompare(diff, 1.0f)) return Segment(0, 1);
 
@@ -869,8 +912,8 @@ public:
             } else if (start > 1 && end > 1) {
                 return noloop(start - 1, end - 1);
             } else {
-                if (start > 1) return loop(start - 1 , end);
-                else return loop(start , end - 1);
+                return (start > 1) ?
+                            loop(start - 1 , end) : loop(start , end - 1);
             }
         } else {
             start += offset;
@@ -880,8 +923,8 @@ public:
             } else if (start < 0 && end < 0) {
                 return noloop(1 + start, 1 + end);
             } else {
-                if (start < 0) return loop(1 + start, end);
-                else return loop(start , 1 + end);
+                return (start < 0) ?
+                            loop(1 + start, end) : loop(start , 1 + end);
             }
         }
     }
@@ -959,7 +1002,7 @@ public:
    double duration() const {return mRoot->duration();}
    size_t totalFrame() const {return mRoot->totalFrame();}
    size_t frameDuration() const {return mRoot->frameDuration();}
-   size_t frameRate() const {return mRoot->frameRate();}
+   double frameRate() const {return mRoot->frameRate();}
    size_t startFrame() const {return mRoot->startFrame();}
    size_t endFrame() const {return mRoot->endFrame();}
    size_t frameAtPos(double pos) const {return mRoot->frameAtPos(pos);}

@@ -65,19 +65,18 @@ class LOTCompItem
 public:
    explicit LOTCompItem(LOTModel *model);
    static std::unique_ptr<LOTLayerItem> createLayerItem(LOTLayerData *layerData);
-   bool update(int frameNo);
-   void resize(const VSize &size);
+   bool update(int frameNo, const VSize &size, bool keepAspectRatio);
    VSize size() const { return mViewSize;}
    void buildRenderTree();
    const LOTLayerNode * renderTree()const;
    bool render(const rlottie::Surface &surface);
    void setValue(const std::string &keypath, LOTVariant &value);
 private:
-   VMatrix                                    mScaleMatrix;
-   VSize                                      mViewSize;
+   VMatrix                                     mScaleMatrix;
+   VSize                                       mViewSize;
    LOTCompositionData                         *mCompData;
    std::unique_ptr<LOTLayerItem>               mRootLayer;
-   bool                                        mUpdateViewBox;
+   bool                                        mKeepAspectRatio{true};
    int                                         mCurFrameNo;
    std::vector<LOTNode *>                      mRenderList;
    std::vector<VDrawable *>                    mDrawableList;
@@ -398,7 +397,7 @@ class LOTPaintDataItem : public LOTContentItem
 {
 public:
    LOTPaintDataItem(bool staticContent);
-   void addPathItems(std::vector<LOTPathDataItem *> &list, int startOffset);
+   void addPathItems(std::vector<LOTPathDataItem *> &list, size_t startOffset);
    void update(int frameNo, const VMatrix &parentMatrix, float parentAlpha, const DirtyFlag &flag) override;
    void renderList(std::vector<VDrawable *> &list) final;
 protected:
@@ -455,8 +454,7 @@ private:
    LOTProxyModel<LOTStrokeData> mModel;
    VColor                       mColor;
    float                        mWidth{0};
-   float                        mDashArray[6];
-   int                          mDashArraySize{0};
+   std::vector<float>           mDashInfo;
 };
 
 class LOTGStrokeItem : public LOTPaintDataItem
@@ -475,8 +473,7 @@ private:
    VColor                        mColor;
    float                         mAlpha{1.0};
    float                         mWidth{0};
-   float                         mDashArray[6];
-   int                           mDashArraySize{0};
+   std::vector<float>            mDashInfo;
 };
 
 
@@ -488,7 +485,7 @@ public:
    LOTTrimItem(LOTTrimData *data);
    void update(int frameNo, const VMatrix &parentMatrix, float parentAlpha, const DirtyFlag &flag) final;
    void update();
-   void addPathItems(std::vector<LOTPathDataItem *> &list, int startOffset);
+   void addPathItems(std::vector<LOTPathDataItem *> &list, size_t startOffset);
 private:
    bool pathDirty() const {
        for (auto &i : mPathItems) {

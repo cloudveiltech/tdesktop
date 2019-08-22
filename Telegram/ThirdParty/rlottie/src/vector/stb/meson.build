@@ -6,6 +6,7 @@ if get_option('module') == true
                                               source_file,
                                               include_directories : [include_directories('.'), config_dir],
                                               install : true,
+                                              cpp_args : compiler_flags,
                                               gnu_symbol_visibility : 'hidden',
                                              )
     cc = meson.get_compiler('cpp')

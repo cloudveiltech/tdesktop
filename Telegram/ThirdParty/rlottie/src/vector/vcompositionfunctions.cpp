@@ -45,7 +45,8 @@ static void comp_func_solid_Source(uint32_t *dest, int length, uint32_t color,
        = s * ca + d * (1 - sa*ca)
        = s' + d ( 1 - s'a)
 */
-static void comp_func_solid_SourceOver(uint32_t *dest, int length, uint32_t color,
+static void comp_func_solid_SourceOver(uint32_t *dest, int length,
+                                       uint32_t color,
                                 uint32_t const_alpha)
 {
     int ialpha, i;
@@ -104,7 +105,8 @@ static void comp_func_Source(uint32_t *dest, const uint32_t *src, int length,
 /* s' = s * ca
  * d' = s' + d (1 - s'a)
  */
-static void comp_func_SourceOver(uint32_t *dest, const uint32_t *src, int length,
+static void comp_func_SourceOver(uint32_t *dest, const uint32_t *src,
+                                 int length,
                           uint32_t const_alpha)
 {
     uint s, sia;
@@ -124,7 +126,7 @@ static void comp_func_SourceOver(uint32_t *dest, const uint32_t *src, int length
          * dest = source' + dest ( 1- source'a)
          */
         for (int i = 0; i < length; ++i) {
-            uint s = BYTE_MUL(src[i], const_alpha);
+            s = BYTE_MUL(src[i], const_alpha);
             sia = vAlpha(~s);
             dest[i] = s + BYTE_MUL(dest[i], sia);
         }

@@ -21,52 +21,79 @@
 
 #include <cstring>
 #include <fstream>
-#include <unordered_map>
-using namespace std;
 
 #ifdef LOTTIE_CACHE_SUPPORT
 
-class LottieFileCache {
+#include <unordered_map>
+#include <mutex>
+
+class LottieModelCache {
 public:
-    static LottieFileCache &instance()
+    static LottieModelCache &instance()
     {
-        static LottieFileCache CACHE;
+        static LottieModelCache CACHE;
         return CACHE;
     }
     std::shared_ptr<LOTModel> find(const std::string &key)
     {
+        std::lock_guard<std::mutex> guard(mMutex);
+
+        if (!mcacheSize) return nullptr;
+
         auto search = mHash.find(key);
-        if (search != mHash.end()) {
-            return search->second;
-        } else {
-            return nullptr;
-        }
+
+        return (search != mHash.end()) ? search->second : nullptr;
+
     }
     void add(const std::string &key, std::shared_ptr<LOTModel> value)
     {
+        std::lock_guard<std::mutex> guard(mMutex);
+
+        if (!mcacheSize) return;
+
+        //@TODO just remove the 1st element
+        // not the best of LRU logic
+        if (mcacheSize == mHash.size()) mHash.erase(mHash.cbegin());
+
         mHash[key] = std::move(value);
     }
 
-private:
-    LottieFileCache() = default;
+    void configureCacheSize(size_t cacheSize)
+    {
+        std::lock_guard<std::mutex> guard(mMutex);
+        mcacheSize = cacheSize;
 
-    std::unordered_map<std::string, std::shared_ptr<LOTModel>> mHash;
+        if (!mcacheSize) mHash.clear();
+    }
+
+private:
+    LottieModelCache() = default;
+
+    std::unordered_map<std::string, std::shared_ptr<LOTModel>>  mHash;
+    std::mutex                                                  mMutex;
+    size_t                                                      mcacheSize{10};
 };
 
 #else
 
-class LottieFileCache {
+class LottieModelCache {
 public:
-    static LottieFileCache &instance()
+    static LottieModelCache &instance()
     {
-        static LottieFileCache CACHE;
+        static LottieModelCache CACHE;
         return CACHE;
     }
     std::shared_ptr<LOTModel> find(const std::string &) { return nullptr; }
     void add(const std::string &, std::shared_ptr<LOTModel>) {}
+    void configureCacheSize(size_t) {}
 };
 
 #endif
+
+void LottieLoader::configureModelCacheSize(size_t cacheSize)
+{
+    LottieModelCache::instance().configureCacheSize(cacheSize);
+}
 
 static std::string dirname(const std::string &path)
 {
@@ -78,10 +105,12 @@ static std::string dirname(const std::string &path)
     return std::string(path, 0, len);
 }
 
-bool LottieLoader::load(const std::string &path)
+bool LottieLoader::load(const std::string &path, bool cachePolicy)
 {
-    mModel = LottieFileCache::instance().find(path);
-    if (mModel) return true;
+    if (cachePolicy) {
+        mModel = LottieModelCache::instance().find(path);
+        if (mModel) return true;
+    }
 
     std::ifstream f;
     f.open(path);
@@ -90,36 +119,46 @@ bool LottieLoader::load(const std::string &path)
         vCritical << "failed to open file = " << path.c_str();
         return false;
     } else {
-        std::stringstream buf;
-        buf << f.rdbuf();
+        std::string content;
 
-        LottieParser parser(const_cast<char *>(buf.str().data()),
+        std::getline(f, content, '\0') ;
+        f.close();
+
+        if (content.empty()) return false;
+
+        const char *str = content.c_str();
+        LottieParser parser(const_cast<char *>(str),
                             dirname(path).c_str());
         mModel = parser.model();
 
         if (!mModel) return false;
 
-        LottieFileCache::instance().add(path, mModel);
-
-        f.close();
+        if (cachePolicy)
+            LottieModelCache::instance().add(path, mModel);
     }
 
     return true;
 }
 
-bool LottieLoader::loadFromData(std::string &&jsonData, const std::string &key,
-                                const std::string &resourcePath)
+bool LottieLoader::loadFromData(
+    std::string &&jsonData, const std::string &key,
+    const std::string &resourcePath, bool cachePolicy,
+    const std::vector<std::pair<std::uint32_t, std::uint32_t>>
+        &colorReplacements)
 {
-    mModel = LottieFileCache::instance().find(key);
-    if (mModel) return true;
+    if (cachePolicy) {
+        mModel = LottieModelCache::instance().find(key);
+        if (mModel) return true;
+    }
 
     LottieParser parser(const_cast<char *>(jsonData.c_str()),
-                        resourcePath.c_str());
+                        resourcePath.c_str(), colorReplacements);
     mModel = parser.model();
 
     if (!mModel) return false;
 
-    LottieFileCache::instance().add(key, mModel);
+    if (cachePolicy)
+        LottieModelCache::instance().add(key, mModel);
 
     return true;
 }

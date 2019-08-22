@@ -1,16 +1,16 @@
-/*
+/* 
  * Copyright (c) 2018 Samsung Electronics Co., Ltd. All rights reserved.
- *
+ * 
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
- *
+ * 
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
- *
+ * 
  * You should have received a copy of the GNU Lesser General Public
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
@@ -25,9 +25,9 @@
 #include <type_traits>
 #include <utility>
 
-typedef uint32_t uint;
-typedef uint16_t ushort;
-typedef uint8_t  uchar;
+using uint   = uint32_t;
+using ushort = uint16_t;
+using uchar  = uint8_t;
 
 #if !defined(V_NAMESPACE)
 
@@ -73,7 +73,7 @@ typedef uint8_t  uchar;
 #include <atomic>
 class RefCount {
 public:
-    inline RefCount(int i) : atomic(i) {}
+    explicit RefCount(int i) : atomic(i) {}
     inline bool ref()
     {
         int count = atomic.load();
@@ -91,7 +91,7 @@ public:
         if (count == -1)  // isStatic
             return true;
         atomic.fetch_sub(1);
-        return --count;
+        return (--count == 0);
     }
     bool isShared() const
     {
@@ -144,12 +144,12 @@ class vFlagHelper {
     int i;
 
 public:
-    constexpr inline vFlagHelper(int ai) noexcept : i(ai) {}
+    explicit constexpr inline vFlagHelper(int ai) noexcept : i(ai) {}
     constexpr inline operator int() const noexcept { return i; }
 
-    constexpr inline vFlagHelper(uint ai) noexcept : i(int(ai)) {}
-    constexpr inline vFlagHelper(short ai) noexcept : i(int(ai)) {}
-    constexpr inline vFlagHelper(ushort ai) noexcept : i(int(uint(ai))) {}
+    explicit constexpr inline vFlagHelper(uint ai) noexcept : i(int(ai)) {}
+    explicit constexpr inline vFlagHelper(short ai) noexcept : i(int(ai)) {}
+    explicit constexpr inline vFlagHelper(ushort ai) noexcept : i(int(uint(ai))) {}
     constexpr inline operator uint() const noexcept { return uint(i); }
 };
 
@@ -162,16 +162,16 @@ public:
     static_assert((std::is_enum<Enum>::value),
                   "vFlag is only usable on enumeration types.");
 
-    typedef typename std::conditional<
+    using Int = typename std::conditional<
         std::is_unsigned<typename std::underlying_type<Enum>::type>::value,
-        unsigned int, signed int>::type Int;
+        unsigned int, signed int>::type;
 
-    typedef Enum enum_type;
+    using  enum_type = Enum;
     // compiler-generated copy/move ctor/assignment operators are fine!
 
-    constexpr inline vFlag(Enum f) noexcept : i(Int(f)) {}
-    constexpr inline vFlag() noexcept : i(0) {}
-    constexpr inline vFlag(vFlagHelper f) noexcept : i(f) {}
+    vFlag() = default;
+    constexpr vFlag(Enum f) noexcept : i(Int(f)) {}
+    explicit constexpr vFlag(vFlagHelper f) noexcept : i(f) {}
 
     inline vFlag &operator&=(int mask) noexcept
     {
@@ -255,27 +255,22 @@ public:
         return on ? (*this |= f) : (*this &= ~f);
     }
 
-    Int i;
+    Int i{0};
 };
 
 class VColor {
 public:
-    inline VColor() noexcept { a = r = g = b = 0; }
-    inline VColor(int red, int green, int blue, int alpha = 255) noexcept
-    {
-        r = red;
-        g = green;
-        b = blue;
-        a = alpha;
-    }
-    inline int  red() const noexcept { return r; }
-    inline int  green() const noexcept { return g; }
-    inline int  blue() const noexcept { return b; }
-    inline int  alpha() const noexcept { return a; }
-    inline void setRed(int red) noexcept { r = red; }
-    inline void setGreen(int green) noexcept { g = green; }
-    inline void setBlue(int blue) noexcept { b = blue; }
-    inline void setAlpha(int alpha) noexcept { a = alpha; }
+    VColor() = default;
+    explicit VColor(uchar red, uchar green, uchar blue, uchar alpha = 255) noexcept
+        :a(alpha), r(red), g(green), b(blue){}
+    inline uchar  red() const noexcept { return r; }
+    inline uchar  green() const noexcept { return g; }
+    inline uchar  blue() const noexcept { return b; }
+    inline uchar  alpha() const noexcept { return a; }
+    inline void setRed(uchar red) noexcept { r = red; }
+    inline void setGreen(uchar green) noexcept { g = green; }
+    inline void setBlue(uchar blue) noexcept { b = blue; }
+    inline void setAlpha(uchar alpha) noexcept { a = alpha; }
     inline bool isOpaque() const { return a == 255; }
     inline bool operator==(const VColor &o) const
     {
@@ -291,7 +286,7 @@ public:
 
     uint premulARGB(float opacity) const
     {
-        int alpha = a * opacity;
+        int alpha = int(a * opacity);
         int pr = (r * alpha) / 255;
         int pg = (g * alpha) / 255;
         int pb = (b * alpha) / 255;
@@ -299,10 +294,10 @@ public:
     }
 
 public:
-    uchar a;
-    uchar r;
-    uchar g;
-    uchar b;
+    uchar a{0};
+    uchar r{0};
+    uchar g{0};
+    uchar b{0};
 };
 
 enum class FillRule: unsigned char { EvenOdd, Winding };

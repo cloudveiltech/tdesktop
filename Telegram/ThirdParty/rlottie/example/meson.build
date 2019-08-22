@@ -13,50 +13,44 @@ executable('lottie2gif',
            override_options : override_default,
            link_with : rlottie_lib)
 
-executable('vectorTest',
-           'vectortest.cpp',
+demo_dep = dependency('elementary', required : false, disabler : true)
+
+executable('demo',
+           demo_sources,
            include_directories : inc,
-           dependencies : [rlottie_lib_dep])
+           override_options : override_default,
+           link_with : rlottie_lib,
+           dependencies : demo_dep)
 
-demo_dep = dependency('elementary', required : false)
+lottieview_test_src  = files('lottieviewtest.cpp')
+lottieview_test_src += common_source
 
-if (demo_dep.found())
-    executable('demo',
-               demo_sources,
-               include_directories : inc,
-               override_options : override_default,
-               link_with : rlottie_lib,
-               dependencies : demo_dep)
+executable('lottieviewTest',
+           lottieview_test_src,
+           include_directories : inc,
+           override_options : override_default,
+           link_with : rlottie_lib,
+           dependencies : demo_dep)
 
-    lottieview_test_src  = files('lottieviewtest.cpp')
-    lottieview_test_src += common_source
+uxsample_test_src  = files('uxsampletest.cpp')
+uxsample_test_src += common_source
 
-    executable('lottieviewTest',
-               lottieview_test_src,
-               include_directories : inc,
-               override_options : override_default,
-               link_with : rlottie_lib,
-               dependencies : demo_dep)
+executable('uxsampleTest',
+           uxsample_test_src,
+           include_directories : inc,
+           override_options : override_default,
+           link_with : rlottie_lib,
+           dependencies : demo_dep)
 
-    uxsample_test_src  = files('uxsampletest.cpp')
-    uxsample_test_src += common_source
+lottieviewer_sources = files('lottieviewer.cpp')
+lottieviewer_sources += common_source
 
-    executable('uxsampleTest',
-               uxsample_test_src,
-               include_directories : inc,
-               override_options : override_default,
-               link_with : rlottie_lib,
-               dependencies : demo_dep)
-
-    lottieviewer_sources = files('lottieviewer.cpp')
-    lottieviewer_sources += common_source
-
-    executable('lottieviewer',
-               lottieviewer_sources,
-               include_directories : inc,
-               override_options : override_default,
-               link_with : rlottie_lib,
-               dependencies : demo_dep)
+executable('lottieviewer',
+           lottieviewer_sources,
+           include_directories : inc,
+           override_options : override_default,
+           link_with : rlottie_lib,
+           dependencies : demo_dep)
 
 if (meson.get_compiler('cpp').has_header('elementary-1/efl_ui_animation_view.h'))
     executable('efl_animview',
@@ -67,4 +61,3 @@ if (meson.get_compiler('cpp').has_header('elementary-1/efl_ui_animation_view.h')
                dependencies : demo_dep)
 endif
 
-endif

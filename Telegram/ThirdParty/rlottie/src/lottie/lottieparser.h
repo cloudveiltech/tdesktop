@@ -20,15 +20,18 @@
 #define LOTTIEPARSER_H
 
 #include "lottiemodel.h"
+#include <memory>
 
 class LottieParserImpl;
 class LottieParser {
 public:
     ~LottieParser();
-    LottieParser(char* str, const char *dir_path);
+    LottieParser(char *str, const char *dir_path,
+                 const std::vector<std::pair<std::uint32_t, std::uint32_t>>
+                     &colorReplacements = {});
     std::shared_ptr<LOTModel> model();
 private:
-   LottieParserImpl   *d;
+   std::unique_ptr<LottieParserImpl>  d;
 };
 
 #endif // LOTTIEPARSER_H

@@ -1,12 +1,20 @@
-cmake_minimum_required( VERSION 3.2 )
+cmake_minimum_required( VERSION 3.3 )
 
 #declare project
 project( rlottie VERSION 0.0.1 LANGUAGES C CXX ASM)
 
-add_definitions(-DLOT_BUILD)
+if (NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE MinSizeRel)
+endif()
+
+if (NOT DEFINED BUILD_SHARED_LIBS)
+    # Keep the previous behavior of the build system, consistent with Meson.
+    set(BUILD_SHARED_LIBS ON)
+endif()
 
 #declare target
-add_library( rlottie SHARED  "" )
+add_library( rlottie )
+set_target_properties( rlottie PROPERTIES DEFINE_SYMBOL LOT_BUILD )
 
 #declare version of the target
 set(player_version_major 0)
@@ -24,6 +32,7 @@ add_library(rlottie::rlottie ALIAS rlottie)
 option(LOTTIE_MODULE "Enable LOTTIE MODULE SUPPORT" ON)
 option(LOTTIE_THREAD "Enable LOTTIE THREAD SUPPORT" ON)
 option(LOTTIE_CACHE "Enable LOTTIE CACHE SUPPORT" ON)
+option(LOTTIE_TEST "Build LOTTIE AUTOTESTS" OFF)
 
 CONFIGURE_FILE(${CMAKE_CURRENT_LIST_DIR}/cmake/config.h.in config.h)
 
@@ -37,7 +46,6 @@ target_compile_options(rlottie
                     PUBLIC
                     PRIVATE
                         -std=c++14
-                        -Os
                         -fno-exceptions
                         -fno-unwind-tables
                         -fno-asynchronous-unwind-tables
@@ -60,10 +68,10 @@ target_link_libraries(rlottie
                         "${CMAKE_THREAD_LIBS_INIT}"
                      )
 
-# for dlopen, dlsym and dlclose dependancy
-target_link_libraries(rlottie
-                    PRIVATE
-                    ${CMAKE_DL_LIBS})
+if (LOTTIE_MODULE)
+    # for dlopen, dlsym and dlclose dependancy
+    target_link_libraries(rlottie PRIVATE ${CMAKE_DL_LIBS})
+endif()
 
 if(APPLE)
     target_link_libraries(rlottie
@@ -86,6 +94,11 @@ endif (NOT LIB_INSTALL_DIR)
 add_subdirectory(inc)
 add_subdirectory(src)
 add_subdirectory(example)
+
+if (LOTTIE_TEST)
+    enable_testing()
+    add_subdirectory(test)
+endif()
 
 SET(PREFIX ${CMAKE_INSTALL_PREFIX})
 SET(EXEC_DIR ${PREFIX})

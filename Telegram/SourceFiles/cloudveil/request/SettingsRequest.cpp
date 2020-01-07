@@ -9,11 +9,11 @@ void SettingsRequest::writeToJson(QJsonObject & json)
 	json["user_name"] = userName;
 
 	QJsonArray groupsArray;
-	writeArrayToJson(groupsArray, groups);	
+	writeArrayToJson(groupsArray, groups, true, true);	
 	json["groups"] = groupsArray;
 
 	QJsonArray channelsArray;
-	writeArrayToJson(channelsArray, channels);
+	writeArrayToJson(channelsArray, channels, false, true);
 	json["channels"] = channelsArray;
 
 	QJsonArray botsArray;
@@ -29,13 +29,13 @@ void SettingsRequest::writeToJson(QJsonObject & json)
 	json["users"] = usersArray;
 }
 
-template<typename T> void SettingsRequest::writeArrayToJson(QJsonArray &jsonArray, QVector<Row<T>> &objects)
+template<typename T> void SettingsRequest::writeArrayToJson(QJsonArray &jsonArray, QVector<Row<T>> &objects, bool writeIsMegagroup, bool writeIsPublic)
 {
 	for (int i = 0; i < objects.size(); i++)
 	{
 		Row<T>& row = objects[i];
 		QJsonObject json;
-		row.writeToJson(json);
+		row.writeToJson(json, writeIsMegagroup, writeIsPublic);
 		jsonArray.append(json);
 	}
 }

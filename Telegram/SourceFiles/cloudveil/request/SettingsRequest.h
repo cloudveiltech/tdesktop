@@ -7,11 +7,19 @@ public:
 		T id;
 		QString title;
 		QString userName;
+		bool isMegagroup;
+		bool isPublic;
 
-		void writeToJson(QJsonObject &json) {			
+		void writeToJson(QJsonObject &json, bool writeIsMegagroup = false, bool writeIsPublic=false) {			
 			json["id"] = QString::number(id);
 			json["title"] = title;
 			json["user_name"] = userName;
+			if (writeIsMegagroup) {
+				json["is_megagroup"] = isMegagroup;
+			}
+			if (writeIsPublic) {
+				json["is_public"] = isPublic;
+			}
 		}
 	};
 
@@ -31,6 +39,6 @@ public:
 	~SettingsRequest();
 
 private:
-	template<typename T> void writeArrayToJson(QJsonArray &jsonArray, QVector<Row<T>> &objects);
+	template<typename T> void writeArrayToJson(QJsonArray &jsonArray, QVector<Row<T>> &objects, bool writeIsMegagroup=false, bool writeIsPublic=false);
 };
 

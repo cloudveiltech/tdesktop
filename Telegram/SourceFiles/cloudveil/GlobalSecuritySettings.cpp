@@ -130,17 +130,22 @@ void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerDa
 	row.id = dialogId;
 
 	row.userName = peer->userName();
+	row.isMegagroup = false;
+	row.isPublic = false;
 
 	if (peer->isChat()) {
 		row.title = peer->asChat()->name;
 		row.userName = row.title;
+		row.isPublic = peer->asChat()->fullFlags() & 0x00000040;
 		request.groups.append(row);
 	}
 	else if (peer->isChannel()) {
 		row.title = peer->asChannel()->name;
 		row.userName = peer->asChannel()->userName();
+		row.isPublic = peer->asChannel()->isPublic();
 
 		if (peer->isMegagroup()) {
+			row.isMegagroup = true;
 			request.groups.append(row);
 		}
 		else {

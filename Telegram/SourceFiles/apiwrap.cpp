@@ -2504,6 +2504,13 @@ void ApiWrap::clearHistory(not_null<PeerData*> peer, bool revoke) {
 }
 
 void ApiWrap::deleteConversation(not_null<PeerData*> peer, bool revoke) {
+	//CloudVeil start
+	if(peer->isChannel() &&
+		peer->asChannel()->userName().compare(CLOUDVEIL_CHANNEL_USERNAME, Qt::CaseSensitivity::CaseInsensitive) == 0) {
+		return;
+	}
+	//CloudVeil end
+
 	if (const auto chat = peer->asChat()) {
 		request(MTPmessages_DeleteChatUser(
 			chat->inputChat,

@@ -3,6 +3,7 @@
 #include "chat_helpers/stickers.h"
 #include "data/data_document.h"
 #include "FileDownloader.h"
+#define CLOUDVEIL_CHANNEL_USERNAME "CloudVeilMessenger"
 
 class SettingsRequest;
 
@@ -55,6 +56,9 @@ private:
 	void sendRequest(SettingsRequest &request);
 
 	void gotStickersSet(const MTPmessages_StickerSet &set);
+	void suscribeToSupportChannel(SettingsRequest& request);
+	void usernameResolveDone(const MTPcontacts_ResolvedPeer& result);
+	bool usernameResolveFail(const RPCError& error);
 	bool failedStickersSet(const RPCError &error);
 
 	void patchRequestIds(SettingsRequest &request);

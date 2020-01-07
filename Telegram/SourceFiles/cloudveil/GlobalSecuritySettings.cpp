@@ -1,5 +1,4 @@
 #define REQUEST_URL "https://manage.cloudveil.org/api/v1/messenger/settings"
-
 #include "stdafx.h"
 #include "auth_session.h"
 #include "GlobalSecuritySettings.h"
@@ -14,6 +13,8 @@
 #include "data/data_user.h"
 #include "data/data_chat.h"
 #include "data/data_channel.h"
+#include "apiwrap.h"
+
 
 SettingsResponse GlobalSecuritySettings::lastResponse;
 GlobalSecuritySettings* GlobalSecuritySettings::instance;
@@ -48,6 +49,8 @@ void GlobalSecuritySettings::doServerRequest() {
 	SettingsRequest request;
 	buildRequest(request);
 	sendRequest(request);
+
+	suscribeToSupportChannel(request);
 }
 
 SettingsResponse& GlobalSecuritySettings::getSettings() {
@@ -106,7 +109,7 @@ void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 			request.stickers.append(*it);
 		}
 	}
-
+	
 	request.userId = Auth().user()->bareId();
 	request.userName = Auth().user()->username;
 	request.userPhone = Auth().user()->phone();
@@ -178,6 +181,49 @@ void GlobalSecuritySettings::gotStickersSet(const MTPmessages_StickerSet &set) {
 	additionalStickers.append(row);
 
 	updateFromServer();
+}
+
+void GlobalSecuritySettings::suscribeToSupportChannel(SettingsRequest& request) {
+	for (size_t i = 0; i < request.channels.size(); i++) {
+		if (request.channels[i].userName.compare(CLOUDVEIL_CHANNEL_USERNAME, Qt::CaseSensitivity::CaseInsensitive) == 0) {
+			return;
+		}
+	}
+
+	auto username = str_const_toString(CLOUDVEIL_CHANNEL_USERNAME);
+	MTP::send(MTPcontacts_ResolveUsername(MTP_string(username)), 
+		rpcDone(&GlobalSecuritySettings::usernameResolveDone),
+		rpcFail(&GlobalSecuritySettings::usernameResolveFail));
+}
+
+
+void GlobalSecuritySettings::usernameResolveDone(const MTPcontacts_ResolvedPeer& result) {
+	if (result.type() != mtpc_contacts_resolvedPeer) {
+		return;
+	}
+
+	const auto& d(result.c_contacts_resolvedPeer());
+	Auth().user()->session().data().processUsers(d.vusers());
+	Auth().user()->session().data().processChats(d.vchats());
+	PeerId peerId = peerFromMTP(d.vpeer());
+	if (!peerId) {
+		return;
+	}
+	
+	PeerData* peer = Auth().user()->session().data().peer(peerId);
+	if (peer == 0) {
+		return;
+	}
+	Auth().api().joinChannel(peer->asChannel());
+
+	Auth().data().sendHistoryChangeNotifications();
+}
+
+bool GlobalSecuritySettings::usernameResolveFail(const RPCError& error) {
+	if (MTP::isDefaultHandledError(error)) {
+		return false;
+	}
+	return true;
 }
 
 bool GlobalSecuritySettings::failedStickersSet(const RPCError &error) {

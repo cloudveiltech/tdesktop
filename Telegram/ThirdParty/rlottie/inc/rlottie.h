@@ -43,6 +43,23 @@ struct LOTLayerNode;
 
 namespace rlottie {
 
+/**
+ *  @brief Configures rlottie model cache policy.
+ *
+ *  Provides Library level control to configure model cache
+ *  policy. Setting it to 0 will disable
+ *  the cache as well as flush all the previously cached content.
+ *
+ *  @param[in] cacheSize  Maximum Model Cache size.
+ *
+ *  @note to disable Caching configure with 0 size.
+ *  @note to flush the current Cache content configure it with 0 and
+ *        then reconfigure with the new size.
+ *
+ *  @internal
+ */
+LOT_EXPORT void configureModelCacheSize(size_t cacheSize);
+
 struct Color {
     Color() = default;
     Color(float r, float g , float b):_r(r), _g(g), _b(b){}
@@ -243,6 +260,10 @@ public:
      *  @brief Constructs an animation object from file path.
      *
      *  @param[in] path Lottie resource file path
+     *  @param[in] cachePolicy whether to cache or not the model data.
+     *             use only when need to explicit disabl caching for a
+     *             particular resource. To disable caching at library level
+     *             use @see configureModelCacheSize() instead.
      *
      *  @return Animation object that can render the contents of the
      *          Lottie resource represented by file path.
@@ -250,7 +271,7 @@ public:
      *  @internal
      */
     static std::unique_ptr<Animation>
-    loadFromFile(const std::string &path);
+    loadFromFile(const std::string &path, bool cachePolicy=true);
 
     /**
      *  @brief Constructs an animation object from JSON string data.
@@ -258,6 +279,10 @@ public:
      *  @param[in] jsonData The JSON string data.
      *  @param[in] key the string that will be used to cache the JSON string data.
      *  @param[in] resourcePath the path will be used to search for external resource.
+     *  @param[in] cachePolicy whether to cache or not the model data.
+     *             use only when need to explicit disabl caching for a
+     *             particular resource. To disable caching at library level
+     *             use @see configureModelCacheSize() instead.
      *
      *  @return Animation object that can render the contents of the
      *          Lottie resource represented by JSON string data.
@@ -265,7 +290,10 @@ public:
      *  @internal
      */
     static std::unique_ptr<Animation>
-    loadFromData(std::string jsonData, const std::string &key, const std::string &resourcePath="");
+    loadFromData(std::string jsonData, const std::string &key,
+                 const std::string &resourcePath="", bool cachePolicy=true,
+	             const std::vector<std::pair<std::uint32_t, std::uint32_t>>
+				     &colorReplacements = {});
 
     /**
      *  @brief Returns default framerate of the Lottie resource.
@@ -340,6 +368,7 @@ public:
      *
      *  @param[in] frameNo Content corresponds to the @p frameNo needs to be drawn
      *  @param[in] surface Surface in which content will be drawn
+     *  @param[in] keepAspectRatio whether to keep the aspect ratio while scaling the content.
      *
      *  @return future that will hold the result when rendering finished.
      *
@@ -348,7 +377,7 @@ public:
      *  @see Surface
      *  @internal
      */
-    std::future<Surface> render(size_t frameNo, Surface surface);
+    std::future<Surface> render(size_t frameNo, Surface surface, bool keepAspectRatio=true);
 
     /**
      *  @brief Renders the content to surface synchronously.
@@ -356,10 +385,11 @@ public:
      *
      *  @param[in] frameNo Content corresponds to the @p frameNo needs to be drawn
      *  @param[in] surface Surface in which content will be drawn
+     *  @param[in] keepAspectRatio whether to keep the aspect ratio while scaling the content.
      *
      *  @internal
      */
-    void              renderSync(size_t frameNo, Surface surface);
+    void              renderSync(size_t frameNo, Surface surface, bool keepAspectRatio=true);
 
     /**
      *  @brief Returns root layer of the composition updated with

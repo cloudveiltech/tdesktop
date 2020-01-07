@@ -76,7 +76,7 @@ public:
         VCacheData            info;
         const VGradientStops &stops = gradient.mStops;
         for (uint i = 0; i < stops.size() && i <= 2; i++)
-            hash_val += (stops[i].second.premulARGB() * gradient.alpha());
+            hash_val += VCacheKey(stops[i].second.premulARGB() * gradient.alpha());
 
         {
             std::lock_guard<std::mutex> guard(mMutex);
@@ -137,9 +137,10 @@ bool VGradientCache::generateGradientColorTable(const VGradientStops &stops,
                                                 float                 opacity,
                                                 uint32_t *colorTable, int size)
 {
-    int                  dist, idist, pos = 0, i;
+    int                  dist, idist, pos = 0;
+    size_t i;
     bool                 alpha = false;
-    int                  stopCount = stops.size();
+    size_t               stopCount = stops.size();
     const VGradientStop *curr, *next, *start;
     uint32_t             curColor, nextColor;
     float                delta, t, incr, fpos;
@@ -150,8 +151,8 @@ bool VGradientCache::generateGradientColorTable(const VGradientStops &stops,
     curr = start;
     if (!curr->second.isOpaque()) alpha = true;
     curColor = curr->second.premulARGB(opacity);
-    incr = 1.0 / (float)size;
-    fpos = 1.5 * incr;
+    incr = 1.0f / (float)size;
+    fpos = 1.5f * incr;
 
     colorTable[pos++] = curColor;
 
@@ -208,7 +209,7 @@ VBitmap::Format VRasterBuffer::prepare(VBitmap *image)
 void VSpanData::init(VRasterBuffer *image)
 {
     mRasterBuffer = image;
-    setDrawRegion(VRect(0, 0, image->width(), image->height()));
+    setDrawRegion(VRect(0, 0, int(image->width()), int(image->height())));
     mType = VSpanData::Type::None;
     mBlendFunc = nullptr;
     mUnclippedBlendFunc = nullptr;
@@ -348,9 +349,9 @@ void fetch_linear_gradient(uint32_t *buffer, const Operator *op,
         float rw = data->m23 * (y + float(0.5)) + data->m13 * (x + float(0.5)) +
                    data->m33;
         while (buffer < end) {
-            float x = rx / rw;
-            float y = ry / rw;
-            t = (op->linear.dx * x + op->linear.dy * y) + op->linear.off;
+            float xt = rx / rw;
+            float yt = ry / rw;
+            t = (op->linear.dx * xt + op->linear.dy * yt) + op->linear.off;
 
             *buffer = gradientPixel(gradient, t);
             rx += data->m11;
@@ -716,8 +717,8 @@ static void blend_untransformed_argb(size_t count, const VRle::Span *spans,
     const int image_width = data->mBitmap.width;
     const int image_height = data->mBitmap.height;
 
-    int xoff = data->dx;
-    int yoff = data->dy;
+    int xoff = int(data->dx);
+    int yoff = int(data->dy);
 
     while (count--) {
         int x = spans->x;
@@ -788,7 +789,7 @@ void VSpanData::setup(const VBrush &brush, VPainter::CompositionMode /*mode*/,
         mType = VSpanData::Type::Texture;
         initTexture(
             &brush.mTexture, 255, VBitmapData::Plain,
-            VRect(0, 0, brush.mTexture.width(), brush.mTexture.height()));
+            brush.mTexture.rect());
         setupMatrix(brush.mMatrix);
         break;
     }
@@ -825,8 +826,8 @@ void VSpanData::initTexture(const VBitmap *bitmap, int alpha,
     mType = VSpanData::Type::Texture;
 
     mBitmap.imageData = bitmap->data();
-    mBitmap.width = bitmap->width();
-    mBitmap.height = bitmap->height();
+    mBitmap.width = int(bitmap->width());
+    mBitmap.height = int(bitmap->height());
     mBitmap.bytesPerLine = bitmap->stride();
     mBitmap.format = bitmap->format();
     mBitmap.x1 = sourceRect.x();

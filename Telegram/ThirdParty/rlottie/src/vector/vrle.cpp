@@ -31,9 +31,9 @@ V_BEGIN_NAMESPACE
 enum class Operation { Add, Xor };
 
 struct VRleHelper {
-    size_t      alloc;
-    size_t      size;
-    VRle::Span *spans;
+    size_t      alloc{0};
+    size_t      size{0};
+    VRle::Span *spans{nullptr};
 };
 static void rleIntersectWithRle(VRleHelper *, int, int, VRleHelper *,
                                 VRleHelper *);
@@ -150,7 +150,7 @@ void VRle::VRleData::invert()
     }
 }
 
-void VRle::VRleData::operator*=(int alpha)
+void VRle::VRleData::operator*=(uchar alpha)
 {
     alpha &= 0xff;
     for (auto &i : mSpans) {
@@ -384,7 +384,7 @@ static void rleIntersectWithRle(VRleHelper *tmp_clip, int clip_offset_x,
                                 VRleHelper *result)
 {
     VRle::Span *out = result->spans;
-    int         available = result->alloc;
+    size_t      available = result->alloc;
     VRle::Span *spans = tmp_obj->spans;
     VRle::Span *end = tmp_obj->spans + tmp_obj->size;
     VRle::Span *clipSpans = tmp_clip->spans;
@@ -459,7 +459,7 @@ static void rleIntersectWithRect(const VRect &clip, VRleHelper *tmp_obj,
                                  VRleHelper *result)
 {
     VRle::Span *out = result->spans;
-    int         available = result->alloc;
+    size_t      available = result->alloc;
     VRle::Span *spans = tmp_obj->spans;
     VRle::Span *end = tmp_obj->spans + tmp_obj->size;
     short       minx, miny, maxx, maxy;

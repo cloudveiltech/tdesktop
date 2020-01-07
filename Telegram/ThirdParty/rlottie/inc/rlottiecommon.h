@@ -52,22 +52,6 @@
  * @ingroup Lottie_Animation
  */
 
-
-/**
- * @brief Enumeration for Lottie Player error code.
- */
-typedef enum
-{
-   //TODO: Coding convention??
-    LOT_ANIMATION_ERROR_NONE = 0,
-    LOT_ANIMATION_ERROR_NOT_PERMITTED,
-    LOT_ANIMATION_ERROR_OUT_OF_MEMORY,
-    LOT_ANIMATION_ERROR_INVALID_PARAMETER,
-    LOT_ANIMATION_ERROR_RESULT_OUT_OF_RANGE,
-    LOT_ANIMATION_ERROR_ALREADY_IN_PROGRESS,
-    LOT_ANIMATION_ERROR_UNKNOWN
-} LOTErrorType;
-
 typedef enum
 {
     BrushSolid = 0,
@@ -117,12 +101,12 @@ typedef enum
 typedef struct LOTMask {
     struct {
         const float *ptPtr;
-        int          ptCount;
+        size_t       ptCount;
         const char*  elmPtr;
-        int          elmCount;
+        size_t       elmCount;
     } mPath;
     LOTMaskType mMode;
-    int mAlpha;
+    unsigned char mAlpha;
 }LOTMask;
 
 typedef enum
@@ -143,9 +127,9 @@ typedef struct LOTNode {
 
     struct {
         const float *ptPtr;
-        int          ptCount;
-        const char*  elmPtr;
-        int          elmCount;
+        size_t       ptCount;
+        const char  *elmPtr;
+        size_t       elmCount;
     } mPath;
 
     struct {
@@ -154,18 +138,18 @@ typedef struct LOTNode {
 
     struct {
         unsigned char  enable;
-        int       width;
+        float       width;
         LOTCapStyle  cap;
         LOTJoinStyle join;
-        int       meterLimit;
-        float*    dashArray;
+        float       miterLimit;
+        float    *dashArray;
         int       dashArraySize;
     } mStroke;
 
     struct {
-        LOTGradientType type;
+        LOTGradientType  type;
         LOTGradientStop *stopPtr;
-        unsigned int stopCount;
+        size_t           stopCount;
         struct {
             float x, y;
         } start, end, center, focal;
@@ -174,9 +158,9 @@ typedef struct LOTNode {
     } mGradient;
 
     struct {
-        unsigned char* data;
-        int width;
-        int height;
+        unsigned char *data;
+        size_t width;
+        size_t height;
         struct {
            float m11; float m12; float m13;
            float m21; float m22; float m23;
@@ -195,30 +179,30 @@ typedef struct LOTLayerNode {
 
     struct {
         LOTMask        *ptr;
-        unsigned int    size;
+        size_t          size;
     } mMaskList;
 
     struct {
         const float *ptPtr;
-        int          ptCount;
-        const char*  elmPtr;
-        int          elmCount;
+        size_t       ptCount;
+        const char  *elmPtr;
+        size_t       elmCount;
     } mClipPath;
 
     struct {
         struct LOTLayerNode   **ptr;
-        unsigned int          size;
+        size_t                  size;
     } mLayerList;
 
     struct {
         LOTNode        **ptr;
-        unsigned int   size;
+        size_t           size;
     } mNodeList;
 
     LOTMatteType mMatte;
     int          mVisible;
-    int          mAlpha;
-    const char  *name;
+    unsigned char mAlpha;
+    const char  *keypath;
 
 } LOTLayerNode;
 

@@ -21,15 +21,20 @@
 
 #include<sstream>
 #include<memory>
+#include<vector>
 
 class LOTModel;
 class LottieLoader
 {
 public:
-   bool load(const std::string &filePath);
-   bool loadFromData(std::string &&jsonData, const std::string &key, const std::string &resourcePath);
+   static void configureModelCacheSize(size_t cacheSize);
+   bool load(const std::string &filePath, bool cachePolicy);
+   bool loadFromData(std::string &&jsonData, const std::string &key,
+                     const std::string &resourcePath, bool cachePolicy,
+                     const std::vector<std::pair<std::uint32_t, std::uint32_t>>
+                         &colorReplacements);
    std::shared_ptr<LOTModel> model();
-private:
+private:  
    std::shared_ptr<LOTModel>    mModel;
 };
 

@@ -12,6 +12,11 @@
 #ifdef Q_OS_WIN
 	#define REQUEST_URL "https://manage.cloudveil.org/api/v1/messenger/updates/windows?current_version=%1"
 #endif
+
+#ifdef Q_OS_LINUX
+	#define REQUEST_URL "https://manage.cloudveil.org/api/v1/messenger/updates/linux?current_version=%1"
+#endif
+
 SimpleUpdater::SimpleUpdater(QObject *parent) : QObject(parent), manager(this)
 {
 	lastUpdateCheck = 0;

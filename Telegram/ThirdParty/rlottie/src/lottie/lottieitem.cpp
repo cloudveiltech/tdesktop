@@ -70,7 +70,7 @@ static bool strokeProp(rlottie::Property prop)
 }
 
 LOTCompItem::LOTCompItem(LOTModel *model)
-    : mUpdateViewBox(false), mCurFrameNo(-1)
+    : mCurFrameNo(-1)
 {
     mCompData = model->mRoot.get();
     mRootLayer = createLayerItem(mCompData->mRootLayer.get());
@@ -109,38 +109,36 @@ std::unique_ptr<LOTLayerItem> LOTCompItem::createLayerItem(
     }
 }
 
-void LOTCompItem::resize(const VSize &size)
-{
-    if (mViewSize == size) return;
-    mViewSize = size;
-    mUpdateViewBox = true;
-}
-
-bool LOTCompItem::update(int frameNo)
+bool LOTCompItem::update(int frameNo, const VSize &size, bool keepAspectRatio)
 {
     // check if cached frame is same as requested frame.
-    if (!mUpdateViewBox && (mCurFrameNo == frameNo)) return false;
+    if ((mViewSize == size) &&
+        (mCurFrameNo == frameNo) &&
+        (mKeepAspectRatio == keepAspectRatio)) return false;
+
+    mViewSize = size;
+    mCurFrameNo = frameNo;
+    mKeepAspectRatio = keepAspectRatio;
 
     /*
      * if viewbox dosen't scale exactly to the viewport
      * we scale the viewbox keeping AspectRatioPreserved and then align the
      * viewbox to the viewport using AlignCenter rule.
      */
+    VMatrix m;
     VSize viewPort = mViewSize;
     VSize viewBox = mCompData->size();
-
     float sx = float(viewPort.width()) / viewBox.width();
     float sy = float(viewPort.height()) / viewBox.height();
-    float scale = fmin(sx, sy);
-    float tx = (viewPort.width() - viewBox.width() * scale) * 0.5;
-    float ty = (viewPort.height() - viewBox.height() * scale) * 0.5;
-
-    VMatrix m;
-    m.translate(tx, ty).scale(scale, scale);
+    if (mKeepAspectRatio) {
+        float scale = std::min(sx, sy);
+        float tx = (viewPort.width() - viewBox.width() * scale) * 0.5f;
+        float ty = (viewPort.height() - viewBox.height() * scale) * 0.5f;
+        m.translate(tx, ty).scale(scale, scale);
+    } else {
+       m.scale(sx, sy);
+    }
     mRootLayer->update(frameNo, m, 1.0);
-
-    mCurFrameNo = frameNo;
-    mUpdateViewBox = false;
     return true;
 }
 
@@ -156,15 +154,15 @@ const LOTLayerNode *LOTCompItem::renderTree() const
 
 bool LOTCompItem::render(const rlottie::Surface &surface)
 {
-    VBitmap bitmap(reinterpret_cast<uchar *>(surface.buffer()), surface.width(),
-                   surface.height(), surface.bytesPerLine(),
+    VBitmap bitmap(reinterpret_cast<uchar *>(surface.buffer()),
+                   uint(surface.width()), uint(surface.height()), uint(surface.bytesPerLine()),
                    VBitmap::Format::ARGB32_Premultiplied);
 
     /* schedule all preprocess task for this frame at once.
      */
     mDrawableList.clear();
     mRootLayer->renderList(mDrawableList);
-    VRect clip(0, 0, surface.drawRegionWidth(), surface.drawRegionHeight());
+    VRect clip(0, 0, int(surface.drawRegionWidth()), int(surface.drawRegionHeight()));
     for (auto &e : mDrawableList) {
         e->preprocess(clip);
     }
@@ -172,8 +170,8 @@ bool LOTCompItem::render(const rlottie::Surface &surface)
     VPainter painter(&bitmap);
     // set sub surface area for drawing.
     painter.setDrawRegion(
-        VRect(surface.drawRegionPosX(), surface.drawRegionPosY(),
-              surface.drawRegionWidth(), surface.drawRegionHeight()));
+        VRect(int(surface.drawRegionPosX()), int(surface.drawRegionPosY()),
+              int(surface.drawRegionWidth()), int(surface.drawRegionHeight())));
     mRootLayer->render(&painter, {}, {});
 
     return true;
@@ -206,7 +204,7 @@ VRle LOTMaskItem::rle()
     if (mRasterRequest) {
         mRasterRequest = false;
         if (!vCompare(mCombinedAlpha, 1.0f))
-            mRasterizer.rle() *= (mCombinedAlpha * 255);
+            mRasterizer.rle() *= uchar(mCombinedAlpha * 255);
         if (mData->mInv) mRasterizer.rle().invert();
     }
     return mRasterizer.rle();
@@ -229,9 +227,9 @@ void LOTLayerItem::buildLayerNode()
         mLayerCNode->mClipPath.elmPtr = nullptr;
         mLayerCNode->mClipPath.ptCount = 0;
         mLayerCNode->mClipPath.elmCount = 0;
-        mLayerCNode->name = name().c_str();
+        mLayerCNode->keypath = name().c_str();
     }
-    if (complexContent()) mLayerCNode->mAlpha = combinedAlpha() * 255;
+    if (complexContent()) mLayerCNode->mAlpha = uchar(combinedAlpha() * 255.f);
     mLayerCNode->mVisible = visible();
     // update matte
     if (hasMatte()) {
@@ -261,13 +259,13 @@ void LOTLayerItem::buildLayerNode()
             LOTMask *                          cNode = &mMasksCNode[i++];
             const std::vector<VPath::Element> &elm = mask.mFinalPath.elements();
             const std::vector<VPointF> &       pts = mask.mFinalPath.points();
-            const float *ptPtr = reinterpret_cast<const float *>(pts.data());
-            const char * elmPtr = reinterpret_cast<const char *>(elm.data());
+            auto ptPtr = reinterpret_cast<const float *>(pts.data());
+            auto elmPtr = reinterpret_cast<const char *>(elm.data());
             cNode->mPath.ptPtr = ptPtr;
             cNode->mPath.ptCount = pts.size();
             cNode->mPath.elmPtr = elmPtr;
             cNode->mPath.elmCount = elm.size();
-            cNode->mAlpha = mask.mCombinedAlpha * 255;
+            cNode->mAlpha = uchar(mask.mCombinedAlpha * 255.0f);
             switch (mask.maskMode()) {
             case LOTMaskData::Mode::Add:
                 cNode->mMode = MaskAdd;
@@ -336,9 +334,11 @@ void LOTLayerItem::render(VPainter *painter, const VRle &inheritMask,
 
 LOTLayerMaskItem::LOTLayerMaskItem(LOTLayerData *layerData)
 {
-    mMasks.reserve(layerData->mMasks.size());
+    if (!layerData->mExtra) return;
 
-    for (auto &i : layerData->mMasks) {
+    mMasks.reserve(layerData->mExtra->mMasks.size());
+
+    for (auto &i : layerData->mExtra->mMasks) {
         mMasks.emplace_back(i.get());
         mStatic &= i->isStatic();
     }
@@ -499,11 +499,8 @@ VMatrix LOTLayerItem::matrix(int frameNo) const
 
 bool LOTLayerItem::visible() const
 {
-    if (frameNo() >= mLayerData->inFrame() &&
-        frameNo() < mLayerData->outFrame())
-        return true;
-    else
-        return false;
+    return (frameNo() >= mLayerData->inFrame() &&
+            frameNo() < mLayerData->outFrame());
 }
 
 LOTCompLayerItem::LOTCompLayerItem(LOTLayerData *layerModel)
@@ -511,9 +508,9 @@ LOTCompLayerItem::LOTCompLayerItem(LOTLayerData *layerModel)
 {
     // 1. create layer item
     for (auto &i : mLayerData->mChildren) {
-        LOTLayerData *layerModel = static_cast<LOTLayerData *>(i.get());
-        auto          layerItem = LOTCompItem::createLayerItem(layerModel);
-        if (layerItem) mLayers.push_back(std::move(layerItem));
+        auto model = static_cast<LOTLayerData *>(i.get());
+        auto item = LOTCompItem::createLayerItem(model);
+        if (item) mLayers.push_back(std::move(item));
     }
 
     // 2. update parent layer
@@ -545,8 +542,8 @@ void LOTCompLayerItem::buildLayerNode()
     if (mClipper) {
         const std::vector<VPath::Element> &elm = mClipper->mPath.elements();
         const std::vector<VPointF> &       pts = mClipper->mPath.points();
-        const float *ptPtr = reinterpret_cast<const float *>(pts.data());
-        const char * elmPtr = reinterpret_cast<const char *>(elm.data());
+        auto ptPtr = reinterpret_cast<const float *>(pts.data());
+        auto elmPtr = reinterpret_cast<const char *>(elm.data());
         layerNode()->mClipPath.ptPtr = ptPtr;
         layerNode()->mClipPath.elmPtr = elmPtr;
         layerNode()->mClipPath.ptCount = 2 * pts.size();
@@ -582,7 +579,7 @@ void LOTCompLayerItem::render(VPainter *painter, const VRle &inheritMask,
             srcPainter.begin(&srcBitmap);
             renderHelper(&srcPainter, inheritMask, matteRle);
             srcPainter.end();
-            painter->drawBitmap(VPoint(), srcBitmap, combinedAlpha() * 255);
+            painter->drawBitmap(VPoint(), srcBitmap, uchar(combinedAlpha() * 255.0f));
         } else {
             renderHelper(painter, inheritMask, matteRle);
         }
@@ -741,7 +738,9 @@ void LOTSolidLayerItem::updateContent()
     if (flag() & DirtyFlagBit::Matrix) {
         VPath path;
         path.addRect(
-            VRectF(0, 0, mLayerData->solidWidth(), mLayerData->solidHeight()));
+            VRectF(0, 0,
+                   mLayerData->layerSize().width(),
+                   mLayerData->layerSize().height()));
         path.transform(combinedMatrix());
         mRenderNode.mFlag |= VDrawable::DirtyState::Path;
         mRenderNode.mPath = path;
@@ -763,7 +762,7 @@ void LOTSolidLayerItem::buildLayerNode()
 
     mCNodeList.clear();
     for (auto &i : mDrawableList) {
-        LOTDrawable *lotDrawable = static_cast<LOTDrawable *>(i);
+        auto lotDrawable = static_cast<LOTDrawable *>(i);
         lotDrawable->sync();
         mCNodeList.push_back(lotDrawable->mCNode.get());
     }
@@ -781,16 +780,20 @@ void LOTSolidLayerItem::renderList(std::vector<VDrawable *> &list)
 LOTImageLayerItem::LOTImageLayerItem(LOTLayerData *layerData)
     : LOTLayerItem(layerData)
 {
-    VBrush brush(mLayerData->mAsset->bitmap());
+    if (!mLayerData->asset()) return;
+
+    VBrush brush(mLayerData->asset()->bitmap());
     mRenderNode.setBrush(brush);
 }
 
 void LOTImageLayerItem::updateContent()
 {
+    if (!mLayerData->asset()) return;
+
     if (flag() & DirtyFlagBit::Matrix) {
         VPath path;
-        path.addRect(VRectF(0, 0, mLayerData->mAsset->mWidth,
-                            mLayerData->mAsset->mHeight));
+        path.addRect(VRectF(0, 0, mLayerData->asset()->mWidth,
+                            mLayerData->asset()->mHeight));
         path.transform(combinedMatrix());
         mRenderNode.mFlag |= VDrawable::DirtyState::Path;
         mRenderNode.mPath = path;
@@ -818,15 +821,15 @@ void LOTImageLayerItem::buildLayerNode()
 
     mCNodeList.clear();
     for (auto &i : mDrawableList) {
-        LOTDrawable *lotDrawable = static_cast<LOTDrawable *>(i);
+        auto lotDrawable = static_cast<LOTDrawable *>(i);
         lotDrawable->sync();
 
         lotDrawable->mCNode->mImageInfo.data =
             lotDrawable->mBrush.mTexture.data();
         lotDrawable->mCNode->mImageInfo.width =
-            lotDrawable->mBrush.mTexture.width();
+            int(lotDrawable->mBrush.mTexture.width());
         lotDrawable->mCNode->mImageInfo.height =
-            lotDrawable->mBrush.mTexture.height();
+            int(lotDrawable->mBrush.mTexture.height());
 
         lotDrawable->mCNode->mImageInfo.mMatrix.m11 = combinedMatrix().m_11();
         lotDrawable->mCNode->mImageInfo.mMatrix.m12 = combinedMatrix().m_12();
@@ -939,7 +942,7 @@ void LOTShapeLayerItem::buildLayerNode()
 
     mCNodeList.clear();
     for (auto &i : mDrawableList) {
-        LOTDrawable *lotDrawable = static_cast<LOTDrawable *>(i);
+        auto lotDrawable = static_cast<LOTDrawable *>(i);
         lotDrawable->sync();
         mCNodeList.push_back(lotDrawable->mCNode.get());
     }
@@ -1087,7 +1090,7 @@ void LOTContentGroupItem::renderList(std::vector<VDrawable *> &list)
 void LOTContentGroupItem::processPaintItems(
     std::vector<LOTPathDataItem *> &list)
 {
-    int curOpCount = list.size();
+    size_t curOpCount = list.size();
     for (auto i = mContents.rbegin(); i != mContents.rend(); ++i) {
         auto content = (*i).get();
         switch (content->type()) {
@@ -1113,7 +1116,7 @@ void LOTContentGroupItem::processPaintItems(
 
 void LOTContentGroupItem::processTrimItems(std::vector<LOTPathDataItem *> &list)
 {
-    int curOpCount = list.size();
+    size_t curOpCount = list.size();
     for (auto i = mContents.rbegin(); i != mContents.rend(); ++i) {
         auto content = (*i).get();
 
@@ -1245,7 +1248,7 @@ void LOTPolystarItem::updatePath(VPath &path, int frameNo)
     path.reset();
     VMatrix m;
 
-    if (mData->mType == LOTPolystarData::PolyType::Star) {
+    if (mData->mPolyType == LOTPolystarData::PolyType::Star) {
         path.addPolystar(points, innerRadius, outerRadius, innerRoundness,
                          outerRoundness, 0.0, 0.0, 0.0, mData->direction());
     } else {
@@ -1312,7 +1315,7 @@ void LOTPaintDataItem::renderList(std::vector<VDrawable *> &list)
 }
 
 void LOTPaintDataItem::addPathItems(std::vector<LOTPathDataItem *> &list,
-                                    int                             startOffset)
+                                    size_t                          startOffset)
 {
     std::copy(list.begin() + startOffset, list.end(),
               back_inserter(mPathItems));
@@ -1332,7 +1335,7 @@ void LOTFillItem::updateRenderNode()
 {
     VColor color = mColor;
 
-    color.setAlpha(color.a * parentAlpha());
+    color.setAlpha(uchar(color.a * parentAlpha()));
     VBrush brush(color);
     mDrawable.setBrush(brush);
     mDrawable.setFillRule(mModel.fillRule());
@@ -1359,58 +1362,47 @@ void LOTGFillItem::updateRenderNode()
 }
 
 LOTStrokeItem::LOTStrokeItem(LOTStrokeData *data)
-    : LOTPaintDataItem(data->isStatic()), mModel(data)
-{
-    mDashArraySize = 0;
-}
+    : LOTPaintDataItem(data->isStatic()), mModel(data){}
 
 void LOTStrokeItem::updateContent(int frameNo)
 {
     mColor = mModel.color(frameNo).toColor(mModel.opacity(frameNo));
     mWidth = mModel.strokeWidth(frameNo);
-    if (mModel.hasDashInfo()) {
-        mDashArraySize = mModel.getDashInfo(frameNo, mDashArray);
-    }
+    if (mModel.hasDashInfo()) mModel.getDashInfo(frameNo, mDashInfo);
 }
 
 static float getScale(const VMatrix &matrix)
 {
-    constexpr float SQRT_2 = 1.41421;
+    constexpr float SQRT_2 = 1.41421f;
     VPointF         p1(0, 0);
     VPointF         p2(SQRT_2, SQRT_2);
     p1 = matrix.map(p1);
     p2 = matrix.map(p2);
     VPointF final = p2 - p1;
 
-    return std::sqrt(final.x() * final.x() + final.y() * final.y()) / 2.0;
+    return std::sqrt(final.x() * final.x() + final.y() * final.y()) / 2.0f;
 }
 
 void LOTStrokeItem::updateRenderNode()
 {
     VColor color = mColor;
 
-    color.setAlpha(color.a * parentAlpha());
+    color.setAlpha(uchar(color.a * parentAlpha()));
     VBrush brush(color);
     mDrawable.setBrush(brush);
     float scale =
         getScale(static_cast<LOTContentGroupItem *>(parent())->matrix());
     mDrawable.setStrokeInfo(mModel.capStyle(), mModel.joinStyle(),
-                            mModel.meterLimit(), mWidth * scale);
-    if (mDashArraySize) {
-        for (int i = 0; i < mDashArraySize; i++) mDashArray[i] *= scale;
+                            mModel.miterLimit(), mWidth * scale);
 
-        /* AE draw the dash even if dash value is 0 */
-        if (vCompare(mDashArray[0], 0.0f)) mDashArray[0] = 0.1;
-
-        mDrawable.setDashInfo(mDashArray, mDashArraySize);
+    if (!mDashInfo.empty()) {
+        for (auto &elm : mDashInfo) elm *= scale;
+        mDrawable.setDashInfo(mDashInfo);
     }
 }
 
 LOTGStrokeItem::LOTGStrokeItem(LOTGStrokeData *data)
-    : LOTPaintDataItem(data->isStatic()), mData(data)
-{
-    mDashArraySize = 0;
-}
+    : LOTPaintDataItem(data->isStatic()), mData(data){}
 
 void LOTGStrokeItem::updateContent(int frameNo)
 {
@@ -1419,11 +1411,10 @@ void LOTGStrokeItem::updateContent(int frameNo)
     mGradient->mMatrix = static_cast<LOTContentGroupItem *>(parent())->matrix();
     mCap = mData->capStyle();
     mJoin = mData->joinStyle();
-    mMiterLimit = mData->meterLimit();
+    mMiterLimit = mData->miterLimit();
     mWidth = mData->width(frameNo);
-    if (mData->hasDashInfo()) {
-        mDashArraySize = mData->getDashInfo(frameNo, mDashArray);
-    }
+
+    if (mData->hasDashInfo()) mData->getDashInfo(frameNo, mDashInfo);
 }
 
 void LOTGStrokeItem::updateRenderNode()
@@ -1432,9 +1423,10 @@ void LOTGStrokeItem::updateRenderNode()
     mGradient->setAlpha(mAlpha * parentAlpha());
     mDrawable.setBrush(VBrush(mGradient.get()));
     mDrawable.setStrokeInfo(mCap, mJoin, mMiterLimit, mWidth * scale);
-    if (mDashArraySize) {
-        for (int i = 0; i < mDashArraySize; i++) mDashArray[i] *= scale;
-        mDrawable.setDashInfo(mDashArray, mDashArraySize);
+
+    if (!mDashInfo.empty()) {
+        for (auto &elm : mDashInfo) elm *= scale;
+        mDrawable.setDashInfo(mDashInfo);
     }
 }
 
@@ -1531,7 +1523,7 @@ void LOTTrimItem::update()
 }
 
 void LOTTrimItem::addPathItems(std::vector<LOTPathDataItem *> &list,
-                               int                             startOffset)
+                               size_t                          startOffset)
 {
     std::copy(list.begin() + startOffset, list.end(),
               back_inserter(mPathItems));
@@ -1562,9 +1554,9 @@ void LOTRepeaterItem::update(int frameNo, const VMatrix &parentMatrix,
     if (visibleCopies == 0) {
         mHidden = true;
         return;
-    } else {
-        mHidden = false;
     }
+
+    mHidden = false;
 
     if (!mRepeaterData->isStatic()) newFlag |= DirtyFlagBit::Matrix;
 
@@ -1605,7 +1597,7 @@ static void updateGStops(LOTNode *n, const VGradient *grad)
     LOTGradientStop *ptr = n->mGradient.stopPtr;
     for (const auto &i : grad->mStops) {
         ptr->pos = i.first;
-        ptr->a = i.second.alpha() * grad->alpha();
+        ptr->a = uchar(i.second.alpha() * grad->alpha());
         ptr->r = i.second.red();
         ptr->g = i.second.green();
         ptr->b = i.second.blue();
@@ -1625,7 +1617,7 @@ void LOTDrawable::sync()
     if (mFlag & DirtyState::None) return;
 
     if (mFlag & DirtyState::Path) {
-        if (mStroke.mDash.size()) {
+        if (!mStroke.mDash.empty()) {
             VDasher dasher(mStroke.mDash.data(), mStroke.mDash.size());
             mPath = dasher.dashed(mPath);
         }
@@ -1642,7 +1634,7 @@ void LOTDrawable::sync()
 
     if (mStroke.enable) {
         mCNode->mStroke.width = mStroke.width;
-        mCNode->mStroke.meterLimit = mStroke.meterLimit;
+        mCNode->mStroke.miterLimit = mStroke.miterLimit;
         mCNode->mStroke.enable = 1;
 
         switch (mStroke.cap) {

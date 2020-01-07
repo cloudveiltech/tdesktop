@@ -5,6 +5,7 @@ gtest_dep  = dependency('gtest')
 
 vector_test_sources = [
     'testsuite.cpp',
+    'test_vrect.cpp',
     'test_vpath.cpp',
     ]
 

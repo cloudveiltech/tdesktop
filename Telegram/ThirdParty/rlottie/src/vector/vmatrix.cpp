@@ -20,7 +20,6 @@
 #include <vglobal.h>
 #include <cassert>
 #include <cmath>
-#include <cstring>
 
 V_BEGIN_NAMESPACE
 
@@ -511,8 +510,8 @@ VMatrix VMatrix::inverted(bool *invertible) const
         inv = !vIsZero(m11);
         inv &= !vIsZero(m22);
         if (inv) {
-            invert.m11 = 1. / m11;
-            invert.m22 = 1. / m22;
+            invert.m11 = 1.0f / m11;
+            invert.m22 = 1.0f / m22;
             invert.mtx = -mtx * invert.m11;
             invert.mty = -mty * invert.m22;
         }
@@ -554,7 +553,7 @@ bool VMatrix::fuzzyCompare(const VMatrix &o) const
            vCompare(mtx, o.mtx) && vCompare(mty, o.mty);
 }
 
-#define V_NEAR_CLIP 0.000001
+#define V_NEAR_CLIP 0.000001f
 #ifdef MAP
 #undef MAP
 #endif
@@ -594,13 +593,13 @@ VRect VMatrix::map(const VRect &rect) const
 {
     VMatrix::MatrixType t = type();
     if (t <= MatrixType::Translate)
-        return rect.translated(std::round(mtx), std::round(mty));
+        return rect.translated(std::lround(mtx), std::lround(mty));
 
     if (t <= MatrixType::Scale) {
-        int x = std::round(m11 * rect.x() + mtx);
-        int y = std::round(m22 * rect.y() + mty);
-        int w = std::round(m11 * rect.width());
-        int h = std::round(m22 * rect.height());
+        int x = std::lround(m11 * rect.x() + mtx);
+        int y = std::lround(m22 * rect.y() + mty);
+        int w = std::lround(m11 * rect.width());
+        int h = std::lround(m22 * rect.height());
         if (w < 0) {
             w = -w;
             x -= w;
@@ -633,9 +632,9 @@ VRect VMatrix::map(const VRect &rect) const
         ymin = vMin(ymin, y);
         xmax = vMax(xmax, x);
         ymax = vMax(ymax, y);
-        return VRect(std::round(xmin), std::round(ymin),
-                     std::round(xmax) - std::round(xmin),
-                     std::round(ymax) - std::round(ymin));
+        return VRect(std::lround(xmin), std::lround(ymin),
+                     std::lround(xmax) - std::lround(xmin),
+                     std::lround(ymax) - std::lround(ymin));
     } else {
         // Not supported
         assert(0);
@@ -650,7 +649,7 @@ VRegion VMatrix::map(const VRegion &r) const
 
     if (t == MatrixType::Translate) {
         VRegion copy(r);
-        copy.translate(std::round(mtx), std::round(mty));
+        copy.translate(std::lround(mtx), std::lround(mty));
         return copy;
     }
 
@@ -688,45 +687,12 @@ VPointF VMatrix::map(const VPointF &p) const
         x = m11 * fx + m21 * fy + mtx;
         y = m12 * fx + m22 * fy + mty;
         if (t == MatrixType::Project) {
-            float w = 1. / (m13 * fx + m23 * fy + m33);
+            float w = 1.0f / (m13 * fx + m23 * fy + m33);
             x *= w;
             y *= w;
         }
     }
     return {x, y};
-}
-static std::string type_helper(VMatrix::MatrixType t)
-{
-    switch (t) {
-    case VMatrix::MatrixType::None:
-        return "MatrixType::None";
-        break;
-    case VMatrix::MatrixType::Translate:
-        return "MatrixType::Translate";
-        break;
-    case VMatrix::MatrixType::Scale:
-        return "MatrixType::Scale";
-        break;
-    case VMatrix::MatrixType::Rotate:
-        return "MatrixType::Rotate";
-        break;
-    case VMatrix::MatrixType::Shear:
-        return "MatrixType::Shear";
-        break;
-    case VMatrix::MatrixType::Project:
-        return "MatrixType::Project";
-        break;
-    }
-    return "";
-}
-std::ostream &operator<<(std::ostream &os, const VMatrix &o)
-{
-    os << "[Matrix: "
-       << "type =" << type_helper(o.type()) << ", Data : " << o.m11 << " "
-       << o.m12 << " " << o.m13 << " " << o.m21 << " " << o.m22 << " " << o.m23
-       << " " << o.mtx << " " << o.mty << " " << o.m33 << " "
-       << "]" << std::endl;
-    return os;
 }
 
 V_END_NAMESPACE

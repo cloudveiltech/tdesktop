@@ -256,6 +256,7 @@ void GlobalSecuritySettings::sendRequest(SettingsRequest &settingsRequestBody) {
 	QNetworkRequest request(url);
 
 	request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+	request.setHeader(QNetworkRequest::UserAgentHeader, QVariant(qsl("CloudVeilMessenger/desktop")));
 
 	connect(&manager, SIGNAL(finished(QNetworkReply*)), this, SLOT(requestFinished(QNetworkReply*)));
 

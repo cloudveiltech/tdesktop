@@ -27,11 +27,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_peer_menu.h"
 #include "boxes/peer_list_box.h"
 #include "boxes/confirm_box.h"
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "data/data_session.h"
 #include "data/data_user.h"
 #include "mainwidget.h"
 #include "lang/lang_keys.h"
+#include "facades.h"
 #include "styles/style_info.h"
 #include "styles/style_profile.h"
 
@@ -216,7 +217,7 @@ Dialogs::RowDescriptor WrapWidget::activeChat() const {
 		return Dialogs::RowDescriptor(peer->owner().history(peer), FullMsgId());
 	//} else if (const auto feed = key().feed()) { // #feed
 	//	return Dialogs::RowDescriptor(feed, FullMsgId());
-	} else if (key().settingsSelf()) {
+	} else if (key().settingsSelf() || key().poll()) {
 		return Dialogs::RowDescriptor();
 	}
 	Unexpected("Owner in WrapWidget::activeChat().");
@@ -353,7 +354,11 @@ void WrapWidget::createTopBar() {
 	auto selectedItems = _topBar
 		? _topBar->takeSelectedItems()
 		: SelectedItems(Section::MediaType::kCount);
-	_topBar.create(this, TopBarStyle(wrapValue), std::move(selectedItems));
+	_topBar.create(
+		this,
+		_controller.get(),
+		TopBarStyle(wrapValue),
+		std::move(selectedItems));
 	_topBar->cancelSelectionRequests(
 	) | rpl::start_with_next([this] {
 		_content->cancelSelection();
@@ -404,7 +409,8 @@ void WrapWidget::createTopBar() {
 		addProfileCallsButton();
 //		addProfileNotificationsButton();
 	} else if (section.type() == Section::Type::Settings
-		&& section.settingsType() == Section::SettingsType::Main) {
+		&& (section.settingsType() == Section::SettingsType::Main
+			|| section.settingsType() == Section::SettingsType::Chat)) {
 		addTopBarMenuButton();
 	} else if (section.type() == Section::Type::Settings
 		&& section.settingsType() == Section::SettingsType::Information) {
@@ -491,7 +497,7 @@ void WrapWidget::addProfileCallsButton() {
 					? st::infoLayerTopBarCall
 					: st::infoTopBarCall))
 		)->addClickHandler([=] {
-			Calls::Current().startOutgoingCall(user);
+			user->session().calls().startOutgoingCall(user);
 		});
 	}, _topBar->lifetime());
 
@@ -568,6 +574,7 @@ void WrapWidget::showTopBarMenu() {
 		Window::FillPeerMenu(
 			_controller->parentController(),
 			peer,
+			FilterId(),
 			addAction,
 			Window::PeerMenuSource::Profile);
 	//} else if (const auto feed = key().feed()) { // #feed
@@ -582,7 +589,11 @@ void WrapWidget::showTopBarMenu() {
 			_topBarMenu = nullptr;
 			controller->showSettings(type);
 		};
-		::Settings::FillMenu(showOther, addAction);
+		::Settings::FillMenu(
+			_controller->parentController(),
+			_controller->section().settingsType(),
+			showOther,
+			addAction);
 	} else {
 		_topBarMenu = nullptr;
 		return;
@@ -1026,14 +1037,14 @@ object_ptr<Ui::RpWidget> WrapWidget::createTopBarSurrogate(
 		Assert(_topBar != nullptr);
 
 		auto result = object_ptr<Ui::AbstractButton>(parent);
-		result->addClickHandler([weak = make_weak(this)]{
+		result->addClickHandler([weak = Ui::MakeWeak(this)]{
 			if (weak) {
 				weak->_controller->showBackFromStack();
 			}
 		});
 		result->setGeometry(_topBar->geometry());
 		result->show();
-		return std::move(result);
+		return result;
 	}
 	return nullptr;
 }

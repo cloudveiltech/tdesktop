@@ -7,12 +7,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "storage/serialize_common.h"
 
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "data/data_channel.h"
 #include "data/data_chat.h"
 #include "data/data_user.h"
 #include "data/data_session.h"
 #include "ui/image/image.h"
+#include "app.h"
 
 namespace Serialize {
 namespace {
@@ -20,6 +21,23 @@ namespace {
 constexpr auto kModernImageLocationTag = std::numeric_limits<qint32>::min();
 
 } // namespace
+
+void writeColor(QDataStream &stream, const QColor &color) {
+	stream << (quint32(uchar(color.red()))
+		| (quint32(uchar(color.green())) << 8)
+		| (quint32(uchar(color.blue())) << 16)
+		| (quint32(uchar(color.alpha())) << 24));
+}
+
+QColor readColor(QDataStream &stream) {
+	auto value = quint32();
+	stream >> value;
+	return QColor(
+		int(value & 0xFFU),
+		int((value >> 8) & 0xFFU),
+		int((value >> 16) & 0xFFU),
+		int((value >> 24) & 0xFFU));
+}
 
 std::optional<StorageImageLocation> readLegacyStorageImageLocationOrTag(
 		int streamAppVersion,
@@ -123,7 +141,7 @@ void writePeer(QDataStream &stream, PeerData *peer) {
 			stream << qint32(user->flags());
 		}
 		if (AppVersion >= 9016) {
-			const auto botInlinePlaceholder = user->botInfo
+			const auto botInlinePlaceholder = user->isBot()
 				? user->botInfo->inlinePlaceholder
 				: QString();
 			stream << botInlinePlaceholder;
@@ -131,7 +149,7 @@ void writePeer(QDataStream &stream, PeerData *peer) {
 		stream
 			<< qint32(user->onlineTill)
 			<< qint32(user->isContact() ? 1 : 0)
-			<< qint32(user->botInfo ? user->botInfo->version : -1);
+			<< qint32(user->isBot() ? user->botInfo->version : -1);
 	} else if (const auto chat = peer->asChat()) {
 		stream
 			<< chat->name
@@ -203,7 +221,7 @@ PeerData *readPeer(int streamAppVersion, QDataStream &stream) {
 			user->onlineTill = onlineTill;
 			user->setIsContact(contact == 1);
 			user->setBotInfoVersion(botInfoVersion);
-			if (!inlinePlaceholder.isEmpty() && user->botInfo) {
+			if (!inlinePlaceholder.isEmpty() && user->isBot()) {
 				user->botInfo->inlinePlaceholder = inlinePlaceholder;
 			}
 

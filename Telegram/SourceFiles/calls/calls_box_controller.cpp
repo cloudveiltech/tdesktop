@@ -16,9 +16,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history.h"
 #include "history/history_item.h"
 #include "mainwidget.h"
-#include "auth_session.h"
+#include "window/window_session_controller.h"
+#include "main/main_session.h"
 #include "data/data_session.h"
 #include "data/data_media_types.h"
+#include "data/data_user.h"
+#include "apiwrap.h"
+#include "facades.h"
+#include "app.h"
 
 namespace Calls {
 namespace {
@@ -104,7 +109,7 @@ public:
 		bool actionSelected) override;
 
 private:
-	void refreshStatus();
+	void refreshStatus() override;
 	static Type ComputeType(not_null<const HistoryItem*> item);
 
 	std::vector<not_null<HistoryItem*>> _items;
@@ -154,7 +159,7 @@ void BoxController::Row::paintAction(
 			_actionRipple.reset();
 		}
 	}
-	st::callReDial.icon.paintInCenter(p, rtlrect(x, y, size.width(), size.height(), outerWidth));
+	st::callReDial.icon.paintInCenter(p, style::rtlrect(x, y, size.width(), size.height(), outerWidth));
 }
 
 void BoxController::Row::refreshStatus() {
@@ -211,8 +216,17 @@ void BoxController::Row::stopLastActionRipple() {
 	}
 }
 
+BoxController::BoxController(not_null<Window::SessionController*> window)
+: _window(window)
+, _api(_window->session().api().instance()) {
+}
+
+Main::Session &BoxController::session() const {
+	return _window->session();
+}
+
 void BoxController::prepare() {
-	Auth().data().itemRemoved(
+	session().data().itemRemoved(
 	) | rpl::start_with_next([=](not_null<const HistoryItem*> item) {
 		if (const auto row = rowForItem(item)) {
 			row->itemRemoved(item);
@@ -225,8 +239,9 @@ void BoxController::prepare() {
 			delegate()->peerListRefreshRows();
 		}
 	}, lifetime());
-	subscribe(Current().newServiceMessage(), [=](FullMsgId msgId) {
-		if (const auto item = Auth().data().message(msgId)) {
+
+	subscribe(session().calls().newServiceMessage(), [=](FullMsgId msgId) {
+		if (const auto item = session().data().message(msgId)) {
 			insertRow(item, InsertWay::Prepend);
 		}
 	});
@@ -243,7 +258,7 @@ void BoxController::loadMoreRows() {
 		return;
 	}
 
-	_loadRequestId = request(MTPmessages_Search(
+	_loadRequestId = _api.request(MTPmessages_Search(
 		MTP_flags(0),
 		MTP_inputPeerEmpty(),
 		MTP_string(),
@@ -261,8 +276,8 @@ void BoxController::loadMoreRows() {
 		_loadRequestId = 0;
 
 		auto handleResult = [&](auto &data) {
-			Auth().data().processUsers(data.vusers());
-			Auth().data().processChats(data.vchats());
+			session().data().processUsers(data.vusers());
+			session().data().processChats(data.vchats());
 			receivedCalls(data.vmessages().v);
 		};
 
@@ -299,7 +314,7 @@ void BoxController::rowActionClicked(not_null<PeerListRow*> row) {
 	auto user = row->peer()->asUser();
 	Assert(user != nullptr);
 
-	Current().startOutgoingCall(user);
+	user->session().calls().startOutgoingCall(user);
 }
 
 void BoxController::receivedCalls(const QVector<MTPMessage> &result) {
@@ -310,9 +325,10 @@ void BoxController::receivedCalls(const QVector<MTPMessage> &result) {
 	for (const auto &message : result) {
 		const auto msgId = IdFromMessage(message);
 		const auto peerId = PeerFromMessage(message);
-		if (const auto peer = Auth().data().peerLoaded(peerId)) {
-			const auto item = Auth().data().addNewMessage(
+		if (const auto peer = session().data().peerLoaded(peerId)) {
+			const auto item = session().data().addNewMessage(
 				message,
+				MTPDmessage_ClientFlags(),
 				NewMessageType::Existing);
 			insertRow(item, InsertWay::Append);
 		} else {
@@ -390,8 +406,7 @@ BoxController::Row *BoxController::rowForItem(not_null<const HistoryItem*> item)
 
 std::unique_ptr<PeerListRow> BoxController::createRow(
 		not_null<HistoryItem*> item) const {
-	auto row = std::make_unique<Row>(item);
-	return std::move(row);
+	return std::make_unique<Row>(item);
 }
 
 } // namespace Calls

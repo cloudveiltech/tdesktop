@@ -8,15 +8,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/rate_call_box.h"
 
 #include "lang/lang_keys.h"
-#include "styles/style_boxes.h"
-#include "styles/style_calls.h"
 #include "boxes/confirm_box.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/input_fields.h"
 #include "mainwindow.h"
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "apiwrap.h"
+#include "styles/style_layers.h"
+#include "styles/style_calls.h"
 
 namespace {
 
@@ -25,8 +25,14 @@ constexpr auto kRateCallCommentLengthMax = 200;
 
 } // namespace
 
-RateCallBox::RateCallBox(QWidget*, uint64 callId, uint64 callAccessHash)
-: _callId(callId)
+RateCallBox::RateCallBox(
+	QWidget*,
+	not_null<Main::Session*> session,
+	uint64 callId,
+	uint64 callAccessHash)
+: _session(session)
+, _api(_session->api().instance())
+, _callId(callId)
 , _callAccessHash(callAccessHash) {
 }
 
@@ -35,7 +41,7 @@ void RateCallBox::prepare() {
 	addButton(tr::lng_cancel(), [this] { closeBox(); });
 
 	for (auto i = 0; i < kMaxRating; ++i) {
-		_stars.push_back(object_ptr<Ui::IconButton>(this, st::callRatingStar));
+		_stars.emplace_back(this, st::callRatingStar);
 		_stars.back()->setClickedCallback([this, value = i + 1] { ratingChanged(value); });
 		_stars.back()->show();
 	}
@@ -79,7 +85,7 @@ void RateCallBox::ratingChanged(int value) {
 				Ui::InputField::Mode::MultiLine,
 				tr::lng_call_rate_comment());
 			_comment->show();
-			_comment->setSubmitSettings(Ui::InputField::SubmitSettings::Both);
+			_comment->setSubmitSettings(_session->settings().sendSubmitWay());
 			_comment->setMaxLength(kRateCallCommentLengthMax);
 			_comment->resize(width() - (st::callRatingPadding.left() + st::callRatingPadding.right()), _comment->height());
 
@@ -115,13 +121,13 @@ void RateCallBox::send() {
 		return;
 	}
 	auto comment = _comment ? _comment->getLastText().trimmed() : QString();
-	_requestId = request(MTPphone_SetCallRating(
+	_requestId = _api.request(MTPphone_SetCallRating(
 		MTP_flags(0),
 		MTP_inputPhoneCall(MTP_long(_callId), MTP_long(_callAccessHash)),
 		MTP_int(_rating),
 		MTP_string(comment)
 	)).done([=](const MTPUpdates &updates) {
-		Auth().api().applyUpdates(updates);
+		_session->api().applyUpdates(updates);
 		closeBox();
 	}).fail([=](const RPCError &error) { closeBox(); }).send();
 }

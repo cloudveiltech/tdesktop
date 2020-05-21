@@ -10,17 +10,30 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/peer_list_controllers.h"
 #include "boxes/peers/edit_participants_box.h"
 
+namespace Window {
+class SessionNavigation;
+} // namespace Window
+
 class AddParticipantsBoxController : public ContactsBoxController {
 public:
-	static void Start(not_null<ChatData*> chat);
-	static void Start(not_null<ChannelData*> channel);
 	static void Start(
+		not_null<Window::SessionNavigation*> navigation,
+		not_null<ChatData*> chat);
+	static void Start(
+		not_null<Window::SessionNavigation*> navigation,
+		not_null<ChannelData*> channel);
+	static void Start(
+		not_null<Window::SessionNavigation*> navigation,
 		not_null<ChannelData*> channel,
 		base::flat_set<not_null<UserData*>> &&alreadyIn);
 
-	AddParticipantsBoxController();
-	AddParticipantsBoxController(not_null<PeerData*> peer);
+	explicit AddParticipantsBoxController(
+		not_null<Window::SessionNavigation*> navigation);
 	AddParticipantsBoxController(
+		not_null<Window::SessionNavigation*> navigation,
+		not_null<PeerData*> peer);
+	AddParticipantsBoxController(
+		not_null<Window::SessionNavigation*> navigation,
 		not_null<PeerData*> peer,
 		base::flat_set<not_null<UserData*>> &&alreadyIn);
 
@@ -34,6 +47,7 @@ protected:
 
 private:
 	static void Start(
+		not_null<Window::SessionNavigation*> navigation,
 		not_null<ChannelData*> channel,
 		base::flat_set<not_null<UserData*>> &&alreadyIn,
 		bool justCreated);
@@ -55,14 +69,14 @@ private:
 class AddSpecialBoxController
 	: public PeerListController
 	, private base::Subscriber
-	, private MTP::Sender
 	, public base::has_weak_ptr {
 public:
 	using Role = ParticipantsBoxController::Role;
 
 	using AdminDoneCallback = Fn<void(
 		not_null<UserData*> user,
-		const MTPChatAdminRights &adminRights)>;
+		const MTPChatAdminRights &adminRights,
+		const QString &rank)>;
 	using BannedDoneCallback = Fn<void(
 		not_null<UserData*> user,
 		const MTPChatBannedRights &bannedRights)>;
@@ -72,11 +86,12 @@ public:
 		AdminDoneCallback adminDoneCallback,
 		BannedDoneCallback bannedDoneCallback);
 
+	[[nodiscard]] Main::Session &session() const override;
 	void prepare() override;
 	void rowClicked(not_null<PeerListRow*> row) override;
 	void loadMoreRows() override;
 
-	std::unique_ptr<PeerListRow> createSearchRow(
+	[[nodiscard]] std::unique_ptr<PeerListRow> createSearchRow(
 		not_null<PeerData*> peer) override;
 
 private:
@@ -89,7 +104,8 @@ private:
 	void showAdmin(not_null<UserData*> user, bool sure = false);
 	void editAdminDone(
 		not_null<UserData*> user,
-		const MTPChatAdminRights &rights);
+		const MTPChatAdminRights &rights,
+		const QString &rank);
 	void showRestricted(not_null<UserData*> user, bool sure = false);
 	void editRestrictedDone(
 		not_null<UserData*> user,
@@ -103,23 +119,26 @@ private:
 	void migrate(not_null<ChannelData*> channel);
 
 	not_null<PeerData*> _peer;
+	MTP::Sender _api;
 	Role _role = Role::Admins;
 	int _offset = 0;
 	mtpRequestId _loadRequestId = 0;
 	bool _allLoaded = false;
 	ParticipantsAdditionalData _additional;
 	std::unique_ptr<ParticipantsOnlineSorter> _onlineSorter;
-	BoxPointer _editBox;
-	QPointer<BoxContent> _editParticipantBox;
+	Ui::BoxPointer _editBox;
+	QPointer<Ui::BoxContent> _editParticipantBox;
 	AdminDoneCallback _adminDoneCallback;
 	BannedDoneCallback _bannedDoneCallback;
+
+protected:
+	bool _excludeSelf = true;
 
 };
 
 // Finds chat/channel members, then contacts, then global search results.
 class AddSpecialBoxSearchController
 	: public PeerListSearchController
-	, private MTP::Sender
 	, private base::Subscriber {
 public:
 	using Role = ParticipantsBoxController::Role;
@@ -161,6 +180,7 @@ private:
 
 	not_null<PeerData*> _peer;
 	not_null<ParticipantsAdditionalData*> _additional;
+	MTP::Sender _api;
 
 	base::Timer _timer;
 	QString _query;

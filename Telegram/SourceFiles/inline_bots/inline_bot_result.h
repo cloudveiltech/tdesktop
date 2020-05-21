@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 class FileLoader;
+class History;
 
 namespace Data {
 class LocationPoint;
@@ -54,7 +55,16 @@ public:
 
 	bool hasThumbDisplay() const;
 
-	void addToHistory(History *history, MTPDmessage::Flags flags, MsgId msgId, UserId fromId, MTPint mtpDate, UserId viaBotId, MsgId replyToId, const QString &postAuthor) const;
+	void addToHistory(
+		History *history,
+		MTPDmessage::Flags flags,
+		MTPDmessage_ClientFlags clientFlags,
+		MsgId msgId,
+		UserId fromId,
+		MTPint mtpDate,
+		UserId viaBotId,
+		MsgId replyToId,
+		const QString &postAuthor) const;
 	QString getErrorOnSend(History *history) const;
 
 	// interface for Layout:: usage

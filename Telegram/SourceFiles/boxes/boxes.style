@@ -5,138 +5,31 @@ the official desktop application for the Telegram messaging service.
 For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
-using "basic.style";
+using "ui/basic.style";
 
+using "ui/layers/layers.style";
 using "ui/widgets/widgets.style";
 using "intro/intro.style";
 
-boxDuration: 200;
-boxRadius: 3px;
-
-ServiceCheck {
-	margin: margins;
-	diameter: pixels;
-	shift: pixels;
-	thickness: pixels;
-	tip: point;
-	small: pixels;
-	large: pixels;
-	stroke: pixels;
-	color: color;
+UserpicButton {
+	size: size;
+	photoSize: pixels;
+	photoPosition: point;
+	changeButton: RoundButton;
+	changeIcon: icon;
+	changeIconPosition: point;
 	duration: int;
+	uploadHeight: pixels;
+	uploadBg: color;
+	uploadIcon: icon;
+	uploadIconPosition: point;
 }
 
-boxButtonFont: font(boxFontSize semibold);
-defaultBoxButton: RoundButton(defaultLightButton) {
-	width: -24px;
-	height: 36px;
-	font: boxButtonFont;
-}
-
-boxTextStyle: TextStyle(defaultTextStyle) {
-	font: font(boxFontSize);
-	linkFont: font(boxFontSize);
-	linkFontOver: font(boxFontSize underline);
-}
-
-boxLabelStyle: TextStyle(boxTextStyle) {
-	lineHeight: 22px;
-}
-
-attentionBoxButton: RoundButton(defaultBoxButton) {
-	textFg: attentionButtonFg;
-	textFgOver: attentionButtonFgOver;
-	textBgOver: attentionButtonBgOver;
-
-	ripple: RippleAnimation(defaultRippleAnimation) {
-		color: attentionButtonBgRipple;
-	}
-}
-
-defaultBoxCheckbox: Checkbox(defaultCheckbox) {
-	width: -46px;
-	textPosition: point(12px, 1px);
-	style: boxTextStyle;
-}
-
-boxRoundShadow: Shadow {
-	left: icon {{ "round_shadow_box_left", windowShadowFg }};
-	topLeft: icon {{ "round_shadow_box_top_left", windowShadowFg }};
-	top: icon {{ "round_shadow_box_top", windowShadowFg }};
-	topRight: icon {{ "round_shadow_box_top_left-flip_horizontal", windowShadowFg }};
-	right: icon {{ "round_shadow_box_left-flip_horizontal", windowShadowFg }};
-	bottomRight: icon {{ "round_shadow_box_bottom_left-flip_horizontal", windowShadowFg }};
-	bottom: icon {{ "round_shadow_box_bottom", windowShadowFg }};
-	bottomLeft: icon {{ "round_shadow_box_bottom_left", windowShadowFg }};
-	extend: margins(10px, 10px, 10px, 10px);
-	fallback: windowShadowFgFallback;
-}
-
-boxTitleFont: font(17px semibold);
-boxTitle: FlatLabel(defaultFlatLabel) {
-	textFg: boxTitleFg;
-	maxHeight: 24px;
-	style: TextStyle(defaultTextStyle) {
-		font: boxTitleFont;
-		linkFont: boxTitleFont;
-		linkFontOver: font(17px semibold underline);
-	}
-}
-boxTitlePosition: point(23px, 16px);
-boxTitleHeight: 56px;
-boxLayerTitlePosition: point(23px, 16px);
-boxLayerTitleHeight: 56px;
-boxLayerTitleAdditionalSkip: 9px;
-boxLayerTitleAdditionalFont: normalFont;
-boxLayerScroll: defaultSolidScroll;
-
-boxRowPadding: margins(23px, 0px, 23px, 0px);
-
-boxTopMargin: 6px;
-
-boxTitleClose: IconButton(defaultIconButton) {
-	width: boxTitleHeight;
-	height: boxTitleHeight;
-
-	icon: boxTitleCloseIcon;
-	iconOver: boxTitleCloseIconOver;
-
-	rippleAreaPosition: point(6px, 6px);
-	rippleAreaSize: 44px;
-	ripple: RippleAnimation(defaultRippleAnimation) {
-		color: windowBgOver;
-	}
-}
-
-boxLinkButton: LinkButton(defaultLinkButton) {
-	font: boxTextFont;
-	overFont: font(boxFontSize underline);
-}
-
-boxOptionListPadding: margins(0px, 0px, 0px, 0px);
-boxOptionListSkip: 20px;
-boxOptionInputSkip: 6px;
-
-boxVerticalMargin: 10px;
-boxWidth: 320px;
-boxWideWidth: 364px;
-boxPadding: margins(23px, 30px, 23px, 8px);
-boxMaxListHeight: 492px;
-boxLittleSkip: 10px;
-boxMediumSkip: 20px;
-
-boxButtonPadding: margins(8px, 12px, 13px, 12px);
-boxLayerButtonPadding: margins(8px, 8px, 8px, 8px);
-boxLabel: FlatLabel(defaultFlatLabel) {
-	minWidth: 274px;
-	align: align(topleft);
-	style: boxLabelStyle;
-}
-boxDividerLabel: FlatLabel(boxLabel) {
-	minWidth: 245px;
-	align: align(topleft);
-	textFg: windowSubTextFg;
-	style: defaultTextStyle;
+FeedUserpicButton {
+	size: size;
+	innerSize: pixels;
+	innerPosition: point;
+	innerPart: UserpicButton;
 }
 
 countryRowHeight: 36px;
@@ -149,7 +42,7 @@ countryRowBgOver: windowBgOver;
 countryRowCodeFg: windowSubTextFg;
 countryRowCodeFgOver: windowSubTextFgOver;
 countriesSkip: 12px;
-countriesScroll: ScrollArea(boxLayerScroll) {
+countriesScroll: ScrollArea(boxScroll) {
 	deltat: 9px;
 	deltab: 3px;
 }
@@ -160,6 +53,28 @@ boxPhotoPadding: margins(28px, 28px, 28px, 18px);
 boxPhotoCompressedSkip: 20px;
 boxPhotoCaptionSkip: 8px;
 boxPhotoTextFg: windowSubTextFg;
+
+defaultChangeUserpicIcon: icon {{ "new_chat_photo", activeButtonFg }};
+defaultUploadUserpicIcon: icon {{ "upload_chat_photo", msgDateImgFg }};
+defaultUserpicButton: UserpicButton {
+	size: size(76px, 76px);
+	photoSize: 76px;
+	photoPosition: point(-1px, -1px);
+	changeButton: defaultActiveButton;
+	changeIcon: defaultChangeUserpicIcon;
+	changeIconPosition: point(23px, 25px);
+	duration: 500;
+	uploadHeight: 24px;
+	uploadBg: msgDateImgBgOver;
+	uploadIcon: defaultUploadUserpicIcon;
+	uploadIconPosition: point(-1px, 1px);
+}
+defaultFeedUserpicButton: FeedUserpicButton {
+	size: size(76px, 76px);
+	innerSize: 76px;
+	innerPosition: point(-1px, -1px);
+	innerPart: defaultUserpicButton;
+}
 
 cropPointSize: 10px;
 cropSkip: 13px;
@@ -217,24 +132,6 @@ editBioCountdownLabel: FlatLabel(defaultFlatLabel) {
 contactUserIcon: icon {{ "settings_name", menuIconFg }};
 contactPhoneIcon: icon {{ "settings_phone_number", menuIconFg }};
 contactIconPosition: point(-5px, 23px);
-
-contactsAddIconAbove: icon {{ "contacts_add", activeButtonFg, point(18px, 18px) }};
-contactsAdd: TwoIconButton {
-	width: 52px;
-	height: 52px;
-
-	iconBelow: contactsAddIconBelow;
-	iconBelowOver: contactsAddIconBelowOver;
-	iconAbove: contactsAddIconAbove;
-	iconAboveOver: contactsAddIconAbove;
-
-	rippleAreaPosition: point(5px, 5px);
-	rippleAreaSize: 42px;
-	ripple: RippleAnimation(defaultRippleAnimation) {
-		color: activeButtonBgRipple;
-	}
-}
-contactsAddPosition: point(14px, 8px);
 
 contactPadding: margins(49px, 2px, 0px, 12px);
 contactSkip: 6px;
@@ -319,24 +216,9 @@ contactsMultiSelect: MultiSelect {
 	fieldCancel: contactsSearchCancel;
 	fieldCancelSkip: 40px;
 }
-contactsPhotoCheckIcon: icon {{
-	"default_checkbox_check",
-	windowFgActive,
-	point(3px, 6px)
-}};
-contactsPhotoCheck: RoundCheckbox(defaultRoundCheckbox) {
-	size: 20px;
-	sizeSmall: 0.3;
-	check: contactsPhotoCheckIcon;
-}
-contactsPhotoCheckbox: RoundImageCheckbox {
-	imageRadius: 21px;
-	imageSmallRadius: 18px;
-	selectWidth: 2px;
-	selectFg: windowBgActive;
-	selectDuration: 150;
-	check: contactsPhotoCheck;
-}
+contactsPhotoCheckIcon: defaultPeerListCheckIcon;
+contactsPhotoCheck: defaultPeerListCheck;
+contactsPhotoCheckbox: defaultPeerListCheckbox;
 contactsPhotoDisabledCheckFg: menuIconFg;
 contactsNameCheckedFg: windowActiveTextFg;
 contactsRipple: defaultRippleAnimation;
@@ -370,7 +252,7 @@ peerListBox: PeerList(defaultPeerList) {
 }
 
 localStorageRowHeight: 50px;
-localStorageRowPadding: margins(23px, 5px, 20px, 5px);
+localStorageRowPadding: margins(22px, 5px, 20px, 5px);
 localStorageRowTitle: FlatLabel(defaultFlatLabel) {
 	textFg: windowBoldFg;
 	maxHeight: 20px;
@@ -393,11 +275,11 @@ localStorageClear: defaultBoxButton;
 localStorageLimitLabel: LabelSimple(defaultLabelSimple) {
 	font: boxTextFont;
 }
-localStorageLimitLabelMargin: margins(23px, 10px, 20px, 5px);
+localStorageLimitLabelMargin: margins(22px, 10px, 20px, 5px);
 localStorageLimitSlider: MediaSlider(defaultContinuousSlider) {
 	seekSize: size(15px, 15px);
 }
-localStorageLimitMargin: margins(23px, 5px, 20px, 10px);
+localStorageLimitMargin: margins(22px, 5px, 20px, 10px);
 
 shareRowsTop: 12px;
 shareRowHeight: 108px;
@@ -453,12 +335,12 @@ membersAbout: FlatLabel(defaultFlatLabel) {
 	style: boxLabelStyle;
 }
 
-sessionsScroll: boxLayerScroll;
+sessionsScroll: boxScroll;
 sessionsHeight: 350px;
 sessionHeight: 70px;
 sessionCurrentPadding: margins(0px, 7px, 0px, 4px);
 sessionCurrentHeight: 118px;
-sessionPadding: margins(23px, 10px, 23px, 0px);
+sessionPadding: margins(22px, 10px, 22px, 0px);
 sessionNameFont: msgNameFont;
 sessionNameFg: boxTextFg;
 sessionWhenFont: msgDateFont;
@@ -546,7 +428,7 @@ aboutLabel: FlatLabel(defaultFlatLabel) {
 }
 
 autoDownloadTopDelta: 10px;
-autoDownloadTitlePosition: point(23px, 18px);
+autoDownloadTitlePosition: point(22px, 18px);
 autoDownloadTitleFont: font(15px semibold);
 autoDownloadLimitSlider: MediaSlider(defaultContinuousSlider) {
 	seekSize: size(15px, 15px);
@@ -591,7 +473,7 @@ langsRadio: Radio(defaultRadio) {
 
 backgroundPadding: 10px;
 backgroundSize: size(108px, 193px);
-backgroundScroll: ScrollArea(boxLayerScroll) {
+backgroundScroll: ScrollArea(boxScroll) {
 	deltax: 3px;
 	width: 10px;
 	deltat: 10px;
@@ -614,6 +496,29 @@ editMediaButton: IconButton {
 	rippleAreaSize: editMediaButtonSize;
 	ripple: defaultRippleAnimation;
 }
+
+// SendFilesBox
+
+sendBoxAlbumGroupEditInternalSkip: 9px;
+sendBoxAlbumGroupSkipRight: 6px;
+sendBoxAlbumGroupSkipTop: 6px;
+sendBoxAlbumGroupRadius: 12px;
+sendBoxAlbumGroupHeight: 25px;
+
+sendBoxAlbumGroupEditButtonIcon: editMediaButtonIconPhoto;
+sendBoxAlbumGroupEditButtonIconPosition: point(4px, -1px);
+
+sendBoxAlbumGroupButtonFile: IconButton(editMediaButton) {
+	ripple: RippleAnimation(defaultRippleAnimation) {
+		color: windowBgRipple;
+	}
+}
+
+sendBoxAlbumGroupDeleteButtonIconPosition: point(-3px, 0px);
+sendBoxAlbumGroupDeleteButtonIcon: icon {{ "history_file_cancel", msgServiceFg}};
+sendBoxAlbumGroupDeleteButtonIconFile: icon {{ "history_file_cancel", menuIconFg, point(6px, 6px) }};
+
+// End of SendFilesBox
 
 calendarTitleHeight: boxTitleHeight;
 calendarPrevious: IconButton {
@@ -657,7 +562,7 @@ passcodeTextStyle: TextStyle(defaultTextStyle) {
 	lineHeight: 20px;
 }
 
-usernamePadding: margins(23px, 6px, 21px, 12px);
+usernamePadding: margins(22px, 6px, 21px, 12px);
 usernameSkip: 49px;
 usernameTextStyle: TextStyle(boxTextStyle, passcodeTextStyle) {
 }
@@ -735,11 +640,11 @@ rightsToggle: Toggle(defaultToggle) {
 	stroke: 2px;
 	duration: 120;
 }
-rightsDividerHeight: 10px;
+rightsDividerHeight: boxDividerHeight;
 rightsDividerMargin: margins(0px, 0px, 0px, 20px);
-rightsHeaderMargin: margins(23px, 0px, 23px, 8px);
-rightsToggleMargin: margins(23px, 8px, 23px, 8px);
-rightsAboutMargin: margins(23px, 8px, 23px, 8px);
+rightsHeaderMargin: margins(22px, 0px, 22px, 8px);
+rightsToggleMargin: margins(22px, 8px, 22px, 8px);
+rightsAboutMargin: margins(22px, 8px, 22px, 8px);
 rightsPhotoButton: UserpicButton(defaultUserpicButton) {
 	size: size(60px, 60px);
 	photoSize: 60px;
@@ -761,6 +666,7 @@ rightsHeaderLabel: FlatLabel(boxLabel) {
 	textFg: windowActiveTextFg;
 }
 rightsUntilMargin: margins(0px, 8px, 0px, 20px);
+rightsRankMargin: margins(0px, 16px, 0px, 20px);
 
 mutePhotoButton: UserpicButton(defaultUserpicButton) {
 	size: size(40px, 40px);
@@ -867,8 +773,8 @@ markdownLinkFieldPadding: margins(22px, 0px, 22px, 10px);
 termsContent: FlatLabel(defaultFlatLabel) {
 	minWidth: 285px;
 }
-termsPadding: margins(23px, 4px, 16px, 16px);
-termsAgePadding: margins(23px, 16px, 16px, 0px);
+termsPadding: margins(22px, 4px, 16px, 16px);
+termsAgePadding: margins(22px, 16px, 16px, 0px);
 
 themesSmallSkip: 10px;
 themesBackgroundSize: 120px;
@@ -876,10 +782,25 @@ themesScroll: ScrollArea(defaultScrollArea) {
 	bottomsh: 0px;
 	topsh: 0px;
 }
+themesMenuToggle: IconButton(defaultIconButton) {
+	width: 44px;
+	height: 44px;
+
+	icon: menuToggleIcon;
+	iconOver: menuToggleIconOver;
+	iconPosition: point(-1px, -1px);
+
+	rippleAreaPosition: point(4px, 4px);
+	rippleAreaSize: 36px;
+	ripple: RippleAnimation(defaultRippleAnimation) {
+		color: windowBgOver;
+	}
+}
+themesMenuPosition: point(-2px, 25px);
 
 createPollField: InputField(defaultInputField) {
 	font: boxTextFont;
-	textMargins: margins(0px, 0px, 0px, 0px);
+	textMargins: margins(0px, 4px, 0px, 4px);
 	textAlign: align(left);
 	heightMin: 36px;
 	heightMax: 86px;
@@ -897,15 +818,20 @@ createPollField: InputField(defaultInputField) {
 }
 createPollFieldPadding: margins(22px, 5px, 22px, 5px);
 createPollOptionField: InputField(createPollField) {
-	textMargins: margins(22px, 8px, 40px, 8px);
+	textMargins: margins(22px, 11px, 40px, 11px);
 	placeholderMargins: margins(2px, 0px, 2px, 0px);
-	heightMax: 64px;
+	heightMax: 68px;
+}
+createPollSolutionField: InputField(createPollField) {
+	textMargins: margins(0px, 4px, 0px, 4px);
+	border: 1px;
+	borderActive: 2px;
 }
 createPollLimitLabel: FlatLabel(defaultFlatLabel) {
 	minWidth: 274px;
 	align: align(topleft);
 }
-createPollLimitPadding: margins(22px, 10px, 22px, 5px);
+createPollLimitPadding: margins(22px, 10px, 22px, 16px);
 createPollOptionRemove: CrossButton {
 	width: 22px;
 	height: 22px;
@@ -926,7 +852,7 @@ createPollOptionRemove: CrossButton {
 		color: windowBgOver;
 	}
 }
-createPollOptionRemovePosition: point(10px, 7px);
+createPollOptionRemovePosition: point(11px, 9px);
 createPollWarning: FlatLabel(defaultFlatLabel) {
 	textFg: windowSubTextFg;
 	palette: TextPalette(defaultTextPalette) {
@@ -934,10 +860,12 @@ createPollWarning: FlatLabel(defaultFlatLabel) {
 	}
 }
 createPollWarningPosition: point(16px, 6px);
+createPollCheckboxMargin: margins(22px, 10px, 22px, 10px);
+createPollFieldTitlePadding: margins(22px, 7px, 10px, 6px);
 
 callSettingsButton: IconButton {
 	width: 50px;
-	height: boxLayerTitleHeight;
+	height: boxTitleHeight;
 	icon: icon {{ "menu_settings", boxTitleCloseFg }};
 	iconOver: icon {{ "menu_settings", boxTitleCloseFgOver }};
 	iconPosition: point(8px, -1px);
@@ -987,4 +915,49 @@ blockUserConfirmation: FlatLabel(boxLabel) {
 	minWidth: 240px;
 }
 
-transferCheckWidth: 300px;
+transferCheckWidth: 320px;
+
+slowmodeLabelsMargin: margins(0px, 5px, 0px, 0px);
+slowmodeLabel: LabelSimple(defaultLabelSimple) {
+	textFg: windowSubTextFg;
+}
+
+customBadgeField: InputField(defaultInputField) {
+	textMargins: margins(2px, 7px, 2px, 0px);
+
+	placeholderFg: placeholderFg;
+	placeholderFgActive: placeholderFgActive;
+	placeholderFgError: placeholderFgActive;
+	placeholderMargins: margins(0px, 0px, 0px, 0px);
+	placeholderScale: 0.;
+	placeholderFont: normalFont;
+
+	heightMin: 32px;
+}
+
+pollResultsQuestion: FlatLabel(defaultFlatLabel) {
+	minWidth: 320px;
+	textFg: windowBoldFg;
+	style: TextStyle(defaultTextStyle) {
+		font: font(16px semibold);
+		linkFont: font(16px semibold);
+		linkFontOver: font(16px semibold underline);
+	}
+}
+pollResultsVotesCount: FlatLabel(defaultFlatLabel) {
+	textFg: windowSubTextFg;
+}
+pollResultsHeaderPadding: margins(22px, 22px, 22px, 8px);
+pollResultsShowMore: SettingsButton {
+	textFg: lightButtonFg;
+	textFgOver: lightButtonFgOver;
+	textBg: windowBg;
+	textBgOver: windowBgOver;
+
+	font: semiboldFont;
+
+	height: 20px;
+	padding: margins(71px, 10px, 8px, 8px);
+
+	ripple: defaultRippleAnimation;
+}

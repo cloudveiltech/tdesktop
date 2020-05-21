@@ -21,13 +21,18 @@ class CheckView;
 
 namespace Window {
 
+class Controller;
+
 class LockWidget : public Ui::RpWidget {
 public:
-	LockWidget(QWidget *parent);
+	LockWidget(QWidget *parent, not_null<Controller*> window);
+
+	not_null<Controller*> window() const;
 
 	virtual void setInnerFocus();
 
 	void showAnimated(const QPixmap &bgAnimCache, bool back = false);
+	void showFinished();
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -36,6 +41,7 @@ protected:
 private:
 	void animationCallback();
 
+	const not_null<Controller*> _window;
 	Ui::Animations::Simple _a_show;
 	bool _showBack = false;
 	QPixmap _cacheUnder, _cacheOver;
@@ -44,7 +50,7 @@ private:
 
 class PasscodeLockWidget : public LockWidget {
 public:
-	PasscodeLockWidget(QWidget *parent);
+	PasscodeLockWidget(QWidget *parent, not_null<Controller*> window);
 
 	void setInnerFocus() override;
 
@@ -81,7 +87,7 @@ struct TermsLock {
 
 };
 
-class TermsBox : public BoxContent {
+class TermsBox : public Ui::BoxContent {
 public:
 	TermsBox(
 		QWidget*,

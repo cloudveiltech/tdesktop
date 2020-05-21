@@ -9,16 +9,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/type_traits.h"
 #include "base/observer.h"
+#include "base/call_delayed.h"
+#include "mtproto/mtproto_proxy_data.h"
 
-class BoxContent;
+class History;
 
 namespace Data {
 struct FileOrigin;
 } // namespace Data
-
-namespace Dialogs {
-enum class Mode;
-} // namespace Dialogs
 
 namespace InlineBots {
 namespace Layout {
@@ -27,36 +25,15 @@ class ItemBase;
 } // namespace InlineBots
 
 namespace App {
-namespace internal {
-
-void CallDelayed(int duration, FnMut<void()> &&lambda);
-
-} // namespace internal
 
 template <typename Guard, typename Lambda>
-inline void CallDelayed(
-		int duration,
-		crl::guarded_wrap<Guard, Lambda> &&guarded) {
-	return internal::CallDelayed(
-		duration,
-		std::move(guarded));
-}
-
-template <typename Guard, typename Lambda>
-inline void CallDelayed(int duration, Guard &&object, Lambda &&lambda) {
-	return internal::CallDelayed(duration, crl::guard(
-		std::forward<Guard>(object),
-		std::forward<Lambda>(lambda)));
-}
-
-template <typename Guard, typename Lambda>
-inline auto LambdaDelayed(int duration, Guard &&object, Lambda &&lambda) {
+[[nodiscard]] inline auto LambdaDelayed(int duration, Guard &&object, Lambda &&lambda) {
 	auto guarded = crl::guard(
 		std::forward<Guard>(object),
 		std::forward<Lambda>(lambda));
 	return [saved = std::move(guarded), duration] {
 		auto copy = saved;
-		internal::CallDelayed(duration, std::move(copy));
+		base::call_delayed(duration, std::move(copy));
 	};
 }
 
@@ -73,43 +50,11 @@ void activateBotCommand(
 void searchByHashtag(const QString &tag, PeerData *inPeer);
 void showSettings();
 
-void activateClickHandler(ClickHandlerPtr handler, ClickContext context);
-void activateClickHandler(ClickHandlerPtr handler, Qt::MouseButton button);
-
 } // namespace App
 
-
-enum class LayerOption {
-	CloseOther = (1 << 0),
-	KeepOther = (1 << 1),
-	ShowAfterOther = (1 << 2),
-};
-using LayerOptions = base::flags<LayerOption>;
-inline constexpr auto is_flag_type(LayerOption) { return true; };
-
 namespace Ui {
-namespace internal {
 
-void showBox(
-	object_ptr<BoxContent> content,
-	LayerOptions options,
-	anim::type animated);
-
-} // namespace internal
-
-template <typename BoxType>
-QPointer<BoxType> show(
-		object_ptr<BoxType> content,
-		LayerOptions options = LayerOption::CloseOther,
-		anim::type animated = anim::type::normal) {
-	auto result = QPointer<BoxType>(content.data());
-	internal::showBox(std::move(content), options, animated);
-	return result;
-}
-
-void hideLayer(anim::type animated = anim::type::normal);
-void hideSettingsAndLayer(anim::type animated = anim::type::normal);
-bool isLayerShown();
+// Legacy global methods.
 
 void showPeerProfile(const PeerId &peer);
 void showPeerProfile(const PeerData *peer);
@@ -144,7 +89,6 @@ void replyMarkupUpdated(const HistoryItem *item);
 void inlineKeyboardMoved(const HistoryItem *item, int oldKeyboardTop, int newKeyboardTop);
 bool switchInlineBotButtonReceived(const QString &query, UserData *samePeerBot = nullptr, MsgId samePeerReplyTo = 0);
 
-void historyMuteUpdated(History *history);
 void unreadCounterUpdated();
 
 enum class ScreenCorner {
@@ -199,15 +143,13 @@ void finish();
 
 DeclareRefVar(SingleQueuedInvokation, HandleUnreadCounterUpdate);
 DeclareRefVar(SingleQueuedInvokation, HandleDelayedPeerUpdates);
-DeclareRefVar(SingleQueuedInvokation, HandleObservables);
 
 DeclareVar(Adaptive::WindowLayout, AdaptiveWindowLayout);
 DeclareVar(Adaptive::ChatLayout, AdaptiveChatLayout);
 DeclareVar(bool, AdaptiveForWide);
 DeclareRefVar(base::Observable<void>, AdaptiveChanged);
 
-DeclareVar(bool, DialogsModeEnabled);
-DeclareVar(Dialogs::Mode, DialogsMode);
+DeclareVar(bool, DialogsFiltersEnabled);
 DeclareVar(bool, ModerateModeEnabled);
 
 DeclareVar(bool, ScreenIsLocked);
@@ -265,14 +207,12 @@ DeclareVar(QString, DownloadPath);
 DeclareVar(QByteArray, DownloadPathBookmark);
 DeclareRefVar(base::Observable<void>, DownloadPathChanged);
 
-DeclareVar(bool, ReplaceEmoji);
-DeclareVar(bool, SuggestEmoji);
-DeclareVar(bool, SuggestStickersByEmoji);
-DeclareRefVar(base::Observable<void>, ReplaceEmojiChanged);
 DeclareVar(bool, VoiceMsgPlaybackDoubled);
 DeclareVar(bool, SoundNotify);
 DeclareVar(bool, DesktopNotify);
+DeclareVar(bool, FlashBounceNotify);
 DeclareVar(bool, RestoreSoundNotifyFromTray);
+DeclareVar(bool, RestoreFlashBounceNotifyFromTray);
 DeclareVar(DBINotifyView, NotifyView);
 DeclareVar(bool, NativeNotifications);
 DeclareVar(int, NotificationsCount);
@@ -280,9 +220,9 @@ DeclareVar(Notify::ScreenCorner, NotificationsCorner);
 DeclareVar(bool, NotificationsDemoIsShown);
 
 DeclareVar(bool, TryIPv6);
-DeclareVar(std::vector<ProxyData>, ProxiesList);
-DeclareVar(ProxyData, SelectedProxy);
-DeclareVar(ProxyData::Settings, ProxySettings);
+DeclareVar(std::vector<MTP::ProxyData>, ProxiesList);
+DeclareVar(MTP::ProxyData, SelectedProxy);
+DeclareVar(MTP::ProxyData::Settings, ProxySettings);
 DeclareVar(bool, UseProxyForCalls);
 DeclareRefVar(base::Observable<void>, ConnectionTypeChanged);
 
@@ -300,8 +240,6 @@ DeclareVar(QString, CallInputDeviceID);
 DeclareVar(int, CallOutputVolume);
 DeclareVar(int, CallInputVolume);
 DeclareVar(bool, CallAudioDuckingEnabled);
-
-rpl::producer<bool> ReplaceEmojiValue();
 
 } // namespace Global
 

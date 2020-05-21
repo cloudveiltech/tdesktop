@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/weak_ptr.h"
 #include "base/timer.h"
+#include "base/object_ptr.h"
 #include "ui/rp_widget.h"
 
 namespace Ui {
@@ -17,6 +18,10 @@ class AbstractButton;
 class LabelSimple;
 class FlatLabel;
 } // namespace Ui
+
+namespace Main {
+class Session;
+} // namespace Main
 
 namespace Calls {
 
@@ -42,7 +47,7 @@ private:
 	void startDurationUpdateTimer(crl::time currentDuration);
 	void setMuted(bool mute);
 
-	base::weak_ptr<Call> _call;
+	const base::weak_ptr<Call> _call;
 
 	bool _muted = false;
 	object_ptr<Ui::LabelSimple> _durationLabel;

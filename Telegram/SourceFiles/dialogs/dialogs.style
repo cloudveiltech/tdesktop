@@ -5,7 +5,7 @@ the official desktop application for the Telegram messaging service.
 For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
-using "basic.style";
+using "ui/basic.style";
 
 using "ui/widgets/widgets.style";
 
@@ -87,6 +87,14 @@ dialogsTextPaletteArchiveActive: TextPalette(defaultTextPalette) {
 	linkFg: dialogsTextFgActive;
 }
 
+dialogsEmptyHeight: 160px;
+dialogsEmptySkip: 2px;
+dialogsEmptyLabel: FlatLabel(defaultFlatLabel) {
+	minWidth: 32px;
+	align: align(top);
+	textFg: windowSubTextFg;
+}
+
 dialogsMenuToggle: IconButton {
 	width: 40px;
 	height: 40px;
@@ -119,6 +127,11 @@ dialogsSearchFrom: IconButton(dialogsCalendar) {
 	width: 26px;
 	icon: icon {{ "dialogs_search_from", dialogsMenuIconFg }};
 	iconOver: icon {{ "dialogs_search_from", dialogsMenuIconFgOver }};
+}
+dialogsSearchForNarrowFilters: IconButton(dialogsMenuToggle) {
+	icon: icon {{ "top_bar_search", menuIconFg }};
+	iconOver: icon {{ "top_bar_search", menuIconFgOver }};
+	iconPosition: point(4px, 4px);
 }
 dialogsSearchFromPadding: margins(10px, 10px, 10px, 10px);
 

@@ -9,7 +9,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "platform/platform_specific.h"
 
-#include <execinfo.h>
 #include <signal.h>
 
 namespace Data {
@@ -21,37 +20,37 @@ namespace Platform {
 inline void SetWatchingMediaKeys(bool watching) {
 }
 
-bool IsApplicationActive();
+bool InSandbox();
+bool InSnap();
+bool InAppImage();
+bool IsStaticBinary();
+bool IsGtkFileDialogForced();
 
-inline void StartTranslucentPaint(QPainter &p, QPaintEvent *e) {
-}
+bool IsXDGDesktopPortalPresent();
+bool UseXDGDesktopPortal();
 
-inline void InitOnTopPanel(QWidget *panel) {
-}
-
-inline void DeInitOnTopPanel(QWidget *panel) {
-}
-
-inline void ReInitOnTopPanel(QWidget *panel) {
-}
-
+QString ProcessNameByPID(const QString &pid);
+QString RealExecutablePath(int argc, char *argv[]);
 QString CurrentExecutablePath(int argc, char *argv[]);
 
-inline std::optional<crl::time> LastUserInputTime() {
-	return std::nullopt;
+QString AppRuntimeDirectory();
+QString SingleInstanceLocalServerName(const QString &hash);
+
+QString GetLauncherBasename();
+QString GetLauncherFilename();
+
+QString GetIconName();
+
+inline void IgnoreApplicationActivationRightNow() {
 }
 
-inline constexpr bool UseMainQueueGeneric() {
-	return true;
-}
+void FallbackFontConfigCheckBegin();
+void FallbackFontConfigCheckEnd();
 
 } // namespace Platform
 
-inline QString psServerPrefix() {
-    return qsl("/tmp/");
-}
 inline void psCheckLocalSocket(const QString &serverName) {
-    QFile address(serverName);
+	QFile address(serverName);
 	if (address.exists()) {
 		address.remove();
 	}
@@ -71,15 +70,12 @@ void psAutoStart(bool start, bool silent = false);
 void psSendToMenu(bool send, bool silent = false);
 
 QRect psDesktopRect();
-void psShowOverAll(QWidget *w, bool canFocus = true);
-void psBringToBack(QWidget *w);
 
 int psCleanup();
 int psFixPrevious();
 
 void psNewVersion();
 
-void psUpdateOverlayed(QWidget *widget);
 inline QByteArray psDownloadPathBookmark(const QString &path) {
 	return QByteArray();
 }

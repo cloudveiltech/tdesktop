@@ -14,17 +14,26 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/confirm_box.h"
 #include "boxes/about_box.h"
 #include "ui/wrap/vertical_layout.h"
+#include "ui/wrap/slide_wrap.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/discrete_sliders.h"
-#include "info/profile/info_profile_button.h"
+#include "ui/widgets/buttons.h"
 #include "info/profile/info_profile_cover.h"
 #include "data/data_user.h"
 #include "data/data_session.h"
+#include "data/data_cloud_themes.h"
+#include "data/data_chat_filters.h"
 #include "lang/lang_keys.h"
 #include "storage/localstorage.h"
-#include "auth_session.h"
+#include "main/main_session.h"
+#include "main/main_account.h"
+#include "main/main_app_config.h"
 #include "apiwrap.h"
+#include "window/window_session_controller.h"
 #include "core/file_utilities.h"
+#include "base/call_delayed.h"
+#include "facades.h"
+#include "app.h"
 #include "styles/style_settings.h"
 
 namespace Settings {
@@ -54,6 +63,7 @@ void SetupLanguageButton(
 }
 
 void SetupSections(
+		not_null<Window::SessionController*> controller,
 		not_null<Ui::VerticalLayout*> container,
 		Fn<void(Type)> showOther) {
 	AddDivider(container);
@@ -70,8 +80,8 @@ void SetupSections(
 			icon
 		)->addClickHandler([=] { showOther(type); });
 	};
-	if (Auth().supportMode()) {
-		SetupSupport(container);
+	if (controller->session().supportMode()) {
+		SetupSupport(controller, container);
 
 		AddDivider(container);
 		AddSkip(container);
@@ -93,6 +103,51 @@ void SetupSections(
 		tr::lng_settings_section_chat_settings(),
 		Type::Chat,
 		&st::settingsIconChat);
+
+	const auto preload = [=] {
+		controller->session().data().chatsFilters().requestSuggested();
+	};
+	const auto account = &controller->session().account();
+	const auto slided = container->add(
+		object_ptr<Ui::SlideWrap<Ui::SettingsButton>>(
+			container,
+			CreateButton(
+				container,
+				tr::lng_settings_section_filters(),
+				st::settingsSectionButton,
+				&st::settingsIconFolders)))->setDuration(0);
+	if (!controller->session().data().chatsFilters().list().empty()
+		|| Global::DialogsFiltersEnabled()) {
+		slided->show(anim::type::instant);
+		preload();
+	} else {
+		const auto enabled = [=] {
+			const auto result = account->appConfig().get<bool>(
+				"dialog_filters_enabled",
+				false);
+			if (result) {
+				preload();
+			}
+			return result;
+		};
+		const auto preloadIfEnabled = [=](bool enabled) {
+			if (enabled) {
+				preload();
+			}
+		};
+		slided->toggleOn(
+			rpl::single(
+				rpl::empty_value()
+			) | rpl::then(
+				account->appConfig().refreshed()
+			) | rpl::map(
+				enabled
+			) | rpl::before_next(preloadIfEnabled));
+	}
+	slided->entity()->setClickedCallback([=] {
+		showOther(Type::Folders);
+	});
+
 	addSection(
 		tr::lng_settings_advanced(),
 		Type::Advanced,
@@ -117,7 +172,7 @@ void SetupInterfaceScale(
 	const auto toggled = Ui::CreateChild<rpl::event_stream<bool>>(
 		container.get());
 
-	const auto switched = (cConfigScale() == kInterfaceScaleAuto);
+	const auto switched = (cConfigScale() == style::kScaleAuto);
 	const auto button = AddButton(
 		container,
 		tr::lng_settings_default_scale(),
@@ -133,7 +188,7 @@ void SetupInterfaceScale(
 		auto values = (cIntRetinaFactor() > 1)
 			? std::vector<int>{ 100, 110, 120, 130, 140, 150 }
 			: std::vector<int>{ 100, 125, 150, 200, 250, 300 };
-		if (cConfigScale() == kInterfaceScaleAuto) {
+		if (cConfigScale() == style::kScaleAuto) {
 			return values;
 		}
 		if (ranges::find(values, cConfigScale()) == end(values)) {
@@ -160,7 +215,7 @@ void SetupInterfaceScale(
 		*inSetScale = true;
 		const auto guard = gsl::finally([=] { *inSetScale = false; });
 
-		toggled->fire(scale == kInterfaceScaleAuto);
+		toggled->fire(scale == style::kScaleAuto);
 		slider->setActiveSection(sectionFromScale(scale));
 		if (cEvalScale(scale) != cEvalScale(cConfigScale())) {
 			const auto confirmed = crl::guard(button, [=] {
@@ -169,7 +224,7 @@ void SetupInterfaceScale(
 				App::restart();
 			});
 			const auto cancelled = crl::guard(button, [=] {
-				App::CallDelayed(
+				base::call_delayed(
 					st::defaultSettingsSlider.duration,
 					button,
 					[=] { (*setScale)(cConfigScale()); });
@@ -201,20 +256,20 @@ void SetupInterfaceScale(
 		return scaleByIndex(section);
 	}) | rpl::start_with_next([=](int scale) {
 		(*setScale)((scale == cScreenScale())
-			? kInterfaceScaleAuto
+			? style::kScaleAuto
 			: scale);
 	}, slider->lifetime());
 
 	button->toggledValue(
 	) | rpl::map([](bool checked) {
-		return checked ? kInterfaceScaleAuto : cEvalScale(cConfigScale());
+		return checked ? style::kScaleAuto : cEvalScale(cConfigScale());
 	}) | rpl::start_with_next([=](int scale) {
 		(*setScale)(scale);
 	}, button->lifetime());
 }
 
 void OpenFaq() {
-	QDesktopServices::openUrl(telegramFaqLink());
+	File::OpenUrl(telegramFaqLink());
 }
 
 void SetupFaq(not_null<Ui::VerticalLayout*> container, bool icon) {
@@ -226,51 +281,68 @@ void SetupFaq(not_null<Ui::VerticalLayout*> container, bool icon) {
 	)->addClickHandler(OpenFaq);
 }
 
-void SetupHelp(not_null<Ui::VerticalLayout*> container) {
+void SetupHelp(
+		not_null<Window::SessionController*> controller,
+		not_null<Ui::VerticalLayout*> container) {
 	AddDivider(container);
 	AddSkip(container);
 
 	SetupFaq(container);
 
-	if (AuthSession::Exists()) {
-		const auto button = AddButton(
-			container,
-			tr::lng_settings_ask_question(),
-			st::settingsSectionButton);
-		button->addClickHandler([=] {
-			const auto ready = crl::guard(button, [](const MTPUser &data) {
-				if (const auto user = Auth().data().processUser(data)) {
-					Ui::showPeerHistory(user, ShowAtUnreadMsgId);
-				}
-			});
-			const auto sure = crl::guard(button, [=] {
-				Auth().api().requestSupportContact(ready);
-			});
-			auto box = Box<ConfirmBox>(
-				tr::lng_settings_ask_sure(tr::now),
-				tr::lng_settings_ask_ok(tr::now),
-				tr::lng_settings_faq_button(tr::now),
-				sure,
-				OpenFaq);
-			box->setStrictCancel(true);
-			Ui::show(std::move(box));
+	const auto button = AddButton(
+		container,
+		tr::lng_settings_ask_question(),
+		st::settingsSectionButton);
+	const auto requestId = button->lifetime().make_state<mtpRequestId>();
+	button->lifetime().add([=] {
+		if (*requestId) {
+			controller->session().api().request(*requestId).cancel();
+		}
+	});
+	button->addClickHandler([=] {
+		const auto sure = crl::guard(button, [=] {
+			if (*requestId) {
+				return;
+			}
+			*requestId = controller->session().api().request(
+				MTPhelp_GetSupport()
+			).done([=](const MTPhelp_Support &result) {
+				*requestId = 0;
+				result.match([&](const MTPDhelp_support &data) {
+					auto &owner = controller->session().data();
+					if (const auto user = owner.processUser(data.vuser())) {
+						Ui::showPeerHistory(user, ShowAtUnreadMsgId);
+					}
+				});
+			}).fail([=](const RPCError &error) {
+				*requestId = 0;
+			}).send();
 		});
-	}
+		auto box = Box<ConfirmBox>(
+			tr::lng_settings_ask_sure(tr::now),
+			tr::lng_settings_ask_ok(tr::now),
+			tr::lng_settings_faq_button(tr::now),
+			sure,
+			OpenFaq);
+		box->setStrictCancel(true);
+		Ui::show(std::move(box));
+	});
 
 	AddSkip(container);
 }
 
 Main::Main(
 	QWidget *parent,
-	not_null<Window::SessionController*> controller,
-	not_null<UserData*> self)
+	not_null<Window::SessionController*> controller)
 : Section(parent)
-, _self(self) {
+, _controller(controller) {
 	setupContent(controller);
 }
 
 void Main::keyPressEvent(QKeyEvent *e) {
-	CodesFeedString(e->text());
+	crl::on_main(this, [=, text = e->text()]{
+		CodesFeedString(_controller, text);
+	});
 	return Section::keyPressEvent(e);
 }
 
@@ -279,11 +351,11 @@ void Main::setupContent(not_null<Window::SessionController*> controller) {
 
 	const auto cover = content->add(object_ptr<Info::Profile::Cover>(
 		content,
-		_self,
+		controller->session().user(),
 		controller));
 	cover->setOnlineCount(rpl::single(0));
 
-	SetupSections(content, [=](Type type) {
+	SetupSections(controller, content, [=](Type type) {
 		_showOther.fire_copy(type);
 	});
 	if (HasInterfaceScale()) {
@@ -292,13 +364,14 @@ void Main::setupContent(not_null<Window::SessionController*> controller) {
 		SetupInterfaceScale(content);
 		AddSkip(content);
 	}
-	SetupHelp(content);
+	SetupHelp(controller, content);
 
 	Ui::ResizeFitChild(this, content);
 
 	// If we load this in advance it won't jump when we open its' section.
-	Auth().api().reloadPasswordState();
-	Auth().api().reloadContactSignupSilent();
+	controller->session().api().reloadPasswordState();
+	controller->session().api().reloadContactSignupSilent();
+	controller->session().data().cloudThemes().refresh();
 }
 
 rpl::producer<Type> Main::sectionShowOther() {

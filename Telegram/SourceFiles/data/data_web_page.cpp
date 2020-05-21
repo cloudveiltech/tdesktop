@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_web_page.h"
 
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "apiwrap.h"
 #include "mainwidget.h"
 #include "data/data_session.h"
@@ -139,6 +139,8 @@ WebPageType ParseWebPageType(const MTPDwebPage &page) {
 		return WebPageType::Profile;
 	} else if (type == qstr("telegram_background")) {
 		return WebPageType::WallPaper;
+	} else if (type == qstr("telegram_theme")) {
+		return WebPageType::Theme;
 	} else if (page.vcached_page()) {
 		return WebPageType::ArticleWithIV;
 	} else {
@@ -213,15 +215,17 @@ bool WebPageData::applyChanges(
 	}
 	type = newType;
 	url = resultUrl;
-	displayUrl = resultDisplayUrl;
+	//CloudVeil start
+//	displayUrl = resultDisplayUrl;
 	siteName = resultSiteName;
-	title = resultTitle;
-	description = newDescription;
-	photo = newPhoto;
-	document = newDocument;
-	collage = std::move(newCollage);
-	duration = newDuration;
-	author = resultAuthor;
+//	title = resultTitle;
+	//description = newDescription;
+	//photo = newPhoto;
+//	document = newDocument;
+//	collage = std::move(newCollage);
+//	duration = newDuration;
+//	author = resultAuthor;
+	//CloudVeil end
 	pendingTill = newPendingTill;
 	++version;
 

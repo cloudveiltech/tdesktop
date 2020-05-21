@@ -8,9 +8,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_document.h"
 
 #include "data/data_session.h"
+#include "data/data_streaming.h"
 #include "data/data_document_good_thumbnail.h"
 #include "lang/lang_keys.h"
 #include "inline_bots/inline_bot_layout_item.h"
+#include "main/main_session.h"
 #include "mainwidget.h"
 #include "core/file_utilities.h"
 #include "core/media_active_cache.h"
@@ -21,6 +23,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_loader_local.h"
 #include "storage/localstorage.h"
 #include "storage/streamed_file_downloader.h"
+#include "storage/file_download_mtproto.h"
+#include "storage/file_download_web.h"
 #include "platform/platform_specific.h"
 #include "history/history.h"
 #include "history/history_item.h"
@@ -30,13 +34,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/image/image.h"
 #include "ui/image/image_source.h"
 #include "ui/text/text_utilities.h"
+#include "base/base_file_utilities.h"
 #include "mainwindow.h"
 #include "core/application.h"
 #include "lottie/lottie_animation.h"
+#include "facades.h"
+#include "app.h"
 
 namespace {
 
-constexpr auto kMemoryForCache = 32 * 1024 * 1024;
+// Updated Mar 3, 2020: Increase the size of the memory cache for media, to prevent items still being displayed from being unloaded.
+constexpr auto kMemoryForCache = 128 * 1024 * 1024; // was 32, updated to 128
 const auto kAnimatedStickerDimensions = QSize(512, 512);
 
 using FilePathResolve = DocumentData::FilePathResolve;
@@ -134,13 +142,7 @@ QString FileNameUnsafe(
 		QString name,
 		bool savingAs,
 		const QDir &dir) {
-#ifdef Q_OS_WIN
-	name = name.replace(QRegularExpression(qsl("[\\\\\\/\\:\\*\\?\\\"\\<\\>\\|]")), qsl("_"));
-#elif defined Q_OS_MAC
-	name = name.replace(QRegularExpression(qsl("[\\:]")), qsl("_"));
-#elif defined Q_OS_LINUX
-	name = name.replace(QRegularExpression(qsl("[\\/]")), qsl("_"));
-#endif
+	name = base::FileNameFromUserString(name);
 	if (Global::AskDownloadPath() || savingAs) {
 		if (!name.isEmpty() && name.at(0) == QChar::fromLatin1('.')) {
 			name = filedialogDefaultName(prefix, name);
@@ -295,6 +297,14 @@ QString documentSaveFilename(const DocumentData *data, bool forceSavingAs = fals
 	return FileNameForSave(caption, filter, prefix, name, forceSavingAs, dir);
 }
 
+DocumentClickHandler::DocumentClickHandler(
+	not_null<DocumentData*> document,
+	FullMsgId context)
+: FileClickHandler(context)
+, _session(&document->session())
+, _document(document) {
+}
+
 void DocumentOpenClickHandler::Open(
 		Data::FileOrigin origin,
 		not_null<DocumentData*> data,
@@ -318,7 +328,7 @@ void DocumentOpenClickHandler::Open(
 		LaunchWithWarning(location.name(), context);
 	};
 	const auto &location = data->location(true);
-	if (data->isTheme() && !location.isEmpty() && location.accessEnable()) {
+	if (data->isTheme() && data->loaded(DocumentData::FilePathResolve::Checked)) {
 		Core::App().showDocument(data, context);
 		location.accessDisable();
 	} else if (data->canBePlayed()) {
@@ -344,7 +354,9 @@ void DocumentOpenClickHandler::Open(
 }
 
 void DocumentOpenClickHandler::onClickImpl() const {
-	Open(context(), document(), getActionItem());
+	if (valid()) {
+		Open(context(), document(), getActionItem());
+	}
 }
 
 void DocumentSaveClickHandler::Save(
@@ -384,14 +396,20 @@ void DocumentSaveClickHandler::Save(
 }
 
 void DocumentSaveClickHandler::onClickImpl() const {
-	Save(context(), document());
+	if (valid()) {
+		Save(context(), document());
+	}
 }
 
 void DocumentCancelClickHandler::onClickImpl() const {
-	const auto data = document();
-	if (!data->date) return;
+	if (!valid()) {
+		return;
+	}
 
-	if (data->uploading()) {
+	const auto data = document();
+	if (!data->date) {
+		return;
+	} else if (data->uploading()) {
 		if (const auto item = data->owner().message(context())) {
 			App::main()->cancelUploadLayer(item);
 		}
@@ -422,7 +440,9 @@ void DocumentOpenWithClickHandler::Open(
 }
 
 void DocumentOpenWithClickHandler::onClickImpl() const {
-	Open(context(), document());
+	if (valid()) {
+		Open(context(), document());
+	}
 }
 
 Data::FileOrigin StickerData::setOrigin() const {
@@ -453,7 +473,7 @@ Data::Session &DocumentData::owner() const {
 	return *_owner;
 }
 
-AuthSession &DocumentData::session() const {
+Main::Session &DocumentData::session() const {
 	return _owner->session();
 }
 
@@ -550,9 +570,7 @@ void DocumentData::setattributes(
 		}
 	}
 	validateGoodThumbnail();
-	if (isAudioFile()
-		|| (isAnimation() && !isVideoMessage())
-		|| isVoiceMessage()) {
+	if (isAudioFile() || isAnimation() || isVoiceMessage()) {
 		setMaybeSupportsStreaming(true);
 	}
 }
@@ -568,6 +586,17 @@ void DocumentData::validateLottieSticker() {
 	}
 }
 
+void DocumentData::setDataAndCache(const QByteArray &data) {
+	setData(data);
+	if (saveToCache() && data.size() <= Storage::kMaxFileInMemory) {
+		owner().cache().put(
+			cacheKey(),
+			Storage::Cache::Database::TaggedValue(
+				base::duplicate(data),
+				cacheTag()));
+	}
+}
+
 bool DocumentData::checkWallPaperProperties() {
 	if (type == WallPaperDocument) {
 		return true;
@@ -578,8 +607,9 @@ bool DocumentData::checkWallPaperProperties() {
 		|| !dimensions.height()
 		|| dimensions.width() > Storage::kMaxWallPaperDimension
 		|| dimensions.height() > Storage::kMaxWallPaperDimension
-		|| size > Storage::kMaxWallPaperInMemory) {
-		return false;
+		|| size > Storage::kMaxWallPaperInMemory
+		|| mimeString() == qstr("application/x-tgwallpattern")) {
+		return false; // #TODO themes support svg patterns
 	}
 	type = WallPaperDocument;
 	validateGoodThumbnail();
@@ -639,6 +669,7 @@ void DocumentData::validateGoodThumbnail() {
 	if (!isVideoFile()
 		&& !isAnimation()
 		&& !isWallPaper()
+		&& !isTheme()
 		&& (!sticker() || !sticker()->animated)) {
 		_goodThumbnail = nullptr;
 	} else if (!_goodThumbnail && hasRemoteLocation()) {
@@ -693,7 +724,8 @@ bool DocumentData::saveToCache() const {
 	return (type == StickerDocument && size < Storage::kMaxStickerInMemory)
 		|| (isAnimation() && size < Storage::kMaxAnimationInMemory)
 		|| (isVoiceMessage() && size < Storage::kMaxVoiceInMemory)
-		|| (type == WallPaperDocument);
+		|| (type == WallPaperDocument)
+		|| (isTheme() && size < Storage::kMaxFileInMemory);
 }
 
 void DocumentData::unload() {
@@ -737,11 +769,11 @@ void DocumentData::automaticLoad(
 	const auto shouldLoadFromCloud = !Data::IsExecutableName(filename)
 		&& (item
 			? Data::AutoDownload::Should(
-				Auth().settings().autoDownload(),
+				session().settings().autoDownload(),
 				item->history()->peer,
 				this)
 			: Data::AutoDownload::Should(
-				Auth().settings().autoDownload(),
+				session().settings().autoDownload(),
 				this));
 	const auto loadFromCloud = shouldLoadFromCloud
 		? LoadFromCloudOrLocal
@@ -805,7 +837,6 @@ void DocumentData::destroyLoader() const {
 	if (cancelled()) {
 		loader->cancel();
 	}
-	loader->stop();
 }
 
 bool DocumentData::loading() const {
@@ -922,7 +953,7 @@ void DocumentData::save(
 		}
 	} else {
 		status = FileReady;
-		auto reader = owner().documentStreamedReader(this, origin, true);
+		auto reader = owner().streaming().sharedReader(this, origin, true);
 		if (reader) {
 			_loader = std::make_unique<Storage::StreamedFileDownloader>(
 				id,
@@ -1132,7 +1163,11 @@ bool DocumentData::isStickerSetInstalled() const {
 			}
 		}
 		return false;
-	}, [&](const MTPDinputStickerSetEmpty &) {
+	}, [](const MTPDinputStickerSetEmpty &) {
+		return false;
+	}, [](const MTPDinputStickerSetAnimatedEmoji &) {
+		return false;
+	}, [](const MTPDinputStickerSetDice &) {
 		return false;
 	});
 }
@@ -1282,7 +1317,7 @@ bool DocumentData::useStreamingLoader() const {
 
 bool DocumentData::canBeStreamed() const {
 	// For now video messages are not streamed.
-	return hasRemoteLocation() && supportsStreaming() && !isVideoMessage();
+	return hasRemoteLocation() && supportsStreaming();
 }
 
 bool DocumentData::canBePlayed() const {
@@ -1456,7 +1491,8 @@ bool DocumentData::isGifv() const {
 
 bool DocumentData::isTheme() const {
 	return
-		_filename.endsWith(
+		_mimeString == qstr("application/x-tgtheme-tdesktop")
+		|| _filename.endsWith(
 			qstr(".tdesktop-theme"),
 			Qt::CaseInsensitive)
 		|| _filename.endsWith(
@@ -1659,21 +1695,24 @@ bool IsExecutableName(const QString &filepath) {
 		const auto joined =
 #ifdef Q_OS_MAC
 			qsl("\
-action app bin command csh osx workflow terminal url caction mpkg pkg xhtm \
-webarchive");
+applescript action app bin command csh osx workflow terminal url caction \
+mpkg pkg scpt scptd xhtm webarchive");
 #elif defined Q_OS_LINUX // Q_OS_MAC
-			qsl("bin csh deb desktop ksh out pet pkg pup rpm run shar slp");
+			qsl("bin csh deb desktop ksh out pet pkg pup rpm run sh shar \
+slp zsh");
 #else // Q_OS_MAC || Q_OS_LINUX
 			qsl("\
-ad ade adp app application appref-ms asp asx bas bat bin cer cfg chi chm \
-cmd cnt com cpl crt csh der diagcab dll drv eml exe fon fxp gadget grp hlp \
-hpj hta htt inf ini ins inx isp isu its jar jnlp job js jse ksh lnk local \
-mad maf mag mam manifest maq mar mas mat mau mav maw mcf mda mdb mde mdt \
-mdw mdz mht mhtml mmc mof msc msg msh msh1 msh2 msh1xml msh2xml mshxml msi \
-msp mst ops osd paf pcd pif pl plg prf prg ps1 ps2 ps1xml ps2xml psc1 psc2 \
-pst reg rgs scf scr sct search-ms settingcontent-ms shb shs slk sys tmp \
-u3p url vb vbe vbp vbs vbscript vdx vsmacros vsd vsdm vsdx vss vssm vssx \
-vst vstm vstx vsw vsx vtx website ws wsc wsf wsh xbap xll xnk");
+ad ade adp app application appref-ms asp asx bas bat bin cdxml cer cfg chi \
+chm cmd cnt com cpl crt csh der diagcab dll drv eml exe fon fxp gadget grp \
+hlp hpj hta htt inf ini ins inx isp isu its jar jnlp job js jse ksh lnk \
+local lua mad maf mag mam manifest maq mar mas mat mau mav maw mcf mda mdb \
+mde mdt mdw mdz mht mhtml mjs mmc mof msc msg msh msh1 msh2 msh1xml msh2xml \
+mshxml msi msp mst ops osd paf pcd phar php php3 php4 php5 php7 phps php-s \
+pht phtml pif pl plg pm pod prf prg ps1 ps2 ps1xml ps2xml psc1 psc2 psd1 \
+psm1 pssc pst py py3 pyc pyd pyi pyo pyw pywz pyz rb reg rgs scf scr sct \
+search-ms settingcontent-ms shb shs slk sys t tmp u3p url vb vbe vbp vbs \
+vbscript vdx vsmacros vsd vsdm vsdx vss vssm vssx vst vstm vstx vsw vsx vtx \
+website ws wsc wsf wsh xbap xll xnk xs");
 #endif // !Q_OS_MAC && !Q_OS_LINUX
 		const auto list = joined.split(' ');
 		return base::flat_set<QString>(list.begin(), list.end());

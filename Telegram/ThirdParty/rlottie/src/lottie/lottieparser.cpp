@@ -313,7 +313,7 @@ bool LottieParserImpl::EnterObject()
 {
     if (st_ != kEnteringObject) {
         st_ = kError;
-        RAPIDJSON_ASSERT(false);
+        //RAPIDJSON_ASSERT(false);
         return false;
     }
 
@@ -325,7 +325,7 @@ bool LottieParserImpl::EnterArray()
 {
     if (st_ != kEnteringArray) {
         st_ = kError;
-        RAPIDJSON_ASSERT(false);
+        //RAPIDJSON_ASSERT(false);
         return false;
     }
 
@@ -355,7 +355,7 @@ const char *LottieParserImpl::NextObjectKey()
     }
 
     if (st_ != kExitingObject) {
-        RAPIDJSON_ASSERT(false);
+        //RAPIDJSON_ASSERT(false);
         st_ = kError;
         return nullptr;
     }
@@ -379,7 +379,7 @@ bool LottieParserImpl::NextArrayValue()
     }
 
     if (st_ == kError || st_ == kHasKey) {
-        RAPIDJSON_ASSERT(false);
+        //RAPIDJSON_ASSERT(false);
         st_ = kError;
         return false;
     }
@@ -391,7 +391,7 @@ int LottieParserImpl::GetInt()
 {
     if (st_ != kHasNumber || !v_.IsInt()) {
         st_ = kError;
-        RAPIDJSON_ASSERT(false);
+        //RAPIDJSON_ASSERT(false);
         return 0;
     }
 
@@ -404,7 +404,7 @@ double LottieParserImpl::GetDouble()
 {
     if (st_ != kHasNumber) {
         st_ = kError;
-        RAPIDJSON_ASSERT(false);
+        //RAPIDJSON_ASSERT(false);
         return 0.;
     }
 
@@ -417,7 +417,7 @@ bool LottieParserImpl::GetBool()
 {
     if (st_ != kHasBool) {
         st_ = kError;
-        RAPIDJSON_ASSERT(false);
+        //RAPIDJSON_ASSERT(false);
         return false;
     }
 
@@ -440,7 +440,7 @@ const char *LottieParserImpl::GetString()
 {
     if (st_ != kHasString) {
         st_ = kError;
-        RAPIDJSON_ASSERT(false);
+        //RAPIDJSON_ASSERT(false);
         return nullptr;
     }
 
@@ -457,7 +457,7 @@ void LottieParserImpl::SkipOut(int depth)
         } else if (st_ == kExitingArray || st_ == kExitingObject) {
             --depth;
         } else if (st_ == kError) {
-            RAPIDJSON_ASSERT(false);
+            //RAPIDJSON_ASSERT(false);
             return;
         }
 
@@ -598,7 +598,7 @@ void LottieParserImpl::parseComposition()
         }
     }
 
-    if (comp->mVersion.empty()) {
+    if (comp->mVersion.empty() || !comp->mRootLayer) {
         // don't have a valid bodymovin header
         return;
     }
@@ -780,10 +780,7 @@ LottieColor LottieParserImpl::toColor(const char *str)
 
     // some resource has empty color string
     // return a default color for those cases.
-    if (!len) return color;
-
-    RAPIDJSON_ASSERT(len == 7);
-    RAPIDJSON_ASSERT(str[0] == '#');
+    if (len != 7 || str[0] != '#') return color;
 
     char tmp[3] = {'\0', '\0', '\0'};
     tmp[0] = str[1];
@@ -807,14 +804,17 @@ LottieColor LottieParserImpl::applyReplacements(const LottieColor &color)
         return color;
     }
     const auto convert = [](float value) {
-        return std::uint32_t(std::round(std::clamp(value, 0.f, 1.f) * 255.));
+        return std::uint32_t(
+            std::round(std::min(std::max(value, 0.f), 1.f) * 255.));
     };
     const auto part = [](std::uint32_t value, int shift) {
         return float((value >> shift) & 0xFFU) / 255.f;
-	};
+    };
     const auto converted =
         convert(color.b) | (convert(color.g) << 8) | (convert(color.r) << 16);
-    for (const auto [key, value] : mColorReplacements) {
+    for (const auto &pair : mColorReplacements) {
+        const auto key = pair.first;
+        const auto value = pair.second;
         if (key == converted) {
             return LottieColor(part(value, 16), part(value, 8), part(value, 0));
         }
@@ -925,9 +925,10 @@ std::shared_ptr<LOTData> LottieParserImpl::parseLayer(bool record)
         } else if (0 == strcmp(key, "bm")) {
             layer->mBlendMode = getBlendMode();
         } else if (0 == strcmp(key, "ks")) {
-            RAPIDJSON_ASSERT(PeekType() == kObjectType);
-            EnterObject();
-            layer->mTransform = parseTransformObject(ddd);
+            if (PeekType() == kObjectType) {
+                EnterObject();
+                layer->mTransform = parseTransformObject(ddd);
+            }
         } else if (0 == strcmp(key, "shapes")) {
             parseShapesAttr(layer);
         } else if (0 == strcmp(key, "w")) {
@@ -1739,13 +1740,16 @@ void LottieParserImpl::getValue(std::vector<VPointF> &v)
 
 void LottieParserImpl::getValue(VPointF &pt)
 {
-    float val[4];
+    float val[4] = {0.f};
     int   i = 0;
 
     if (PeekType() == kArrayType) EnterArray();
 
     while (NextArrayValue()) {
-        val[i++] = GetDouble();
+        const auto value = GetDouble();
+        if (i < 4) {
+            val[i++] = value;
+        }
     }
     pt.setX(val[0]);
     pt.setY(val[1]);
@@ -1769,12 +1773,15 @@ void LottieParserImpl::getValue(float &val)
 
 void LottieParserImpl::getValue(LottieColor &color)
 {
-    float val[4];
+    float val[4] = {0.f};
     int   i = 0;
     if (PeekType() == kArrayType) EnterArray();
 
     while (NextArrayValue()) {
-        val[i++] = GetDouble();
+        const auto value = GetDouble();
+        if (i < 4) {
+            val[i++] = value;
+        }
     }
     color = applyReplacements(LottieColor(val[0], val[1], val[2]));
 }

@@ -14,14 +14,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/buttons.h"
+#include "ui/widgets/input_fields.h"
+#include "ui/widgets/box_content_divider.h"
+#include "ui/layers/generic_box.h"
 #include "ui/toast/toast.h"
 #include "ui/text/text_utilities.h"
 #include "ui/text_options.h"
 #include "ui/special_buttons.h"
-#include "info/profile/info_profile_button.h"
+#include "chat_helpers/emoji_suggestions_widget.h"
 #include "settings/settings_privacy_security.h"
 #include "boxes/calendar_box.h"
-#include "boxes/generic_box.h"
 #include "boxes/confirm_box.h"
 #include "boxes/passcode_box.h"
 #include "boxes/peers/edit_peer_permissions_box.h"
@@ -33,7 +35,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/core_cloud_password.h"
 #include "base/unixtime.h"
 #include "apiwrap.h"
-#include "auth_session.h"
+#include "facades.h"
+#include "main/main_session.h"
+#include "styles/style_layers.h"
 #include "styles/style_boxes.h"
 #include "styles/style_info.h"
 
@@ -42,6 +46,7 @@ namespace {
 constexpr auto kMaxRestrictDelayDays = 366;
 constexpr auto kSecondsInDay = 24 * 60 * 60;
 constexpr auto kSecondsInWeek = 7 * kSecondsInDay;
+constexpr auto kAdminRoleLimit = 16;
 
 enum class PasswordErrorType {
 	None,
@@ -49,12 +54,12 @@ enum class PasswordErrorType {
 	Later,
 };
 
-void SetCloudPassword(not_null<GenericBox*> box, not_null<UserData*> user) {
+void SetCloudPassword(not_null<Ui::GenericBox*> box, not_null<UserData*> user) {
 	user->session().api().passwordState(
 	) | rpl::start_with_next([=] {
 		using namespace Settings;
-		const auto weak = make_weak(box);
-		if (CheckEditCloudPassword()) {
+		const auto weak = Ui::MakeWeak(box);
+		if (CheckEditCloudPassword(&user->session())) {
 			box->getDelegate()->show(
 				EditCloudPasswordBox(&user->session()));
 		} else {
@@ -67,7 +72,7 @@ void SetCloudPassword(not_null<GenericBox*> box, not_null<UserData*> user) {
 }
 
 void TransferPasswordError(
-		not_null<GenericBox*> box,
+		not_null<Ui::GenericBox*> box,
 		not_null<UserData*> user,
 		PasswordErrorType error) {
 	box->setTitle(tr::lng_rights_transfer_check());
@@ -157,7 +162,7 @@ EditParticipantBox::Inner::Inner(
 	_userPhoto->setPointerCursor(false);
 	_userName.setText(
 		st::rightsNameStyle,
-		App::peerName(_user),
+		_user->name,
 		Ui::NameTextOptions());
 }
 
@@ -196,8 +201,8 @@ void EditParticipantBox::Inner::paintEvent(QPaintEvent *e) {
 		st::rightsPhotoMargin.top() + st::rightsNameTop,
 		namew,
 		width());
-	auto statusText = [this] {
-		if (_user->botInfo) {
+	const auto statusText = [&] {
+		if (_user->isBot()) {
 			const auto seesAllMessages = _user->botInfo->readsAllHistory
 				|| _hasAdminRights;
 			return (seesAllMessages
@@ -205,14 +210,14 @@ void EditParticipantBox::Inner::paintEvent(QPaintEvent *e) {
 				: tr::lng_status_bot_not_reads_all)(tr::now);
 		}
 		return Data::OnlineText(_user->onlineTill, base::unixtime::now());
-	};
+	}();
 	p.setFont(st::contactsStatusFont);
 	p.setPen(st::contactsStatusFg);
 	p.drawTextLeft(
 		namex,
 		st::rightsPhotoMargin.top() + st::rightsStatusTop,
 		width(),
-		statusText());
+		statusText);
 }
 
 EditParticipantBox::EditParticipantBox(
@@ -243,17 +248,28 @@ Widget *EditParticipantBox::addControl(
 	return _inner->addControl(std::move(widget), margin);
 }
 
+bool EditParticipantBox::amCreator() const {
+	if (const auto chat = _peer->asChat()) {
+		return chat->amCreator();
+	} else if (const auto channel = _peer->asChannel()) {
+		return channel->amCreator();
+	}
+	Unexpected("Peer type in EditParticipantBox::Inner::amCreator.");
+}
+
 EditAdminBox::EditAdminBox(
 	QWidget*,
 	not_null<PeerData*> peer,
 	not_null<UserData*> user,
-	const MTPChatAdminRights &rights)
+	const MTPChatAdminRights &rights,
+	const QString &rank)
 : EditParticipantBox(
 	nullptr,
 	peer,
 	user,
 	(rights.c_chatAdminRights().vflags().v != 0))
-, _oldRights(rights) {
+, _oldRights(rights)
+, _oldRank(rank) {
 }
 
 MTPChatAdminRights EditAdminBox::Defaults(not_null<PeerData*> peer) {
@@ -284,7 +300,7 @@ void EditAdminBox::prepare() {
 		: tr::lng_channel_add_admin());
 
 	addControl(
-		object_ptr<BoxContentDivider>(this),
+		object_ptr<Ui::BoxContentDivider>(this),
 		st::rightsDividerMargin);
 
 	const auto chat = peer()->asChat();
@@ -303,7 +319,7 @@ void EditAdminBox::prepare() {
 
 	const auto disabledMessages = [&] {
 		auto result = std::map<Flags, QString>();
-		if (!canSave()) {
+		if (!canSave() || (amCreator() && user()->isSelf())) {
 			result.emplace(
 				~Flags(0),
 				tr::lng_rights_about_admin_cant_edit(tr::now));
@@ -340,6 +356,18 @@ void EditAdminBox::prepare() {
 	) | rpl::then(std::move(
 		changes
 	));
+	_aboutAddAdmins = addControl(
+		object_ptr<Ui::FlatLabel>(this, st::boxDividerLabel),
+		st::rightsAboutMargin);
+	rpl::duplicate(
+		selectedFlags
+	) | rpl::map(
+		(_1 & Flag::f_add_admins) != 0
+	) | rpl::distinct_until_changed(
+	) | rpl::start_with_next([=](bool checked) {
+		refreshAboutAddAdminsText(checked);
+	}, lifetime());
+
 	if (canTransferOwnership()) {
 		const auto allFlags = FullAdminRights(isGroup);
 		setupTransferButton(
@@ -350,19 +378,12 @@ void EditAdminBox::prepare() {
 			((_1 & allFlags) == allFlags)
 		))->setDuration(0);
 	}
-	_aboutAddAdmins = addControl(
-		object_ptr<Ui::FlatLabel>(this, st::boxLabel),
-		st::rightsAboutMargin);
-	std::move(
-		selectedFlags
-	) | rpl::map(
-		(_1 & Flag::f_add_admins) != 0
-	) | rpl::distinct_until_changed(
-	) | rpl::start_with_next([=](bool checked) {
-		refreshAboutAddAdminsText(checked);
-	}, lifetime());
 
 	if (canSave()) {
+		const auto rank = (chat || channel->isMegagroup())
+			? addRankInput().get()
+			: nullptr;
+
 		addButton(tr::lng_settings_save(), [=, value = getChecked] {
 			if (!_saveCallback) {
 				return;
@@ -373,12 +394,64 @@ void EditAdminBox::prepare() {
 					: channel->adminRights());
 			_saveCallback(
 				_oldRights,
-				MTP_chatAdminRights(MTP_flags(newFlags)));
+				MTP_chatAdminRights(MTP_flags(newFlags)),
+				rank ? rank->getLastText().trimmed() : QString());
 		});
-		addButton(tr::lng_cancel(), [this] { closeBox(); });
+		addButton(tr::lng_cancel(), [=] { closeBox(); });
 	} else {
-		addButton(tr::lng_box_ok(), [this] { closeBox(); });
+		addButton(tr::lng_box_ok(), [=] { closeBox(); });
 	}
+}
+
+not_null<Ui::InputField*> EditAdminBox::addRankInput() {
+	addControl(
+		object_ptr<Ui::BoxContentDivider>(this),
+		st::rightsRankMargin);
+
+	addControl(
+		object_ptr<Ui::FlatLabel>(
+			this,
+			tr::lng_rights_edit_admin_rank_name(),
+			st::rightsHeaderLabel),
+		st::rightsHeaderMargin);
+
+	const auto isOwner = [&] {
+		if (user()->isSelf() && amCreator()) {
+			return true;
+		} else if (const auto chat = peer()->asChat()) {
+			return chat->creator == peerToUser(user()->id);
+		} else if (const auto channel = peer()->asChannel()) {
+			return channel->mgInfo && channel->mgInfo->creator == user();
+		}
+		Unexpected("Peer type in EditAdminBox::addRankInput.");
+	}();
+	const auto result = addControl(
+		object_ptr<Ui::InputField>(
+			this,
+			st::customBadgeField,
+			(isOwner ? tr::lng_owner_badge : tr::lng_admin_badge)(),
+			TextUtilities::RemoveEmoji(_oldRank)),
+		st::rightsAboutMargin);
+	result->setMaxLength(kAdminRoleLimit);
+	result->setInstantReplaces(Ui::InstantReplaces::TextOnly());
+	connect(result, &Ui::InputField::changed, [=] {
+		const auto text = result->getLastText();
+		const auto removed = TextUtilities::RemoveEmoji(text);
+		if (removed != text) {
+			result->setText(removed);
+		}
+	});
+
+	addControl(
+		object_ptr<Ui::FlatLabel>(
+			this,
+			tr::lng_rights_edit_admin_rank_about(
+				lt_title,
+				(isOwner ? tr::lng_owner_badge : tr::lng_admin_badge)()),
+			st::boxDividerLabel),
+		st::rightsAboutMargin);
+
+	return result;
 }
 
 bool EditAdminBox::canTransferOwnership() const {
@@ -400,13 +473,10 @@ not_null<Ui::SlideWrap<Ui::RpWidget>*> EditAdminBox::setupTransferButton(
 			object_ptr<Ui::VerticalLayout>(this)));
 
 	const auto container = wrap->entity();
-	const auto addDivider = [&] {
-		container->add(
-			object_ptr<BoxContentDivider>(container),
-			{ 0, st::infoProfileSkip, 0, st::infoProfileSkip });
-	};
 
-	addDivider();
+	container->add(
+		object_ptr<Ui::BoxContentDivider>(container),
+		{ 0, st::infoProfileSkip, 0, st::infoProfileSkip });
 	container->add(EditPeerInfoBox::CreateButton(
 		this,
 		(isGroup
@@ -415,7 +485,6 @@ not_null<Ui::SlideWrap<Ui::RpWidget>*> EditAdminBox::setupTransferButton(
 		rpl::single(QString()),
 		[=] { transferOwnership(); },
 		st::peerPermissionsButton));
-	addDivider();
 
 	return wrap;
 }
@@ -499,7 +568,9 @@ void EditAdminBox::requestTransferPassword(not_null<ChannelData*> channel) {
 				const Core::CloudPasswordResult &result) {
 			sendTransferRequestFrom(*box, channel, result);
 		});
-		*box = getDelegate()->show(Box<PasscodeBox>(fields));
+		*box = getDelegate()->show(Box<PasscodeBox>(
+			&channel->session(),
+			fields));
 	}, lifetime());
 }
 
@@ -510,7 +581,7 @@ void EditAdminBox::sendTransferRequestFrom(
 	if (_transferRequestId) {
 		return;
 	}
-	const auto weak = make_weak(this);
+	const auto weak = Ui::MakeWeak(this);
 	const auto user = this->user();
 	const auto api = &channel->session().api();
 	_transferRequestId = api->request(MTPchannels_EditCreator(
@@ -556,7 +627,7 @@ void EditAdminBox::sendTransferRequestFrom(
 				|| (type == qstr("PASSWORD_TOO_FRESH_XXX"))
 				|| (type == qstr("SESSION_TOO_FRESH_XXX"));
 		}();
-		const auto weak = make_weak(this);
+		const auto weak = Ui::MakeWeak(this);
 		getDelegate()->show(Box<InformBox>(problem));
 		if (box) {
 			box->closeBox();
@@ -569,7 +640,7 @@ void EditAdminBox::sendTransferRequestFrom(
 
 void EditAdminBox::refreshAboutAddAdminsText(bool canAddAdmins) {
 	_aboutAddAdmins->setText([&] {
-		if (!canSave()) {
+		if (!canSave() || (amCreator() && user()->isSelf())) {
 			return tr::lng_rights_about_admin_cant_edit(tr::now);
 		} else if (canAddAdmins) {
 			return tr::lng_rights_about_add_admins_yes(tr::now);
@@ -594,7 +665,7 @@ void EditRestrictedBox::prepare() {
 	setTitle(tr::lng_rights_user_restrictions());
 
 	addControl(
-		object_ptr<BoxContentDivider>(this),
+		object_ptr<Ui::BoxContentDivider>(this),
 		st::rightsDividerMargin);
 
 	const auto chat = peer()->asChat();
@@ -638,7 +709,7 @@ void EditRestrictedBox::prepare() {
 	addControl(std::move(checkboxes), QMargins());
 
 	_until = prepareRights.c_chatBannedRights().vuntil_date().v;
-	addControl(object_ptr<BoxContentDivider>(this), st::rightsUntilMargin);
+	addControl(object_ptr<Ui::BoxContentDivider>(this), st::rightsUntilMargin);
 	addControl(
 		object_ptr<Ui::FlatLabel>(
 			this,
@@ -689,7 +760,7 @@ void EditRestrictedBox::showRestrictUntil() {
 				setRestrictUntil(
 					static_cast<int>(QDateTime(date).toTime_t()));
 			}),
-		LayerOption::KeepOther);
+		Ui::LayerOption::KeepOther);
 	_restrictUntilBox->setMaxDate(
 		QDate::currentDate().addDays(kMaxRestrictDelayDays));
 	_restrictUntilBox->setMinDate(tomorrow);

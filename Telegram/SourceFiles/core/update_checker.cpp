@@ -7,18 +7,24 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/update_checker.h"
 
-#include "platform/platform_info.h"
+#include "base/platform/base_platform_info.h"
 #include "base/timer.h"
 #include "base/bytes.h"
 #include "base/unixtime.h"
 #include "storage/localstorage.h"
 #include "core/application.h"
-#include "mainwindow.h"
 #include "core/click_handler_types.h"
+#include "mainwindow.h"
+#include "main/main_account.h"
 #include "info/info_memento.h"
 #include "info/settings/info_settings_widget.h"
 #include "window/window_session_controller.h"
 #include "settings/settings_intro.h"
+#include "ui/layers/box_content.h"
+#include "app.h"
+
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
 
 extern "C" {
 #include <openssl/rsa.h>
@@ -27,11 +33,11 @@ extern "C" {
 #include <openssl/err.h>
 } // extern "C"
 
-#ifdef Q_OS_WIN // use Lzma SDK for win
+#if defined Q_OS_WIN && !defined DESKTOP_APP_USE_PACKAGED // use Lzma SDK for win
 #include <LzmaLib.h>
-#else // Q_OS_WIN
+#else // Q_OS_WIN && !DESKTOP_APP_USE_PACKAGED
 #include <lzma.h>
-#endif // else of Q_OS_WIN
+#endif // else of Q_OS_WIN && !DESKTOP_APP_USE_PACKAGED
 
 namespace Core {
 namespace {
@@ -216,7 +222,7 @@ QString FindUpdateFile() {
 			"^("
 			"tupdate|"
 			"tmacupd|"
-			"tmac32upd|"
+			"tosxupd|"
 			"tlinuxupd|"
 			"tlinux32upd"
 			")\\d+(_[a-z\\d]+)?$",
@@ -246,11 +252,11 @@ bool UnpackUpdate(const QString &filepath) {
 		return false;
 	}
 
-#ifdef Q_OS_WIN // use Lzma SDK for win
+#if defined Q_OS_WIN && !defined DESKTOP_APP_USE_PACKAGED // use Lzma SDK for win
 	const int32 hSigLen = 128, hShaLen = 20, hPropsLen = LZMA_PROPS_SIZE, hOriginalSizeLen = sizeof(int32), hSize = hSigLen + hShaLen + hPropsLen + hOriginalSizeLen; // header
-#else // Q_OS_WIN
+#else // Q_OS_WIN && !DESKTOP_APP_USE_PACKAGED
 	const int32 hSigLen = 128, hShaLen = 20, hPropsLen = 0, hOriginalSizeLen = sizeof(int32), hSize = hSigLen + hShaLen + hOriginalSizeLen; // header
-#endif // Q_OS_WIN
+#endif // Q_OS_WIN && !DESKTOP_APP_USE_PACKAGED
 
 	QByteArray compressed = input.readAll();
 	int32 compressedLen = compressed.size() - hSize;
@@ -305,14 +311,14 @@ bool UnpackUpdate(const QString &filepath) {
 	uncompressed.resize(uncompressedLen);
 
 	size_t resultLen = uncompressed.size();
-#ifdef Q_OS_WIN // use Lzma SDK for win
+#if defined Q_OS_WIN && !defined DESKTOP_APP_USE_PACKAGED // use Lzma SDK for win
 	SizeT srcLen = compressedLen;
 	int uncompressRes = LzmaUncompress((uchar*)uncompressed.data(), &resultLen, (const uchar*)(compressed.constData() + hSize), &srcLen, (const uchar*)(compressed.constData() + hSigLen + hShaLen), LZMA_PROPS_SIZE);
 	if (uncompressRes != SZ_OK) {
 		LOG(("Update Error: could not uncompress lzma, code: %1").arg(uncompressRes));
 		return false;
 	}
-#else // Q_OS_WIN
+#else // Q_OS_WIN && !DESKTOP_APP_USE_PACKAGED
 	lzma_stream stream = LZMA_STREAM_INIT;
 
 	lzma_ret ret = lzma_stream_decoder(&stream, UINT64_MAX, LZMA_CONCATENATED);
@@ -355,7 +361,7 @@ bool UnpackUpdate(const QString &filepath) {
 		LOG(("Error in decompression: %1 (error code %2)").arg(msg).arg(res));
 		return false;
 	}
-#endif // Q_OS_WIN
+#endif // Q_OS_WIN && !DESKTOP_APP_USE_PACKAGED
 
 	tempDir.mkdir(tempDir.absolutePath());
 
@@ -495,21 +501,7 @@ bool ParseCommonMap(
 		return false;
 	}
 	const auto platforms = document.object();
-	const auto platform = [&] {
-		if (Platform::IsWindows()) {
-			return "win";
-		} else if (Platform::IsMacOldBuild()) {
-			return "mac32";
-		} else if (Platform::IsMac()) {
-			return "mac";
-		} else if (Platform::IsLinux32Bit()) {
-			return "linux32";
-		} else if (Platform::IsLinux64Bit()) {
-			return "linux";
-		} else {
-			Unexpected("Platform in ParseCommonMap.");
-		}
-	}();
+	const auto platform = Platform::AutoUpdateKey();
 	const auto it = platforms.constFind(platform);
 	if (it == platforms.constEnd()) {
 		LOG(("Update Error: MTP platform '%1' not found in response."
@@ -617,7 +609,11 @@ HttpChecker::HttpChecker(bool testing) : Checker(testing) {
 }
 
 void HttpChecker::start() {
-	auto url = QUrl(Local::readAutoupdatePrefix() + qstr("/current"));
+	const auto updaterVersion = Platform::AutoUpdateVersion();
+	const auto path = Local::readAutoupdatePrefix()
+		+ qstr("/current")
+		+ (updaterVersion > 1 ? QString::number(updaterVersion) : QString());
+	auto url = QUrl(path);
 	DEBUG_LOG(("Update Info: requesting update state"));
 	const auto request = QNetworkRequest(url);
 	_manager = std::make_unique<QNetworkAccessManager>();
@@ -892,8 +888,10 @@ void MtpChecker::start() {
 		crl::on_main(this, [=] { fail(); });
 		return;
 	}
-	constexpr auto kFeed = "tdhbcfeed";
-	MTP::ResolveChannel(&_mtp, kFeed, [=](const MTPInputChannel &channel) {
+	const auto updaterVersion = Platform::AutoUpdateVersion();
+	const auto feed = "tdhbcfeed"
+		+ (updaterVersion > 1 ? QString::number(updaterVersion) : QString());
+	MTP::ResolveChannel(&_mtp, feed, [=](const MTPInputChannel &channel) {
 		_mtp.send(
 			MTPmessages_GetHistory(
 				MTP_inputPeerChannel(
@@ -1392,7 +1390,7 @@ Updater::~Updater() {
 UpdateChecker::UpdateChecker()
 : _updater(GetUpdaterInstance()) {
 	if (IsAppLaunched()) {
-		if (const auto mtproto = Core::App().mtp()) {
+		if (const auto mtproto = Core::App().activeAccount().mtp()) {
 			_updater->setMtproto(mtproto);
 		}
 	}
@@ -1588,7 +1586,7 @@ void UpdateApplication() {
 					Window::SectionShow());
 			} else {
 				window->showSpecialLayer(
-					Box<Settings::LayerWidget>(),
+					Box<::Settings::LayerWidget>(),
 					anim::type::normal);
 			}
 			window->showFromTray();

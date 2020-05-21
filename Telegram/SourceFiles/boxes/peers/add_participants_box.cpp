@@ -18,12 +18,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history.h"
 #include "dialogs/dialogs_indexed_list.h"
 #include "base/unixtime.h"
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
 #include "window/window_session_controller.h"
 #include "apiwrap.h"
 #include "observer_peer.h"
+#include "facades.h"
+#include "app.h"
 
 namespace {
 
@@ -47,20 +49,29 @@ base::flat_set<not_null<UserData*>> GetAlreadyInFromPeer(PeerData *peer) {
 
 } // namespace
 
-AddParticipantsBoxController::AddParticipantsBoxController()
+AddParticipantsBoxController::AddParticipantsBoxController(
+	not_null<Window::SessionNavigation*> navigation)
 : ContactsBoxController(
-	std::make_unique<PeerListGlobalSearchController>()) {
+	navigation,
+	std::make_unique<PeerListGlobalSearchController>(navigation)) {
 }
 
 AddParticipantsBoxController::AddParticipantsBoxController(
+	not_null<Window::SessionNavigation*> navigation,
 	not_null<PeerData*> peer)
-: AddParticipantsBoxController(peer, GetAlreadyInFromPeer(peer)) {
+: AddParticipantsBoxController(
+	navigation,
+	peer,
+	GetAlreadyInFromPeer(peer)) {
 }
 
 AddParticipantsBoxController::AddParticipantsBoxController(
+	not_null<Window::SessionNavigation*> navigation,
 	not_null<PeerData*> peer,
 	base::flat_set<not_null<UserData*>> &&alreadyIn)
-: ContactsBoxController(std::make_unique<PeerListGlobalSearchController>())
+: ContactsBoxController(
+	navigation,
+	std::make_unique<PeerListGlobalSearchController>(navigation))
 , _peer(peer)
 , _alreadyIn(std::move(alreadyIn)) {
 	subscribeToMigration();
@@ -87,13 +98,13 @@ void AddParticipantsBoxController::rowClicked(not_null<PeerListRow*> row) {
 		if (!_peer->isMegagroup()) {
 			Ui::show(
 				Box<MaxInviteBox>(_peer->asChannel()),
-				LayerOption::KeepOther);
+				Ui::LayerOption::KeepOther);
 		}
 	} else if (count >= Global::ChatSizeMax()
 		&& count < Global::MegagroupSizeMax()) {
 		Ui::show(
 			Box<InformBox>(tr::lng_profile_add_more_after_create(tr::now)),
-			LayerOption::KeepOther);
+			Ui::LayerOption::KeepOther);
 	}
 }
 
@@ -180,8 +191,12 @@ bool AddParticipantsBoxController::inviteSelectedUsers(
 	return true;
 }
 
-void AddParticipantsBoxController::Start(not_null<ChatData*> chat) {
-	auto controller = std::make_unique<AddParticipantsBoxController>(chat);
+void AddParticipantsBoxController::Start(
+		not_null<Window::SessionNavigation*> navigation,
+		not_null<ChatData*> chat) {
+	auto controller = std::make_unique<AddParticipantsBoxController>(
+		navigation,
+		chat);
 	const auto weak = controller.get();
 	auto initBox = [=](not_null<PeerListBox*> box) {
 		box->addButton(tr::lng_participant_invite(), [=] {
@@ -195,14 +210,16 @@ void AddParticipantsBoxController::Start(not_null<ChatData*> chat) {
 		Box<PeerListBox>(
 			std::move(controller),
 			std::move(initBox)),
-		LayerOption::KeepOther);
+		Ui::LayerOption::KeepOther);
 }
 
 void AddParticipantsBoxController::Start(
+		not_null<Window::SessionNavigation*> navigation,
 		not_null<ChannelData*> channel,
 		base::flat_set<not_null<UserData*>> &&alreadyIn,
 		bool justCreated) {
 	auto controller = std::make_unique<AddParticipantsBoxController>(
+		navigation,
 		channel,
 		std::move(alreadyIn));
 	const auto weak = controller.get();
@@ -234,17 +251,20 @@ void AddParticipantsBoxController::Start(
 		Box<PeerListBox>(
 			std::move(controller),
 			std::move(initBox)),
-		LayerOption::KeepOther);
+		Ui::LayerOption::KeepOther);
 }
 
 void AddParticipantsBoxController::Start(
+		not_null<Window::SessionNavigation*> navigation,
 		not_null<ChannelData*> channel,
 		base::flat_set<not_null<UserData*>> &&alreadyIn) {
-	Start(channel, std::move(alreadyIn), false);
+	Start(navigation, channel, std::move(alreadyIn), false);
 }
 
-void AddParticipantsBoxController::Start(not_null<ChannelData*> channel) {
-	Start(channel, {}, true);
+void AddParticipantsBoxController::Start(
+		not_null<Window::SessionNavigation*> navigation,
+		not_null<ChannelData*> channel) {
+	Start(navigation, channel, {}, true);
 }
 
 AddSpecialBoxController::AddSpecialBoxController(
@@ -256,11 +276,16 @@ AddSpecialBoxController::AddSpecialBoxController(
 	peer,
 	&_additional))
 , _peer(peer)
+, _api(_peer->session().api().instance())
 , _role(role)
 , _additional(peer, Role::Members)
 , _adminDoneCallback(std::move(adminDoneCallback))
 , _bannedDoneCallback(std::move(bannedDoneCallback)) {
 	subscribeToMigration();
+}
+
+Main::Session &AddSpecialBoxController::session() const {
+	return _peer->session();
 }
 
 void AddSpecialBoxController::subscribeToMigration() {
@@ -277,7 +302,7 @@ void AddSpecialBoxController::migrate(not_null<ChannelData*> channel) {
 
 std::unique_ptr<PeerListRow> AddSpecialBoxController::createSearchRow(
 		not_null<PeerData*> peer) {
-	if (peer->isSelf()) {
+	if (_excludeSelf && peer->isSelf()) {
 		return nullptr;
 	}
 	if (const auto user = peer->asUser()) {
@@ -290,6 +315,8 @@ void AddSpecialBoxController::prepare() {
 	delegate()->peerListSetSearchMode(PeerListSearchMode::Enabled);
 	auto title = [&] {
 		switch (_role) {
+		case Role::Members:
+			return tr::lng_profile_participants_section();
 		case Role::Admins:
 			return tr::lng_channel_add_admin();
 		case Role::Restricted:
@@ -382,7 +409,7 @@ void AddSpecialBoxController::loadMoreRows() {
 	const auto participantsHash = 0;
 	const auto channel = _peer->asChannel();
 
-	_loadRequestId = request(MTPchannels_GetParticipants(
+	_loadRequestId = _api.request(MTPchannels_GetParticipants(
 		channel->inputChannel,
 		MTP_channelParticipantsRecent(),
 		MTP_int(_offset),
@@ -438,7 +465,7 @@ bool AddSpecialBoxController::checkInfoLoaded(
 
 	// We don't know what this user status is in the group.
 	const auto channel = _peer->asChannel();
-	request(MTPchannels_GetParticipant(
+	_api.request(MTPchannels_GetParticipant(
 		channel->inputChannel,
 		user->inputUser
 	)).done([=](const MTPchannels_ChannelParticipant &result) {
@@ -491,19 +518,19 @@ void AddSpecialBoxController::showAdmin(
 						Box<ConfirmBox>(
 							tr::lng_sure_add_admin_unremove(tr::now),
 							showAdminSure),
-						LayerOption::KeepOther);
+						Ui::LayerOption::KeepOther);
 					return;
 				}
 			} else {
 				Ui::show(Box<InformBox>(
 					tr::lng_error_cant_add_admin_unban(tr::now)),
-					LayerOption::KeepOther);
+					Ui::LayerOption::KeepOther);
 				return;
 			}
 		} else {
 			Ui::show(Box<InformBox>(
 				tr::lng_error_cant_add_admin_invite(tr::now)),
-				LayerOption::KeepOther);
+				Ui::LayerOption::KeepOther);
 			return;
 		}
 	} else if (_additional.restrictedRights(user).has_value()) {
@@ -514,13 +541,13 @@ void AddSpecialBoxController::showAdmin(
 					Box<ConfirmBox>(
 						tr::lng_sure_add_admin_unremove(tr::now),
 						showAdminSure),
-					LayerOption::KeepOther);
+					Ui::LayerOption::KeepOther);
 				return;
 			}
 		} else {
 			Ui::show(Box<InformBox>(
 				tr::lng_error_cant_add_admin_unban(tr::now)),
-				LayerOption::KeepOther);
+				Ui::LayerOption::KeepOther);
 			return;
 		}
 	} else if (_additional.isExternal(user)) {
@@ -534,13 +561,13 @@ void AddSpecialBoxController::showAdmin(
 					Box<ConfirmBox>(
 						text,
 						showAdminSure),
-					LayerOption::KeepOther);
+					Ui::LayerOption::KeepOther);
 				return;
 			}
 		} else {
 			Ui::show(
 				Box<InformBox>(tr::lng_error_cant_add_admin_invite(tr::now)),
-				LayerOption::KeepOther);
+				Ui::LayerOption::KeepOther);
 			return;
 		}
 	}
@@ -553,11 +580,16 @@ void AddSpecialBoxController::showAdmin(
 		: adminRights
 		? *adminRights
 		: MTPChatAdminRights(MTP_chatAdminRights(MTP_flags(0)));
-	auto box = Box<EditAdminBox>(_peer, user, currentRights);
+	auto box = Box<EditAdminBox>(
+		_peer,
+		user,
+		currentRights,
+		_additional.adminRank(user));
 	if (_additional.canAddOrEditAdmin(user)) {
 		const auto done = crl::guard(this, [=](
-				const MTPChatAdminRights &newRights) {
-			editAdminDone(user, newRights);
+				const MTPChatAdminRights &newRights,
+				const QString &rank) {
+			editAdminDone(user, newRights, rank);
 		});
 		const auto fail = crl::guard(this, [=] {
 			if (_editParticipantBox) {
@@ -566,35 +598,45 @@ void AddSpecialBoxController::showAdmin(
 		});
 		box->setSaveCallback(SaveAdminCallback(_peer, user, done, fail));
 	}
-	_editParticipantBox = Ui::show(std::move(box), LayerOption::KeepOther);
+	_editParticipantBox = Ui::show(std::move(box), Ui::LayerOption::KeepOther);
 }
 
 void AddSpecialBoxController::editAdminDone(
 		not_null<UserData*> user,
-		const MTPChatAdminRights &rights) {
+		const MTPChatAdminRights &rights,
+		const QString &rank) {
 	if (_editParticipantBox) {
 		_editParticipantBox->closeBox();
 	}
 
 	const auto date = base::unixtime::now(); // Incorrect, but ignored.
-	if (rights.c_chatAdminRights().vflags().v == 0) {
+	if (_additional.isCreator(user) && user->isSelf()) {
+		using Flag = MTPDchannelParticipantCreator::Flag;
+		_additional.applyParticipant(MTP_channelParticipantCreator(
+			MTP_flags(rank.isEmpty() ? Flag(0) : Flag::f_rank),
+			MTP_int(user->bareId()),
+			MTP_string(rank)));
+	} else if (rights.c_chatAdminRights().vflags().v == 0) {
 		_additional.applyParticipant(MTP_channelParticipant(
 			MTP_int(user->bareId()),
 			MTP_int(date)));
 	} else {
+		using Flag = MTPDchannelParticipantAdmin::Flag;
 		const auto alreadyPromotedBy = _additional.adminPromotedBy(user);
 		_additional.applyParticipant(MTP_channelParticipantAdmin(
-			MTP_flags(MTPDchannelParticipantAdmin::Flag::f_can_edit),
+			MTP_flags(Flag::f_can_edit
+				| (rank.isEmpty() ? Flag(0) : Flag::f_rank)),
 			MTP_int(user->bareId()),
 			MTPint(), // inviter_id
 			MTP_int(alreadyPromotedBy
 				? alreadyPromotedBy->bareId()
 				: user->session().userId()),
 			MTP_int(date),
-			rights));
+			rights,
+			MTP_string(rank)));
 	}
 	if (const auto callback = _adminDoneCallback) {
-		callback(user, rights);
+		callback(user, rights, rank);
 	}
 }
 
@@ -628,13 +670,13 @@ void AddSpecialBoxController::showRestricted(
 					Box<ConfirmBox>(
 						tr::lng_sure_ban_admin(tr::now),
 						showRestrictedSure),
-					LayerOption::KeepOther);
+					Ui::LayerOption::KeepOther);
 				return;
 			}
 		} else {
 			Ui::show(
 				Box<InformBox>(tr::lng_error_cant_ban_admin(tr::now)),
-				LayerOption::KeepOther);
+				Ui::LayerOption::KeepOther);
 			return;
 		}
 	}
@@ -663,7 +705,7 @@ void AddSpecialBoxController::showRestricted(
 		box->setSaveCallback(
 			SaveRestrictedCallback(_peer, user, done, fail));
 	}
-	_editParticipantBox = Ui::show(std::move(box), LayerOption::KeepOther);
+	_editParticipantBox = Ui::show(std::move(box), Ui::LayerOption::KeepOther);
 }
 
 void AddSpecialBoxController::editRestrictedDone(
@@ -718,13 +760,13 @@ void AddSpecialBoxController::kickUser(
 					Box<ConfirmBox>(
 						tr::lng_sure_ban_admin(tr::now),
 						kickUserSure),
-					LayerOption::KeepOther);
+					Ui::LayerOption::KeepOther);
 				return;
 			}
 		} else {
 			Ui::show(
 				Box<InformBox>(tr::lng_error_cant_ban_admin(tr::now)),
-				LayerOption::KeepOther);
+				Ui::LayerOption::KeepOther);
 			return;
 		}
 	}
@@ -736,10 +778,10 @@ void AddSpecialBoxController::kickUser(
 			: tr::lng_profile_sure_kick_channel)(
 				tr::now,
 				lt_user,
-				App::peerName(user));
+				user->name);
 		_editBox = Ui::show(
 			Box<ConfirmBox>(text, kickUserSure),
-			LayerOption::KeepOther);
+			Ui::LayerOption::KeepOther);
 		return;
 	}
 
@@ -762,7 +804,8 @@ void AddSpecialBoxController::kickUser(
 }
 
 bool AddSpecialBoxController::appendRow(not_null<UserData*> user) {
-	if (delegate()->peerListFindRow(user->id) || user->isSelf()) {
+	if (delegate()->peerListFindRow(user->id)
+		|| (_excludeSelf && user->isSelf())) {
 		return false;
 	}
 	delegate()->peerListAppendRow(createRow(user));
@@ -787,6 +830,7 @@ AddSpecialBoxSearchController::AddSpecialBoxSearchController(
 	not_null<ParticipantsAdditionalData*> additional)
 : _peer(peer)
 , _additional(additional)
+, _api(_peer->session().api().instance())
 , _timer([=] { searchOnServer(); }) {
 	subscribeToMigration();
 }
@@ -882,7 +926,7 @@ void AddSpecialBoxSearchController::requestParticipants() {
 	const auto participantsHash = 0;
 	const auto channel = _peer->asChannel();
 
-	_requestId = request(MTPchannels_GetParticipants(
+	_requestId = _api.request(MTPchannels_GetParticipants(
 		channel->inputChannel,
 		MTP_channelParticipantsSearch(MTP_string(_query)),
 		MTP_int(_offset),
@@ -970,7 +1014,7 @@ void AddSpecialBoxSearchController::requestGlobal() {
 	}
 
 	auto perPage = SearchPeopleLimit;
-	_requestId = request(MTPcontacts_Search(
+	_requestId = _api.request(MTPcontacts_Search(
 		MTP_string(_query),
 		MTP_int(perPage)
 	)).done([=](const MTPcontacts_Found &result, mtpRequestId requestId) {

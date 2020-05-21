@@ -10,7 +10,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/file_download.h"
 #include "storage/cache/storage_cache_database.h"
 #include "storage/localimageloader.h"
-#include "auth_session.h"
+#include "main/main_session.h"
+
+#include <QtCore/QTimer>
+
+class History;
 
 namespace Data {
 class WallPaper;
@@ -26,6 +30,7 @@ class EncryptionKey;
 
 namespace Window {
 namespace Theme {
+struct Object;
 struct Saved;
 } // namespace Theme
 } // namespace Window
@@ -152,8 +157,9 @@ bool readBackground();
 
 void writeTheme(const Window::Theme::Saved &saved);
 void clearTheme();
-bool copyThemeColorsToPalette(const QString &file);
-Window::Theme::Saved readThemeAfterSwitch();
+[[nodiscard]] Window::Theme::Saved readThemeAfterSwitch();
+
+[[nodiscard]] Window::Theme::Object ReadThemeContent();
 
 void writeLangPack();
 void pushRecentLanguage(const Lang::Language &language);

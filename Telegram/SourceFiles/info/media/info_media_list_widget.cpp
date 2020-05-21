@@ -13,25 +13,31 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_photo.h"
 #include "data/data_document.h"
 #include "data/data_session.h"
+#include "data/data_file_origin.h"
 #include "history/history_item.h"
 #include "history/history.h"
 #include "history/view/history_view_cursor_state.h"
 #include "window/themes/window_theme.h"
 #include "window/window_session_controller.h"
 #include "window/window_peer_menu.h"
-#include "storage/file_download.h"
 #include "ui/widgets/popup_menu.h"
+#include "ui/ui_utility.h"
+#include "ui/inactive_press.h"
 #include "lang/lang_keys.h"
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "mainwidget.h"
-#include "window/main_window.h"
+#include "mainwindow.h"
 #include "styles/style_overview.h"
 #include "styles/style_info.h"
-#include "platform/platform_info.h"
+#include "base/platform/base_platform_info.h"
 #include "media/player/media_player_instance.h"
 #include "boxes/peer_list_controllers.h"
 #include "boxes/confirm_box.h"
 #include "core/file_utilities.h"
+#include "facades.h"
+
+#include <QtWidgets/QApplication>
+#include <QtGui/QClipboard>
 
 namespace Layout = Overview::Layout;
 
@@ -554,6 +560,10 @@ ListWidget::ListWidget(
 	start();
 }
 
+Main::Session &ListWidget::session() const {
+	return _controller->session();
+}
+
 void ListWidget::start() {
 	_controller->setSearchEnabledByContent(false);
 	ObservableViewer(
@@ -564,17 +574,17 @@ void ListWidget::start() {
 		}
 	}, lifetime());
 	ObservableViewer(
-		Auth().downloader().taskFinished()
+		session().downloaderTaskFinished()
 	) | rpl::start_with_next([this] { update(); }, lifetime());
-	Auth().data().itemLayoutChanged(
+	session().data().itemLayoutChanged(
 	) | rpl::start_with_next([this](auto item) {
 		itemLayoutChanged(item);
 	}, lifetime());
-	Auth().data().itemRemoved(
+	session().data().itemRemoved(
 	) | rpl::start_with_next([this](auto item) {
 		itemRemoved(item);
 	}, lifetime());
-	Auth().data().itemRepaintRequest(
+	session().data().itemRepaintRequest(
 	) | rpl::start_with_next([this](auto item) {
 		repaintItem(item);
 	}, lifetime());
@@ -839,7 +849,7 @@ BaseLayout *ListWidget::getExistingLayout(
 std::unique_ptr<BaseLayout> ListWidget::createLayout(
 		UniversalMsgId universalId,
 		Type type) {
-	auto item = Auth().data().message(computeFullId(universalId));
+	auto item = session().data().message(computeFullId(universalId));
 	if (!item) {
 		return nullptr;
 	}
@@ -1180,7 +1190,7 @@ void ListWidget::showContextMenu(
 		mouseActionUpdate(e->globalPos());
 	}
 
-	auto item = Auth().data().message(computeFullId(_overState.itemId));
+	auto item = session().data().message(computeFullId(_overState.itemId));
 	if (!item || !_overState.inside) {
 		return;
 	}
@@ -1225,11 +1235,12 @@ void ListWidget::showContextMenu(
 	auto link = ClickHandler::getActive();
 
 	const auto itemFullId = item->fullId();
+	const auto owner = &session().data();
 	_contextMenu = base::make_unique_q<Ui::PopupMenu>(this);
 	_contextMenu->addAction(
 		tr::lng_context_to_msg(tr::now),
-		[itemFullId] {
-			if (auto item = Auth().data().message(itemFullId)) {
+		[=] {
+			if (const auto item = owner->message(itemFullId)) {
 				Ui::showPeerHistoryAtItem(item);
 			}
 		});
@@ -1300,7 +1311,7 @@ void ListWidget::showContextMenu(
 			_contextMenu->addAction(
 				actionText,
 				[text = link->copyToClipboardText()] {
-					QApplication::clipboard()->setText(text);
+					QGuiApplication::clipboard()->setText(text);
 				});
 		}
 	}
@@ -1381,25 +1392,26 @@ void ListWidget::forwardSelected() {
 }
 
 void ListWidget::forwardItem(UniversalMsgId universalId) {
-	if (const auto item = Auth().data().message(computeFullId(universalId))) {
+	if (const auto item = session().data().message(computeFullId(universalId))) {
 		forwardItems({ 1, item->fullId() });
 	}
 }
 
 void ListWidget::forwardItems(MessageIdsList &&items) {
-	auto callback = [weak = make_weak(this)] {
+	auto callback = [weak = Ui::MakeWeak(this)] {
 		if (const auto strong = weak.data()) {
 			strong->clearSelected();
 		}
 	};
 	setActionBoxWeak(Window::ShowForwardMessagesBox(
+		_controller,
 		std::move(items),
 		std::move(callback)));
 }
 
 void ListWidget::deleteSelected() {
 	if (const auto box = deleteItems(collectSelectedIds())) {
-		const auto weak = make_weak(this);
+		const auto weak = Ui::MakeWeak(this);
 		box->setDeleteConfirmedCallback([=]{
 			if (const auto strong = weak.data()) {
 				strong->clearSelected();
@@ -1409,7 +1421,7 @@ void ListWidget::deleteSelected() {
 }
 
 void ListWidget::deleteItem(UniversalMsgId universalId) {
-	if (const auto item = Auth().data().message(computeFullId(universalId))) {
+	if (const auto item = session().data().message(computeFullId(universalId))) {
 		deleteItems({ 1, item->fullId() });
 	}
 }
@@ -1417,7 +1429,9 @@ void ListWidget::deleteItem(UniversalMsgId universalId) {
 DeleteMessagesBox *ListWidget::deleteItems(MessageIdsList &&items) {
 	if (!items.empty()) {
 		const auto box = Ui::show(
-			Box<DeleteMessagesBox>(std::move(items))).data();
+			Box<DeleteMessagesBox>(
+				&_controller->session(),
+				std::move(items))).data();
 		setActionBoxWeak(box);
 		return box;
 	}
@@ -1427,7 +1441,7 @@ DeleteMessagesBox *ListWidget::deleteItems(MessageIdsList &&items) {
 void ListWidget::setActionBoxWeak(QPointer<Ui::RpWidget> box) {
 	if ((_actionBoxWeak = box)) {
 		_actionBoxWeakLifetime = _actionBoxWeak->alive(
-		) | rpl::start_with_done([weak = make_weak(this)]{
+		) | rpl::start_with_done([weak = Ui::MakeWeak(this)]{
 			if (weak) {
 				weak->_checkForHide.fire({});
 			}
@@ -1513,7 +1527,7 @@ bool ListWidget::changeItemSelection(
 			universalId,
 			selection);
 		if (ok) {
-			auto item = Auth().data().message(computeFullId(universalId));
+			auto item = session().data().message(computeFullId(universalId));
 			if (!item) {
 				selected.erase(iterator);
 				return false;
@@ -1549,7 +1563,7 @@ bool ListWidget::requiredToStartDragging(
 	if (_mouseCursorState == CursorState::Date) {
 		return true;
 	}
-//	return dynamic_cast<HistorySticker*>(layout->getMedia());
+//	return dynamic_cast<Sticker*>(layout->getMedia());
 	return false;
 }
 
@@ -1810,8 +1824,13 @@ void ListWidget::mouseActionStart(
 	auto pressLayout = _overLayout;
 
 	_mouseAction = MouseAction::None;
-	_pressWasInactive = _controller->parentController()->window()->wasInactivePress();
-	if (_pressWasInactive) _controller->parentController()->window()->setInactivePress(false);
+	_pressWasInactive = Ui::WasInactivePress(
+		_controller->parentController()->widget());
+	if (_pressWasInactive) {
+		Ui::MarkInactivePress(
+			_controller->parentController()->widget(),
+			false);
+	}
 
 	if (ClickHandler::getPressed() && !hasSelected()) {
 		_mouseAction = MouseAction::PrepareDrag;
@@ -1932,7 +1951,7 @@ void ListWidget::performDrag() {
 	//	if (uponSelected && !Adaptive::OneColumn()) {
 	//		auto selectedState = getSelectionState();
 	//		if (selectedState.count > 0 && selectedState.count == selectedState.canForwardCount) {
-	//			Auth().data().setMimeForwardIds(collectSelectedIds());
+	//			session().data().setMimeForwardIds(collectSelectedIds());
 	//			mimeData->setData(qsl("application/x-td-forward"), "1");
 	//		}
 	//	}
@@ -1940,18 +1959,18 @@ void ListWidget::performDrag() {
 	//	return;
 	//} else {
 	//	auto forwardMimeType = QString();
-	//	auto pressedMedia = static_cast<HistoryMedia*>(nullptr);
+	//	auto pressedMedia = static_cast<HistoryView::Media*>(nullptr);
 	//	if (auto pressedItem = _pressState.layout) {
 	//		pressedMedia = pressedItem->getMedia();
 	//		if (_mouseCursorState == CursorState::Date || (pressedMedia && pressedMedia->dragItem())) {
-	//			Auth().data().setMimeForwardIds(Auth().data().itemOrItsGroup(pressedItem));
+	//			session().data().setMimeForwardIds(session().data().itemOrItsGroup(pressedItem));
 	//			forwardMimeType = qsl("application/x-td-forward");
 	//		}
 	//	}
 	//	if (auto pressedLnkItem = App::pressedLinkItem()) {
 	//		if ((pressedMedia = pressedLnkItem->getMedia())) {
 	//			if (forwardMimeType.isEmpty() && pressedMedia->dragItemByHandler(pressedHandler)) {
-	//				Auth().data().setMimeForwardIds({ 1, pressedLnkItem->fullId() });
+	//				session().data().setMimeForwardIds({ 1, pressedLnkItem->fullId() });
 	//				forwardMimeType = qsl("application/x-td-forward");
 	//			}
 	//		}
@@ -2005,7 +2024,7 @@ void ListWidget::mouseActionFinish(
 	_wasSelectedText = false;
 	if (activated) {
 		mouseActionCancel();
-		App::activateClickHandler(activated, button);
+		ActivateClickHandler(window(), activated, button);
 		return;
 	}
 
@@ -2032,7 +2051,7 @@ void ListWidget::mouseActionFinish(
 
 #if defined Q_OS_LINUX32 || defined Q_OS_LINUX64
 	//if (hasSelectedText()) { // #TODO linux clipboard
-	//	SetClipboardText(_selected.cbegin()->first->selectedText(_selected.cbegin()->second), QClipboard::Selection);
+	//	TextUtilities::SetClipboardText(_selected.cbegin()->first->selectedText(_selected.cbegin()->second), QClipboard::Selection);
 	//}
 #endif // Q_OS_LINUX32 || Q_OS_LINUX64
 }

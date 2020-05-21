@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <rpl/never.h>
 #include <rpl/merge.h>
 #include "lang/lang_keys.h"
+#include "lang/lang_numbers_animation.h"
 #include "info/info_wrap_widget.h"
 #include "info/info_controller.h"
 #include "info/profile/info_profile_values.h"
@@ -17,7 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/confirm_box.h"
 #include "boxes/peer_list_controllers.h"
 #include "mainwidget.h"
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/input_fields.h"
@@ -35,9 +36,11 @@ namespace Info {
 
 TopBar::TopBar(
 	QWidget *parent,
+	not_null<Window::SessionNavigation*> navigation,
 	const style::InfoTopBar &st,
 	SelectedItems &&selectedItems)
 : RpWidget(parent)
+, _navigation(navigation)
 , _st(st)
 , _selectedItems(Section::MediaType::kCount) {
 	setAttribute(Qt::WA_OpaquePaintEvent);
@@ -50,7 +53,7 @@ void TopBar::registerUpdateControlCallback(
 		QObject *guard,
 		Callback &&callback) {
 	_updateControlCallbacks[guard] =[
-		weak = make_weak(guard),
+		weak = Ui::MakeWeak(guard),
 		callback = std::forward<Callback>(callback)
 	](anim::type animated) {
 		if (!weak) {
@@ -516,8 +519,8 @@ MessageIdsList TopBar::collectItems() const {
 		_selectedItems.list
 	) | ranges::view::transform([](auto &&item) {
 		return item.msgId;
-	}) | ranges::view::filter([](FullMsgId msgId) {
-		return Auth().data().message(msgId) != nullptr;
+	}) | ranges::view::filter([&](FullMsgId msgId) {
+		return _navigation->session().data().message(msgId) != nullptr;
 	}) | ranges::to_vector;
 }
 
@@ -528,8 +531,9 @@ void TopBar::performForward() {
 		return;
 	}
 	Window::ShowForwardMessagesBox(
+		_navigation,
 		std::move(items),
-		[weak = make_weak(this)] {
+		[weak = Ui::MakeWeak(this)] {
 			if (weak) {
 				weak->_cancelSelectionClicks.fire({});
 			}
@@ -541,8 +545,10 @@ void TopBar::performDelete() {
 	if (items.empty()) {
 		_cancelSelectionClicks.fire({});
 	} else {
-		const auto box = Ui::show(Box<DeleteMessagesBox>(std::move(items)));
-		box->setDeleteConfirmedCallback([weak = make_weak(this)] {
+		const auto box = Ui::show(Box<DeleteMessagesBox>(
+			&_navigation->session(),
+			std::move(items)));
+		box->setDeleteConfirmedCallback([weak = Ui::MakeWeak(this)] {
 			if (weak) {
 				weak->_cancelSelectionClicks.fire({});
 			}
@@ -599,6 +605,11 @@ rpl::producer<QString> TitleValue(
 		return tr::lng_profile_common_groups_section();
 
 	case Section::Type::Members:
+		if (const auto channel = peer->asChannel()) {
+			return channel->isMegagroup()
+				? tr::lng_profile_participants_section()
+				: tr::lng_profile_subscribers_section();
+		}
 		return tr::lng_profile_participants_section();
 
 	//case Section::Type::Channels: // #feed
@@ -618,10 +629,17 @@ rpl::producer<QString> TitleValue(
 			return tr::lng_settings_advanced();
 		case Section::SettingsType::Chat:
 			return tr::lng_settings_section_chat_settings();
+		case Section::SettingsType::Folders:
+			return tr::lng_filters_title();
 		case Section::SettingsType::Calls:
 			return tr::lng_settings_section_call_settings();
 		}
 		Unexpected("Bad settings type in Info::TitleValue()");
+
+	case Section::Type::PollResults:
+		return key.poll()->quiz()
+			? tr::lng_polls_quiz_results_title()
+			: tr::lng_polls_poll_results_title();
 	}
 	Unexpected("Bad section type in Info::TitleValue()");
 }

@@ -3,6 +3,7 @@
 #include "chat_helpers/stickers.h"
 #include "data/data_document.h"
 #include "FileDownloader.h"
+#include <QtCore/QTimer>
 #define CLOUDVEIL_CHANNEL_USERNAME "CloudVeilMessenger"
 
 class SettingsRequest;

@@ -19,38 +19,50 @@ namespace {
 std::map<int, const char*> BetaLogs() {
 	return {
 	{
-		1006004,
-		"- Replace media when editing messages with media content.\n"
+		1009010,
+		"\xE2\x80\xA2 Switch to the Picture-in-Picture mode "
+		"to watch your video in a small window.\n"
 
-		"- Jump quickly to the top of your chats list.\n"
+		"\xE2\x80\xA2 Change video playback speed "
+		"in the playback controls '...' menu.\n"
 
-		"- Get emoji suggestions for the first word you type in a message.\n"
-
-		"- Help Telegram improve emoji suggestions in your language "
-		"using this interface https://translations.telegram.org/en/emoji"
+		"\xE2\x80\xA2 Rotate photos and videos in the media viewer "
+		"using the rotate button in the bottom right corner.\n"
 	},
 	{
-		1007001,
-		"- Disable pinned messages notifications in Settings."
-	},
-	{
-		1007004,
-		"- Download video files while watching them using streaming."
-	},
-	{
-		1007008,
-		"\xE2\x80\xA2 Hide archived chats in the main menu.\n"
-
-		"\xE2\x80\xA2 See who is online straight from the chat list.\n"
-
-		"\xE2\x80\xA2 Apply formatting to selected text parts "
-		"from the MacBook Pro TouchBar."
-	},
-	{
-		1007011,
-		"\xE2\x80\xA2 Use strikethrough and underline formatting.\n"
+		1009015,
+		"\xE2\x80\xA2 Mark new messages as read "
+		"while scrolling down through them.\n"
 
 		"\xE2\x80\xA2 Bug fixes and other minor improvements."
+	},
+	{
+		1009017,
+		"\xE2\x80\xA2 Spell checker on Windows 7.\n"
+
+		"\xE2\x80\xA2 Bug fixes and other minor improvements."
+	},
+	{
+		1009020,
+		"\xE2\x80\xA2 Fix crash in shared links search.\n"
+
+		"\xE2\x80\xA2 Fix blurred thumbnails in albums with video files.\n"
+
+		"\xE2\x80\xA2 Fix a possible crash in animated stickers rendering."
+	},
+	{
+		1009022,
+		"\xE2\x80\xA2 Organize chats into Chat Folders "
+		"if you have too many chats.\n"
+	},
+	{
+		2000001,
+		"\xE2\x80\xA2 Switch between folders using Ctrl+1, ..., Ctrl+8.\n"
+
+		"\xE2\x80\xA2 Fix crash when a pinned in folder chat "
+		"was added to archive.\n"
+
+		"\xE2\x80\xA2 Fix font issues in Linux version."
 	}
 	};
 };
@@ -71,7 +83,7 @@ QString FormatVersionPrecise(int version) {
 
 } // namespace
 
-Changelogs::Changelogs(not_null<AuthSession*> session, int oldVersion)
+Changelogs::Changelogs(not_null<Main::Session*> session, int oldVersion)
 : _session(session)
 , _oldVersion(oldVersion) {
 	_session->data().chatsListChanges(
@@ -83,7 +95,7 @@ Changelogs::Changelogs(not_null<AuthSession*> session, int oldVersion)
 }
 
 std::unique_ptr<Changelogs> Changelogs::Create(
-		not_null<AuthSession*> session) {
+		not_null<Main::Session*> session) {
 	const auto oldVersion = Local::oldMapVersion();
 	return (oldVersion > 0 && oldVersion < AppVersion)
 		? std::make_unique<Changelogs>(session, oldVersion)

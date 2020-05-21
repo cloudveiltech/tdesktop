@@ -7,12 +7,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "inline_bots/inline_bot_send_data.h"
 
+#include "api/api_text_entities.h"
 #include "data/data_document.h"
 #include "inline_bots/inline_bot_result.h"
 #include "storage/localstorage.h"
 #include "lang/lang_keys.h"
 #include "history/history.h"
 #include "data/data_channel.h"
+#include "app.h"
 
 namespace InlineBots {
 namespace internal {
@@ -29,6 +31,7 @@ void SendDataCommon::addToHistory(
 		const Result *owner,
 		not_null<History*> history,
 		MTPDmessage::Flags flags,
+		MTPDmessage_ClientFlags clientFlags,
 		MsgId msgId,
 		UserId fromId,
 		MTPint mtpDate,
@@ -57,7 +60,10 @@ void SendDataCommon::addToHistory(
 			MTP_int(1),
 			MTPint(),
 			MTP_string(postAuthor),
-			MTPlong()),
+			MTPlong(),
+			//MTPMessageReactions(),
+			MTPVector<MTPRestrictionReason>()),
+		clientFlags,
 		NewMessageType::Unread);
 }
 
@@ -73,7 +79,7 @@ QString SendDataCommon::getErrorOnSend(
 SendDataCommon::SentMTPMessageFields SendText::getSentMessageFields() const {
 	SentMTPMessageFields result;
 	result.text = MTP_string(_message);
-	result.entities = TextUtilities::EntitiesToMTP(_entities);
+	result.entities = Api::EntitiesToMTP(_entities);
 	return result;
 }
 
@@ -121,6 +127,7 @@ void SendPhoto::addToHistory(
 		const Result *owner,
 		not_null<History*> history,
 		MTPDmessage::Flags flags,
+		MTPDmessage_ClientFlags clientFlags,
 		MsgId msgId,
 		UserId fromId,
 		MTPint mtpDate,
@@ -128,9 +135,10 @@ void SendPhoto::addToHistory(
 		MsgId replyToId,
 		const QString &postAuthor,
 		const MTPReplyMarkup &markup) const {
-	history->addNewPhoto(
+	history->addNewLocalMessage(
 		msgId,
 		flags,
+		clientFlags,
 		viaBotId,
 		replyToId,
 		mtpDate.v,
@@ -154,6 +162,7 @@ void SendFile::addToHistory(
 		const Result *owner,
 		not_null<History*> history,
 		MTPDmessage::Flags flags,
+		MTPDmessage_ClientFlags clientFlags,
 		MsgId msgId,
 		UserId fromId,
 		MTPint mtpDate,
@@ -161,9 +170,10 @@ void SendFile::addToHistory(
 		MsgId replyToId,
 		const QString &postAuthor,
 		const MTPReplyMarkup &markup) const {
-	history->addNewDocument(
+	history->addNewLocalMessage(
 		msgId,
 		flags,
+		clientFlags,
 		viaBotId,
 		replyToId,
 		mtpDate.v,
@@ -201,6 +211,7 @@ void SendGame::addToHistory(
 		const Result *owner,
 		not_null<History*> history,
 		MTPDmessage::Flags flags,
+		MTPDmessage_ClientFlags clientFlags,
 		MsgId msgId,
 		UserId fromId,
 		MTPint mtpDate,
@@ -208,9 +219,10 @@ void SendGame::addToHistory(
 		MsgId replyToId,
 		const QString &postAuthor,
 		const MTPReplyMarkup &markup) const {
-	history->addNewGame(
+	history->addNewLocalMessage(
 		msgId,
 		flags,
+		clientFlags,
 		viaBotId,
 		replyToId,
 		mtpDate.v,

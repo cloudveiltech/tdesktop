@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_shared_media.h"
 #include "data/data_user_photos.h"
 #include "data/data_web_page.h"
+#include "data/data_cloud_themes.h" // Data::CloudTheme.
 #include "media/view/media_view_playback_controls.h"
 
 namespace Ui {
@@ -47,6 +48,7 @@ namespace Media {
 namespace View {
 
 class GroupThumbs;
+class Pip;
 
 #if defined Q_OS_MAC && !defined OS_MAC_OLD
 #define USE_OPENGL_OVERLAY_WIDGET
@@ -70,7 +72,12 @@ public:
 
 	void showPhoto(not_null<PhotoData*> photo, HistoryItem *context);
 	void showPhoto(not_null<PhotoData*> photo, not_null<PeerData*> context);
-	void showDocument(not_null<DocumentData*> document, HistoryItem *context);
+	void showDocument(
+		not_null<DocumentData*> document,
+		HistoryItem *context);
+	void showTheme(
+		not_null<DocumentData*> document,
+		const Data::CloudTheme &cloud);
 
 	void leaveToChildEvent(QEvent *e, QWidget *child) override { // e -- from enterEvent() of child TWidget
 		updateOverState(OverNone);
@@ -85,6 +92,8 @@ public:
 	void onDocClick();
 
 	PeerData *ui_getPeerForMouseAction();
+
+	void notifyFileDialogShown(bool shown);
 
 	void clearData();
 
@@ -120,6 +129,7 @@ private slots:
 
 private:
 	struct Streamed;
+	struct PipWrap;
 
 	enum OverState {
 		OverNone,
@@ -130,6 +140,7 @@ private:
 		OverName,
 		OverDate,
 		OverSave,
+		OverRotate,
 		OverMore,
 		OverIcon,
 		OverVideo,
@@ -163,14 +174,20 @@ private:
 	void playbackControlsSeekFinished(crl::time position) override;
 	void playbackControlsVolumeChanged(float64 volume) override;
 	float64 playbackControlsCurrentVolume() override;
+	void playbackControlsVolumeToggled() override;
+	void playbackControlsVolumeChangeFinished() override;
+	void playbackControlsSpeedChanged(float64 speed) override;
+	float64 playbackControlsCurrentSpeed() override;
 	void playbackControlsToFullScreen() override;
 	void playbackControlsFromFullScreen() override;
+	void playbackControlsToPictureInPicture() override;
+	void playbackControlsRotate() override;
 	void playbackPauseResume();
 	void playbackToggleFullScreen();
 	void playbackPauseOnCall();
 	void playbackResumeOnCall();
 	void playbackPauseMusic();
-	void playbackWaitingChange(bool waiting);
+	void switchToPip();
 
 	void updateOver(QPoint mpos);
 	void moveToScreen(bool force = false);
@@ -229,14 +246,23 @@ private:
 	void resizeCenteredControls();
 	void resizeContentByScreenSize();
 
+	void showDocument(
+		not_null<DocumentData*> document,
+		HistoryItem *context,
+		const Data::CloudTheme &cloud,
+		bool continueStreaming);
 	void displayPhoto(not_null<PhotoData*> photo, HistoryItem *item);
-	void displayDocument(DocumentData *document, HistoryItem *item);
+	void displayDocument(
+		DocumentData *document,
+		HistoryItem *item,
+		const Data::CloudTheme &cloud = Data::CloudTheme(),
+		bool continueStreaming = false);
 	void displayFinished();
 	void redisplayContent();
 	void findCurrent();
 
 	void updateCursor();
-	void setZoomLevel(int newZoom);
+	void setZoomLevel(int newZoom, bool force = false);
 
 	void updatePlaybackState();
 	void restartAtSeekPosition(crl::time position);
@@ -244,13 +270,13 @@ private:
 	void refreshClipControllerGeometry();
 	void refreshCaptionGeometry();
 
-	void initStreaming();
+	[[nodiscard]] bool initStreaming(bool continueStreaming = false);
+	void startStreamingPlayer();
 	void initStreamingThumbnail();
 	void streamingReady(Streaming::Information &&info);
-	void createStreamingObjects();
+	[[nodiscard]] bool createStreamingObjects();
 	void handleStreamingUpdate(Streaming::Update &&update);
 	void handleStreamingError(Streaming::Error &&error);
-	void validateStreamedGoodThumbnail();
 
 	void initThemePreview();
 	void destroyThemePreview();
@@ -259,7 +285,8 @@ private:
 	void documentUpdated(DocumentData *doc);
 	void changingMsgId(not_null<HistoryItem*> row, MsgId newId);
 
-	QRect contentRect() const;
+	[[nodiscard]] int contentRotation() const;
+	[[nodiscard]] QRect contentRect() const;
 	void contentSizeChanged();
 
 	// Radial animation interface.
@@ -301,21 +328,27 @@ private:
 	void validatePhotoImage(Image *image, bool blurred);
 	void validatePhotoCurrentImage();
 
+	[[nodiscard]] QSize flipSizeByRotation(QSize size) const;
+
+	void applyVideoSize();
 	[[nodiscard]] bool videoShown() const;
 	[[nodiscard]] QSize videoSize() const;
 	[[nodiscard]] bool videoIsGifv() const;
 	[[nodiscard]] QImage videoFrame() const;
 	[[nodiscard]] QImage videoFrameForDirectPaint() const;
 	[[nodiscard]] QImage transformVideoFrame(QImage frame) const;
+	[[nodiscard]] QImage transformStaticContent(QPixmap content) const;
 	[[nodiscard]] bool documentContentShown() const;
 	[[nodiscard]] bool documentBubbleShown() const;
 	void paintTransformedVideoFrame(Painter &p);
-	void clearStreaming();
+	void paintTransformedStaticContent(Painter &p);
+	void clearStreaming(bool savePosition = true);
 
 	QBrush _transparentBrush;
 
 	PhotoData *_photo = nullptr;
 	DocumentData *_doc = nullptr;
+	int _rotation = 0;
 	std::unique_ptr<SharedMedia> _sharedMedia;
 	std::optional<SharedMediaWithLastSlice> _sharedMediaData;
 	std::optional<SharedMediaWithLastSlice::Key> _sharedMediaDataKey;
@@ -327,7 +360,7 @@ private:
 	QRect _closeNav, _closeNavIcon;
 	QRect _leftNav, _leftNavIcon, _rightNav, _rightNavIcon;
 	QRect _headerNav, _nameNav, _dateNav;
-	QRect _saveNav, _saveNavIcon, _moreNav, _moreNavIcon;
+	QRect _rotateNav, _rotateNavIcon, _saveNav, _saveNavIcon, _moreNav, _moreNavIcon;
 	bool _leftNavVisible = false;
 	bool _rightNavVisible = false;
 	bool _saveVisible = false;
@@ -338,6 +371,7 @@ private:
 	bool _streamingStartPaused = false;
 	bool _fullScreenVideo = false;
 	int _fullScreenZoomCache = 0;
+	float64 _lastPositiveVolume = 1.;
 
 	std::unique_ptr<GroupThumbs> _groupThumbs;
 	QRect _groupThumbsRect;
@@ -353,13 +387,15 @@ private:
 	int _xStart = 0, _yStart = 0;
 	int _zoom = 0; // < 0 - out, 0 - none, > 0 - in
 	float64 _zoomToScreen = 0.; // for documents
+	float64 _zoomToDefault = 0.;
 	QPoint _mStart;
 	bool _pressed = false;
 	int32 _dragging = 0;
-	QPixmap _current;
+	QPixmap _staticContent;
 	bool _blurred = true;
 
 	std::unique_ptr<Streamed> _streamed;
+	std::unique_ptr<PipWrap> _pip;
 
 	const style::icon *_docIcon = nullptr;
 	style::color _docIconColor;
@@ -455,6 +491,8 @@ private:
 	std::unique_ptr<Window::Theme::Preview> _themePreview;
 	object_ptr<Ui::RoundButton> _themeApply = { nullptr };
 	object_ptr<Ui::RoundButton> _themeCancel = { nullptr };
+	object_ptr<Ui::RoundButton> _themeShare = { nullptr };
+	Data::CloudTheme _themeCloudData;
 
 	bool _wasRepainted = false;
 

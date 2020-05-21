@@ -10,7 +10,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/rp_widget.h"
 #include "ui/effects/animations.h"
 #include "base/timer.h"
+#include "base/object_ptr.h"
 #include "dialogs/dialogs_key.h"
+
+namespace Main {
+class Session;
+} // namespace Main
 
 namespace Ui {
 class AbstractButton;
@@ -29,18 +34,24 @@ namespace HistoryView {
 
 class TopBarWidget : public Ui::RpWidget, private base::Subscriber {
 public:
-	TopBarWidget(
-		QWidget *parent,
-		not_null<Window::SessionController*> controller);
-
 	struct SelectedState {
 		bool textSelected = false;
 		int count = 0;
 		int canDeleteCount = 0;
 		int canForwardCount = 0;
+		int canSendNowCount = 0;
+	};
+	enum class Section {
+		History,
+		Scheduled,
 	};
 
+	TopBarWidget(
+		QWidget *parent,
+		not_null<Window::SessionController*> controller);
 	~TopBarWidget();
+
+	Main::Session &session() const;
 
 	void updateControlsVisibility();
 	void finishAnimating();
@@ -50,10 +61,13 @@ public:
 	}
 	void setAnimatingMode(bool enabled);
 
-	void setActiveChat(Dialogs::Key chat);
+	void setActiveChat(Dialogs::Key chat, Section section);
 
 	rpl::producer<> forwardSelectionRequest() const {
 		return _forwardSelection.events();
+	}
+	rpl::producer<> sendNowSelectionRequest() const {
+		return _sendNowSelection.events();
 	}
 	rpl::producer<> deleteSelectionRequest() const {
 		return _deleteSelection.events();
@@ -73,6 +87,7 @@ protected:
 private:
 	void refreshInfoButton();
 	void refreshLang();
+	void updateSearchVisibility();
 	void updateControlsGeometry();
 	void selectedShowCallback();
 	void updateInfoToggleActive();
@@ -107,17 +122,19 @@ private:
 	void refreshUnreadBadge();
 	void updateUnreadBadge();
 
-	not_null<Window::SessionController*> _controller;
+	const not_null<Window::SessionController*> _controller;
 	Dialogs::Key _activeChat;
+	Section _section = Section::History;
 
 	int _selectedCount = 0;
 	bool _canDelete = false;
 	bool _canForward = false;
+	bool _canSendNow = false;
 
 	Ui::Animations::Simple _selectedShown;
 
 	object_ptr<Ui::RoundButton> _clear;
-	object_ptr<Ui::RoundButton> _forward, _delete;
+	object_ptr<Ui::RoundButton> _forward, _sendNow, _delete;
 
 	object_ptr<Ui::IconButton> _back;
 	object_ptr<Ui::UnreadBadge> _unreadBadge = { nullptr };
@@ -143,6 +160,7 @@ private:
 	base::Timer _onlineUpdater;
 
 	rpl::event_stream<> _forwardSelection;
+	rpl::event_stream<> _sendNowSelection;
 	rpl::event_stream<> _deleteSelection;
 	rpl::event_stream<> _clearSelection;
 

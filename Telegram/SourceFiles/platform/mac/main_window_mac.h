@@ -11,6 +11,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/mac/specific_mac_p.h"
 #include "base/timer.h"
 
+#include <QtWidgets/QMenuBar>
+#include <QtCore/QTimer>
+
 namespace Platform {
 
 class MainWindow : public Window::MainWindow {
@@ -19,13 +22,6 @@ class MainWindow : public Window::MainWindow {
 
 public:
 	explicit MainWindow(not_null<Window::Controller*> controller);
-
-	void psFirstShow();
-	void psInitSysMenu();
-	void psUpdateMargins();
-
-	void psRefreshTaskbarIcon() {
-	}
 
 	bool psFilterNativeEvent(void *event);
 
@@ -51,6 +47,14 @@ public slots:
 	void psMacPaste();
 	void psMacDelete();
 	void psMacSelectAll();
+	void psMacEmojiAndSymbols();
+
+	void psMacBold();
+	void psMacItalic();
+	void psMacUnderline();
+	void psMacStrikeOut();
+	void psMacMonospace();
+	void psMacClearFormat();
 
 protected:
 	bool eventFilter(QObject *obj, QEvent *evt) override;
@@ -81,14 +85,15 @@ protected:
 
 	QTimer psUpdatedPositionTimer;
 
+	void initShadows() override;
 	void closeWithoutDestroy() override;
+	void createGlobalMenu() override;
 
 private:
 	friend class Private;
 
 	void initTouchBar();
 	void hideAndDeactivate();
-	void createGlobalMenu();
 	void updateTitleCounter();
 	void updateIconCounters();
 
@@ -113,6 +118,13 @@ private:
 	QAction *psNewGroup = nullptr;
 	QAction *psNewChannel = nullptr;
 	QAction *psShowTelegram = nullptr;
+
+	QAction *psBold = nullptr;
+	QAction *psItalic = nullptr;
+	QAction *psUnderline = nullptr;
+	QAction *psStrikeOut = nullptr;
+	QAction *psMonospace = nullptr;
+	QAction *psClearFormat = nullptr;
 
 	int _customTitleHeight = 0;
 

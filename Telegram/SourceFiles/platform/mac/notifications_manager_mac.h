@@ -13,18 +13,22 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Platform {
 namespace Notifications {
 
-bool SkipAudio();
-bool SkipToast();
-
 class Manager : public Window::Notifications::NativeManager, public base::has_weak_ptr {
 public:
 	Manager(Window::Notifications::System *system);
 	~Manager();
 
 protected:
-	void doShowNativeNotification(PeerData *peer, MsgId msgId, const QString &title, const QString &subtitle, const QString &msg, bool hideNameAndPhoto, bool hideReplyButton) override;
+	void doShowNativeNotification(
+		not_null<PeerData*> peer,
+		MsgId msgId,
+		const QString &title,
+		const QString &subtitle,
+		const QString &msg,
+		bool hideNameAndPhoto,
+		bool hideReplyButton) override;
 	void doClearAllFast() override;
-	void doClearFromHistory(History *history) override;
+	void doClearFromHistory(not_null<History*> history) override;
 
 private:
 	class Private;

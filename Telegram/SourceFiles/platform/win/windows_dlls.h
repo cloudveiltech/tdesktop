@@ -7,13 +7,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "platform/win/wrapper_windows_h.h"
+#include "base/platform/win/base_windows_h.h"
 
 #include <shlobj.h>
 #include <roapi.h>
 #include <dwmapi.h>
 #include <RestartManager.h>
 #include <psapi.h>
+
+#ifdef __MINGW32__
+#define __in
+#endif
 
 namespace Platform {
 namespace Dlls {

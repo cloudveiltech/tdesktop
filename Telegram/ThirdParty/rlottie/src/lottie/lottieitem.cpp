@@ -69,6 +69,16 @@ static bool strokeProp(rlottie::Property prop)
     }
 }
 
+static bool isGoodParentLayer(LOTLayerItem *parent, LOTLayerItem *child) {
+    do {
+        if (parent == child) {
+            return false;
+        }
+        parent = parent->resolvedParentLayer();
+    } while (parent);
+    return true;
+}
+
 LOTCompItem::LOTCompItem(LOTModel *model)
     : mCurFrameNo(-1)
 {
@@ -508,6 +518,9 @@ LOTCompLayerItem::LOTCompLayerItem(LOTLayerData *layerModel)
 {
     // 1. create layer item
     for (auto &i : mLayerData->mChildren) {
+        if (i->type() != LOTData::Type::Layer) {
+            continue;
+        }
         auto model = static_cast<LOTLayerData *>(i.get());
         auto item = LOTCompItem::createLayerItem(model);
         if (item) mLayers.push_back(std::move(item));
@@ -520,7 +533,10 @@ LOTCompLayerItem::LOTCompLayerItem(LOTLayerData *layerModel)
             auto search =
                 std::find_if(mLayers.begin(), mLayers.end(),
                              [id](const auto &val) { return val->id() == id; });
-            if (search != mLayers.end()) layer->setParentLayer((*search).get());
+            if (search != mLayers.end() &&
+                isGoodParentLayer((*search).get(), layer.get())) {
+                layer->setParentLayer((*search).get());
+            }
         }
     }
 

@@ -20,10 +20,13 @@ class SessionNavigation;
 
 Fn<void(
 	const MTPChatAdminRights &oldRights,
-	const MTPChatAdminRights &newRights)> SaveAdminCallback(
+	const MTPChatAdminRights &newRights,
+	const QString &rank)> SaveAdminCallback(
 		not_null<PeerData*> peer,
 		not_null<UserData*> user,
-		Fn<void(const MTPChatAdminRights &newRights)> onDone,
+		Fn<void(
+			const MTPChatAdminRights &newRights,
+			const QString &rank)> onDone,
 		Fn<void()> onFail);
 
 Fn<void(
@@ -87,6 +90,7 @@ public:
 	[[nodiscard]] bool canRestrictUser(not_null<UserData*> user) const;
 	[[nodiscard]] std::optional<MTPChatAdminRights> adminRights(
 		not_null<UserData*> user) const;
+	QString adminRank(not_null<UserData*> user) const;
 	[[nodiscard]] std::optional<MTPChatBannedRights> restrictedRights(
 		not_null<UserData*> user) const;
 	[[nodiscard]] bool isCreator(not_null<UserData*> user) const;
@@ -104,7 +108,6 @@ private:
 	UserData *applyBanned(const MTPDchannelParticipantBanned &data);
 	void fillFromChat(not_null<ChatData*> chat);
 	void fillFromChannel(not_null<ChannelData*> channel);
-	void subscribeToCreatorChange(not_null<ChannelData*> channel);
 
 	not_null<PeerData*> _peer;
 	Role _role = Role::Members;
@@ -116,6 +119,7 @@ private:
 
 	// Data for channels.
 	base::flat_map<not_null<UserData*>, MTPChatAdminRights> _adminRights;
+	base::flat_map<not_null<UserData*>, QString> _adminRanks;
 	base::flat_set<not_null<UserData*>> _adminCanEdit;
 	base::flat_map<not_null<UserData*>, not_null<UserData*>> _adminPromotedBy;
 	std::map<not_null<UserData*>, MTPChatBannedRights> _restrictedRights;
@@ -130,7 +134,6 @@ private:
 class ParticipantsBoxController
 	: public PeerListController
 	, private base::Subscriber
-	, private MTP::Sender
 	, public base::has_weak_ptr {
 public:
 	using Role = ParticipantsRole;
@@ -145,6 +148,7 @@ public:
 		not_null<PeerData*> peer,
 		Role role);
 
+	Main::Session &session() const override;
 	void prepare() override;
 	void rowClicked(not_null<PeerListRow*> row) override;
 	void rowActionClicked(not_null<PeerListRow*> row) override;
@@ -204,7 +208,8 @@ private:
 	void showAdmin(not_null<UserData*> user);
 	void editAdminDone(
 		not_null<UserData*> user,
-		const MTPChatAdminRights &rights);
+		const MTPChatAdminRights &rights,
+		const QString &rank);
 	void showRestricted(not_null<UserData*> user);
 	void editRestrictedDone(
 		not_null<UserData*> user,
@@ -232,22 +237,21 @@ private:
 
 	not_null<Window::SessionNavigation*> _navigation;
 	not_null<PeerData*> _peer;
+	MTP::Sender _api;
 	Role _role = Role::Admins;
 	int _offset = 0;
 	mtpRequestId _loadRequestId = 0;
 	bool _allLoaded = false;
 	ParticipantsAdditionalData _additional;
 	std::unique_ptr<ParticipantsOnlineSorter> _onlineSorter;
-	BoxPointer _editBox;
-	BoxPointer _addBox;
-	QPointer<BoxContent> _editParticipantBox;
+	Ui::BoxPointer _editBox;
+	Ui::BoxPointer _addBox;
+	QPointer<Ui::BoxContent> _editParticipantBox;
 
 };
 
 // Members, banned and restricted users server side search.
-class ParticipantsBoxSearchController
-	: public PeerListSearchController
-	, private MTP::Sender {
+class ParticipantsBoxSearchController : public PeerListSearchController {
 public:
 	using Role = ParticipantsBoxController::Role;
 
@@ -289,6 +293,7 @@ private:
 	not_null<ChannelData*> _channel;
 	Role _role = Role::Restricted;
 	not_null<ParticipantsAdditionalData*> _additional;
+	MTP::Sender _api;
 
 	base::Timer _timer;
 	QString _query;

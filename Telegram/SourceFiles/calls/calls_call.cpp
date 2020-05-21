@@ -7,19 +7,20 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "calls/calls_call.h"
 
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "apiwrap.h"
 #include "lang/lang_keys.h"
 #include "boxes/confirm_box.h"
 #include "boxes/rate_call_box.h"
 #include "calls/calls_instance.h"
 #include "base/openssl_help.h"
-#include "mtproto/connection.h"
+#include "mtproto/mtproto_dh_utils.h"
 #include "media/audio/media_audio_track.h"
-#include "platform/platform_info.h"
+#include "base/platform/base_platform_info.h"
 #include "calls/calls_panel.h"
 #include "data/data_user.h"
 #include "data/data_session.h"
+#include "facades.h"
 
 #ifdef slots
 #undef slots
@@ -129,6 +130,7 @@ Call::Call(
 	Type type)
 : _delegate(delegate)
 , _user(user)
+, _api(_user->session().api().instance())
 , _type(type) {
 	_discardByTimeoutTimer.setCallback([this] { hangup(); });
 
@@ -188,7 +190,7 @@ void Call::startOutgoing() {
 	Expects(_state == State::Requesting);
 	Expects(_gaHash.size() == kSha256Size);
 
-	request(MTPphone_RequestCall(
+	_api.request(MTPphone_RequestCall(
 		MTP_flags(0),
 		_user->inputUser,
 		MTP_int(rand_value<int32>()),
@@ -197,14 +199,15 @@ void Call::startOutgoing() {
 			MTP_flags(MTPDphoneCallProtocol::Flag::f_udp_p2p
 				| MTPDphoneCallProtocol::Flag::f_udp_reflector),
 			MTP_int(kMinLayer),
-			MTP_int(tgvoip::VoIPController::GetConnectionMaxLayer()))
+			MTP_int(tgvoip::VoIPController::GetConnectionMaxLayer()),
+			MTP_vector(1, MTP_string("2.4.4")))
 	)).done([=](const MTPphone_PhoneCall &result) {
 		Expects(result.type() == mtpc_phone_phoneCall);
 
 		setState(State::Waiting);
 
 		auto &call = result.c_phone_phoneCall();
-		Auth().data().processUsers(call.vusers());
+		_user->session().data().processUsers(call.vusers());
 		if (call.vphone_call().type() != mtpc_phoneCallWaiting) {
 			LOG(("Call Error: Expected phoneCallWaiting in response to phone.requestCall()"));
 			finish(FinishType::Failed);
@@ -235,11 +238,13 @@ void Call::startIncoming() {
 	Expects(_type == Type::Incoming);
 	Expects(_state == State::Starting);
 
-	request(MTPphone_ReceivedCall(MTP_inputPhoneCall(MTP_long(_id), MTP_long(_accessHash)))).done([this](const MTPBool &result) {
+	_api.request(MTPphone_ReceivedCall(
+		MTP_inputPhoneCall(MTP_long(_id), MTP_long(_accessHash))
+	)).done([=](const MTPBool &result) {
 		if (_state == State::Starting) {
 			setState(State::WaitingIncoming);
 		}
-	}).fail([this](const RPCError &error) {
+	}).fail([=](const RPCError &error) {
 		handleRequestError(error);
 	}).send();
 }
@@ -266,18 +271,19 @@ void Call::actuallyAnswer() {
 	} else {
 		_answerAfterDhConfigReceived = false;
 	}
-	request(MTPphone_AcceptCall(
+	_api.request(MTPphone_AcceptCall(
 		MTP_inputPhoneCall(MTP_long(_id), MTP_long(_accessHash)),
 		MTP_bytes(_gb),
 		MTP_phoneCallProtocol(
 			MTP_flags(MTPDphoneCallProtocol::Flag::f_udp_p2p
 				| MTPDphoneCallProtocol::Flag::f_udp_reflector),
 			MTP_int(kMinLayer),
-			MTP_int(tgvoip::VoIPController::GetConnectionMaxLayer()))
+			MTP_int(tgvoip::VoIPController::GetConnectionMaxLayer()),
+			MTP_vector(1, MTP_string("2.4.4")))
 	)).done([=](const MTPphone_PhoneCall &result) {
 		Expects(result.type() == mtpc_phone_phoneCall);
 		auto &call = result.c_phone_phoneCall();
-		Auth().data().processUsers(call.vusers());
+		_user->session().data().processUsers(call.vusers());
 		if (call.vphone_call().type() != mtpc_phoneCallWaiting) {
 			LOG(("Call Error: "
 				"Not phoneCallWaiting in response to phone.acceptCall."));
@@ -334,7 +340,7 @@ QString Call::getDebugLog() const {
 
 void Call::startWaitingTrack() {
 	_waitingTrack = Media::Audio::Current().createTrack();
-	auto trackFileName = Auth().settings().getSoundPath(
+	auto trackFileName = _user->session().settings().getSoundPath(
 		(_type == Type::Outgoing)
 		? qsl("call_outgoing")
 		: qsl("call_incoming"));
@@ -374,10 +380,10 @@ bool Call::handleUpdate(const MTPPhoneCall &call) {
 			|| peerToUser(_user->id) != data.vadmin_id().v) {
 			Unexpected("phoneCallRequested call inside an existing call handleUpdate()");
 		}
-		if (Auth().userId() != data.vparticipant_id().v) {
+		if (_user->session().userId() != data.vparticipant_id().v) {
 			LOG(("Call Error: Wrong call participant_id %1, expected %2."
 				).arg(data.vparticipant_id().v
-				).arg(Auth().userId()));
+				).arg(_user->session().userId()));
 			finish(FinishType::Failed);
 			return true;
 		}
@@ -446,7 +452,7 @@ bool Call::handleUpdate(const MTPPhoneCall &call) {
 			}
 		}
 		if (data.is_need_rating() && _id && _accessHash) {
-			Ui::show(Box<RateCallBox>(_id, _accessHash));
+			Ui::show(Box<RateCallBox>(&_user->session(), _id, _accessHash));
 		}
 		const auto reason = data.vreason();
 		if (reason && reason->type() == mtpc_phoneCallDiscardReasonDisconnect) {
@@ -503,7 +509,7 @@ void Call::confirmAcceptedCall(const MTPDphoneCallAccepted &call) {
 	_keyFingerprint = ComputeFingerprint(_authKey);
 
 	setState(State::ExchangingKeys);
-	request(MTPphone_ConfirmCall(
+	_api.request(MTPphone_ConfirmCall(
 		MTP_inputPhoneCall(MTP_long(_id), MTP_long(_accessHash)),
 		MTP_bytes(_ga),
 		MTP_long(_keyFingerprint),
@@ -511,12 +517,13 @@ void Call::confirmAcceptedCall(const MTPDphoneCallAccepted &call) {
 			MTP_flags(MTPDphoneCallProtocol::Flag::f_udp_p2p
 				| MTPDphoneCallProtocol::Flag::f_udp_reflector),
 			MTP_int(kMinLayer),
-			MTP_int(tgvoip::VoIPController::GetConnectionMaxLayer()))
+			MTP_int(tgvoip::VoIPController::GetConnectionMaxLayer()),
+			MTP_vector(1, MTP_string("2.4.4")))
 	)).done([this](const MTPphone_PhoneCall &result) {
 		Expects(result.type() == mtpc_phone_phoneCall);
 
 		auto &call = result.c_phone_phoneCall();
-		Auth().data().processUsers(call.vusers());
+		_user->session().data().processUsers(call.vusers());
 		if (call.vphone_call().type() != mtpc_phoneCall) {
 			LOG(("Call Error: Expected phoneCall in response to phone.confirmCall()"));
 			finish(FinishType::Failed);
@@ -622,10 +629,10 @@ void Call::createAndStartController(const MTPDphoneCall &call) {
 	_controller->SetEncryptionKey(reinterpret_cast<char*>(_authKey.data()), (_type == Type::Outgoing));
 	_controller->SetCallbacks(callbacks);
 	if (Global::UseProxyForCalls()
-		&& (Global::ProxySettings() == ProxyData::Settings::Enabled)) {
+		&& (Global::ProxySettings() == MTP::ProxyData::Settings::Enabled)) {
 		const auto &proxy = Global::SelectedProxy();
 		if (proxy.supportsCalls()) {
-			Assert(proxy.type == ProxyData::Type::Socks5);
+			Assert(proxy.type == MTP::ProxyData::Type::Socks5);
 			_controller->SetProxy(
 				tgvoip::PROXY_SOCKS5,
 				proxy.host.toStdString(),
@@ -702,8 +709,8 @@ bool Call::checkCallCommonFields(const T &call) {
 		LOG(("Call Error: Wrong call access_hash."));
 		return checkFailed();
 	}
-	auto adminId = (_type == Type::Outgoing) ? Auth().userId() : peerToUser(_user->id);
-	auto participantId = (_type == Type::Outgoing) ? peerToUser(_user->id) : Auth().userId();
+	auto adminId = (_type == Type::Outgoing) ? _user->session().userId() : peerToUser(_user->id);
+	auto participantId = (_type == Type::Outgoing) ? peerToUser(_user->id) : _user->session().userId();
 	if (call.vadmin_id().v != adminId) {
 		LOG(("Call Error: Wrong call admin_id %1, expected %2.").arg(call.vadmin_id().v).arg(adminId));
 		return checkFailed();
@@ -839,7 +846,7 @@ void Call::finish(FinishType type, const MTPPhoneCallDiscardReason &reason) {
 	auto duration = getDurationMs() / 1000;
 	auto connectionId = _controller ? _controller->GetPreferredRelayID() : 0;
 	_finishByTimeoutTimer.call(kHangupTimeoutMs, [this, finalState] { setState(finalState); });
-	request(MTPphone_DiscardCall(
+	_api.request(MTPphone_DiscardCall(
 		MTP_flags(0),
 		MTP_inputPhoneCall(
 			MTP_long(_id),
@@ -848,10 +855,10 @@ void Call::finish(FinishType type, const MTPPhoneCallDiscardReason &reason) {
 		reason,
 		MTP_long(connectionId)
 	)).done([=](const MTPUpdates &result) {
-		// This could be destroyed by updates, so we set Ended after
+		// Here 'this' could be destroyed by updates, so we set Ended after
 		// updates being handled, but in a guarded way.
 		crl::on_main(this, [=] { setState(finalState); });
-		Auth().api().applyUpdates(result);
+		_user->session().api().applyUpdates(result);
 	}).fail([this, finalState](const RPCError &error) {
 		setState(finalState);
 	}).send();
@@ -871,11 +878,11 @@ void Call::setFailedQueued(int error) {
 
 void Call::handleRequestError(const RPCError &error) {
 	if (error.type() == qstr("USER_PRIVACY_RESTRICTED")) {
-		Ui::show(Box<InformBox>(tr::lng_call_error_not_available(tr::now, lt_user, App::peerName(_user))));
+		Ui::show(Box<InformBox>(tr::lng_call_error_not_available(tr::now, lt_user, _user->name)));
 	} else if (error.type() == qstr("PARTICIPANT_VERSION_OUTDATED")) {
-		Ui::show(Box<InformBox>(tr::lng_call_error_outdated(tr::now, lt_user, App::peerName(_user))));
+		Ui::show(Box<InformBox>(tr::lng_call_error_outdated(tr::now, lt_user, _user->name)));
 	} else if (error.type() == qstr("CALL_PROTOCOL_LAYER_INVALID")) {
-		Ui::show(Box<InformBox>(Lang::Hard::CallErrorIncompatible().replace("{user}", App::peerName(_user))));
+		Ui::show(Box<InformBox>(Lang::Hard::CallErrorIncompatible().replace("{user}", _user->name)));
 	}
 	finish(FinishType::Failed);
 }
@@ -885,7 +892,7 @@ void Call::handleControllerError(int error) {
 		Ui::show(Box<InformBox>(
 			Lang::Hard::CallErrorIncompatible().replace(
 				"{user}",
-				App::peerName(_user))));
+				_user->name)));
 	} else if (error == tgvoip::ERROR_AUDIO_IO) {
 		Ui::show(Box<InformBox>(tr::lng_call_error_audio_io(tr::now)));
 	}

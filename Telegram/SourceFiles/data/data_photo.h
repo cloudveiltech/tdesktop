@@ -9,7 +9,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "data/data_types.h"
 
-class AuthSession;
+namespace Main {
+class Session;
+} // namespace Main
 
 namespace Data {
 class Session;
@@ -20,7 +22,7 @@ public:
 	PhotoData(not_null<Data::Session*> owner, PhotoId id);
 
 	[[nodiscard]] Data::Session &owner() const;
-	[[nodiscard]] AuthSession &session() const;
+	[[nodiscard]] Main::Session &session() const;
 
 	void automaticLoad(
 		Data::FileOrigin origin,
@@ -106,21 +108,23 @@ public:
 	PhotoClickHandler(
 		not_null<PhotoData*> photo,
 		FullMsgId context = FullMsgId(),
-		PeerData *peer = nullptr)
-	: FileClickHandler(context)
-	, _photo(photo)
-	, _peer(peer) {
+		PeerData *peer = nullptr);
+
+	[[nodiscard]] bool valid() const {
+		return !_session.empty();
 	}
-	not_null<PhotoData*> photo() const {
+
+	[[nodiscard]] not_null<PhotoData*> photo() const {
 		return _photo;
 	}
-	PeerData *peer() const {
+	[[nodiscard]] PeerData *peer() const {
 		return _peer;
 	}
 
 private:
-	not_null<PhotoData*> _photo;
-	PeerData *_peer = nullptr;
+	const base::weak_ptr<Main::Session> _session;
+	const not_null<PhotoData*> _photo;
+	PeerData * const _peer = nullptr;
 
 };
 

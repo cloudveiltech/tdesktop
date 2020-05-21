@@ -11,14 +11,20 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_message.h"
 #include "history/history_item_components.h"
 #include "history/history_item.h"
-#include "history/media/history_media.h"
-#include "history/media/history_media_grouped.h"
+#include "history/view/media/history_view_media.h"
+#include "history/view/media/history_view_media_grouped.h"
+#include "history/view/media/history_view_sticker.h"
+#include "history/view/media/history_view_large_emoji.h"
 #include "history/history.h"
+#include "main/main_session.h"
+#include "chat_helpers/stickers_emoji_pack.h"
 #include "data/data_session.h"
 #include "data/data_groups.h"
 #include "data/data_media_types.h"
 #include "lang/lang_keys.h"
 #include "layout.h"
+#include "facades.h"
+#include "app.h"
 #include "styles/style_history.h"
 
 namespace HistoryView {
@@ -84,6 +90,20 @@ bool SimpleElementDelegate::elementIntersectsRange(
 	return true;
 }
 
+void SimpleElementDelegate::elementStartStickerLoop(
+	not_null<const Element*> view) {
+}
+
+void SimpleElementDelegate::elementShowPollResults(
+	not_null<PollData*> poll,
+	FullMsgId context) {
+}
+
+void SimpleElementDelegate::elementShowTooltip(
+	const TextWithEntities &text,
+	Fn<void()> hiddenCallback) {
+}
+
 TextSelection UnshiftItemSelection(
 		TextSelection selection,
 		uint16 byLength) {
@@ -112,14 +132,8 @@ TextSelection ShiftItemSelection(
 	return ShiftItemSelection(selection, byText.length());
 }
 
-void UnreadBar::init(int newCount) {
-	if (freezed) {
-		return;
-	}
-	count = newCount;
-	text = /*(count == kCountUnknown) // #feed
-		? tr::lng_unread_bar_some(tr::now)
-		: */tr::lng_unread_bar(tr::now, lt_count, count);
+void UnreadBar::init() {
+	text = tr::lng_unread_bar_some(tr::now);
 	width = st::semiboldFont->width(text);
 }
 
@@ -170,8 +184,8 @@ void UnreadBar::paint(Painter &p, int y, int w) const {
 }
 
 
-void DateBadge::init(const QDateTime &date) {
-	text = langDayOfMonthFull(date.date());
+void DateBadge::init(const QString &date) {
+	text = date;
 	width = st::msgServiceFont->width(text);
 }
 
@@ -192,7 +206,8 @@ Element::Element(
 	not_null<HistoryItem*> data)
 : _delegate(delegate)
 , _data(data)
-, _dateTime(ItemDateTime(data))
+, _isScheduledUntilOnline(IsItemScheduledUntilOnline(data))
+, _dateTime(_isScheduledUntilOnline ? QDateTime() : ItemDateTime(data))
 , _context(delegate->elementContext()) {
 	history()->owner().registerItemView(this);
 	refreshMedia();
@@ -217,7 +232,7 @@ QDateTime Element::dateTime() const {
 	return _dateTime;
 }
 
-HistoryMedia *Element::media() const {
+Media *Element::media() const {
 	return _media.get();
 }
 
@@ -268,6 +283,16 @@ void Element::paintHighlight(
 
 bool Element::isUnderCursor() const {
 	return _delegate->elementUnderCursor(this);
+}
+
+bool Element::isLastAndSelfMessage() const {
+	if (!hasOutLayout() || data()->_history->peer->isSelf()) {
+		return false;
+	}
+	if (const auto last = data()->_history->lastMessage()) {
+		return last == data();
+	}
+	return false;
 }
 
 void Element::setPendingResize() {
@@ -324,7 +349,7 @@ void Element::refreshMedia() {
 				_media = nullptr;
 				_flags |= Flag::HiddenByGroup;
 			} else {
-				_media = std::make_unique<HistoryGroupedMedia>(
+				_media = std::make_unique<GroupedMedia>(
 					this,
 					group->items);
 				if (!pendingResize()) {
@@ -334,8 +359,25 @@ void Element::refreshMedia() {
 			return;
 		}
 	}
-	if (_data->media()) {
-		_media = _data->media()->createView(this);
+	const auto session = &history()->session();
+	if (const auto media = _data->media()) {
+		_media = media->createView(this);
+	} else if (_data->isIsolatedEmoji()
+		&& session->settings().largeEmoji()) {
+		const auto emoji = _data->isolatedEmoji();
+		const auto emojiStickers = &session->emojiStickersPack();
+		if (const auto sticker = emojiStickers->stickerForEmoji(emoji)) {
+			_media = std::make_unique<UnwrappedMedia>(
+				this,
+				std::make_unique<Sticker>(
+					this,
+					sticker.document,
+					sticker.replacements));
+		} else {
+			_media = std::make_unique<UnwrappedMedia>(
+				this,
+				std::make_unique<LargeEmoji>(this, emoji));
+		}
 	} else {
 		_media = nullptr;
 	}
@@ -383,6 +425,18 @@ bool Element::computeIsAttachToPrevious(not_null<Element*> previous) {
 	return false;
 }
 
+void Element::createUnreadBar() {
+	if (!AddComponents(UnreadBar::Bit())) {
+		return;
+	}
+	const auto bar = Get<UnreadBar>();
+	bar->init();
+	if (data()->mainView() == this) {
+		recountAttachToPreviousInBlocks();
+	}
+	history()->owner().requestViewResize(this);
+}
+
 void Element::destroyUnreadBar() {
 	if (!Has<UnreadBar>()) {
 		return;
@@ -391,29 +445,6 @@ void Element::destroyUnreadBar() {
 	history()->owner().requestViewResize(this);
 	if (data()->mainView() == this) {
 		recountAttachToPreviousInBlocks();
-	}
-}
-
-void Element::setUnreadBarCount(int count) {
-	const auto changed = AddComponents(UnreadBar::Bit());
-	const auto bar = Get<UnreadBar>();
-	if (bar->freezed) {
-		return;
-	}
-	bar->init(count);
-	if (changed) {
-		if (data()->mainView() == this) {
-			recountAttachToPreviousInBlocks();
-		}
-		history()->owner().requestViewResize(this);
-	} else {
-		history()->owner().requestViewRepaint(this);
-	}
-}
-
-void Element::setUnreadBarFreezed() {
-	if (const auto bar = Get<UnreadBar>()) {
-		bar->freezed = true;
 	}
 }
 
@@ -473,7 +504,7 @@ void Element::setDisplayDate(bool displayDate) {
 	const auto item = data();
 	if (displayDate && !Has<DateBadge>()) {
 		AddComponents(DateBadge::Bit());
-		Get<DateBadge>()->init(dateTime());
+		Get<DateBadge>()->init(ItemDateText(item, _isScheduledUntilOnline));
 		setPendingResize();
 	} else if (!displayDate && Has<DateBadge>()) {
 		RemoveComponents(DateBadge::Bit());
@@ -568,6 +599,13 @@ bool Element::hasVisibleText() const {
 	return false;
 }
 
+auto Element::verticalRepaintRange() const -> VerticalRepaintRange {
+	return {
+		.top = 0,
+		.height = height()
+	};
+}
+
 void Element::unloadHeavyPart() {
 	if (_media) {
 		_media->unloadHeavyPart();
@@ -583,7 +621,7 @@ const HistoryBlock *Element::block() const {
 }
 
 void Element::attachToBlock(not_null<HistoryBlock*> block, int index) {
-	Expects(!_data->isLogEntry());
+	Expects(_data->isHistoryEntry());
 	Expects(_block == nullptr);
 	Expects(_indexInBlock < 0);
 	Expects(index >= 0);

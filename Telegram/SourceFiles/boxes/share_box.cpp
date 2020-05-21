@@ -26,31 +26,36 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/message_field.h"
 #include "history/history.h"
 #include "history/history_message.h"
+#include "history/view/history_view_schedule_box.h"
 #include "window/themes/window_theme.h"
+#include "window/window_session_controller.h"
 #include "boxes/peer_list_box.h"
 #include "chat_helpers/emoji_suggestions_widget.h"
 #include "data/data_channel.h"
 #include "data/data_user.h"
 #include "data/data_session.h"
 #include "data/data_folder.h"
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "core/application.h"
+#include "styles/style_layers.h"
 #include "styles/style_boxes.h"
 #include "styles/style_history.h"
-
 
 class ShareBox::Inner
 	: public Ui::RpWidget
 	, public RPCSender
 	, private base::Subscriber {
 public:
-	Inner(QWidget *parent, ShareBox::FilterCallback &&filterCallback);
+	Inner(
+		QWidget *parent,
+		not_null<Window::SessionNavigation*> navigation,
+		ShareBox::FilterCallback &&filterCallback);
 
 	void setPeerSelectedChangedCallback(
 		Fn<void(PeerData *peer, bool selected)> callback);
 	void peerUnselected(not_null<PeerData*> peer);
 
-	QVector<PeerData*> selected() const;
+	std::vector<not_null<PeerData*>> selected() const;
 	bool hasSelected() const;
 
 	void peopleReceived(
@@ -119,6 +124,8 @@ private:
 
 	void refresh();
 
+	const not_null<Window::SessionNavigation*> _navigation;
+
 	float64 _columnSkip = 0.;
 	float64 _rowWidthReal = 0.;
 	int _rowsLeft = 0;
@@ -151,10 +158,12 @@ private:
 
 ShareBox::ShareBox(
 	QWidget*,
+	not_null<Window::SessionNavigation*> navigation,
 	CopyCallback &&copyCallback,
 	SubmitCallback &&submitCallback,
 	FilterCallback &&filterCallback)
-: _copyCallback(std::move(copyCallback))
+: _navigation(navigation)
+, _copyCallback(std::move(copyCallback))
 , _submitCallback(std::move(submitCallback))
 , _filterCallback(std::move(filterCallback))
 , _select(
@@ -188,14 +197,18 @@ void ShareBox::prepareCommentField() {
 	const auto field = _comment->entity();
 
 	connect(field, &Ui::InputField::submitted, [=] {
-		submit();
+		submit({});
 	});
 
 	field->setInstantReplaces(Ui::InstantReplaces::Default());
-	field->setInstantReplacesEnabled(Global::ReplaceEmojiValue());
+	field->setInstantReplacesEnabled(
+		_navigation->session().settings().replaceEmojiValue());
 	field->setMarkdownReplacesEnabled(rpl::single(true));
-	field->setEditLinkCallback(DefaultEditLinkCallback(field));
+	field->setEditLinkCallback(
+		DefaultEditLinkCallback(&_navigation->session(), field));
+	field->setSubmitSettings(_navigation->session().settings().sendSubmitWay());
 
+	InitSpellchecker(&_navigation->session(), field);
 	Ui::SendPendingMoveResizeEvents(_comment);
 }
 
@@ -210,6 +223,7 @@ void ShareBox::prepare() {
 	_inner = setInnerWidget(
 		object_ptr<Inner>(
 			this,
+			_navigation,
 			std::move(_filterCallback)),
 		getTopScrollSkip(),
 		getBottomScrollSkip());
@@ -222,7 +236,7 @@ void ShareBox::prepare() {
 		applyFilterUpdate(query);
 	});
 	_select->setItemRemovedCallback([=](uint64 itemId) {
-		if (const auto peer = Auth().data().peerLoaded(itemId)) {
+		if (const auto peer = _navigation->session().data().peerLoaded(itemId)) {
 			_inner->peerUnselected(peer);
 			selectedChanged();
 			update();
@@ -232,7 +246,7 @@ void ShareBox::prepare() {
 	_select->setSubmittedCallback([=](Qt::KeyboardModifiers modifiers) {
 		if (modifiers.testFlag(Qt::ControlModifier)
 			|| modifiers.testFlag(Qt::MetaModifier)) {
-			submit();
+			submit({});
 		} else {
 			_inner->selectActive();
 		}
@@ -258,7 +272,8 @@ void ShareBox::prepare() {
 
 	Ui::Emoji::SuggestionsController::Init(
 		getDelegate()->outerContainer(),
-		_comment->entity());
+		_comment->entity(),
+		&_navigation->session());
 
 	_select->raise();
 }
@@ -336,8 +351,8 @@ void ShareBox::peopleReceived(
 		switch (result.type()) {
 		case mtpc_contacts_found: {
 			auto &found = result.c_contacts_found();
-			Auth().data().processUsers(found.vusers());
-			Auth().data().processChats(found.vchats());
+			_navigation->session().data().processUsers(found.vusers());
+			_navigation->session().data().processChats(found.vchats());
 			_inner->peopleReceived(
 				query,
 				found.vmy_results().v,
@@ -397,10 +412,26 @@ void ShareBox::keyPressEvent(QKeyEvent *e) {
 	}
 }
 
+SendMenuType ShareBox::sendMenuType() const {
+	const auto selected = _inner->selected();
+	return ranges::all_of(selected, HistoryView::CanScheduleUntilOnline)
+		? SendMenuType::ScheduledToUser
+		: (selected.size() == 1 && selected.front()->isSelf())
+		? SendMenuType::Reminder
+		: SendMenuType::Scheduled;
+}
+
 void ShareBox::createButtons() {
 	clearButtons();
 	if (_hasSelected) {
-		addButton(tr::lng_share_confirm(), [=] { submit(); });
+		const auto send = addButton(tr::lng_share_confirm(), [=] {
+			submit({});
+		});
+		SetupSendMenuAndShortcuts(
+			send,
+			[=] { return sendMenuType(); },
+			[=] { submitSilent(); },
+			[=] { submitScheduled(); });
 	} else if (_copyCallback) {
 		addButton(tr::lng_share_copy_link(), [=] { copyLink(); });
 	}
@@ -434,12 +465,26 @@ void ShareBox::innerSelectedChanged(PeerData *peer, bool checked) {
 	update();
 }
 
-void ShareBox::submit() {
+void ShareBox::submit(Api::SendOptions options) {
 	if (_submitCallback) {
 		_submitCallback(
 			_inner->selected(),
-			_comment->entity()->getTextWithAppliedMarkdown());
+			_comment->entity()->getTextWithAppliedMarkdown(),
+			options);
 	}
+}
+
+void ShareBox::submitSilent() {
+	auto options = Api::SendOptions();
+	options.silent = true;
+	submit(options);
+}
+
+void ShareBox::submitScheduled() {
+	const auto callback = [=](Api::SendOptions options) { submit(options); };
+	Ui::show(
+		HistoryView::PrepareScheduleBox(this, sendMenuType(), callback),
+		Ui::LayerOption::KeepOther);
 }
 
 void ShareBox::copyLink() {
@@ -480,8 +525,10 @@ void ShareBox::scrollAnimationCallback() {
 
 ShareBox::Inner::Inner(
 	QWidget *parent,
+	not_null<Window::SessionNavigation*> navigation,
 	ShareBox::FilterCallback &&filterCallback)
 : RpWidget(parent)
+, _navigation(navigation)
 , _filterCallback(std::move(filterCallback))
 , _chatsIndexed(
 	std::make_unique<Dialogs::IndexedList>(
@@ -490,7 +537,7 @@ ShareBox::Inner::Inner(
 	_rowHeight = st::shareRowHeight;
 	setAttribute(Qt::WA_OpaquePaintEvent);
 
-	const auto self = Auth().user();
+	const auto self = _navigation->session().user();
 	if (_filterCallback(self)) {
 		_chatsIndexed->addToEnd(self->owner().history(self));
 	}
@@ -504,12 +551,12 @@ ShareBox::Inner::Inner(
 			}
 		}
 	};
-	addList(Auth().data().chatsList()->indexed());
+	addList(_navigation->session().data().chatsList()->indexed());
 	const auto id = Data::Folder::kId;
-	if (const auto folder = Auth().data().folderLoaded(id)) {
+	if (const auto folder = _navigation->session().data().folderLoaded(id)) {
 		addList(folder->chatsList()->indexed());
 	}
-	addList(Auth().data().contactsNoChatsList());
+	addList(_navigation->session().data().contactsNoChatsList());
 
 	_filter = qsl("a");
 	updateFilter();
@@ -519,7 +566,9 @@ ShareBox::Inner::Inner(
 	subscribe(Notify::PeerUpdated(), Notify::PeerUpdatedHandler(observeEvents, [this](const Notify::PeerUpdate &update) {
 		notifyPeerUpdated(update);
 	}));
-	subscribe(Auth().downloaderTaskFinished(), [this] { update(); });
+	subscribe(_navigation->session().downloaderTaskFinished(), [=] {
+		update();
+	});
 
 	subscribe(Window::Theme::Background(), [this](const Window::Theme::BackgroundUpdate &update) {
 		if (update.paletteChanged()) {
@@ -599,7 +648,7 @@ void ShareBox::Inner::repaintChatAtIndex(int index) {
 
 	auto row = index / _columnCount;
 	auto column = index % _columnCount;
-	update(rtlrect(_rowsLeft + qFloor(column * _rowWidthReal), row * _rowHeight, _rowWidth, _rowHeight, width()));
+	update(style::rtlrect(_rowsLeft + qFloor(column * _rowWidthReal), row * _rowHeight, _rowWidth, _rowHeight, width()));
 }
 
 ShareBox::Inner::Chat *ShareBox::Inner::getChatAtIndex(int index) {
@@ -676,7 +725,6 @@ void ShareBox::Inner::loadProfilePhotos(int yFrom) {
 	yFrom *= _columnCount;
 	yTo *= _columnCount;
 
-	Auth().downloader().clearPriorities();
 	if (_filter.isEmpty()) {
 		if (!_chatsIndexed->empty()) {
 			auto i = _chatsIndexed->cfind(yFrom, _rowHeight);
@@ -889,10 +937,7 @@ void ShareBox::Inner::changeCheckState(Chat *chat) {
 		const auto history = chat->peer->owner().history(chat->peer);
 		auto row = _chatsIndexed->getRow(history);
 		if (!row) {
-			const auto rowsByLetter = _chatsIndexed->addToEnd(history);
-			const auto it = rowsByLetter.find(0);
-			Assert(it != rowsByLetter.cend());
-			row = it->second;
+			row = _chatsIndexed->addToEnd(history).main;
 		}
 		chat = getChat(row);
 		if (!chat->checkbox.checked()) {
@@ -985,8 +1030,8 @@ void ShareBox::Inner::peopleReceived(
 	d_byUsernameFiltered.reserve(already + my.size() + people.size());
 	const auto feedList = [&](const QVector<MTPPeer> &list) {
 		for (const auto &data : list) {
-			if (const auto peer = Auth().data().peerLoaded(peerFromMTP(data))) {
-				const auto history = Auth().data().historyLoaded(peer);
+			if (const auto peer = _navigation->session().data().peerLoaded(peerFromMTP(data))) {
+				const auto history = _navigation->session().data().historyLoaded(peer);
 				if (!_filterCallback(peer)) {
 					continue;
 				} else if (history && _chatsIndexed->getRow(history)) {
@@ -1020,8 +1065,8 @@ void ShareBox::Inner::refresh() {
 	update();
 }
 
-QVector<PeerData*> ShareBox::Inner::selected() const {
-	auto result = QVector<PeerData*>();
+std::vector<not_null<PeerData*>> ShareBox::Inner::selected() const {
+	auto result = std::vector<not_null<PeerData*>>();
 	result.reserve(_dataMap.size());
 	for (const auto &[peer, chat] : _dataMap) {
 		if (chat->checkbox.checked()) {
@@ -1031,15 +1076,18 @@ QVector<PeerData*> ShareBox::Inner::selected() const {
 	return result;
 }
 
-QString AppendShareGameScoreUrl(const QString &url, const FullMsgId &fullId) {
+QString AppendShareGameScoreUrl(
+		not_null<Main::Session*> session,
+		const QString &url,
+		const FullMsgId &fullId) {
 	auto shareHashData = QByteArray(0x10, Qt::Uninitialized);
 	auto shareHashDataInts = reinterpret_cast<int32*>(shareHashData.data());
 	auto channel = fullId.channel
-		? Auth().data().channelLoaded(fullId.channel)
+		? session->data().channelLoaded(fullId.channel)
 		: static_cast<ChannelData*>(nullptr);
 	auto channelAccessHash = channel ? channel->access : 0ULL;
 	auto channelAccessHashInts = reinterpret_cast<int32*>(&channelAccessHash);
-	shareHashDataInts[0] = Auth().userId();
+	shareHashDataInts[0] = session->userId();
 	shareHashDataInts[1] = fullId.channel;
 	shareHashDataInts[2] = fullId.msg;
 	shareHashDataInts[3] = channelAccessHashInts[0];
@@ -1076,7 +1124,9 @@ QString AppendShareGameScoreUrl(const QString &url, const FullMsgId &fullId) {
 	return url + shareComponent;
 }
 
-void ShareGameScoreByHash(const QString &hash) {
+void ShareGameScoreByHash(
+		not_null<Main::Session*> session,
+		const QString &hash) {
 	auto key128Size = 0x10;
 
 	auto hashEncrypted = QByteArray::fromBase64(hash.toLatin1(), QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals);
@@ -1106,7 +1156,7 @@ void ShareGameScoreByHash(const QString &hash) {
 	}
 
 	auto hashDataInts = reinterpret_cast<int32*>(hashData.data());
-	if (!AuthSession::Exists() || hashDataInts[0] != Auth().userId()) {
+	if (hashDataInts[0] != session->userId()) {
 		Ui::show(Box<InformBox>(tr::lng_share_wrong_user(tr::now)));
 		return;
 	}
@@ -1126,14 +1176,14 @@ void ShareGameScoreByHash(const QString &hash) {
 		return;
 	}
 
-	if (const auto item = Auth().data().message(channelId, msgId)) {
+	if (const auto item = session->data().message(channelId, msgId)) {
 		FastShareMessage(item);
 	} else {
 		auto resolveMessageAndShareScore = [=](ChannelData *channel) {
-			Auth().api().requestMessageData(channel, msgId, [](
+			session->api().requestMessageData(channel, msgId, [=](
 					ChannelData *channel,
 					MsgId msgId) {
-				if (const auto item = Auth().data().message(channel, msgId)) {
+				if (const auto item = session->data().message(channel, msgId)) {
 					FastShareMessage(item);
 				} else {
 					Ui::show(Box<InformBox>(tr::lng_edit_deleted(tr::now)));
@@ -1142,21 +1192,25 @@ void ShareGameScoreByHash(const QString &hash) {
 		};
 
 		const auto channel = channelId
-			? Auth().data().channelLoaded(channelId)
+			? session->data().channelLoaded(channelId)
 			: nullptr;
 		if (channel || !channelId) {
 			resolveMessageAndShareScore(channel);
 		} else {
-			auto requestChannelIds = MTP_vector<MTPInputChannel>(1, MTP_inputChannel(MTP_int(channelId), MTP_long(channelAccessHash)));
-			auto requestChannel = MTPchannels_GetChannels(requestChannelIds);
-			MTP::send(requestChannel, rpcDone([=](const MTPmessages_Chats &result) {
-				result.match([](const auto &data) {
-					Auth().data().processChats(data.vchats());
+			session->api().request(MTPchannels_GetChannels(
+				MTP_vector<MTPInputChannel>(
+					1,
+					MTP_inputChannel(
+						MTP_int(channelId),
+						MTP_long(channelAccessHash)))
+			)).done([=](const MTPmessages_Chats &result) {
+				result.match([&](const auto &data) {
+					session->data().processChats(data.vchats());
 				});
-				if (const auto channel = Auth().data().channelLoaded(channelId)) {
+				if (const auto channel = session->data().channelLoaded(channelId)) {
 					resolveMessageAndShareScore(channel);
 				}
-			}));
+			}).send();
 		}
 	}
 }

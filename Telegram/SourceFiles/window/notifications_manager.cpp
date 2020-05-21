@@ -23,7 +23,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwindow.h"
 #include "mainwidget.h"
 #include "apiwrap.h"
-#include "auth_session.h"
+#include "main/main_session.h"
+#include "facades.h"
+#include "app.h"
+
+#include <QtGui/QWindow>
 
 namespace Window {
 namespace Notifications {
@@ -35,7 +39,7 @@ constexpr auto kWaitingForAllGroupedDelay = crl::time(1000);
 
 } // namespace
 
-System::System(not_null<AuthSession*> session)
+System::System(not_null<Main::Session*> session)
 : _session(session)
 , _waitTimer([=] { showNext(); })
 , _waitForAllGroupedTimer([=] { showGrouped(); }) {
@@ -61,48 +65,58 @@ void System::createManager() {
 	}
 }
 
-void System::schedule(History *history, HistoryItem *item) {
-	if (App::quitting()
-		|| !history->currentNotification()
-		|| !AuthSession::Exists()) return;
+System::SkipState System::skipNotification(
+		not_null<HistoryItem*> item) const {
+	const auto history = item->history();
+	const auto notifyBy = item->specialNotificationPeer();
+	if (App::quitting() || !history->currentNotification()) {
+		return { SkipState::Skip };
+	}
+	const auto scheduled = item->out() && item->isFromScheduled();
 
-	const auto notifyBy = (!history->peer->isUser() && item->mentionsMe())
-		? item->from().get()
-		: nullptr;
+	history->owner().requestNotifySettings(history->peer);
+	if (notifyBy) {
+		history->owner().requestNotifySettings(notifyBy);
+	}
 
-	if (item->isSilent()) {
+	if (history->owner().notifyMuteUnknown(history->peer)) {
+		return { SkipState::Unknown, item->isSilent() };
+	} else if (!history->owner().notifyIsMuted(history->peer)) {
+		return { SkipState::DontSkip, item->isSilent() };
+	} else if (!notifyBy) {
+		return {
+			scheduled ? SkipState::DontSkip : SkipState::Skip,
+			item->isSilent() || scheduled
+		};
+	} else if (history->owner().notifyMuteUnknown(notifyBy)) {
+		return { SkipState::Unknown, item->isSilent() };
+	} else if (!history->owner().notifyIsMuted(notifyBy)) {
+		return { SkipState::DontSkip, item->isSilent() };
+	} else {
+		return {
+			scheduled ? SkipState::DontSkip : SkipState::Skip,
+			item->isSilent() || scheduled
+		};
+	}
+}
+
+void System::schedule(not_null<HistoryItem*> item) {
+	const auto history = item->history();
+	const auto skip = skipNotification(item);
+	if (skip.value == SkipState::Skip) {
 		history->popNotification(item);
 		return;
 	}
-
-	Auth().data().requestNotifySettings(history->peer);
-	if (notifyBy) {
-		Auth().data().requestNotifySettings(notifyBy);
-	}
-	auto haveSetting = !Auth().data().notifyMuteUnknown(history->peer);
-	if (haveSetting && Auth().data().notifyIsMuted(history->peer)) {
-		if (notifyBy) {
-			haveSetting = !Auth().data().notifyMuteUnknown(notifyBy);
-			if (haveSetting) {
-				if (Auth().data().notifyIsMuted(notifyBy)) {
-					history->popNotification(item);
-					return;
-				}
-			}
-		} else {
-			history->popNotification(item);
-			return;
-		}
-	}
-	if (!item->notificationReady()) {
-		haveSetting = false;
-	}
+	const auto notifyBy = item->specialNotificationPeer();
+	const auto ready = (skip.value != SkipState::Unknown)
+		&& item->notificationReady();
 
 	auto delay = item->Has<HistoryMessageForwarded>() ? 500 : 100;
-	auto t = base::unixtime::now();
-	auto ms = crl::now();
-	bool isOnline = App::main()->lastWasOnline(), otherNotOld = ((cOtherOnline() * 1000LL) + Global::OnlineCloudTimeout() > t * 1000LL);
-	bool otherLaterThanMe = (cOtherOnline() * 1000LL + (ms - App::main()->lastSetOnline()) > t * 1000LL);
+	const auto t = base::unixtime::now();
+	const auto ms = crl::now();
+	const bool isOnline = App::main()->lastWasOnline();
+	const auto otherNotOld = ((cOtherOnline() * 1000LL) + Global::OnlineCloudTimeout() > t * 1000LL);
+	const bool otherLaterThanMe = (cOtherOnline() * 1000LL + (ms - App::main()->lastSetOnline()) > t * 1000LL);
 	if (!isOnline && otherNotOld && otherLaterThanMe) {
 		delay = Global::NotifyCloudDelay();
 	} else if (cOtherOnline() >= t) {
@@ -110,20 +124,22 @@ void System::schedule(History *history, HistoryItem *item) {
 	}
 
 	auto when = ms + delay;
-	_whenAlerts[history].insert(when, notifyBy);
+	if (!skip.silent) {
+		_whenAlerts[history].insert(when, notifyBy);
+	}
 	if (Global::DesktopNotify() && !Platform::Notifications::SkipToast()) {
 		auto &whenMap = _whenMaps[history];
 		if (whenMap.constFind(item->id) == whenMap.cend()) {
 			whenMap.insert(item->id, when);
 		}
 
-		auto &addTo = haveSetting ? _waiters : _settingWaiters;
-		auto it = addTo.constFind(history);
+		auto &addTo = ready ? _waiters : _settingWaiters;
+		const auto it = addTo.constFind(history);
 		if (it == addTo.cend() || it->when > when) {
 			addTo.insert(history, Waiter(item->id, when, notifyBy));
 		}
 	}
-	if (haveSetting) {
+	if (ready) {
 		if (!_waitTimer.isActive() || _waitTimer.remainingTime() > delay) {
 			_waitTimer.callOnce(delay);
 		}
@@ -142,7 +158,7 @@ void System::clearAll() {
 	_settingWaiters.clear();
 }
 
-void System::clearFromHistory(History *history) {
+void System::clearFromHistory(not_null<History*> history) {
 	_manager->clearFromHistory(history);
 
 	history->clearNotifications();
@@ -155,7 +171,13 @@ void System::clearFromHistory(History *history) {
 	showNext();
 }
 
-void System::clearFromItem(HistoryItem *item) {
+void System::clearIncomingFromHistory(not_null<History*> history) {
+	_manager->clearFromHistory(history);
+	history->clearIncomingNotifications();
+	_whenAlerts.remove(history);
+}
+
+void System::clearFromItem(not_null<HistoryItem*> item) {
 	_manager->clearFromItem(item);
 }
 
@@ -174,12 +196,12 @@ void System::checkDelayed() {
 		const auto peer = history->peer;
 		auto loaded = false;
 		auto muted = false;
-		if (!Auth().data().notifyMuteUnknown(peer)) {
-			if (!Auth().data().notifyIsMuted(peer)) {
+		if (!peer->owner().notifyMuteUnknown(peer)) {
+			if (!peer->owner().notifyIsMuted(peer)) {
 				loaded = true;
 			} else if (const auto from = i.value().notifyBy) {
-				if (!Auth().data().notifyMuteUnknown(from)) {
-					if (!Auth().data().notifyIsMuted(from)) {
+				if (!peer->owner().notifyMuteUnknown(from)) {
+					if (!peer->owner().notifyIsMuted(from)) {
 						loaded = true;
 					} else {
 						loaded = muted = true;
@@ -193,7 +215,7 @@ void System::checkDelayed() {
 			const auto fullId = FullMsgId(
 				history->channelId(),
 				i.value().msg);
-			if (const auto item = Auth().data().message(fullId)) {
+			if (const auto item = peer->owner().message(fullId)) {
 				if (!item->notificationReady()) {
 					loaded = false;
 				}
@@ -215,7 +237,7 @@ void System::checkDelayed() {
 }
 
 void System::showGrouped() {
-	if (const auto lastItem = Auth().data().message(_lastHistoryItemId)) {
+	if (const auto lastItem = session().data().message(_lastHistoryItemId)) {
 		_waitForAllGroupedTimer.cancel();
 		_manager->showNotification(lastItem, _lastForwardedCount);
 		_lastForwardedCount = 0;
@@ -230,7 +252,9 @@ void System::showNext() {
 		if (!_lastHistoryItemId || !item) {
 			return false;
 		}
-		if (const auto lastItem = Auth().data().message(_lastHistoryItemId)) {
+		const auto lastItem = item->history()->owner().message(
+			_lastHistoryItemId);
+		if (lastItem) {
 			return (lastItem->groupId() == item->groupId() || lastItem->author() == item->author());
 		}
 		return false;
@@ -242,14 +266,14 @@ void System::showNext() {
 	for (auto i = _whenAlerts.begin(); i != _whenAlerts.end();) {
 		while (!i.value().isEmpty() && i.value().begin().key() <= ms) {
 			const auto peer = i.key()->peer;
-			const auto peerUnknown = Auth().data().notifyMuteUnknown(peer);
+			const auto peerUnknown = peer->owner().notifyMuteUnknown(peer);
 			const auto peerAlert = !peerUnknown
-				&& !Auth().data().notifyIsMuted(peer);
+				&& !peer->owner().notifyIsMuted(peer);
 			const auto from = i.value().begin().value();
 			const auto fromUnknown = (!from
-				|| Auth().data().notifyMuteUnknown(from));
+				|| peer->owner().notifyMuteUnknown(from));
 			const auto fromAlert = !fromUnknown
-				&& !Auth().data().notifyIsMuted(from);
+				&& !peer->owner().notifyIsMuted(from);
 			if (peerAlert || fromAlert) {
 				alert = true;
 			}
@@ -275,7 +299,14 @@ void System::showNext() {
 		}
 	}
 	if (alert) {
-		Platform::Notifications::FlashBounce();
+		if (Global::FlashBounceNotify() && !Platform::Notifications::SkipFlashBounce()) {
+			if (const auto widget = App::wnd()) {
+				if (const auto window = widget->windowHandle()) {
+					window->alert(0);
+					// (window, SLOT(_q_clearAlert())); in the future.
+				}
+			}
+		}
 		if (Global::SoundNotify() && !Platform::Notifications::SkipAudio()) {
 			ensureSoundCreated();
 			_soundTrack->playOnce();
@@ -448,7 +479,7 @@ void System::ensureSoundCreated() {
 
 	_soundTrack = Media::Audio::Current().createTrack();
 	_soundTrack->fillFromFile(
-		Auth().settings().getSoundPath(qsl("msg_incoming")));
+		session().settings().getSoundPath(qsl("msg_incoming")));
 }
 
 void System::updateAll() {
@@ -460,16 +491,23 @@ Manager::DisplayOptions Manager::getNotificationOptions(HistoryItem *item) {
 		|| Global::ScreenIsLocked();
 
 	DisplayOptions result;
-	result.hideNameAndPhoto = hideEverything || (Global::NotifyView() > dbinvShowName);
-	result.hideMessageText = hideEverything || (Global::NotifyView() > dbinvShowPreview);
-	result.hideReplyButton = result.hideMessageText || !item || !item->history()->peer->canWrite();
+	result.hideNameAndPhoto = hideEverything
+		|| (Global::NotifyView() > dbinvShowName);
+	result.hideMessageText = hideEverything
+		|| (Global::NotifyView() > dbinvShowPreview);
+	result.hideReplyButton = result.hideMessageText
+		|| !item
+		|| ((item->out() || item->history()->peer->isSelf())
+			&& item->isFromScheduled())
+		|| !item->history()->peer->canWrite()
+		|| (item->history()->peer->slowmodeSecondsLeft() > 0);
 	return result;
 }
 
 void Manager::notificationActivated(PeerId peerId, MsgId msgId) {
 	onBeforeNotificationActivated(peerId, msgId);
 	if (auto window = App::wnd()) {
-		auto history = Auth().data().history(peerId);
+		auto history = system()->session().data().history(peerId);
 		window->showFromTray();
 		window->reActivateWindow();
 		if (Core::App().locked()) {
@@ -491,7 +529,7 @@ void Manager::openNotificationMessage(
 			|| !IsServerMsgId(messageId)) {
 			return false;
 		}
-		const auto item = Auth().data().message(history->channelId(), messageId);
+		const auto item = history->owner().message(history->channelId(), messageId);
 		if (!item || !item->mentionsMe()) {
 			return false;
 		}
@@ -520,35 +558,49 @@ void Manager::notificationReplied(
 		const TextWithTags &reply) {
 	if (!peerId) return;
 
-	const auto history = Auth().data().history(peerId);
+	const auto history = system()->session().data().history(peerId);
 
-	auto message = ApiWrap::MessageToSend(history);
+	auto message = Api::MessageToSend(history);
 	message.textWithTags = reply;
-	message.replyTo = (msgId > 0 && !history->peer->isUser()) ? msgId : 0;
-	message.clearDraft = false;
-	Auth().api().sendMessage(std::move(message));
+	message.action.replyTo = (msgId > 0 && !history->peer->isUser()) ? msgId : 0;
+	message.action.clearDraft = false;
+	history->session().api().sendMessage(std::move(message));
 
 	const auto item = history->owner().message(history->channelId(), msgId);
 	if (item && item->isUnreadMention() && !item->isUnreadMedia()) {
-		Auth().api().markMediaRead(item);
+		history->session().api().markMediaRead(item);
 	}
 }
 
-void NativeManager::doShowNotification(HistoryItem *item, int forwardedCount) {
+void NativeManager::doShowNotification(
+		not_null<HistoryItem*> item,
+		int forwardedCount) {
 	const auto options = getNotificationOptions(item);
 
-	const auto title = options.hideNameAndPhoto ? qsl("Telegram Desktop") : item->history()->peer->name;
-	const auto subtitle = options.hideNameAndPhoto ? QString() : item->notificationHeader();
+	const auto peer = item->history()->peer;
+	const auto scheduled = !options.hideNameAndPhoto
+		&& (item->out() || peer->isSelf())
+		&& item->isFromScheduled();
+	const auto title = options.hideNameAndPhoto
+		? qsl("CloudVeil Messenger")
+		: (scheduled && peer->isSelf())
+		? tr::lng_notification_reminder(tr::now)
+		: peer->name;
+	const auto subtitle = options.hideNameAndPhoto
+		? QString()
+		: item->notificationHeader();
 	const auto text = options.hideMessageText
 		? tr::lng_notification_preview(tr::now)
 		: (forwardedCount < 2
-			? (item->groupId() ? tr::lng_in_dlg_album(tr::now) : item->notificationText())
+			? (item->groupId()
+				? tr::lng_in_dlg_album(tr::now)
+				: item->notificationText())
 			: tr::lng_forward_messages(tr::now, lt_count, forwardedCount));
 
 	doShowNativeNotification(
 		item->history()->peer,
 		item->id,
-		title,
+		scheduled ? WrapFromScheduled(title) : title,
 		subtitle,
 		text,
 		options.hideNameAndPhoto,
@@ -556,6 +608,10 @@ void NativeManager::doShowNotification(HistoryItem *item, int forwardedCount) {
 }
 
 System::~System() = default;
+
+QString WrapFromScheduled(const QString &text) {
+	return QString::fromUtf8("\xF0\x9F\x93\x85 ") + text;
+}
 
 } // namespace Notifications
 } // namespace Window

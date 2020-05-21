@@ -1,0 +1,133 @@
+name: Snap.
+
+on:
+  push:
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - 'changelog.txt'
+      - 'LEGAL'
+      - 'LICENSE'
+      - '.github/**'
+      - '!.github/workflows/snap.yml'
+      - 'Telegram/build/**'
+      - 'Telegram/Patches/**'
+      - '!Telegram/Patches/ffmpeg.diff'
+      - 'Telegram/Resources/uwp/**'
+      - 'Telegram/Resources/winrc/**'
+      - 'Telegram/SourceFiles/platform/win/**'
+      - 'Telegram/SourceFiles/platform/mac/**'
+      - 'Telegram/Telegram/**'
+      - 'Telegram/configure.bat'
+      - 'Telegram/Telegram.plist'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - 'changelog.txt'
+      - 'LEGAL'
+      - 'LICENSE'
+      - '.github/**'
+      - '!.github/workflows/snap.yml'
+      - 'Telegram/build/**'
+      - 'Telegram/Patches/**'
+      - '!Telegram/Patches/ffmpeg.diff'
+      - 'Telegram/Resources/uwp/**'
+      - 'Telegram/Resources/winrc/**'
+      - 'Telegram/SourceFiles/platform/win/**'
+      - 'Telegram/SourceFiles/platform/mac/**'
+      - 'Telegram/Telegram/**'
+      - 'Telegram/configure.bat'
+      - 'Telegram/Telegram.plist'
+
+jobs:
+
+  linux:
+    name: Ubuntu 18.04
+    runs-on: ubuntu-18.04
+
+    env:
+      UPLOAD_ARTIFACT: "false"
+      ONLY_CACHE: "false"
+      MANUAL_CACHING: "5"
+
+    steps:
+      - name: Clone.
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+
+      - name: First set up.
+        run: |
+          sudo apt-get update
+          sudo apt-get install gcc-8 g++-8 -y
+          sudo snap install --classic snapcraft
+
+          # Workaround for snapcraft
+          # See https://forum.snapcraft.io/t/13258
+          sudo chown root:root /
+
+          md5() {
+            md5cache=$(md5sum $1.txt | cut -c -32)
+            echo ::set-env name=$1::$md5cache
+          }
+          keyFor() {
+            keyName="${1^^}_CACHE_KEY"
+            awk -v RS="" -v ORS="\n\n" '/^  '"$1"':/' snap/snapcraft.yaml > $keyName.txt
+            md5 $keyName
+          }
+
+          snap run snapcraft --version > CACHE_KEY.txt
+          gcc-8 --version >> CACHE_KEY.txt
+          echo $MANUAL_CACHING >> CACHE_KEY.txt
+          md5 CACHE_KEY
+
+          keyFor cmake
+          keyFor ffmpeg
+
+      - name: CMake cache.
+        id: cache-cmake
+        uses: actions/cache@v1
+        with:
+          path: parts/cmake
+          key: ${{ runner.OS }}-cmake-${{ env.CACHE_KEY }}-${{ env.CMAKE_CACHE_KEY }}
+
+      - name: CMake build.
+        if: steps.cache-cmake.outputs.cache-hit != 'true'
+        run: sudo snap run snapcraft build --destructive-mode cmake
+
+      - name: FFmpeg cache.
+        id: cache-ffmpeg
+        uses: actions/cache@v1
+        with:
+          path: parts/ffmpeg
+          key: ${{ runner.OS }}-ffmpeg-${{ env.CACHE_KEY }}-${{ env.FFMPEG_CACHE_KEY }}
+
+      - name: FFmpeg build.
+        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+        run: sudo snap run snapcraft build --destructive-mode ffmpeg
+
+      - name: Telegram Desktop snap build.
+        if: env.ONLY_CACHE == 'false'
+        run: sudo snap run snapcraft --destructive-mode
+
+      - name: Move artifact.
+        if: env.UPLOAD_ARTIFACT == 'true'
+        run: |
+          artifact_name=$(echo telegram-desktop_*.snap)
+          echo ::set-env name=ARTIFACT_NAME::$artifact_name
+
+          mkdir artifact
+          mv $artifact_name artifact
+
+      - uses: actions/upload-artifact@master
+        if: env.UPLOAD_ARTIFACT == 'true'
+        name: Upload artifact.
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: artifact
+
+      - name: Remove unneeded directories for cache.
+        run: |
+          sudo rm -rf parts/*/{build,src,ubuntu}
+          sudo rm -rf parts/*/state/{stage,prime}

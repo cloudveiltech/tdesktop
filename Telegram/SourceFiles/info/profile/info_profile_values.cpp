@@ -9,7 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "observer_peer.h"
 #include "core/application.h"
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/text/text_utilities.h"
 #include "lang/lang_keys.h"
@@ -20,8 +20,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_chat.h"
 #include "data/data_user.h"
 #include "data/data_session.h"
-
 #include "boxes/peers/edit_peer_permissions_box.h"
+#include "app.h"
 #include "cloudveil/GlobalSecuritySettings.h"
 
 namespace Info {
@@ -32,7 +32,7 @@ auto PlainBioValue(not_null<UserData*> user) {
 	return Notify::PeerUpdateValue(
 		user,
 		Notify::PeerUpdate::Flag::AboutChanged
-	) | rpl::map([=] {
+	) | rpl::map([=] {	
 		//CloudVeil start
 		if (GlobalSecuritySettings::getSettings().disableBio)
 		{
@@ -42,7 +42,7 @@ auto PlainBioValue(not_null<UserData*> user) {
 		{
 			return user->about();
 		}
-		//CloudVeil end
+		//CloudVeil end 
 	});
 }
 
@@ -62,7 +62,7 @@ rpl::producer<TextWithEntities> NameValue(not_null<PeerData*> peer) {
 		peer,
 		Notify::PeerUpdate::Flag::NameChanged
 	) | rpl::map([=] {
-		return App::peerName(peer);
+		return peer->name;
 	}) | Ui::Text::ToWithEntities();
 }
 
@@ -110,7 +110,7 @@ rpl::producer<TextWithEntities> UsernameValue(not_null<UserData*> user) {
 
 rpl::producer<QString> PlainAboutValue(not_null<PeerData*> peer) {
 	if (const auto user = peer->asUser()) {
-		if (!user->botInfo) {
+		if (!user->isBot()) {
 			return rpl::single(QString());
 		}
 	}
@@ -286,6 +286,21 @@ rpl::producer<int> RestrictionsCountValue(not_null<PeerData*> peer) {
 		});
 	}
 	Unexpected("User in RestrictionsCountValue().");
+}
+
+rpl::producer<not_null<PeerData*>> MigratedOrMeValue(
+		not_null<PeerData*> peer) {
+	using Flag = Notify::PeerUpdate::Flag;
+	if (const auto chat = peer->asChat()) {
+		return Notify::PeerUpdateValue(
+			chat,
+			Flag::MigrationChanged
+		) | rpl::map([=] {
+			return chat->migrateToOrMe();
+		});
+	} else {
+		return rpl::single(peer);
+	}
 }
 
 rpl::producer<int> RestrictedCountValue(not_null<ChannelData*> channel) {

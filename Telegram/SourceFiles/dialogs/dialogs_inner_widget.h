@@ -12,13 +12,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/animations.h"
 #include "ui/rp_widget.h"
 #include "base/flags.h"
+#include "base/object_ptr.h"
+#include "mtproto/mtproto_rpc_sender.h"
 
-class AuthSession;
+namespace Main {
+class Session;
+} // namespace Main
 
 namespace Ui {
 class IconButton;
 class PopupMenu;
-class LinkButton;
+class FlatLabel;
 } // namespace Ui
 
 namespace Window {
@@ -68,12 +72,15 @@ public:
 
 	bool searchReceived(
 		const QVector<MTPMessage> &result,
+		HistoryItem *inject,
 		SearchRequestType type,
 		int fullCount);
 	void peerSearchReceived(
 		const QString &query,
 		const QVector<MTPPeer> &my,
 		const QVector<MTPPeer> &result);
+
+	[[nodiscard]] FilterId filterId() const;
 
 	void clearSelection();
 
@@ -83,13 +90,16 @@ public:
 
 	void refreshDialog(Key key);
 	void removeDialog(Key key);
-	void repaintDialogRow(Mode list, not_null<Row*> row);
+	void repaintDialogRow(FilterId filterId, not_null<Row*> row);
 	void repaintDialogRow(RowDescriptor row);
+	void refreshDialogRow(RowDescriptor row);
 
 	void dragLeft();
 
 	void clearFilter();
 	void refresh(bool toTop = false);
+	void refreshEmptyLabel();
+	void resizeEmptyLabel();
 
 	bool chooseRow();
 
@@ -121,14 +131,11 @@ public:
 
 	rpl::producer<ChosenRow> chosenRow() const;
 
-	void notify_historyMuteUpdated(History *history);
+	~InnerWidget();
 
 	//CloudVeil start
 	void refreshOnUpdate();
 	//CloudVeil end
-
-	~InnerWidget();
-
 public slots:
 	void onParentGeometryChanged();
 
@@ -167,15 +174,23 @@ private:
 		NextOrOriginal,
 	};
 
-	AuthSession &session() const;
+	enum class EmptyState : uchar {
+		None,
+		Loading,
+		NoContacts,
+		EmptyFolder,
+	};
+
+	Main::Session &session() const;
 
 	void dialogRowReplaced(Row *oldRow, Row *newRow);
 
+	void editOpenedFilter();
 	void repaintCollapsedFolderRow(not_null<Data::Folder*> folder);
 	void refreshWithCollapsedRows(bool toTop = false);
 	bool needCollapsedRowsRefresh() const;
 	bool chooseCollapsedRow();
-	void switchImportantChats();
+	void switchToFilter(FilterId filterId);
 	bool chooseHashtag();
 	ChosenRow computeChosenRow() const;
 	bool isSearchResultActive(
@@ -308,7 +323,7 @@ private:
 
 	not_null<Window::SessionController*> _controller;
 
-	Mode _mode = Mode();
+	FilterId _filterId = 0;
 	bool _mouseSelection = false;
 	std::optional<QPoint> _lastMousePosition;
 	Qt::MouseButton _pressButton = Qt::LeftButton;
@@ -355,6 +370,7 @@ private:
 	int _filteredPressed = -1;
 
 	bool _waitingForSearch = false;
+	EmptyState _emptyState = EmptyState::None;
 
 	QString _peerSearchQuery;
 	std::vector<std::unique_ptr<PeerSearchResult>> _peerSearchResults;
@@ -374,7 +390,7 @@ private:
 
 	WidgetState _state = WidgetState::Default;
 
-	object_ptr<Ui::LinkButton> _addContactLnk;
+	object_ptr<Ui::FlatLabel> _empty = { nullptr };
 	object_ptr<Ui::IconButton> _cancelSearchInChat;
 	object_ptr<Ui::IconButton> _cancelSearchFromUser;
 

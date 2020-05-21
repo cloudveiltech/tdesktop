@@ -11,11 +11,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/empty_userpic.h"
 #include "ui/effects/animations.h"
 
-class HistoryDocument;
 struct WebPageData;
 
 namespace HistoryView {
 class Element;
+class Document;
 } // namespace HistoryView
 
 struct HistoryMessageVia : public RuntimeComponent<HistoryMessageVia, HistoryItem> {
@@ -77,6 +77,7 @@ struct HistoryMessageForwarded : public RuntimeComponent<HistoryMessageForwarded
 	PeerData *originalSender = nullptr;
 	std::unique_ptr<HiddenSenderInfo> hiddenSenderInfo;
 	QString originalAuthor;
+	QString psaType;
 	MsgId originalId = 0;
 	mutable Ui::Text::String text = { 1 };
 
@@ -91,6 +92,7 @@ struct HistoryMessageReply : public RuntimeComponent<HistoryMessageReply, Histor
 	HistoryMessageReply &operator=(const HistoryMessageReply &other) = delete;
 	HistoryMessageReply &operator=(HistoryMessageReply &&other) {
 		replyToMsgId = other.replyToMsgId;
+		replyToDocumentId = other.replyToDocumentId;
 		std::swap(replyToMsg, other.replyToMsg);
 		replyToLnk = std::move(other.replyToLnk);
 		replyToName = std::move(other.replyToName);
@@ -130,20 +132,23 @@ struct HistoryMessageReply : public RuntimeComponent<HistoryMessageReply, Histor
 		int w,
 		PaintFlags flags) const;
 
-	MsgId replyToId() const {
+	[[nodiscard]] MsgId replyToId() const {
 		return replyToMsgId;
 	}
-	int replyToWidth() const {
+	[[nodiscard]] int replyToWidth() const {
 		return maxReplyWidth;
 	}
-	ClickHandlerPtr replyToLink() const {
+	[[nodiscard]] ClickHandlerPtr replyToLink() const {
 		return replyToLnk;
 	}
 	void setReplyToLinkFrom(
 		not_null<HistoryMessage*> holder);
 
+	void refreshReplyToDocument();
+
 	MsgId replyToMsgId = 0;
 	HistoryItem *replyToMsg = nullptr;
+	DocumentId replyToDocumentId = 0;
 	ClickHandlerPtr replyToLnk;
 	mutable Ui::Text::String replyToName, replyToText;
 	mutable int replyToVersion = 0;
@@ -160,6 +165,7 @@ struct HistoryMessageMarkupButton {
 		Callback,
 		RequestPhone,
 		RequestLocation,
+		RequestPoll,
 		SwitchInline,
 		SwitchInlineSame,
 		Game,
@@ -375,7 +381,7 @@ struct HistoryMessageLogEntryOriginal
 };
 
 class FileClickHandler;
-struct HistoryDocumentThumbed : public RuntimeComponent<HistoryDocumentThumbed, HistoryDocument> {
+struct HistoryDocumentThumbed : public RuntimeComponent<HistoryDocumentThumbed, HistoryView::Document> {
 	std::shared_ptr<FileClickHandler> _linksavel;
 	std::shared_ptr<FileClickHandler> _linkopenwithl;
 	std::shared_ptr<FileClickHandler> _linkcancell;
@@ -385,31 +391,31 @@ struct HistoryDocumentThumbed : public RuntimeComponent<HistoryDocumentThumbed, 
 	mutable QString _link;
 };
 
-struct HistoryDocumentCaptioned : public RuntimeComponent<HistoryDocumentCaptioned, HistoryDocument> {
+struct HistoryDocumentCaptioned : public RuntimeComponent<HistoryDocumentCaptioned, HistoryView::Document> {
 	HistoryDocumentCaptioned();
 
 	Ui::Text::String _caption;
 };
 
-struct HistoryDocumentNamed : public RuntimeComponent<HistoryDocumentNamed, HistoryDocument> {
+struct HistoryDocumentNamed : public RuntimeComponent<HistoryDocumentNamed, HistoryView::Document> {
 	QString _name;
 	int _namew = 0;
 };
 
 struct HistoryDocumentVoicePlayback {
-	HistoryDocumentVoicePlayback(const HistoryDocument *that);
+	HistoryDocumentVoicePlayback(const HistoryView::Document *that);
 
 	int32 position = 0;
 	anim::value progress;
 	Ui::Animations::Basic progressAnimation;
 };
 
-class HistoryDocumentVoice : public RuntimeComponent<HistoryDocumentVoice, HistoryDocument> {
+class HistoryDocumentVoice : public RuntimeComponent<HistoryDocumentVoice, HistoryView::Document> {
 	// We don't use float64 because components should align to pointer even on 32bit systems.
 	static constexpr float64 kFloatToIntMultiplier = 65536.;
 
 public:
-	void ensurePlayback(const HistoryDocument *interfaces) const;
+	void ensurePlayback(const HistoryView::Document *interfaces) const;
 	void checkPlaybackFinished() const;
 
 	mutable std::unique_ptr<HistoryDocumentVoicePlayback> _playback;

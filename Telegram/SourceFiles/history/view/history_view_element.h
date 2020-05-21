@@ -11,12 +11,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/runtime_composer.h"
 #include "base/flags.h"
 
+class History;
 class HistoryBlock;
 class HistoryItem;
 class HistoryMessage;
 class HistoryService;
-class HistoryMedia;
-class HistoryWebPage;
 
 namespace HistoryView {
 
@@ -24,6 +23,7 @@ enum class PointState : char;
 enum class InfoDisplayType : char;
 struct StateRequest;
 struct TextState;
+class Media;
 
 enum class Context : char {
 	History,
@@ -50,6 +50,13 @@ public:
 		not_null<const Element*> view,
 		int from,
 		int till) = 0;
+	virtual void elementStartStickerLoop(not_null<const Element*> view) = 0;
+	virtual void elementShowPollResults(
+		not_null<PollData*> poll,
+		FullMsgId context) = 0;
+	virtual void elementShowTooltip(
+		const TextWithEntities &text,
+		Fn<void()> hiddenCallback) = 0;
 
 };
 
@@ -69,6 +76,14 @@ public:
 		not_null<const Element*> view,
 		int from,
 		int till) override;
+	void elementStartStickerLoop(not_null<const Element*> view) override;
+	void elementShowPollResults(
+		not_null<PollData*> poll,
+		FullMsgId context) override;
+	void elementShowTooltip(
+		const TextWithEntities &text,
+		Fn<void()> hiddenCallback) override;
+
 };
 
 TextSelection UnshiftItemSelection(
@@ -87,33 +102,22 @@ TextSelection ShiftItemSelection(
 // Any HistoryView::Element can have this Component for
 // displaying the unread messages bar above the message.
 struct UnreadBar : public RuntimeComponent<UnreadBar, Element> {
-	void init(int newCount);
+	void init();
 
 	static int height();
 	static int marginTop();
 
 	void paint(Painter &p, int y, int w) const;
 
-	static constexpr auto kCountUnknown = std::numeric_limits<int>::max();
-
 	QString text;
 	int width = 0;
-	int count = 0;
-
-	// If unread bar is freezed the new messages do not
-	// increment the counter displayed by this bar.
-	//
-	// It happens when we've opened the conversation and
-	// we've seen the bar and new messages are marked as read
-	// as soon as they are added to the chat history.
-	bool freezed = false;
 
 };
 
 // Any HistoryView::Element can have this Component for
 // displaying the day mark above the message.
 struct DateBadge : public RuntimeComponent<DateBadge, Element> {
-	void init(const QDateTime &date);
+	void init(const QString &date);
 
 	int height() const;
 	void paint(Painter &p, int y, int w) const;
@@ -144,7 +148,7 @@ public:
 	not_null<ElementDelegate*> delegate() const;
 	not_null<HistoryItem*> data() const;
 	not_null<History*> history() const;
-	HistoryMedia *media() const;
+	Media *media() const;
 	Context context() const;
 	void refreshDataId();
 
@@ -159,6 +163,8 @@ public:
 	void setPendingResize();
 	bool pendingResize() const;
 	bool isUnderCursor() const;
+
+	bool isLastAndSelfMessage() const;
 
 	bool isAttachedToPrevious() const;
 	bool isAttachedToNext() const;
@@ -183,13 +189,8 @@ public:
 
 	bool computeIsAttachToPrevious(not_null<Element*> previous);
 
-	void setUnreadBarCount(int count);
+	void createUnreadBar();
 	void destroyUnreadBar();
-
-	// marks the unread bar as freezed so that unread
-	// messages count will not change for this bar
-	// when the new messages arrive in this chat history
-	void setUnreadBarFreezed();
 
 	int displayedDateHeight() const;
 	bool displayDate() const;
@@ -254,6 +255,12 @@ public:
 	virtual TimeId displayedEditDate() const;
 	virtual bool hasVisibleText() const;
 
+	struct VerticalRepaintRange {
+		int top = 0;
+		int height = 0;
+	};
+	[[nodiscard]] virtual VerticalRepaintRange verticalRepaintRange() const;
+
 	virtual void unloadHeavyPart();
 
 	// Legacy blocks structure.
@@ -300,7 +307,8 @@ private:
 
 	const not_null<ElementDelegate*> _delegate;
 	const not_null<HistoryItem*> _data;
-	std::unique_ptr<HistoryMedia> _media;
+	std::unique_ptr<Media> _media;
+	bool _isScheduledUntilOnline = false;
 	const QDateTime _dateTime;
 
 	int _y = 0;

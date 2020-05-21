@@ -8,6 +8,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "boxes/abstract_box.h"
+#include "mtproto/mtproto_rpc_sender.h"
+
+namespace Main {
+class Session;
+} // namespace Main
 
 namespace Ui {
 class Checkbox;
@@ -16,7 +21,7 @@ class EmptyUserpic;
 } // namespace Ui
 
 class InformBox;
-class ConfirmBox : public BoxContent, public ClickHandlerHost {
+class ConfirmBox : public Ui::BoxContent, public ClickHandlerHost {
 public:
 	ConfirmBox(QWidget*, const QString &text, FnMut<void()> confirmedCallback = FnMut<void()>(), FnMut<void()> cancelledCallback = FnMut<void()>());
 	ConfirmBox(QWidget*, const QString &text, const QString &confirmText, FnMut<void()> confirmedCallback = FnMut<void()>(), FnMut<void()> cancelledCallback = FnMut<void()>());
@@ -91,7 +96,7 @@ public:
 
 };
 
-class MaxInviteBox : public BoxContent {
+class MaxInviteBox : public Ui::BoxContent, private base::Subscriber {
 public:
 	MaxInviteBox(QWidget*, not_null<ChannelData*> channel);
 
@@ -119,7 +124,7 @@ private:
 
 };
 
-class PinMessageBox : public BoxContent, public RPCSender {
+class PinMessageBox : public Ui::BoxContent, public RPCSender {
 public:
 	PinMessageBox(QWidget*, not_null<PeerData*> peer, MsgId msgId);
 
@@ -144,13 +149,16 @@ private:
 
 };
 
-class DeleteMessagesBox : public BoxContent, public RPCSender {
+class DeleteMessagesBox : public Ui::BoxContent, public RPCSender {
 public:
 	DeleteMessagesBox(
 		QWidget*,
 		not_null<HistoryItem*> item,
 		bool suggestModerateActions);
-	DeleteMessagesBox(QWidget*, MessageIdsList &&selected);
+	DeleteMessagesBox(
+		QWidget*,
+		not_null<Main::Session*> session,
+		MessageIdsList &&selected);
 	DeleteMessagesBox(QWidget*, not_null<PeerData*> peer, bool justClear);
 
 	void setDeleteConfirmedCallback(Fn<void()> callback) {
@@ -169,8 +177,12 @@ private:
 		TextWithEntities description;
 	};
 	void deleteAndClear();
-	PeerData *checkFromSinglePeer() const;
-	std::optional<RevokeConfig> revokeText(not_null<PeerData*> peer) const;
+	[[nodiscard]] PeerData *checkFromSinglePeer() const;
+	[[nodiscard]] bool hasScheduledMessages() const;
+	[[nodiscard]] std::optional<RevokeConfig> revokeText(
+		not_null<PeerData*> peer) const;
+
+	const not_null<Main::Session*> _session;
 
 	PeerData * const _wipeHistoryPeer = nullptr;
 	const bool _wipeHistoryJustClear = false;
@@ -190,10 +202,14 @@ private:
 
 };
 
-class ConfirmInviteBox : public BoxContent, public RPCSender {
+class ConfirmInviteBox
+	: public Ui::BoxContent
+	, public RPCSender
+	, private base::Subscriber {
 public:
 	ConfirmInviteBox(
 		QWidget*,
+		not_null<Main::Session*> session,
 		const MTPDchatInvite &data,
 		Fn<void()> submit);
 	~ConfirmInviteBox();
@@ -206,7 +222,10 @@ protected:
 
 private:
 	static std::vector<not_null<UserData*>> GetParticipants(
+		not_null<Main::Session*> session,
 		const MTPDchatInvite &data);
+
+	const not_null<Main::Session*> _session;
 
 	Fn<void()> _submit;
 	object_ptr<Ui::FlatLabel> _title;
@@ -220,7 +239,7 @@ private:
 
 };
 
-class ConfirmDontWarnBox : public BoxContent {
+class ConfirmDontWarnBox : public Ui::BoxContent {
 public:
 	ConfirmDontWarnBox(
 		QWidget*,

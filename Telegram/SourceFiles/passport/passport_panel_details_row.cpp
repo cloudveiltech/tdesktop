@@ -9,17 +9,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "passport/passport_panel_controller.h"
 #include "lang/lang_keys.h"
-#include "platform/platform_info.h"
+#include "base/platform/base_platform_info.h"
 #include "ui/widgets/input_fields.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/countryinput.h"
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "data/data_user.h"
 #include "data/data_countries.h"
-#include "styles/style_boxes.h"
+#include "styles/style_layers.h"
 #include "styles/style_passport.h"
 
 namespace Passport {
@@ -552,7 +552,7 @@ DateRow::DateRow(
 	GetYear(value))
 , _value(valueCurrent()) {
 	const auto focused = [=](const object_ptr<DateInput> &field) {
-		return [this, pointer = make_weak(field.data())]{
+		return [this, pointer = Ui::MakeWeak(field.data())]{
 			_borderAnimationStart = pointer->borderAnimationStart()
 				+ pointer->x()
 				- _day->x();

@@ -9,12 +9,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "lang/lang_keys.h"
 #include "data/data_peer.h"
+#include "main/main_session.h"
 #include "boxes/confirm_box.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/input_fields.h"
 #include "ui/toast/toast.h"
+#include "mtproto/facade.h"
 #include "mainwindow.h"
+#include "styles/style_layers.h"
 #include "styles/style_boxes.h"
 #include "styles/style_profile.h"
 
@@ -104,7 +107,7 @@ void ReportBox::reasonChanged(Reason reason) {
 				Ui::InputField::Mode::MultiLine,
 				tr::lng_report_reason_description());
 			_reasonOtherText->show();
-			_reasonOtherText->setSubmitSettings(Ui::InputField::SubmitSettings::Both);
+			_reasonOtherText->setSubmitSettings(_peer->session().settings().sendSubmitWay());
 			_reasonOtherText->setMaxLength(kReportReasonLengthMax);
 			_reasonOtherText->resize(width() - (st::boxPadding.left() + st::boxOptionListPadding.left() + st::boxPadding.right()), _reasonOtherText->height());
 

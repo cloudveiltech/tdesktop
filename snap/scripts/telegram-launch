@@ -1,24 +1,16 @@
-#!/bin/bash
+#!/bin/sh
 
-default_downloaddir="$SNAP_USER_DATA/Telegram Desktop"
+if [ ! -d $SNAP/kf5/usr ]; then
+  runtime="kde-frameworks-5-core18"
+  slot="kde-frameworks-5-core18:kde-frameworks-5-core18-slot"
 
-if [ -d "$default_downloaddir" ] && [ ! -L "$default_downloaddir" ]; then
-  dest_downloaddir="$SNAP_USER_COMMON/$(basename "$default_downloaddir")"
-  if [ -d "$dest_downloaddir" ]; then
-    mv -v "$default_downloaddir/*" "$dest_downloaddir/"
-    rmdir "$default_downloaddir"
-  else
-    mv -v "$default_downloaddir" "$SNAP_USER_COMMON"
-  fi
-  ln -sv "$dest_downloaddir" "$default_downloaddir"
+  echo "You need to connect this snap to the $runtime snap."
+  echo ""
+  echo "You can do this with those commands:"
+  echo "snap install $runtime"
+  echo "snap refresh $runtime"
+  echo "snap connect $SNAP_NAME:kde-frameworks-5-plug $slot"
+  exit 1
 fi
 
-default_im_module="xim"
-
-if [ -n "$TELEGRAM_QT_IM_MODULE" ]; then
-  export QT_IM_MODULE="$TELEGRAM_QT_IM_MODULE"
-elif [ -z "$QT_IM_MODULE" ] || [ "$QT_IM_MODULE" == "ibus" ]; then
-  export QT_IM_MODULE="$default_im_module"
-fi
-
-exec desktop-launch Telegram $*
+exec telegram-desktop "$@"

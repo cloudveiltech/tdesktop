@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text_options.h"
 #include "apiwrap.h"
 #include "lang/lang_keys.h"
+#include "facades.h"
 
 namespace {
 
@@ -80,13 +81,15 @@ void UserData::setPhoto(const MTPUserProfilePhoto &photo) {
 	}
 }
 
-QString UserData::unavailableReason() const {
-	return _unavailableReason;
+auto UserData::unavailableReasons() const
+-> const std::vector<Data::UnavailableReason> & {
+	return _unavailableReasons;
 }
 
-void UserData::setUnavailableReason(const QString &text) {
-	if (_unavailableReason != text) {
-		_unavailableReason = text;
+void UserData::setUnavailableReasons(
+		std::vector<Data::UnavailableReason> &&reasons) {
+	if (_unavailableReasons != reasons) {
+		_unavailableReasons = std::move(reasons);
 		Notify::peerUpdatedDelayed(
 			this,
 			Notify::PeerUpdate::Flag::UnavailableReasonChanged);
@@ -152,8 +155,10 @@ void UserData::setBotInfoVersion(int version) {
 void UserData::setBotInfo(const MTPBotInfo &info) {
 	switch (info.type()) {
 	case mtpc_botInfo: {
-		const auto &d(info.c_botInfo());
-		if (peerFromUser(d.vuser_id().v) != id || !botInfo) return;
+		const auto &d = info.c_botInfo();
+		if (peerFromUser(d.vuser_id().v) != id || !isBot()) {
+			return;
+		}
 
 		QString desc = qs(d.vdescription());
 		if (botInfo->description != desc) {

@@ -11,19 +11,21 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/stickers_list_widget.h"
 #include "chat_helpers/gifs_list_widget.h"
 #include "chat_helpers/stickers.h"
-#include "styles/style_chat_helpers.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/shadow.h"
 #include "ui/widgets/discrete_sliders.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/image/image_prepare.h"
+#include "window/window_session_controller.h"
 #include "storage/localstorage.h"
 #include "data/data_channel.h"
+#include "data/data_session.h"
 #include "lang/lang_keys.h"
 #include "mainwindow.h"
 #include "observer_peer.h"
 #include "apiwrap.h"
+#include "styles/style_chat_helpers.h"
 #include "cloudveil/GlobalSecuritySettings.h"
 
 namespace ChatHelpers {
@@ -280,18 +282,19 @@ TabbedSelector::TabbedSelector(
 	not_null<Window::SessionController*> controller,
 	Mode mode)
 : RpWidget(parent)
+, _controller(controller)
 , _mode(mode)
 , _topShadow(full() ? object_ptr<Ui::PlainShadow>(this) : nullptr)
 , _bottomShadow(this)
 , _scroll(this, st::emojiScroll)
 , _tabs { {
-	createTab(SelectorTab::Emoji, controller),
-	createTab(SelectorTab::Stickers, controller),
-	createTab(SelectorTab::Gifs, controller),
+	createTab(SelectorTab::Emoji),
+	createTab(SelectorTab::Stickers),
+	createTab(SelectorTab::Gifs),
 } }
 , _currentTabType(full()
-	? Auth().settings().selectorTab()
-	: SelectorTab::Emoji) {
+		? session().settings().selectorTab()
+		: SelectorTab::Emoji) {
 	resize(st::emojiPanWidth, st::emojiPanMaxHeight);
 
 	for (auto &tab : _tabs) {
@@ -356,35 +359,47 @@ TabbedSelector::TabbedSelector(
 				Notify::PeerUpdate::Flag::RightsChanged,
 				handleUpdate));
 
-		Auth().api().stickerSetInstalled(
+		session().api().stickerSetInstalled(
 		) | rpl::start_with_next([this](uint64 setId) {
 			_tabsSlider->setActiveSection(
 				static_cast<int>(SelectorTab::Stickers));
 			stickers()->showStickerSet(setId);
 			_showRequests.fire({});
 		}, lifetime());
+
+		session().data().stickersUpdated(
+		) | rpl::start_with_next([=] {
+			refreshStickers();
+		}, lifetime());
 	}
 	//setAttribute(Qt::WA_AcceptTouchEvents);
 	setAttribute(Qt::WA_OpaquePaintEvent, false);
 	showAll();
+	hide();
 }
 
-TabbedSelector::Tab TabbedSelector::createTab(SelectorTab type, not_null<Window::SessionController*> controller) {
-auto createWidget = [&]() -> object_ptr<Inner> {
-	if (!full() && type != SelectorTab::Emoji) {
-		return { nullptr };
-	}
-	switch (type) {
-	case SelectorTab::Emoji:
-		return object_ptr<EmojiListWidget>(this, controller);
-	case SelectorTab::Stickers:
-		return object_ptr<StickersListWidget>(this, controller);
-	case SelectorTab::Gifs:
-		return object_ptr<GifsListWidget>(this, controller);
-	}
-	Unexpected("Type in TabbedSelector::createTab.");
-};
-return Tab{ type, createWidget() };
+TabbedSelector::~TabbedSelector() = default;
+
+Main::Session &TabbedSelector::session() const {
+	return _controller->session();
+}
+
+TabbedSelector::Tab TabbedSelector::createTab(SelectorTab type) {
+	auto createWidget = [&]() -> object_ptr<Inner> {
+		if (!full() && type != SelectorTab::Emoji) {
+			return { nullptr };
+		}
+		switch (type) {
+		case SelectorTab::Emoji:
+			return object_ptr<EmojiListWidget>(this, _controller);
+		case SelectorTab::Stickers:
+			return object_ptr<StickersListWidget>(this, _controller);
+		case SelectorTab::Gifs:
+			return object_ptr<GifsListWidget>(this, _controller);
+		}
+		Unexpected("Type in TabbedSelector::createTab.");
+	};
+	return Tab{ type, createWidget() };
 }
 
 bool TabbedSelector::full() const {
@@ -603,8 +618,6 @@ QRect TabbedSelector::rectForFloatPlayer() const {
 	return mapToGlobal(_scroll->geometry());
 }
 
-TabbedSelector::~TabbedSelector() = default;
-
 void TabbedSelector::hideFinished() {
 	for (auto &tab : _tabs) {
 		if (!tab.widget()) {
@@ -618,7 +631,7 @@ void TabbedSelector::hideFinished() {
 
 void TabbedSelector::showStarted() {
 	if (full()) {
-		Auth().api().updateStickers();
+		session().api().updateStickers();
 	}
 	currentTab()->widget()->refreshRecent();
 	currentTab()->widget()->preloadImages();
@@ -646,13 +659,6 @@ void TabbedSelector::afterShown() {
 	}
 }
 
-void TabbedSelector::showMegagroupSet(ChannelData *megagroup) {
-	if (!full()) {
-		return;
-	}
-	stickers()->showMegagroupSet(megagroup);
-}
-
 void TabbedSelector::setCurrentPeer(PeerData *peer) {
 	if (!full()) {
 		return;
@@ -660,6 +666,7 @@ void TabbedSelector::setCurrentPeer(PeerData *peer) {
 	gifs()->setInlineQueryPeer(peer);
 	_currentPeer = peer;
 	checkRestrictedPeer();
+	stickers()->showMegagroupSet(peer ? peer->asMegagroup() : nullptr);
 }
 
 void TabbedSelector::checkRestrictedPeer() {
@@ -816,8 +823,7 @@ void TabbedSelector::switchTab() {
 	_slideAnimation = std::make_unique<SlideAnimation>();
 	auto slidingRect = QRect(0, _scroll->y() * cIntRetinaFactor(), width() * cIntRetinaFactor(), (height() - _scroll->y()) * cIntRetinaFactor());
 	_slideAnimation->setFinalImages(direction, std::move(wasCache), std::move(nowCache), slidingRect, wasSectionIcons);
-	auto corners = App::cornersMask(ImageRoundRadius::Small);
-	_slideAnimation->setCornerMasks(corners[0], corners[1], corners[2], corners[3]);
+	_slideAnimation->setCornerMasks(Images::CornersMask(ImageRoundRadius::Small));
 	_slideAnimation->start();
 
 	hideForSliding();
@@ -828,8 +834,8 @@ void TabbedSelector::switchTab() {
 	update();
 
 	if (full()) {
-		Auth().settings().setSelectorTab(_currentTabType);
-		Auth().saveSettingsDelayed();
+		session().settings().setSelectorTab(_currentTabType);
+		session().saveSettingsDelayed();
 	}
 }
 

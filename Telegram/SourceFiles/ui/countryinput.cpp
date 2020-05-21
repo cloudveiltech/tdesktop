@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/multi_select.h"
 #include "ui/effects/ripple_animation.h"
 #include "data/data_countries.h"
+#include "styles/style_layers.h"
 #include "styles/style_boxes.h"
 #include "styles/style_intro.h"
 
@@ -152,7 +153,9 @@ CountrySelectBox::CountrySelectBox(QWidget*)
 CountrySelectBox::CountrySelectBox(QWidget*, const QString &iso, Type type)
 : _type(type)
 , _select(this, st::contactsMultiSelect, tr::lng_country_ph()) {
-	LastValidISO = iso;
+	if (Data::CountriesByISO2().contains(iso)) {
+		LastValidISO = iso;
+	}
 }
 
 void CountrySelectBox::prepare() {
@@ -304,7 +307,7 @@ void CountrySelectBox::Inner::paintEvent(QPaintEvent *e) {
 
 		auto name = QString::fromUtf8(list[i]->name);
 		auto nameWidth = st::countryRowNameFont->width(name);
-		auto availWidth = width() - st::countryRowPadding.left() - st::countryRowPadding.right() - codeWidth - st::boxLayerScroll.width;
+		auto availWidth = width() - st::countryRowPadding.left() - st::countryRowPadding.right() - codeWidth - st::boxScroll.width;
 		if (nameWidth > availWidth) {
 			name = st::countryRowNameFont->elided(name, availWidth);
 			nameWidth = st::countryRowNameFont->width(name);

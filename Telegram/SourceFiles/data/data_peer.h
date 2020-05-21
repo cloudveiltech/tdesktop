@@ -11,18 +11,18 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_flags.h"
 #include "data/data_notify_settings.h"
 
-namespace Ui {
-class EmptyUserpic;
-} // namespace Ui
-
-class AuthSession;
 class PeerData;
 class UserData;
 class ChatData;
 class ChannelData;
 
+namespace Ui {
+class EmptyUserpic;
+} // namespace Ui
+
 namespace Main {
 class Account;
+class Session;
 } // namespace Main
 
 namespace Data {
@@ -84,6 +84,18 @@ private:
 
 };
 
+struct UnavailableReason {
+	QString reason;
+	QString text;
+
+	bool operator==(const UnavailableReason &other) const {
+		return (reason == other.reason) && (text == other.text);
+	}
+	bool operator!=(const UnavailableReason &other) const {
+		return !(*this == other);
+	}
+};
+
 } // namespace Data
 
 class PeerClickHandler : public ClickHandler {
@@ -125,7 +137,7 @@ public:
 	static constexpr auto kServiceNotificationsId = peerFromUser(777000);
 
 	[[nodiscard]] Data::Session &owner() const;
-	[[nodiscard]] AuthSession &session() const;
+	[[nodiscard]] Main::Session &session() const;
 	[[nodiscard]] Main::Account &account() const;
 
 	[[nodiscard]] bool isUser() const {
@@ -177,6 +189,9 @@ public:
 	[[nodiscard]] Data::RestrictionCheckResult amRestricted(
 		ChatRestriction right) const;
 	[[nodiscard]] bool canRevokeFullHistory() const;
+	[[nodiscard]] bool slowmodeApplied() const;
+	[[nodiscard]] int slowmodeSecondsLeft() const;
+	[[nodiscard]] bool canSendPolls() const;
 
 	[[nodiscard]] UserData *asUser();
 	[[nodiscard]] const UserData *asUser() const;
@@ -269,9 +284,7 @@ public:
 
 	// If this string is not empty we must not allow to open the
 	// conversation and we must show this string instead.
-	[[nodiscard]] virtual QString unavailableReason() const {
-		return QString();
-	}
+	[[nodiscard]] QString computeUnavailableReason() const;
 
 	[[nodiscard]] ClickHandlerPtr createOpenLink();
 	[[nodiscard]] const ClickHandlerPtr &openLink() {
@@ -284,6 +297,7 @@ public:
 	[[nodiscard]] ImagePtr currentUserpic() const;
 
 	[[nodiscard]] bool canPinMessages() const;
+	[[nodiscard]] bool canEditMessagesIndefinitely() const;
 	[[nodiscard]] MsgId pinnedMessageId() const {
 		return _pinnedMessageId;
 	}
@@ -344,6 +358,8 @@ private:
 	void fillNames();
 	std::unique_ptr<Ui::EmptyUserpic> createEmptyUserpic() const;
 	void refreshEmptyUserpic() const;
+	[[nodiscard]] virtual auto unavailableReasons() const
+		-> const std::vector<Data::UnavailableReason> &;
 
 	void setUserpicChecked(
 		PhotoId photoId,
@@ -352,7 +368,7 @@ private:
 
 	static constexpr auto kUnknownPhotoId = PhotoId(0xFFFFFFFFFFFFFFFFULL);
 
-	not_null<Data::Session*> _owner;
+	const not_null<Data::Session*> _owner;
 
 	ImagePtr _userpic;
 	PhotoId _userpicPhotoId = kUnknownPhotoId;

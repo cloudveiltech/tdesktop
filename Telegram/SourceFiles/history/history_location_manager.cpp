@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_location_manager.h"
 
 #include "mainwidget.h"
+#include "core/file_utilities.h"
 #include "lang/lang_keys.h"
 #include "ui/image/image.h"
 #include "data/data_file_origin.h"
@@ -30,7 +31,7 @@ QString LocationClickHandler::copyToClipboardContextItemText() const {
 
 void LocationClickHandler::onClick(ClickContext context) const {
 	if (!psLaunchMaps(_point)) {
-		QDesktopServices::openUrl(_text);
+		File::OpenUrl(_text);
 	}
 }
 

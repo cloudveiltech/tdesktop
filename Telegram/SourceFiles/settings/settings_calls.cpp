@@ -13,7 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/labels.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/level_meter.h"
-#include "info/profile/info_profile_button.h"
+#include "ui/widgets/buttons.h"
 #include "boxes/single_choice_box.h"
 #include "boxes/confirm_box.h"
 #include "platform/platform_specific.h"
@@ -22,7 +22,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "layout.h"
 #include "styles/style_settings.h"
 #include "ui/widgets/continuous_sliders.h"
+#include "window/window_session_controller.h"
 #include "calls/calls_instance.h"
+#include "facades.h"
 
 #ifdef slots
 #undef slots
@@ -38,9 +40,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Settings {
 
-Calls::Calls(QWidget *parent, UserData *self)
+Calls::Calls(
+	QWidget *parent,
+	not_null<Window::SessionController*> controller)
 : Section(parent) {
-	setupContent();
+	setupContent(controller);
 }
 
 Calls::~Calls() {
@@ -56,8 +60,8 @@ void Calls::sectionSaveChanges(FnMut<void()> done) {
 	done();
 }
 
-void Calls::setupContent() {
-	using namespace tgvoip;
+void Calls::setupContent(not_null<Window::SessionController*> controller) {
+	using VoIP = tgvoip::VoIPController;
 
 	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
 	const auto getId = [](const auto &device) {
@@ -71,7 +75,7 @@ void Calls::setupContent() {
 		if (Global::CallOutputDeviceID() == qsl("default")) {
 			return tr::lng_settings_call_device_default(tr::now);
 		}
-		const auto &list = VoIPController::EnumerateAudioOutputs();
+		const auto &list = VoIP::EnumerateAudioOutputs();
 		const auto i = ranges::find(
 			list,
 			Global::CallOutputDeviceID(),
@@ -85,7 +89,7 @@ void Calls::setupContent() {
 		if (Global::CallInputDeviceID() == qsl("default")) {
 			return tr::lng_settings_call_device_default(tr::now);
 		}
-		const auto &list = VoIPController::EnumerateAudioInputs();
+		const auto &list = VoIP::EnumerateAudioInputs();
 		const auto i = ranges::find(
 			list,
 			Global::CallInputDeviceID(),
@@ -107,7 +111,7 @@ void Calls::setupContent() {
 		),
 		st::settingsButton
 	)->addClickHandler([=] {
-		const auto &devices = VoIPController::EnumerateAudioOutputs();
+		const auto &devices = VoIP::EnumerateAudioOutputs();
 		const auto options = ranges::view::concat(
 			ranges::view::single(tr::lng_settings_call_device_default(tr::now)),
 			devices | ranges::view::transform(getName)
@@ -126,7 +130,7 @@ void Calls::setupContent() {
 				: "default";
 			Global::SetCallOutputDeviceID(QString::fromStdString(deviceId));
 			Local::writeUserSettings();
-			if (const auto call = ::Calls::Current().currentCall()) {
+			if (const auto call = controller->session().calls().currentCall()) {
 				call->setCurrentAudioDevice(false, deviceId);
 			}
 		});
@@ -156,7 +160,7 @@ void Calls::setupContent() {
 		_needWriteSettings = true;
 		updateOutputLabel(value);
 		Global::SetCallOutputVolume(value);
-		if (const auto call = ::Calls::Current().currentCall()) {
+		if (const auto call = controller->session().calls().currentCall()) {
 			call->setAudioVolume(false, value / 100.0f);
 		}
 	};
@@ -182,7 +186,7 @@ void Calls::setupContent() {
 		),
 		st::settingsButton
 	)->addClickHandler([=] {
-		const auto &devices = VoIPController::EnumerateAudioInputs();
+		const auto &devices = VoIP::EnumerateAudioInputs();
 		const auto options = ranges::view::concat(
 			ranges::view::single(tr::lng_settings_call_device_default(tr::now)),
 			devices | ranges::view::transform(getName)
@@ -204,7 +208,7 @@ void Calls::setupContent() {
 			if (_micTester) {
 				stopTestingMicrophone();
 			}
-			if (const auto call = ::Calls::Current().currentCall()) {
+			if (const auto call = controller->session().calls().currentCall()) {
 				call->setCurrentAudioDevice(true, deviceId);
 			}
 		});
@@ -234,9 +238,8 @@ void Calls::setupContent() {
 		_needWriteSettings = true;
 		updateInputLabel(value);
 		Global::SetCallInputVolume(value);
-		::Calls::Call *currentCall = ::Calls::Current().currentCall();
-		if (currentCall) {
-			currentCall->setAudioVolume(true, value / 100.0f);
+		if (const auto call = controller->session().calls().currentCall()) {
+			call->setAudioVolume(true, value / 100.0f);
 		}
 	};
 	inputSlider->resize(st::settingsAudioVolumeSlider.seekSize);
@@ -287,10 +290,10 @@ void Calls::setupContent() {
 		rpl::single(Global::CallAudioDuckingEnabled())
 	)->toggledValue() | rpl::filter([](bool enabled) {
 		return (enabled != Global::CallAudioDuckingEnabled());
-	}) | rpl::start_with_next([](bool enabled) {
+	}) | rpl::start_with_next([=](bool enabled) {
 		Global::SetCallAudioDuckingEnabled(enabled);
 		Local::writeUserSettings();
-		if (const auto call = ::Calls::Current().currentCall()) {
+		if (const auto call = controller->session().calls().currentCall()) {
 			call->setAudioDuckingEnabled(enabled);
 		}
 	}, content->lifetime());

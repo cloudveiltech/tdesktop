@@ -11,6 +11,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/sender.h"
 #include "core/core_cloud_password.h"
 
+namespace Main {
+class Session;
+} // namespace Main
+
 namespace Ui {
 class InputField;
 class PasswordInput;
@@ -21,9 +25,9 @@ namespace Core {
 struct CloudPasswordState;
 } // namespace Core
 
-class PasscodeBox : public BoxContent, private MTP::Sender {
+class PasscodeBox : public Ui::BoxContent {
 public:
-	PasscodeBox(QWidget*, bool turningOff);
+	PasscodeBox(QWidget*, not_null<Main::Session*> session, bool turningOff);
 
 	struct CloudFields {
 		static CloudFields From(const Core::CloudPasswordState &current);
@@ -42,7 +46,10 @@ public:
 		std::optional<QString> customDescription;
 		rpl::producer<QString> customSubmitButton;
 	};
-	PasscodeBox(QWidget*, const CloudFields &fields);
+	PasscodeBox(
+		QWidget*,
+		not_null<Main::Session*> session,
+		const CloudFields &fields);
 
 	rpl::producer<QByteArray> newPasswordSet() const;
 	rpl::producer<> passwordReloadNeeded() const;
@@ -122,9 +129,12 @@ private:
 	void passwordChecked();
 	void serverError();
 
+	const not_null<Main::Session*> _session;
+	MTP::Sender _api;
+
 	QString _pattern;
 
-	QPointer<BoxContent> _replacedBy;
+	QPointer<Ui::BoxContent> _replacedBy;
 	bool _turningOff = false;
 	bool _cloudPwd = false;
 	CloudFields _cloudFields;
@@ -154,7 +164,7 @@ private:
 
 };
 
-class RecoverBox : public BoxContent, public RPCSender {
+class RecoverBox : public Ui::BoxContent, public RPCSender {
 public:
 	RecoverBox(QWidget*, const QString &pattern, bool notEmptyPassport);
 
@@ -192,7 +202,7 @@ private:
 };
 
 struct RecoveryEmailValidation {
-	object_ptr<BoxContent> box;
+	object_ptr<Ui::BoxContent> box;
 	rpl::producer<> reloadRequests;
 	rpl::producer<> cancelRequests;
 };

@@ -13,21 +13,30 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/wrap/slide_wrap.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/checkbox.h"
+#include "ui/widgets/buttons.h"
 #include "ui/text/text_utilities.h" // Ui::Text::ToUpper
 #include "boxes/connection_box.h"
 #include "boxes/about_box.h"
 #include "boxes/confirm_box.h"
-#include "info/profile/info_profile_button.h"
 #include "platform/platform_specific.h"
-#include "platform/platform_info.h"
+#include "base/platform/base_platform_info.h"
+#include "window/window_session_controller.h"
 #include "lang/lang_keys.h"
 #include "core/update_checker.h"
 #include "core/application.h"
 #include "storage/localstorage.h"
 #include "data/data_session.h"
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "layout.h"
+#include "facades.h"
+#include "app.h"
 #include "styles/style_settings.h"
+
+#ifndef TDESKTOP_DISABLE_SPELLCHECK
+#include "boxes/dictionaries_manager.h"
+#include "chat_helpers/spellchecker_common.h"
+#include "spellcheck/platform/platform_spellcheck.h"
+#endif // !TDESKTOP_DISABLE_SPELLCHECK
 
 namespace Settings {
 
@@ -45,7 +54,7 @@ void SetupConnectionType(not_null<Ui::VerticalLayout*> container) {
 #ifndef TDESKTOP_DISABLE_NETWORK_PROXY
 	const auto connectionType = [] {
 		const auto transport = MTP::dctransport();
-		if (Global::ProxySettings() != ProxyData::Settings::Enabled) {
+		if (Global::ProxySettings() != MTP::ProxyData::Settings::Enabled) {
 			return transport.isEmpty()
 				? tr::lng_connection_auto_connecting(tr::now)
 				: tr::lng_connection_auto(tr::now, lt_transport, transport);
@@ -240,6 +249,77 @@ void SetupUpdate(not_null<Ui::VerticalLayout*> container) {
 	});
 }
 
+bool HasSystemSpellchecker() {
+#ifdef TDESKTOP_DISABLE_SPELLCHECK
+	return false;
+#endif // TDESKTOP_DISABLE_SPELLCHECK
+	return true;
+}
+
+void SetupSpellchecker(
+		not_null<Window::SessionController*> controller,
+		not_null<Ui::VerticalLayout*> container) {
+#ifndef TDESKTOP_DISABLE_SPELLCHECK
+	const auto session = &controller->session();
+	const auto settings = &session->settings();
+	const auto isSystem = Platform::Spellchecker::IsSystemSpellchecker();
+	const auto button = AddButton(
+		container,
+		isSystem
+			? tr::lng_settings_system_spellchecker()
+			: tr::lng_settings_custom_spellchecker(),
+		st::settingsButton
+	)->toggleOn(
+		rpl::single(settings->spellcheckerEnabled())
+	);
+
+	button->toggledValue(
+	) | rpl::filter([=](bool enabled) {
+		return (enabled != settings->spellcheckerEnabled());
+	}) | rpl::start_with_next([=](bool enabled) {
+		settings->setSpellcheckerEnabled(enabled);
+		session->saveSettingsDelayed();
+	}, container->lifetime());
+
+	if (isSystem) {
+		return;
+	}
+
+	const auto sliding = container->add(
+		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
+			container,
+			object_ptr<Ui::VerticalLayout>(container)));
+
+	AddButton(
+		sliding->entity(),
+		tr::lng_settings_auto_download_dictionaries(),
+		st::settingsButton
+	)->toggleOn(
+		rpl::single(settings->autoDownloadDictionaries())
+	)->toggledValue(
+	) | rpl::filter([=](bool enabled) {
+		return (enabled != settings->autoDownloadDictionaries());
+	}) | rpl::start_with_next([=](bool enabled) {
+		settings->setAutoDownloadDictionaries(enabled);
+		session->saveSettingsDelayed();
+	}, sliding->entity()->lifetime());
+
+	AddButtonWithLabel(
+		sliding->entity(),
+		tr::lng_settings_manage_dictionaries(),
+		Spellchecker::ButtonManageDictsState(session),
+		st::settingsButton
+	)->addClickHandler([=] {
+		Ui::show(Box<Ui::ManageDictionariesBox>(session));
+	});
+
+	button->toggledValue(
+	) | rpl::start_with_next([=](bool enabled) {
+		sliding->toggle(enabled, anim::type::normal);
+	}, container->lifetime());
+#endif // !TDESKTOP_DISABLE_SPELLCHECK
+}
+
 bool HasTray() {
 	return cSupportTray() || Platform::IsWindows();
 }
@@ -324,7 +404,7 @@ void SetupTrayContent(not_null<Ui::VerticalLayout*> container) {
 	}
 
 #ifndef OS_WIN_STORE
-	if (Platform::IsWindows()) {
+	if (Platform::IsWindows() || Platform::IsLinux()) {
 		const auto minimizedToggled = [] {
 			return cStartMinimized() && !Global::LocalPasscode();
 		};
@@ -335,9 +415,6 @@ void SetupTrayContent(not_null<Ui::VerticalLayout*> container) {
 		const auto minimized = addSlidingCheckbox(
 			tr::lng_settings_start_min(tr::now),
 			minimizedToggled());
-		const auto sendto = addCheckbox(
-			tr::lng_settings_add_sendto(tr::now),
-			cSendToMenu());
 
 		autostart->checkedChanges(
 		) | rpl::filter([](bool checked) {
@@ -374,6 +451,12 @@ void SetupTrayContent(not_null<Ui::VerticalLayout*> container) {
 		) | rpl::start_with_next([=] {
 			minimized->entity()->setChecked(minimizedToggled());
 		}, minimized->lifetime());
+	}
+
+	if (Platform::IsWindows()) {
+		const auto sendto = addCheckbox(
+			tr::lng_settings_add_sendto(tr::now),
+			cSendToMenu());
 
 		sendto->checkedChanges(
 		) | rpl::filter([](bool checked) {
@@ -418,25 +501,10 @@ void SetupAnimations(not_null<Ui::VerticalLayout*> container) {
 	}, container->lifetime());
 }
 
-void SetupPerformance(not_null<Ui::VerticalLayout*> container) {
+void SetupPerformance(
+		not_null<Window::SessionController*> controller,
+		not_null<Ui::VerticalLayout*> container) {
 	SetupAnimations(container);
-
-	AddButton(
-		container,
-		tr::lng_settings_autoplay_gifs(),
-		st::settingsButton
-	)->toggleOn(
-		rpl::single(cAutoPlayGif())
-	)->toggledValue(
-	) | rpl::filter([](bool enabled) {
-		return (enabled != cAutoPlayGif());
-	}) | rpl::start_with_next([](bool enabled) {
-		cSetAutoPlayGif(enabled);
-		if (!cAutoPlayGif()) {
-			Auth().data().stopAutoplayAnimations();
-		}
-		Local::writeUserSettings();
-	}, container->lifetime());
 }
 
 void SetupSystemIntegration(
@@ -456,16 +524,18 @@ void SetupSystemIntegration(
 	AddSkip(container);
 }
 
-Advanced::Advanced(QWidget *parent, UserData *self)
+Advanced::Advanced(
+	QWidget *parent,
+	not_null<Window::SessionController*> controller)
 : Section(parent) {
-	setupContent();
+	setupContent(controller);
 }
 
 rpl::producer<Type> Advanced::sectionShowOther() {
 	return _showOther.events();
 }
 
-void Advanced::setupContent() {
+void Advanced::setupContent(not_null<Window::SessionController*> controller) {
 	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
 
 	auto empty = true;
@@ -495,8 +565,8 @@ void Advanced::setupContent() {
 		SetupConnectionType(content);
 		AddSkip(content);
 	}
-	SetupDataStorage(content);
-	SetupAutoDownload(content);
+	SetupDataStorage(controller, content);
+	SetupAutoDownload(controller, content);
 	SetupSystemIntegration(content, [=](Type type) {
 		_showOther.fire_copy(type);
 	});
@@ -504,8 +574,16 @@ void Advanced::setupContent() {
 	AddDivider(content);
 	AddSkip(content);
 	AddSubsectionTitle(content, tr::lng_settings_performance());
-	SetupPerformance(content);
+	SetupPerformance(controller, content);
 	AddSkip(content);
+
+	if (HasSystemSpellchecker()) {
+		AddDivider(content);
+		AddSkip(content);
+		AddSubsectionTitle(content, tr::lng_settings_spellchecker());
+		SetupSpellchecker(controller, content);
+		AddSkip(content);
+	}
 
 	if (cAutoUpdate()) {
 		addUpdate();

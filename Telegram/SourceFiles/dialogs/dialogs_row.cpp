@@ -28,7 +28,7 @@ QString ComposeFolderListEntryText(not_null<Data::Folder*> folder) {
 
 	const auto count = std::max(
 		int(list.size()),
-		folder->chatsListSize());
+		folder->chatsList()->fullSize().current());
 
 	const auto throwAwayLastName = (list.size() > 1)
 		&& (count == list.size() + 1);
@@ -38,7 +38,7 @@ QString ComposeFolderListEntryText(not_null<Data::Folder*> folder) {
 		list.size() - (throwAwayLastName ? 1 : 0)
 	);
 	const auto wrapName = [](not_null<History*> history) {
-		const auto name = TextUtilities::Clean(App::peerName(history->peer));
+		const auto name = TextUtilities::Clean(history->peer->name);
 		return (history->unreadCount() > 0)
 			? (textcmdStartSemibold()
 				+ textcmdLink(1, name)
@@ -220,8 +220,8 @@ Row::Row(Key key, int pos) : _id(key), _pos(pos) {
 	}
 }
 
-uint64 Row::sortKey() const {
-	return _id.entry()->sortKeyInChatList();
+uint64 Row::sortKey(FilterId filterId) const {
+	return _id.entry()->sortKeyInChatList(filterId);
 }
 
 void Row::validateListEntryCache() const {

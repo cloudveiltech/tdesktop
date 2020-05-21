@@ -3,6 +3,8 @@
 #include "chat_helpers/stickers.h"
 #include "data/data_document.h"
 
+class History;
+
 class SettingsResponse
 {
 public:

@@ -12,6 +12,21 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/timer.h"
 #include "ui/effects/animations.h"
 #include "ui/effects/round_checkbox.h"
+#include "mtproto/mtproto_rpc_sender.h"
+
+enum class SendMenuType;
+
+namespace Window {
+class SessionNavigation;
+} // namespace Window
+
+namespace Api {
+struct SendOptions;
+} // namespace Api
+
+namespace Main {
+class Session;
+} // namespace Main
 
 namespace Dialogs {
 class Row;
@@ -30,16 +45,26 @@ template <typename Widget>
 class SlideWrap;
 } // namespace Ui
 
-QString AppendShareGameScoreUrl(const QString &url, const FullMsgId &fullId);
-void ShareGameScoreByHash(const QString &hash);
+QString AppendShareGameScoreUrl(
+	not_null<Main::Session*> session,
+	const QString &url,
+	const FullMsgId &fullId);
+void ShareGameScoreByHash(
+	not_null<Main::Session*> session,
+	const QString &hash);
 
-class ShareBox : public BoxContent, public RPCSender {
+class ShareBox : public Ui::BoxContent, public RPCSender {
 public:
 	using CopyCallback = Fn<void()>;
-	using SubmitCallback = Fn<void(QVector<PeerData*>&&, TextWithTags&&)>;
+	using SubmitCallback = Fn<void(
+		std::vector<not_null<PeerData*>>&&,
+		TextWithTags&&,
+		Api::SendOptions)>;
 	using FilterCallback = Fn<bool(PeerData*)>;
+
 	ShareBox(
 		QWidget*,
+		not_null<Window::SessionNavigation*> navigation,
 		CopyCallback &&copyCallback,
 		SubmitCallback &&submitCallback,
 		FilterCallback &&filterCallback);
@@ -55,9 +80,13 @@ private:
 	void prepareCommentField();
 	void scrollAnimationCallback();
 
-	void submit();
+	void submit(Api::SendOptions options);
+	void submitSilent();
+	void submitScheduled();
 	void copyLink();
 	bool searchByUsername(bool useCache = false);
+
+	SendMenuType sendMenuType() const;
 
 	void scrollTo(Ui::ScrollToRequest request);
 	void needSearchByUsername();
@@ -76,6 +105,8 @@ private:
 		const MTPcontacts_Found &result,
 		mtpRequestId requestId);
 	bool peopleFailed(const RPCError &error, mtpRequestId requestId);
+
+	const not_null<Window::SessionNavigation*> _navigation;
 
 	CopyCallback _copyCallback;
 	SubmitCallback _submitCallback;

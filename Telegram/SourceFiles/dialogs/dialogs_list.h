@@ -16,7 +16,7 @@ enum class SortMode;
 
 class List final {
 public:
-	List(SortMode sortMode);
+	List(SortMode sortMode, FilterId filterId = 0);
 	List(const List &other) = delete;
 	List &operator=(const List &other) = delete;
 	List(List &&other) = default;
@@ -74,7 +74,6 @@ public:
 	void resetAll();
 	void remove(History* history);
 	//CloudVeil end
-
 private:
 	void adjustByName(not_null<Row*> row);
 	void rotate(
@@ -83,6 +82,7 @@ private:
 		std::vector<not_null<Row*>>::iterator last);
 
 	SortMode _sortMode = SortMode();
+	FilterId _filterId = 0;
 	std::vector<not_null<Row*>> _rows;
 	std::map<Key, std::unique_ptr<Row>> _rowByKey;
 

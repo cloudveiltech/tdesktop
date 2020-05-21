@@ -15,6 +15,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_messages.h"
 #include "history/view/history_view_element.h"
 
+namespace Main {
+class Session;
+} // namespace Main
+
 namespace Ui {
 class PopupMenu;
 } // namespace Ui
@@ -42,6 +46,7 @@ struct SelectedItem {
 	FullMsgId msgId;
 	bool canDelete = false;
 	bool canForward = false;
+	bool canSendNow = false;
 
 };
 
@@ -58,6 +63,7 @@ public:
 		int limitBefore,
 		int limitAfter) = 0;
 	virtual bool listAllowsMultiSelect() = 0;
+	virtual bool listIsItemGoodForSelection(not_null<HistoryItem*> item) = 0;
 	virtual bool listIsLessInOrder(
 		not_null<HistoryItem*> first,
 		not_null<HistoryItem*> second) = 0;
@@ -73,6 +79,7 @@ public:
 struct SelectionData {
 	bool canDelete = false;
 	bool canForward = false;
+	bool canSendNow = false;
 
 };
 
@@ -88,7 +95,8 @@ public:
 		int shift = 0;
 	};
 
-	explicit ListMemento(Data::MessagePosition position)
+	explicit ListMemento(
+		Data::MessagePosition position = Data::UnreadMessagePosition)
 	: _aroundPosition(position) {
 	}
 	void setAroundPosition(Data::MessagePosition position) {
@@ -127,6 +135,8 @@ public:
 		QWidget *parent,
 		not_null<Window::SessionController*> controller,
 		not_null<ListDelegate*> delegate);
+
+	Main::Session &session() const;
 
 	not_null<ListDelegate*> delegate() const;
 
@@ -168,6 +178,7 @@ public:
 	// AbstractTooltipShower interface
 	QString tooltipText() const override;
 	QPoint tooltipPos() const override;
+	bool tooltipWindowActive() const override;
 
 	// ElementDelegate interface.
 	Context elementContext() override;
@@ -178,12 +189,20 @@ public:
 	bool elementUnderCursor(not_null<const Element*> view) override;
 	void elementAnimationAutoplayAsync(
 		not_null<const Element*> view) override;
-	crl::time elementHighlightTime(not_null<const Element*> element) override;
+	crl::time elementHighlightTime(
+		not_null<const Element*> element) override;
 	bool elementInSelectionMode() override;
 	bool elementIntersectsRange(
 		not_null<const Element*> view,
 		int from,
 		int till) override;
+	void elementStartStickerLoop(not_null<const Element*> view) override;
+	void elementShowPollResults(
+		not_null<PollData*> poll,
+		FullMsgId context) override;
+	void elementShowTooltip(
+		const TextWithEntities &text,
+		Fn<void()> hiddenCallback) override;
 
 	~ListWidget();
 
@@ -329,7 +348,6 @@ private:
 		TextSelection selection);
 	int itemMinimalHeight() const;
 
-	bool isGoodForSelection(not_null<HistoryItem*> item) const;
 	bool isGoodForSelection(
 		SelectedMap &applyTo,
 		not_null<HistoryItem*> item,
@@ -435,6 +453,7 @@ private:
 	int _itemsWidth = 0;
 	int _itemsHeight = 0;
 	int _itemAverageHeight = 0;
+	base::flat_set<FullMsgId> _animatedStickersPlayed;
 
 	int _minHeight = 0;
 	int _visibleTop = 0;

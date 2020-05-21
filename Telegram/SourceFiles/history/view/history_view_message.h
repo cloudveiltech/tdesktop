@@ -8,11 +8,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "history/view/history_view_element.h"
+#include "ui/effects/animations.h"
+#include "base/weak_ptr.h"
 
 class HistoryMessage;
 struct HistoryMessageEdited;
+struct HistoryMessageForwarded;
 
 namespace HistoryView {
+
+class WebPage;
 
 // Special type of Component for the channel actions log.
 struct LogEntryOriginal
@@ -22,11 +27,17 @@ struct LogEntryOriginal
 	LogEntryOriginal &operator=(LogEntryOriginal &&other);
 	~LogEntryOriginal();
 
-	std::unique_ptr<HistoryWebPage> page;
-
+	std::unique_ptr<WebPage> page;
 };
 
-class Message : public Element {
+struct PsaTooltipState : public RuntimeComponent<PsaTooltipState, Element> {
+	QString type;
+	mutable ClickHandlerPtr link;
+	mutable Ui::Animations::Simple buttonVisibleAnimation;
+	mutable bool buttonVisible = true;
+};
+
+class Message : public Element, public base::has_weak_ptr {
 public:
 	Message(
 		not_null<ElementDelegate*> delegate,
@@ -84,6 +95,8 @@ public:
 	TimeId displayedEditDate() const override;
 	int infoWidth() const override;
 
+	VerticalRepaintRange verticalRepaintRange() const override;
+
 protected:
 	void refreshDataIdHook() override;
 
@@ -91,6 +104,7 @@ private:
 	not_null<HistoryMessage*> message() const;
 
 	void initLogEntryOriginal();
+	void initPsa();
 	void refreshEditedBadge();
 	void fromNameUpdated(int width) const;
 
@@ -140,17 +154,21 @@ private:
 	bool displayFastShare() const;
 	bool displayGoToOriginal() const;
 	ClickHandlerPtr fastReplyLink() const;
-	TimeId displayedEditDate(bool hasViaBotOrInlineMarkup) const;
 	const HistoryMessageEdited *displayedEditBadge() const;
 	HistoryMessageEdited *displayedEditBadge();
 	void initTime();
-	int timeLeft() const;
-	int plainMaxWidth() const;
+	[[nodiscard]] int timeLeft() const;
+	[[nodiscard]] int plainMaxWidth() const;
+	[[nodiscard]] int monospaceMaxWidth() const;
 
-	HistoryWebPage *logEntryOriginal() const;
+	WebPage *logEntryOriginal() const;
+
+	[[nodiscard]] ClickHandlerPtr psaTooltipLink() const;
+	void psaTooltipToggled(bool shown) const;
 
 	mutable ClickHandlerPtr _rightActionLink;
 	mutable ClickHandlerPtr _fastReplyLink;
+	int _bubbleWidthLimit = 0;
 
 };
 

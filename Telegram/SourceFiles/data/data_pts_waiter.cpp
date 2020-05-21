@@ -8,8 +8,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_pts_waiter.h"
 
 #include "mainwidget.h"
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "apiwrap.h"
+#include "app.h"
 
 uint64 PtsWaiter::ptsKey(PtsSkippedQueue queue, int32 pts) {
 	return _queue.insert(uint64(uint32(pts)) << 32 | (++_skippedKey), queue).key();

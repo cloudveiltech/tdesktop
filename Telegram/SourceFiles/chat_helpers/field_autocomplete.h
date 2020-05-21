@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/animations.h"
 #include "ui/rp_widget.h"
 #include "base/timer.h"
+#include "base/object_ptr.h"
 #include "chat_helpers/stickers.h"
 
 namespace Ui {
@@ -20,6 +21,10 @@ namespace Lottie {
 class SinglePlayer;
 class FrameRenderer;
 } // namespace Lottie;
+
+namespace Window {
+class SessionController;
+} // namespace Window
 
 namespace internal {
 
@@ -41,7 +46,9 @@ class FieldAutocomplete final : public Ui::RpWidget {
 	Q_OBJECT
 
 public:
-	FieldAutocomplete(QWidget *parent);
+	FieldAutocomplete(
+		QWidget *parent,
+		not_null<Window::SessionController*> controller);
 	~FieldAutocomplete();
 
 	bool clearFilteredBotCommands();
@@ -104,6 +111,7 @@ private:
 	void recount(bool resetScroll = false);
 	internal::StickerRows getStickerSuggestions();
 
+	const not_null<Window::SessionController*> _controller;
 	QPixmap _cache;
 	internal::MentionRows _mrows;
 	internal::HashtagRows _hrows;
@@ -154,6 +162,7 @@ class FieldAutocompleteInner final
 
 public:
 	FieldAutocompleteInner(
+		not_null<Window::SessionController*> controller,
 		not_null<FieldAutocomplete*> parent,
 		not_null<MentionRows*> mrows,
 		not_null<HashtagRows*> hrows,
@@ -193,15 +202,17 @@ private:
 	void showPreview();
 	void selectByMouse(QPoint global);
 
+	QSize stickerBoundingBox() const;
 	void setupLottie(StickerSuggestion &suggestion);
 	void repaintSticker(not_null<DocumentData*> document);
 	std::shared_ptr<Lottie::FrameRenderer> getLottieRenderer();
 
-	not_null<FieldAutocomplete*> _parent;
-	not_null<MentionRows*> _mrows;
-	not_null<HashtagRows*> _hrows;
-	not_null<BotCommandRows*> _brows;
-	not_null<StickerRows*> _srows;
+	const not_null<Window::SessionController*> _controller;
+	const not_null<FieldAutocomplete*> _parent;
+	const not_null<MentionRows*> _mrows;
+	const not_null<HashtagRows*> _hrows;
+	const not_null<BotCommandRows*> _brows;
+	const not_null<StickerRows*> _srows;
 	rpl::lifetime _stickersLifetime;
 	std::weak_ptr<Lottie::FrameRenderer> _lottieRenderer;
 	int _stickersPerRow = 1;

@@ -40,37 +40,42 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 #include "numbers.h"
 #include "observer_peer.h"
-#include "auth_session.h"
+#include "main/main_session.h"
+#include "styles/style_boxes.h"
 #include "styles/style_overview.h"
-#include "styles/style_mediaview.h"
+#include "styles/style_media_view.h"
 #include "styles/style_chat_helpers.h"
 #include "styles/style_history.h"
-#include "styles/style_boxes.h"
+#include "styles/style_layers.h"
+
+#include <QtCore/QBuffer>
+#include <QtGui/QFontDatabase>
 
 #ifdef OS_MAC_OLD
 #include <libexif/exif-data.h>
 #endif // OS_MAC_OLD
 
 namespace {
-	App::LaunchState _launchState = App::Launched;
 
-	HistoryView::Element *hoveredItem = nullptr,
-		*pressedItem = nullptr,
-		*hoveredLinkItem = nullptr,
-		*pressedLinkItem = nullptr,
-		*mousedItem = nullptr;
+constexpr auto kImageAreaLimit = 12'032 * 9'024;
 
-	style::font monofont;
+App::LaunchState _launchState = App::Launched;
 
-	struct CornersPixmaps {
-		QPixmap p[4];
-	};
-	QVector<CornersPixmaps> corners;
-	using CornersMap = QMap<uint32, CornersPixmaps>;
-	CornersMap cornersMap;
-	QImage cornersMaskLarge[4], cornersMaskSmall[4];
+HistoryView::Element *hoveredItem = nullptr,
+	*pressedItem = nullptr,
+	*hoveredLinkItem = nullptr,
+	*pressedLinkItem = nullptr,
+	*mousedItem = nullptr;
 
-	int32 serviceImageCacheSize = 0;
+struct CornersPixmaps {
+	QPixmap p[4];
+};
+QVector<CornersPixmaps> corners;
+using CornersMap = QMap<uint32, CornersPixmaps>;
+CornersMap cornersMap;
+QImage cornersMaskLarge[4], cornersMaskSmall[4];
+
+int32 serviceImageCacheSize = 0;
 
 } // namespace
 
@@ -102,50 +107,6 @@ namespace App {
 		return result;
 	}
 
-	MainWindow *wnd() {
-		return (Core::IsAppLaunched() && Core::App().activeWindow())
-			? Core::App().activeWindow()->widget().get()
-			: nullptr;
-	}
-
-	MainWidget *main() {
-		if (auto window = wnd()) {
-			return window->mainWidget();
-		}
-		return nullptr;
-	}
-
-	void addSavedGif(DocumentData *doc) {
-		auto &saved = Auth().data().savedGifsRef();
-		int32 index = saved.indexOf(doc);
-		if (index) {
-			if (index > 0) saved.remove(index);
-			saved.push_front(doc);
-			if (saved.size() > Global::SavedGifsLimit()) saved.pop_back();
-			Local::writeSavedGifs();
-
-			Auth().data().notifySavedGifsUpdated();
-			Auth().data().setLastSavedGifsUpdate(0);
-			Auth().api().updateStickers();
-		}
-	}
-
-	void checkSavedGif(HistoryItem *item) {
-		if (!item->Has<HistoryMessageForwarded>() && (item->out() || item->history()->peer == Auth().user())) {
-			if (const auto media = item->media()) {
-				if (const auto document = media->document()) {
-					if (document->isGifv()) {
-						addSavedGif(document);
-					}
-				}
-			}
-		}
-	}
-
-	QString peerName(const PeerData *peer, bool forDialogs) {
-		return peer ? ((forDialogs && peer->isUser() && !peer->asUser()->nameOrPhone.isEmpty()) ? peer->asUser()->nameOrPhone : peer->name) : tr::lng_deleted(tr::now);
-	}
-
 	void prepareCorners(RoundCorners index, int32 radius, const QBrush &brush, const style::color *shadow = nullptr, QImage *cors = nullptr) {
 		Expects(::corners.size() > index);
 
@@ -175,14 +136,6 @@ namespace App {
 			for (int i = 0; i < 4; ++i) {
 				::corners[index].p[i] = pixmapFromImageInPlace(std::move(cors[i]));
 				::corners[index].p[i].setDevicePixelRatio(cRetinaFactor());
-			}
-		}
-	}
-
-	void tryFontFamily(QString &family, const QString &tryFamily) {
-		if (family.isEmpty()) {
-			if (!QFontInfo(QFont(tryFamily)).family().trimmed().compare(tryFamily, Qt::CaseInsensitive)) {
-				family = tryFamily;
 			}
 		}
 	}
@@ -231,6 +184,8 @@ namespace App {
 		prepareCorners(MessageInSelectedCorners, st::historyMessageRadius, st::msgInBgSelected, &st::msgInShadowSelected);
 		prepareCorners(MessageOutCorners, st::historyMessageRadius, st::msgOutBg, &st::msgOutShadow);
 		prepareCorners(MessageOutSelectedCorners, st::historyMessageRadius, st::msgOutBgSelected, &st::msgOutShadowSelected);
+
+		prepareCorners(SendFilesBoxAlbumGroupCorners, st::sendBoxAlbumGroupRadius, st::callFingerprintBg);
 	}
 
 	void createCorners() {
@@ -245,16 +200,6 @@ namespace App {
 	}
 
 	void initMedia() {
-		if (!::monofont) {
-			QString family;
-			tryFontFamily(family, qsl("Consolas"));
-			tryFontFamily(family, qsl("Liberation Mono"));
-			tryFontFamily(family, qsl("Menlo"));
-			tryFontFamily(family, qsl("Courier"));
-			if (family.isEmpty()) family = QFontDatabase::systemFont(QFontDatabase::FixedFont).family();
-			::monofont = style::font(st::normalFont->f.pixelSize(), 0, family);
-		}
-
 		createCorners();
 
 		using Update = Window::Theme::BackgroundUpdate;
@@ -334,16 +279,11 @@ namespace App {
 		mousedItem(nullptr);
 	}
 
-	const style::font &monofont() {
-		return ::monofont;
-	}
-
 	void quit() {
 		if (quitting()) {
 			return;
-		} else if (AuthSession::Exists()
-			&& Auth().data().exportInProgress()) {
-			Auth().data().stopExportWithConfirmation([] { App::quit(); });
+		} else if (Core::IsAppLaunched()
+			&& Core::App().exportPreventsQuit()) {
 			return;
 		}
 		setLaunchState(QuitRequested);
@@ -382,18 +322,25 @@ namespace App {
 	}
 
 	QImage readImage(QByteArray data, QByteArray *format, bool opaque, bool *animated) {
-        QByteArray tmpFormat;
+		QByteArray tmpFormat;
 		QImage result;
 		QBuffer buffer(&data);
-        if (!format) {
-            format = &tmpFormat;
-        }
+		if (!format) {
+			format = &tmpFormat;
+		}
 		{
 			QImageReader reader(&buffer, *format);
 #ifndef OS_MAC_OLD
 			reader.setAutoTransform(true);
 #endif // OS_MAC_OLD
 			if (animated) *animated = reader.supportsAnimation() && reader.imageCount() > 1;
+			if (!reader.canRead()) {
+				return QImage();
+			}
+			const auto imageSize = reader.size();
+			if (imageSize.width() * imageSize.height() > kImageAreaLimit) {
+				return QImage();
+			}
 			QByteArray fmt = reader.format();
 			if (!fmt.isEmpty()) *format = fmt;
 			if (!reader.read(&result)) {
@@ -491,15 +438,6 @@ namespace App {
 
 	void complexLocationRect(Painter &p, QRect rect, ImageRoundRadius radius, RectParts corners) {
 		rectWithCorners(p, rect, st::msgInBg, MessageInCorners, corners);
-	}
-
-	QImage *cornersMask(ImageRoundRadius radius) {
-		switch (radius) {
-		case ImageRoundRadius::Large: return ::cornersMaskLarge;
-		case ImageRoundRadius::Small:
-		default: break;
-		}
-		return ::cornersMaskSmall;
 	}
 
 	void roundRect(Painter &p, int32 x, int32 y, int32 w, int32 h, style::color bg, const CornersPixmaps &corner, const style::color *shadow, RectParts parts) {

@@ -12,9 +12,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/connection_resolving.h"
 #include "mtproto/session.h"
 #include "base/unixtime.h"
+#include "base/openssl_help.h"
 
 namespace MTP {
-namespace internal {
+namespace details {
 
 ConnectionPointer::ConnectionPointer() = default;
 
@@ -141,16 +142,17 @@ mtpBuffer AbstractConnection::preparePQFake(const MTPint128 &nonce) const {
 		base::unixtime::mtproto_msg_id());
 }
 
-MTPResPQ AbstractConnection::readPQFakeReply(
+std::optional<MTPResPQ> AbstractConnection::readPQFakeReply(
 		const mtpBuffer &buffer) const {
 	const auto answer = parseNotSecureResponse(buffer);
 	if (answer.empty()) {
-		throw Exception("bad pq reply");
+		return std::nullopt;
 	}
 	auto from = answer.data();
 	MTPResPQ response;
-	response.read(from, from + answer.size());
-	return response;
+	return response.read(from, from + answer.size())
+		? std::make_optional(response)
+		: std::nullopt;
 }
 
 AbstractConnection::AbstractConnection(
@@ -186,5 +188,11 @@ ConnectionPointer AbstractConnection::Create(
 	return result;
 }
 
-} // namespace internal
+uint32 AbstractConnection::extendedNotSecurePadding() const {
+	return requiresExtendedPadding()
+		? uint32(openssl::RandomValue<uchar>() & 0x3F)
+		: 0;
+}
+
+} // namespace details
 } // namespace MTP

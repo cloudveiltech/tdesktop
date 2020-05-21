@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QByteArray>
+#include <QtNetwork/QNetworkReply>
 
 class FileDownloader : public QObject
 {

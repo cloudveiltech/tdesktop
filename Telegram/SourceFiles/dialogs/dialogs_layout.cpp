@@ -27,6 +27,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_user.h"
 #include "data/data_folder.h"
 #include "data/data_peer_values.h"
+#include "app.h"
 
 namespace Dialogs {
 namespace Layout {
@@ -34,6 +35,7 @@ namespace {
 
 // Show all dates that are in the last 20 hours in time format.
 constexpr int kRecentlyInSeconds = 20 * 3600;
+const auto kPsaBadgePrefix = "cloud_lng_badge_psa_";
 
 bool ShowUserBotIcon(not_null<UserData*> user) {
 	return user->isBot() && !user->isSupport();
@@ -217,6 +219,7 @@ void paintRow(
 		not_null<const BasicRow*> row,
 		not_null<Entry*> entry,
 		Dialogs::Key chat,
+		FilterId filterId,
 		PeerData *from,
 		const HiddenSenderInfo *hiddenSenderInfo,
 		HistoryItem *item,
@@ -294,10 +297,19 @@ void paintRow(
 		namewidth,
 		st::msgNameFont->height);
 
-	const auto promoted = (history && history->useProxyPromotion())
+	const auto promoted = (history && history->useTopPromotion())
 		&& !(flags & (Flag::SearchResult/* | Flag::FeedSearchResult*/)); // #feed
 	if (promoted) {
-		const auto text = tr::lng_proxy_sponsor(tr::now);
+		const auto type = history->topPromotionType();
+		const auto custom = type.isEmpty()
+			? QString()
+			: Lang::Current().getNonDefaultValue(
+				kPsaBadgePrefix + type.toUtf8());
+		const auto text = type.isEmpty()
+			? tr::lng_proxy_sponsor(tr::now)
+			: custom.isEmpty()
+			? tr::lng_badge_psa_default(tr::now)
+			: custom;
 		PaintRowTopRight(p, text, rectForName, active, selected);
 	} else if (from/* && !(flags & Flag::FeedSearchResult)*/) { // #feed
 		if (const auto chatTypeIcon = ChatTypeIcon(from, active, selected)) {
@@ -313,7 +325,18 @@ void paintRow(
 	auto texttop = st::dialogsPadding.y()
 		+ st::msgNameFont->height
 		+ st::dialogsSkip;
-	if (draft
+	if (promoted && !history->topPromotionMessage().isEmpty()) {
+		auto availableWidth = namewidth;
+		p.setFont(st::dialogsTextFont);
+		if (history->cloudDraftTextCache.isEmpty()) {
+			history->cloudDraftTextCache.setText(
+				st::dialogsTextStyle,
+				history->topPromotionMessage(),
+				Ui::DialogTextOptions());
+		}
+		p.setPen(active ? st::dialogsTextFgActive : (selected ? st::dialogsTextFgOver : st::dialogsTextFg));
+		history->cloudDraftTextCache.drawElided(p, nameleft, texttop, availableWidth, 1);
+	} else if (draft
 		|| (supportMode
 			&& Auth().supportHelper().isOccupiedBySomeone(history))) {
 		if (!promoted) {
@@ -321,7 +344,7 @@ void paintRow(
 		}
 
 		auto availableWidth = namewidth;
-		if (entry->isPinnedDialog() && !entry->fixedOnTopIndex()) {
+		if (entry->isPinnedDialog(filterId) && (filterId || !entry->fixedOnTopIndex())) {
 			auto &icon = (active ? st::dialogsPinnedIconActive : (selected ? st::dialogsPinnedIconOver : st::dialogsPinnedIcon));
 			icon.paint(p, fullWidth - st::dialogsPadding.x() - icon.width(), texttop, fullWidth);
 			availableWidth -= icon.width() + st::dialogsUnreadPadding;
@@ -348,7 +371,7 @@ void paintRow(
 		}
 	} else if (!item) {
 		auto availableWidth = namewidth;
-		if (entry->isPinnedDialog() && !entry->fixedOnTopIndex()) {
+		if (entry->isPinnedDialog(filterId) && (filterId || !entry->fixedOnTopIndex())) {
 			auto &icon = (active ? st::dialogsPinnedIconActive : (selected ? st::dialogsPinnedIconOver : st::dialogsPinnedIcon));
 			icon.paint(p, fullWidth - st::dialogsPadding.x() - icon.width(), texttop, fullWidth);
 			availableWidth -= icon.width() + st::dialogsUnreadPadding;
@@ -365,7 +388,7 @@ void paintRow(
 		}
 
 		paintItemCallback(nameleft, namewidth);
-	} else if (entry->isPinnedDialog() && !entry->fixedOnTopIndex()) {
+	} else if (entry->isPinnedDialog(filterId) && (filterId || !entry->fixedOnTopIndex())) {
 		auto availableWidth = namewidth;
 		auto &icon = (active ? st::dialogsPinnedIconActive : (selected ? st::dialogsPinnedIconOver : st::dialogsPinnedIcon));
 		icon.paint(p, fullWidth - st::dialogsPadding.x() - icon.width(), texttop, fullWidth);
@@ -612,6 +635,7 @@ void paintUnreadCount(
 void RowPainter::paint(
 		Painter &p,
 		not_null<const Row*> row,
+		FilterId filterId,
 		int fullWidth,
 		bool active,
 		bool selected,
@@ -667,8 +691,8 @@ void RowPainter::paint(
 	const auto displayPinnedIcon = !displayUnreadCounter
 		&& !displayMentionBadge
 		&& !displayUnreadMark
-		&& entry->isPinnedDialog()
-		&& !entry->fixedOnTopIndex();
+		&& entry->isPinnedDialog(filterId)
+		&& (filterId || !entry->fixedOnTopIndex());
 
 	const auto from = history
 		? (history->peer->migrateTo()
@@ -746,6 +770,7 @@ void RowPainter::paint(
 		row,
 		entry,
 		row->key(),
+		filterId,
 		from,
 		nullptr,
 		item,
@@ -869,6 +894,7 @@ void RowPainter::paint(
 		row,
 		history,
 		history,
+		FilterId(),
 		from,
 		hiddenSenderInfo,
 		item,

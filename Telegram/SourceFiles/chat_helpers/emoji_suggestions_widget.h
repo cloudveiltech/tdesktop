@@ -12,6 +12,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/unique_qptr.h"
 #include "base/timer.h"
 
+#include <QtWidgets/QTextEdit>
+
+namespace Main {
+class Session;
+} // namespace Main
+
 namespace Ui {
 
 class InnerDropdown;
@@ -106,6 +112,7 @@ public:
 	SuggestionsController(
 		not_null<QWidget*> outer,
 		not_null<QTextEdit*> field,
+		not_null<Main::Session*> session,
 		const Options &options);
 
 	void raise();
@@ -117,6 +124,7 @@ public:
 	static SuggestionsController *Init(
 		not_null<QWidget*> outer,
 		not_null<Ui::InputField*> field,
+		not_null<Main::Session*> session,
 		const Options &options = Options());
 
 private:
@@ -137,6 +145,7 @@ private:
 	bool _ignoreCursorPositionChange = false;
 	bool _textChangeAfterKeyPress = false;
 	QPointer<QTextEdit> _field;
+	const not_null<Main::Session*> _session;
 	Fn<void(
 		int from,
 		int till,

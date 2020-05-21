@@ -14,11 +14,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
 #include "ui/text/text_utilities.h"
-#include "platform/platform_file_utilities.h"
-#include "platform/platform_info.h"
+#include "core/file_utilities.h"
+#include "base/platform/base_platform_info.h"
 #include "core/click_handler_types.h"
 #include "core/update_checker.h"
+#include "styles/style_layers.h"
 #include "styles/style_boxes.h"
+
+#include <QtGui/QGuiApplication>
+#include <QtGui/QClipboard>
 
 namespace {
 
@@ -87,8 +91,8 @@ void AboutBox::showVersionHistory() {
 		auto url = qsl("https://tdesktop.com/");
 		if (Platform::IsWindows()) {
 			url += qsl("win/%1.zip");
-		} else if (Platform::IsMacOldBuild()) {
-			url += qsl("mac32/%1.zip");
+		} else if (Platform::IsOSXBuild()) {
+			url += qsl("osx/%1.zip");
 		} else if (Platform::IsMac()) {
 			url += qsl("mac/%1.zip");
 		} else if (Platform::IsLinux32Bit()) {
@@ -100,11 +104,11 @@ void AboutBox::showVersionHistory() {
 		}
 		url = url.arg(qsl("talpha%1_%2").arg(cRealAlphaVersion()).arg(Core::countAlphaVersionSignature(cRealAlphaVersion())));
 
-		QApplication::clipboard()->setText(url);
+		QGuiApplication::clipboard()->setText(url);
 
 		Ui::show(Box<InformBox>("The link to the current private alpha version of Telegram Desktop was copied to the clipboard."));
 	} else {
-		QDesktopServices::openUrl(qsl("https://desktop.telegram.org/changelog"));
+		File::OpenUrl(qsl("https://desktop.telegram.org/changelog"));
 	}
 }
 

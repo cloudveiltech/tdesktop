@@ -8,7 +8,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_session_controller.h"
 
 #include "boxes/peers/edit_peer_info_box.h"
+#include "window/window_controller.h"
 #include "window/main_window.h"
+#include "window/window_filters_menu.h"
 #include "info/info_memento.h"
 #include "info/info_controller.h"
 #include "history/history.h"
@@ -20,15 +22,18 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_folder.h"
 #include "data/data_channel.h"
 #include "data/data_chat.h"
+#include "data/data_chat_filters.h"
 #include "passport/passport_form_controller.h"
+#include "chat_helpers/tabbed_selector.h"
 #include "core/shortcuts.h"
 #include "base/unixtime.h"
 #include "boxes/calendar_box.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "apiwrap.h"
 #include "support/support_helper.h"
+#include "facades.h"
 #include "styles/style_window.h"
 #include "styles/style_dialogs.h"
 
@@ -52,11 +57,11 @@ void DateClickHandler::onClick(ClickContext context) const {
 	App::wnd()->sessionController()->showJumpToDate(_chat, _date);
 }
 
-SessionNavigation::SessionNavigation(not_null<AuthSession*> session)
+SessionNavigation::SessionNavigation(not_null<Main::Session*> session)
 : _session(session) {
 }
 
-AuthSession &SessionNavigation::session() const {
+Main::Session &SessionNavigation::session() const {
 	return *_session;
 }
 
@@ -97,17 +102,28 @@ void SessionNavigation::showSettings(const SectionShow &params) {
 	showSettings(Settings::Type::Main, params);
 }
 
+void SessionNavigation::showPollResults(
+		not_null<PollData*> poll,
+		FullMsgId contextId,
+		const SectionShow &params) {
+	showSection(Info::Memento(poll, contextId), params);
+}
+
 SessionController::SessionController(
-	not_null<AuthSession*> session,
-	not_null<MainWindow*> window)
+	not_null<Main::Session*> session,
+	not_null<Controller*> window)
 : SessionNavigation(session)
-, _window(window) {
+, _window(window)
+, _tabbedSelector(
+	std::make_unique<ChatHelpers::TabbedSelector>(
+		_window->widget(),
+		this)) {
 	init();
 
 	subscribe(session->api().fullPeerUpdated(), [=](PeerData *peer) {
 		if (peer == _showEditPeer) {
 			_showEditPeer = nullptr;
-			Ui::show(Box<EditPeerInfoBox>(peer));
+			Ui::show(Box<EditPeerInfoBox>(this, peer));
 		}
 	});
 
@@ -115,11 +131,45 @@ SessionController::SessionController(
 	) | rpl::filter([=](Data::Folder *folder) {
 		return (folder != nullptr)
 			&& (folder == _openedFolder.current())
-			&& folder->chatsList()->indexed(Global::DialogsMode())->empty();
+			&& folder->chatsList()->indexed()->empty();
 	}) | rpl::start_with_next([=](Data::Folder *folder) {
 		folder->updateChatListSortPosition();
 		closeFolder();
 	}, lifetime());
+
+	session->data().chatsFilters().changed(
+	) | rpl::start_with_next([=] {
+		checkOpenedFilter();
+		crl::on_main(session, [=] {
+			refreshFiltersMenu();
+		});
+	}, session->lifetime());
+}
+
+not_null<::MainWindow*> SessionController::widget() const {
+	return _window->widget();
+}
+
+auto SessionController::tabbedSelector() const
+-> not_null<ChatHelpers::TabbedSelector*> {
+	return _tabbedSelector.get();
+}
+
+void SessionController::takeTabbedSelectorOwnershipFrom(
+		not_null<QWidget*> parent) {
+	if (_tabbedSelector->parent() == parent) {
+		if (const auto chats = widget()->chatsWidget()) {
+			chats->returnTabbedSelector();
+		}
+		if (_tabbedSelector->parent() == parent) {
+			_tabbedSelector->hide();
+			_tabbedSelector->setParent(widget());
+		}
+	}
+}
+
+bool SessionController::hasTabbedSelectorOwnership() const {
+	return (_tabbedSelector->parent() == widget());
 }
 
 void SessionController::showEditPeerBox(PeerData *peer) {
@@ -149,6 +199,42 @@ void SessionController::initSupportMode() {
 	}, lifetime());
 }
 
+void SessionController::toggleFiltersMenu(bool enabled) {
+	if (!enabled == !_filters) {
+		return;
+	} else if (enabled) {
+		_filters = std::make_unique<FiltersMenu>(
+			widget()->bodyWidget(),
+			this);
+	} else {
+		_filters = nullptr;
+	}
+	_filtersMenuChanged.fire({});
+}
+
+void SessionController::refreshFiltersMenu() {
+	const auto enabled = !session().data().chatsFilters().list().empty();
+	if (enabled != Global::DialogsFiltersEnabled()) {
+		Global::SetDialogsFiltersEnabled(enabled);
+		session().saveSettingsDelayed();
+		toggleFiltersMenu(enabled);
+	}
+}
+
+rpl::producer<> SessionController::filtersMenuChanged() const {
+	return _filtersMenuChanged.events();
+}
+
+void SessionController::checkOpenedFilter() {
+	if (const auto filterId = activeChatsFilterCurrent()) {
+		const auto &list = session().data().chatsFilters().list();
+		const auto i = ranges::find(list, filterId, &Data::ChatFilter::id);
+		if (i == end(list)) {
+			setActiveChatsFilter(0);
+		}
+	}
+}
+
 bool SessionController::uniqueChatsInSearchResults() const {
 	return session().supportMode()
 		&& !session().settings().supportAllSearchResults()
@@ -156,6 +242,10 @@ bool SessionController::uniqueChatsInSearchResults() const {
 }
 
 void SessionController::openFolder(not_null<Data::Folder*> folder) {
+	if (_openedFolder.current() != folder) {
+		resetFakeUnreadWhileOpened();
+	}
+	setActiveChatsFilter(0);
 	_openedFolder = folder.get();
 }
 
@@ -168,9 +258,23 @@ const rpl::variable<Data::Folder*> &SessionController::openedFolder() const {
 }
 
 void SessionController::setActiveChatEntry(Dialogs::RowDescriptor row) {
+	const auto was = _activeChatEntry.current().key.history();
+	const auto now = row.key.history();
+	if (was && was != now) {
+		was->setFakeUnreadWhileOpened(false);
+	}
 	_activeChatEntry = row;
+	if (now) {
+		now->setFakeUnreadWhileOpened(true);
+	}
 	if (session().supportMode()) {
 		pushToChatEntryHistory(row);
+	}
+}
+
+void SessionController::resetFakeUnreadWhileOpened() {
+	if (const auto history = _activeChatEntry.current().key.history()) {
+		history->setFakeUnreadWhileOpened(false);
 	}
 }
 
@@ -270,9 +374,9 @@ void SessionController::disableGifPauseReason(GifPauseReason reason) {
 
 bool SessionController::isGifPausedAtLeastFor(GifPauseReason reason) const {
 	if (reason == GifPauseReason::Any) {
-		return (_gifPauseReasons != 0) || !window()->isActive();
+		return (_gifPauseReasons != 0) || !widget()->isActive();
 	}
-	return (static_cast<int>(_gifPauseReasons) >= 2 * static_cast<int>(reason)) || !window()->isActive();
+	return (static_cast<int>(_gifPauseReasons) >= 2 * static_cast<int>(reason)) || !widget()->isActive();
 }
 
 int SessionController::dialogsSmallColumnWidth() const {
@@ -294,10 +398,10 @@ bool SessionController::forceWideDialogs() const {
 	return !App::main()->isMainSectionShown();
 }
 
-SessionController::ColumnLayout SessionController::computeColumnLayout() const {
+auto SessionController::computeColumnLayout() const -> ColumnLayout {
 	auto layout = Adaptive::WindowLayout::OneColumn;
 
-	auto bodyWidth = window()->bodyWidget()->width();
+	auto bodyWidth = widget()->bodyWidget()->width() - filtersWidth();
 	auto dialogsWidth = 0, chatWidth = 0, thirdWidth = 0;
 
 	auto useOneColumnLayout = [&] {
@@ -386,7 +490,7 @@ bool SessionController::canShowThirdSection() const {
 	auto currentLayout = computeColumnLayout();
 	auto minimalExtendBy = minimalThreeColumnWidth()
 		- currentLayout.bodyWidth;
-	return (minimalExtendBy <= window()->maximalExtendBy());
+	return (minimalExtendBy <= widget()->maximalExtendBy());
 }
 
 bool SessionController::canShowThirdSectionWithoutResize() const {
@@ -419,15 +523,15 @@ void SessionController::resizeForThirdSection() {
 		// Next - extend by minimal third column without moving.
 		// Next - show third column inside the window without moving.
 		// Last - extend with moving.
-		if (window()->canExtendNoMove(wanted)) {
-			return window()->tryToExtendWidthBy(wanted);
-		} else if (window()->canExtendNoMove(minimal)) {
+		if (widget()->canExtendNoMove(wanted)) {
+			return widget()->tryToExtendWidthBy(wanted);
+		} else if (widget()->canExtendNoMove(minimal)) {
 			extendBy = minimal;
-			return window()->tryToExtendWidthBy(minimal);
+			return widget()->tryToExtendWidthBy(minimal);
 		} else if (layout.bodyWidth >= minimalThreeColumnWidth()) {
 			return 0;
 		}
-		return window()->tryToExtendWidthBy(minimal);
+		return widget()->tryToExtendWidthBy(minimal);
 	}();
 	if (extendedBy) {
 		if (extendBy != session().settings().thirdColumnWidth()) {
@@ -448,11 +552,11 @@ void SessionController::resizeForThirdSection() {
 }
 
 void SessionController::closeThirdSection() {
-	auto newWindowSize = window()->size();
+	auto newWindowSize = widget()->size();
 	auto layout = computeColumnLayout();
 	if (layout.windowLayout == Adaptive::WindowLayout::ThreeColumn) {
-		auto noResize = window()->isFullScreen()
-			|| window()->isMaximized();
+		auto noResize = widget()->isFullScreen()
+			|| widget()->isMaximized();
 		auto savedValue = session().settings().thirdSectionExtendedBy();
 		auto extendedBy = (savedValue == -1)
 			? layout.thirdWidth
@@ -464,14 +568,14 @@ void SessionController::closeThirdSection() {
 		session().settings().setDialogsWidthRatio(
 			(currentRatio * layout.bodyWidth) / newBodyWidth);
 		newWindowSize = QSize(
-			window()->width() + (newBodyWidth - layout.bodyWidth),
-			window()->height());
+			widget()->width() + (newBodyWidth - layout.bodyWidth),
+			widget()->height());
 	}
 	session().settings().setTabbedSelectorSectionEnabled(false);
 	session().settings().setThirdSectionInfoEnabled(false);
 	session().saveSettingsDelayed();
-	if (window()->size() != newWindowSize) {
-		window()->resize(newWindowSize);
+	if (widget()->size() != newWindowSize) {
+		widget()->resize(newWindowSize);
 	} else {
 		updateColumnLayout();
 	}
@@ -562,6 +666,7 @@ void SessionController::showJumpToDate(Dialogs::Key chat, QDate requestedDate) {
 		std::move(callback));
 	box->setMinDate(minPeerDate(chat));
 	box->setMaxDate(maxPeerDate(chat));
+	box->setBeginningButton(true);
 	Ui::show(std::move(box));
 }
 
@@ -626,7 +731,7 @@ void SessionController::showBackFromStack(const SectionShow &params) {
 }
 
 void SessionController::showSpecialLayer(
-		object_ptr<LayerWidget> &&layer,
+		object_ptr<Ui::LayerWidget> &&layer,
 		anim::type animated) {
 	App::wnd()->showSpecialLayer(std::move(layer), animated);
 }
@@ -670,6 +775,31 @@ rpl::producer<FullMsgId> SessionController::floatPlayerClosed() const {
 	Expects(_floatPlayers != nullptr);
 
 	return _floatPlayers->closeEvents();
+}
+
+int SessionController::filtersWidth() const {
+	return _filters ? st::windowFiltersWidth : 0;
+}
+
+rpl::producer<FilterId> SessionController::activeChatsFilter() const {
+	return _activeChatsFilter.value();
+}
+
+FilterId SessionController::activeChatsFilterCurrent() const {
+	return _activeChatsFilter.current();
+}
+
+void SessionController::setActiveChatsFilter(FilterId id) {
+	if (activeChatsFilterCurrent() != id) {
+		resetFakeUnreadWhileOpened();
+	}
+	_activeChatsFilter.force_assign(id);
+	if (id) {
+		closeFolder();
+	}
+	if (Adaptive::OneColumn()) {
+		Ui::showChatsList();
+	}
 }
 
 SessionController::~SessionController() = default;

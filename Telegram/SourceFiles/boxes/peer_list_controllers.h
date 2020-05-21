@@ -28,6 +28,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 //
 //};
 
+class History;
+
+namespace Window {
+class SessionNavigation;
+} // namespace Window
+
 class PeerListRowWithLink : public PeerListRow {
 public:
 	using PeerListRow::PeerListRow;
@@ -53,9 +59,10 @@ private:
 
 };
 
-class PeerListGlobalSearchController : public PeerListSearchController, private MTP::Sender {
+class PeerListGlobalSearchController : public PeerListSearchController {
 public:
-	PeerListGlobalSearchController();
+	PeerListGlobalSearchController(
+		not_null<Window::SessionNavigation*> navigation);
 
 	void searchQuery(const QString &query) override;
 	bool isLoading() override;
@@ -68,6 +75,8 @@ private:
 	void searchOnServer();
 	void searchDone(const MTPcontacts_Found &result, mtpRequestId requestId);
 
+	const not_null<Window::SessionNavigation*> _navigation;
+	MTP::Sender _api;
 	base::Timer _timer;
 	QString _query;
 	mtpRequestId _requestId = 0;
@@ -78,14 +87,6 @@ private:
 
 class ChatsListBoxController : public PeerListController {
 public:
-	ChatsListBoxController(
-		std::unique_ptr<PeerListSearchController> searchController
-			= std::make_unique<PeerListGlobalSearchController>());
-
-	void prepare() override final;
-	std::unique_ptr<PeerListRow> createSearchRow(not_null<PeerData*> peer) override final;
-
-protected:
 	class Row : public PeerListRow {
 	public:
 		Row(not_null<History*> history);
@@ -98,6 +99,15 @@ protected:
 		not_null<History*> _history;
 
 	};
+
+	ChatsListBoxController(not_null<Window::SessionNavigation*> navigation);
+	ChatsListBoxController(
+		std::unique_ptr<PeerListSearchController> searchController);
+
+	void prepare() override final;
+	std::unique_ptr<PeerListRow> createSearchRow(not_null<PeerData*> peer) override final;
+
+protected:
 	virtual std::unique_ptr<Row> createRow(not_null<History*> history) = 0;
 	virtual void prepareViewHook() = 0;
 	virtual void updateRowHook(not_null<Row*> row) {
@@ -114,9 +124,12 @@ private:
 class ContactsBoxController : public PeerListController {
 public:
 	ContactsBoxController(
-		std::unique_ptr<PeerListSearchController> searchController
-		= std::make_unique<PeerListGlobalSearchController>());
+		not_null<Window::SessionNavigation*> navigation);
+	ContactsBoxController(
+		not_null<Window::SessionNavigation*> navigation,
+		std::unique_ptr<PeerListSearchController> searchController);
 
+	Main::Session &session() const override;
 	void prepare() override final;
 	std::unique_ptr<PeerListRow> createSearchRow(not_null<PeerData*> peer) override final;
 	void rowClicked(not_null<PeerListRow*> row) override;
@@ -133,16 +146,23 @@ private:
 	void checkForEmptyRows();
 	bool appendRow(not_null<UserData*> user);
 
+	const not_null<Window::SessionNavigation*> _navigation;
+
 };
 
 class AddBotToGroupBoxController
 	: public ChatsListBoxController
 	, public base::has_weak_ptr {
 public:
-	static void Start(not_null<UserData*> bot);
+	static void Start(
+		not_null<Window::SessionNavigation*> navigation,
+		not_null<UserData*> bot);
 
-	AddBotToGroupBoxController(not_null<UserData*> bot);
+	AddBotToGroupBoxController(
+		not_null<Window::SessionNavigation*> navigation,
+		not_null<UserData*> bot);
 
+	Main::Session &session() const override;
 	void rowClicked(not_null<PeerListRow*> row) override;
 
 protected:
@@ -171,8 +191,10 @@ class ChooseRecipientBoxController
 	, public base::has_weak_ptr {
 public:
 	ChooseRecipientBoxController(
+		not_null<Window::SessionNavigation*> navigation,
 		FnMut<void(not_null<PeerData*>)> callback);
 
+	Main::Session &session() const override;
 	void rowClicked(not_null<PeerListRow*> row) override;
 
 	bool respectSavedMessagesChat() const override {
@@ -185,6 +207,7 @@ protected:
 		not_null<History*> history) override;
 
 private:
+	const not_null<Window::SessionNavigation*> _navigation;
 	FnMut<void(not_null<PeerData*>)> _callback;
 
 };

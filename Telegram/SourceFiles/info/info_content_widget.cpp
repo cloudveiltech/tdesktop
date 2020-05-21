@@ -24,9 +24,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/info_controller.h"
 #include "boxes/peer_list_box.h"
 #include "data/data_session.h"
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "styles/style_info.h"
 #include "styles/style_profile.h"
+
+#include <QtCore/QCoreApplication>
 
 namespace Info {
 
@@ -113,7 +115,7 @@ void ContentWidget::setGeometryWithTopMoved(
 	}
 	if (!willBeResized) {
 		QResizeEvent fake(size(), size());
-		QApplication::sendEvent(this, &fake);
+		QCoreApplication::sendEvent(this, &fake);
 	}
 	_topDelta = 0;
 }
@@ -264,6 +266,8 @@ Key ContentMemento::key() const {
 		return Key(Auth().data().peer(peerId));
 	//} else if (const auto feed = this->feed()) { // #feed
 	//	return Key(feed);
+	} else if (const auto poll = this->poll()) {
+		return Key(poll, pollContextId());
 	} else {
 		return Settings::Tag{ settingsSelf() };
 	}

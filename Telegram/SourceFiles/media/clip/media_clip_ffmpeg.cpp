@@ -16,8 +16,12 @@ namespace Clip {
 namespace internal {
 namespace {
 
-constexpr int kSkipInvalidDataPackets = 10;
-constexpr int kAlignImageBy = 16;
+constexpr auto kSkipInvalidDataPackets = 10;
+constexpr auto kMaxInlineArea = 1280 * 720;
+constexpr auto kMaxSendingArea = 3840 * 2160; // usual 4K
+
+// See https://github.com/telegramdesktop/tdesktop/issues/7225
+constexpr auto kAlignImageBy = 64;
 
 void alignedImageBufferCleanupHandler(void *data) {
 	auto buffer = static_cast<uchar*>(data);
@@ -57,6 +61,12 @@ ReaderImplementation::ReadResult FFMpegReaderImplementation::readNextFrame() {
 	do {
 		int res = avcodec_receive_frame(_codecContext, _frame.get());
 		if (res >= 0) {
+			const auto limit = (_mode == Mode::Inspecting)
+				? kMaxSendingArea
+				: kMaxInlineArea;
+			if (_frame->width * _frame->height > limit) {
+				return ReadResult::Error;
+			}
 			processReadFrame();
 			return ReadResult::Success;
 		}
@@ -490,9 +500,10 @@ FFMpegReaderImplementation::PacketResult FFMpegReaderImplementation::readPacket(
 		if (res == AVERROR_EOF) {
 			if (_audioStreamId >= 0) {
 				// queue terminating packet to audio player
+				auto empty = FFmpeg::Packet();
 				Player::mixer()->feedFromExternal({
 					_audioMsgId,
-					FFmpeg::Packet()
+					gsl::make_span(&empty, 1)
 				});
 			}
 			return PacketResult::EndOfFile;
@@ -519,7 +530,7 @@ void FFMpegReaderImplementation::processPacket(FFmpeg::Packet &&packet) {
 			// queue packet to audio player
 			Player::mixer()->feedFromExternal({
 				_audioMsgId,
-				std::move(packet)
+				gsl::make_span(&packet, 1)
 			});
 		}
 	}

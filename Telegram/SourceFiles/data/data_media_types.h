@@ -8,7 +8,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 class HistoryItem;
-class HistoryMedia;
 
 namespace base {
 template <typename Enum>
@@ -23,6 +22,7 @@ using SharedMediaTypesMask = base::enum_mask<SharedMediaType>;
 namespace HistoryView {
 enum class Context : char;
 class Element;
+class Media;
 } // namespace HistoryView
 
 namespace Data {
@@ -95,7 +95,7 @@ public:
 	virtual bool allowsEdit() const;
 	virtual bool allowsEditCaption() const;
 	virtual bool allowsEditMedia() const;
-	virtual bool allowsRevoke() const;
+	virtual bool allowsRevoke(TimeId now) const;
 	virtual bool forwardedBecomesUnread() const;
 	virtual QString errorTextForForward(not_null<PeerData*> peer) const;
 
@@ -107,10 +107,10 @@ public:
 	// the media (all media that was generated on client side, for example).
 	virtual bool updateInlineResultMedia(const MTPMessageMedia &media) = 0;
 	virtual bool updateSentMedia(const MTPMessageMedia &media) = 0;
-	virtual std::unique_ptr<HistoryMedia> createView(
+	virtual std::unique_ptr<HistoryView::Media> createView(
 		not_null<HistoryView::Element*> message,
 		not_null<HistoryItem*> realParent) = 0;
-	std::unique_ptr<HistoryMedia> createView(
+	std::unique_ptr<HistoryView::Media> createView(
 		not_null<HistoryView::Element*> message);
 
 private:
@@ -118,7 +118,7 @@ private:
 
 };
 
-class MediaPhoto : public Media {
+class MediaPhoto final : public Media {
 public:
 	MediaPhoto(
 		not_null<HistoryItem*> parent,
@@ -148,7 +148,7 @@ public:
 
 	bool updateInlineResultMedia(const MTPMessageMedia &media) override;
 	bool updateSentMedia(const MTPMessageMedia &media) override;
-	std::unique_ptr<HistoryMedia> createView(
+	std::unique_ptr<HistoryView::Media> createView(
 		not_null<HistoryView::Element*> message,
 		not_null<HistoryItem*> realParent) override;
 
@@ -158,7 +158,7 @@ private:
 
 };
 
-class MediaFile : public Media {
+class MediaFile final : public Media {
 public:
 	MediaFile(
 		not_null<HistoryItem*> parent,
@@ -185,7 +185,7 @@ public:
 
 	bool updateInlineResultMedia(const MTPMessageMedia &media) override;
 	bool updateSentMedia(const MTPMessageMedia &media) override;
-	std::unique_ptr<HistoryMedia> createView(
+	std::unique_ptr<HistoryView::Media> createView(
 		not_null<HistoryView::Element*> message,
 		not_null<HistoryItem*> realParent) override;
 
@@ -195,7 +195,7 @@ private:
 
 };
 
-class MediaContact : public Media {
+class MediaContact final : public Media {
 public:
 	MediaContact(
 		not_null<HistoryItem*> parent,
@@ -214,7 +214,7 @@ public:
 
 	bool updateInlineResultMedia(const MTPMessageMedia &media) override;
 	bool updateSentMedia(const MTPMessageMedia &media) override;
-	std::unique_ptr<HistoryMedia> createView(
+	std::unique_ptr<HistoryView::Media> createView(
 		not_null<HistoryView::Element*> message,
 		not_null<HistoryItem*> realParent) override;
 
@@ -223,7 +223,7 @@ private:
 
 };
 
-class MediaLocation : public Media {
+class MediaLocation final : public Media {
 public:
 	MediaLocation(
 		not_null<HistoryItem*> parent,
@@ -244,7 +244,7 @@ public:
 
 	bool updateInlineResultMedia(const MTPMessageMedia &media) override;
 	bool updateSentMedia(const MTPMessageMedia &media) override;
-	std::unique_ptr<HistoryMedia> createView(
+	std::unique_ptr<HistoryView::Media> createView(
 		not_null<HistoryView::Element*> message,
 		not_null<HistoryItem*> realParent) override;
 
@@ -255,7 +255,7 @@ private:
 
 };
 
-class MediaCall : public Media {
+class MediaCall final : public Media {
 public:
 	MediaCall(
 		not_null<HistoryItem*> parent,
@@ -271,7 +271,7 @@ public:
 
 	bool updateInlineResultMedia(const MTPMessageMedia &media) override;
 	bool updateSentMedia(const MTPMessageMedia &media) override;
-	std::unique_ptr<HistoryMedia> createView(
+	std::unique_ptr<HistoryView::Media> createView(
 		not_null<HistoryView::Element*> message,
 		not_null<HistoryItem*> realParent) override;
 
@@ -284,7 +284,7 @@ private:
 
 };
 
-class MediaWebPage : public Media {
+class MediaWebPage final : public Media {
 public:
 	MediaWebPage(
 		not_null<HistoryItem*> parent,
@@ -307,7 +307,7 @@ public:
 
 	bool updateInlineResultMedia(const MTPMessageMedia &media) override;
 	bool updateSentMedia(const MTPMessageMedia &media) override;
-	std::unique_ptr<HistoryMedia> createView(
+	std::unique_ptr<HistoryView::Media> createView(
 		not_null<HistoryView::Element*> message,
 		not_null<HistoryItem*> realParent) override;
 
@@ -316,7 +316,7 @@ private:
 
 };
 
-class MediaGame : public Media {
+class MediaGame final : public Media {
 public:
 	MediaGame(
 		not_null<HistoryItem*> parent,
@@ -338,7 +338,7 @@ public:
 
 	bool updateInlineResultMedia(const MTPMessageMedia &media) override;
 	bool updateSentMedia(const MTPMessageMedia &media) override;
-	std::unique_ptr<HistoryMedia> createView(
+	std::unique_ptr<HistoryView::Media> createView(
 		not_null<HistoryView::Element*> message,
 		not_null<HistoryItem*> realParent) override;
 
@@ -348,7 +348,7 @@ private:
 
 };
 
-class MediaInvoice : public Media {
+class MediaInvoice final : public Media {
 public:
 	MediaInvoice(
 		not_null<HistoryItem*> parent,
@@ -369,7 +369,7 @@ public:
 
 	bool updateInlineResultMedia(const MTPMessageMedia &media) override;
 	bool updateSentMedia(const MTPMessageMedia &media) override;
-	std::unique_ptr<HistoryMedia> createView(
+	std::unique_ptr<HistoryView::Media> createView(
 		not_null<HistoryView::Element*> message,
 		not_null<HistoryItem*> realParent) override;
 
@@ -378,7 +378,7 @@ private:
 
 };
 
-class MediaPoll : public Media {
+class MediaPoll final : public Media {
 public:
 	MediaPoll(
 		not_null<HistoryItem*> parent,
@@ -396,12 +396,37 @@ public:
 
 	bool updateInlineResultMedia(const MTPMessageMedia &media) override;
 	bool updateSentMedia(const MTPMessageMedia &media) override;
-	std::unique_ptr<HistoryMedia> createView(
+	std::unique_ptr<HistoryView::Media> createView(
 		not_null<HistoryView::Element*> message,
 		not_null<HistoryItem*> realParent) override;
 
 private:
 	not_null<PollData*> _poll;
+
+};
+
+class MediaDice final : public Media {
+public:
+	MediaDice(not_null<HistoryItem*> parent, QString emoji, int value);
+
+	std::unique_ptr<Media> clone(not_null<HistoryItem*> parent) override;
+
+	[[nodiscard]] QString emoji() const;
+	[[nodiscard]] int value() const;
+
+	bool allowsRevoke(TimeId now) const override;
+	QString notificationText() const override;
+	QString pinnedTextSubstring() const override;
+	TextForMimeData clipboardText() const override;
+	bool updateInlineResultMedia(const MTPMessageMedia &media) override;
+	bool updateSentMedia(const MTPMessageMedia &media) override;
+	std::unique_ptr<HistoryView::Media> createView(
+		not_null<HistoryView::Element*> message,
+		not_null<HistoryItem*> realParent) override;
+
+private:
+	QString _emoji;
+	int _value = 0;
 
 };
 

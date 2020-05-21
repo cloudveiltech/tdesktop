@@ -3,8 +3,9 @@
 This is the complete source code and the build instructions for the alpha version of the official desktop client for the [Telegram][telegram] messenger, based on the [Telegram API][telegram_api] and the [MTProto][telegram_proto] secure protocol.
 
 [![Version](https://badge.fury.io/gh/telegramdesktop%2Ftdesktop.svg)](https://github.com/telegramdesktop/tdesktop/releases)
-[![Build Status](https://travis-ci.org/telegramdesktop/tdesktop.svg?branch=dev)](https://travis-ci.org/telegramdesktop/tdesktop)
-[![Build status](https://ci.appveyor.com/api/projects/status/uiw2y768iy4i5bu8/branch/dev?svg=true)](https://ci.appveyor.com/project/telegramdesktop/tdesktop)
+[![Build Status](https://github.com/telegramdesktop/tdesktop/workflows/Windows./badge.svg)](https://github.com/telegramdesktop/tdesktop/actions)
+[![Build Status](https://github.com/telegramdesktop/tdesktop/workflows/MacOS./badge.svg)](https://github.com/telegramdesktop/tdesktop/actions)
+[![Build Status](https://github.com/telegramdesktop/tdesktop/workflows/Linux./badge.svg)](https://github.com/telegramdesktop/tdesktop/actions)
 
 [![Preview of Telegram Desktop][preview_image]][preview_image_url]
 
@@ -12,20 +13,28 @@ The source code is published under GPLv3 with OpenSSL exception, the license is 
 
 ## Supported systems
 
-* Windows XP - Windows 10 (**not** RT)
-* Mac OS X 10.8 - Mac OS X 10.11
-* Mac OS X 10.6 - Mac OS X 10.7 (separate build)
-* Ubuntu 12.04 - Ubuntu 19.04
-* Fedora 22 - Fedora 30
-* [Snappy](https://snapcraft.io/telegram-desktop)
-* [Flathub](https://flathub.org/apps/details/org.telegram.desktop)
+The latest version is available for
+
+* [Windows 7 and above](https://telegram.org/dl/desktop/win) ([portable](https://telegram.org/dl/desktop/win_portable))
+* [macOS 10.12 and above](https://telegram.org/dl/desktop/mac)
+* [OS X 10.10 and 10.11](https://telegram.org/dl/desktop/osx)
+* [Linux static build for 64 bit](https://telegram.org/dl/desktop/linux) ([32 bit](https://telegram.org/dl/desktop/linux32))
+* [Snap](https://snapcraft.io/telegram-desktop)
+* [Flatpak](https://flathub.org/apps/details/org.telegram.desktop)
+
+## Old system versions
+
+Version **1.8.15** was the last that supports older systems
+
+* [Windows XP and Vista](https://updates.tdesktop.com/tsetup/tsetup.1.8.15.exe) ([portable](https://updates.tdesktop.com/tsetup/tportable.1.8.15.zip))
+* [OS X 10.8 and 10.9](https://updates.tdesktop.com/tmac/tsetup.1.8.15.dmg)
+* [OS X 10.6 and 10.7](https://updates.tdesktop.com/tmac32/tsetup32.1.8.15.dmg)
 
 ## Third-party
 
-* Qt 5.3.2 and 5.6.2, slightly patched ([LGPL](http://doc.qt.io/qt-5/lgpl.html))
-* OpenSSL 1.0.1g ([OpenSSL License](https://www.openssl.org/source/license.html))
-* zlib 1.2.8 ([zlib License](http://www.zlib.net/zlib_license.html))
-* libexif 0.6.20 ([LGPL](https://www.gnu.org/licenses/old-licenses/lgpl-2.1.en.html))
+* Qt 5.12.8, 5.6.2 and 5.3.2 slightly patched ([LGPL](http://doc.qt.io/qt-5/lgpl.html))
+* OpenSSL 1.1.1 and 1.0.1 ([OpenSSL License](https://www.openssl.org/source/license.html))
+* zlib 1.2.11 ([zlib License](http://www.zlib.net/zlib_license.html))
 * LZMA SDK 9.20 ([public domain](http://www.7-zip.org/sdk.html))
 * liblzma ([public domain](http://tukaani.org/xz/))
 * Google Breakpad ([License](https://chromium.googlesource.com/breakpad/breakpad/+/master/LICENSE))
@@ -39,15 +48,19 @@ The source code is published under GPLv3 with OpenSSL exception, the license is 
 * Mapbox Variant ([BSD License](https://github.com/mapbox/variant/blob/master/LICENSE))
 * Range-v3 ([Boost License](https://github.com/ericniebler/range-v3/blob/master/LICENSE.txt))
 * Open Sans font ([Apache License 2.0](http://www.apache.org/licenses/LICENSE-2.0.html))
+* Vazir font ([License](https://github.com/rastikerdar/vazir-font/blob/master/LICENSE))
 * Emoji alpha codes ([MIT License](https://github.com/emojione/emojione/blob/master/extras/alpha-codes/LICENSE.md))
 * Catch test framework ([Boost License](https://github.com/philsquared/Catch/blob/master/LICENSE.txt))
 * xxHash ([BSD License](https://github.com/Cyan4973/xxHash/blob/dev/LICENSE))
+* QR Code generator ([MIT License](https://github.com/nayuki/QR-Code-generator#license))
+* CMake ([New BSD License](https://github.com/Kitware/CMake/blob/master/Copyright.txt))
+* Hunspell ([GPL](https://github.com/hunspell/hunspell/blob/master/COPYING))
 
 ## Build instructions
 
 * [Visual Studio 2019][msvc]
-* [Xcode 10][xcode]
-* [GYP/CMake on GNU/Linux][cmake]
+* [Xcode 11][xcode]
+* [CMake on GNU/Linux][cmake]
 
 [//]: # (LINKS)
 [telegram]: https://telegram.org

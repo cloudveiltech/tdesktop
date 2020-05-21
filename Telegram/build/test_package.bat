@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 set "FullScriptPath=%~dp0"
 set "FullExecPath=%cd%"
 
-if not exist "%FullScriptPath%..\..\..\TelegramPrivate" (
+if not exist "%FullScriptPath%..\..\..\DesktopPrivate" (
   echo.
   echo This script is for building the production version of Telegram Desktop.
   echo.
@@ -13,7 +13,7 @@ if not exist "%FullScriptPath%..\..\..\TelegramPrivate" (
 )
 
 set "HomePath=%FullScriptPath%.."
-set "SignAppxPath=%HomePath%\..\..\TelegramPrivate\AppxSign.bat"
+set "SignAppxPath=%HomePath%\..\..\DesktopPrivate\AppxSign.bat"
 set "ResourcesPath=%HomePath%\Resources"
 set "SolutionPath=%HomePath%\.."
 set "ReleasePath=%HomePath%\..\out\Debug"
@@ -39,7 +39,7 @@ mkdir "%ReleasePath%\AppX"
 xcopy "Resources\uwp\AppX\*" "%ReleasePath%\AppX\" /E
 
 set "ResourcePath=%ReleasePath%\AppX\AppxManifest.xml"
-call :repl "Argument= (Publisher=)&quot;CN=536BC709-8EE1-4478-AF22-F0F0F26FF64A&quot;/ $1&quot;CN=Telegram Messenger LLP, O=Telegram Messenger LLP, L=London, C=GB&quot;" "Filename=%ResourcePath%" || goto :error
+call :repl "Argument= (Publisher=)&quot;CN=536BC709-8EE1-4478-AF22-F0F0F26FF64A&quot;/ $1&quot;CN=Telegram FZ-LLC, O=Telegram FZ-LLC, L=Dubai, C=AE&quot;" "Filename=%ResourcePath%" || goto :error
 call :repl "Argument= (ProcessorArchitecture=)&quot;ARCHITECTURE&quot;/ $1&quot;x64&quot;" "Filename=%ResourcePath%" || goto :error
 
 makepri new /pr Resources\uwp\AppX\ /cf Resources\uwp\priconfig.xml /mn %ReleasePath%\AppX\AppxManifest.xml /of %ReleasePath%\AppX\resources.pri

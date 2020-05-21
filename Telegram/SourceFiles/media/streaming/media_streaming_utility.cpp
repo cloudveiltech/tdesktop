@@ -85,9 +85,14 @@ FFmpeg::AvErrorWrap ReadNextFrame(Stream &stream) {
 	return error;
 }
 
-bool GoodForRequest(const QImage &image, const FrameRequest &request) {
+bool GoodForRequest(
+		const QImage &image,
+		int rotation,
+		const FrameRequest &request) {
 	if (request.resize.isEmpty()) {
 		return true;
+	} else if (rotation != 0) {
+		return false;
 	} else if ((request.radius != ImageRoundRadius::None)
 		&& ((request.corners & RectPart::AllCorners) != 0)) {
 		return false;
@@ -174,25 +179,123 @@ QImage ConvertFrame(
 	return storage;
 }
 
+void PaintFrameOuter(QPainter &p, const QRect &inner, QSize outer) {
+	const auto left = inner.x();
+	const auto right = outer.width() - inner.width() - left;
+	const auto top = inner.y();
+	const auto bottom = outer.height() - inner.height() - top;
+	if (left > 0) {
+		p.fillRect(0, 0, left, outer.height(), st::imageBg);
+	}
+	if (right > 0) {
+		p.fillRect(
+			outer.width() - right,
+			0,
+			right,
+			outer.height(),
+			st::imageBg);
+	}
+	if (top > 0) {
+		p.fillRect(left, 0, inner.width(), top, st::imageBg);
+	}
+	if (bottom > 0) {
+		p.fillRect(
+			left,
+			outer.height() - bottom,
+			inner.width(),
+			bottom,
+			st::imageBg);
+	}
+}
+
+void PaintFrameInner(
+		QPainter &p,
+		QRect to,
+		const QImage &original,
+		bool alpha,
+		int rotation) {
+	const auto rotated = [](QRect rect, int rotation) {
+		switch (rotation) {
+		case 0: return rect;
+		case 90: return QRect(
+			rect.y(),
+			-rect.x() - rect.width(),
+			rect.height(),
+			rect.width());
+		case 180: return QRect(
+			-rect.x() - rect.width(),
+			-rect.y() - rect.height(),
+			rect.width(),
+			rect.height());
+		case 270: return QRect(
+			-rect.y() - rect.height(),
+			rect.x(),
+			rect.height(),
+			rect.width());
+		}
+		Unexpected("Rotation in PaintFrameInner.");
+	};
+
+	PainterHighQualityEnabler hq(p);
+	if (rotation) {
+		p.rotate(rotation);
+	}
+	const auto rect = rotated(to, rotation);
+	if (alpha) {
+		p.fillRect(rect, Qt::white);
+	}
+	p.drawImage(rect, original);
+}
+
+void PaintFrameContent(
+		QPainter &p,
+		const QImage &original,
+		bool alpha,
+		int rotation,
+		const FrameRequest &request) {
+	const auto full = request.outer.isEmpty()
+		? original.size()
+		: request.outer;
+	const auto size = request.resize.isEmpty()
+		? original.size()
+		: request.resize;
+	const auto to = QRect(
+		(full.width() - size.width()) / 2,
+		(full.height() - size.height()) / 2,
+		size.width(),
+		size.height());
+	PaintFrameOuter(p, to, full);
+	PaintFrameInner(p, to, original, alpha, rotation);
+}
+
+void ApplyFrameRounding(QImage &storage, const FrameRequest &request) {
+	if (!(request.corners & RectPart::AllCorners)
+		|| (request.radius == ImageRoundRadius::None)) {
+		return;
+	}
+	Images::prepareRound(storage, request.radius, request.corners);
+}
+
 QImage PrepareByRequest(
 		const QImage &original,
+		bool alpha,
+		int rotation,
 		const FrameRequest &request,
 		QImage storage) {
-	Expects(!request.outer.isEmpty());
+	Expects(!request.outer.isEmpty() || alpha);
 
-	if (!FFmpeg::GoodStorageForFrame(storage, request.outer)) {
-		storage = FFmpeg::CreateFrameStorage(request.outer);
+	const auto outer = request.outer.isEmpty()
+		? original.size()
+		: request.outer;
+	if (!FFmpeg::GoodStorageForFrame(storage, outer)) {
+		storage = FFmpeg::CreateFrameStorage(outer);
 	}
-	{
-		Painter p(&storage);
-		PainterHighQualityEnabler hq(p);
-		p.drawImage(QRect(QPoint(), request.outer), original);
-	}
-	if ((request.corners & RectPart::AllCorners)
-		&& (request.radius != ImageRoundRadius::None)) {
-		Images::prepareRound(storage, request.radius, request.corners);
-	}
-	// #TODO streaming later full prepare support.
+
+	QPainter p(&storage);
+	PaintFrameContent(p, original, alpha, rotation, request);
+	p.end();
+
+	ApplyFrameRounding(storage, request);
 	return storage;
 }
 

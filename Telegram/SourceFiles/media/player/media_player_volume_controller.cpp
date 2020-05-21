@@ -11,10 +11,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/shadow.h"
 #include "ui/widgets/continuous_sliders.h"
+#include "ui/ui_utility.h"
+#include "base/object_ptr.h"
+#include "mainwindow.h"
+#include "main/main_session.h"
+#include "facades.h"
+#include "app.h"
 #include "styles/style_media_player.h"
 #include "styles/style_widgets.h"
-#include "mainwindow.h"
-#include "auth_session.h"
 
 namespace Media {
 namespace Player {
@@ -23,10 +27,10 @@ VolumeController::VolumeController(QWidget *parent)
 : TWidget(parent)
 , _slider(this, st::mediaPlayerPanelPlayback) {
 	_slider->setMoveByWheel(true);
-	_slider->setChangeProgressCallback([this](float64 volume) {
+	_slider->setChangeProgressCallback([=](float64 volume) {
 		applyVolumeChange(volume);
 	});
-	_slider->setChangeFinishedCallback([this](float64 volume) {
+	_slider->setChangeFinishedCallback([=](float64 volume) {
 		if (volume > 0) {
 			Global::SetRememberedSongVolume(volume);
 		}

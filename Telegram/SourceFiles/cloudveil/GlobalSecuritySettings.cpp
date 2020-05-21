@@ -1,9 +1,7 @@
 #define REQUEST_URL "https://manage.cloudveil.org/api/v1/messenger/settings"
 #include "stdafx.h"
-#include "auth_session.h"
 #include "GlobalSecuritySettings.h"
 #include "mainwidget.h"
-#include "auth_session.h"
 #include "dialogs/dialogs_indexed_list.h"
 #include "./request/SettingsRequest.h"
 #include "./response/SettingsResponse.h"
@@ -14,6 +12,7 @@
 #include "data/data_chat.h"
 #include "data/data_channel.h"
 #include "apiwrap.h"
+#include <QtCore/QJsonDocument>
 
 
 SettingsResponse GlobalSecuritySettings::lastResponse;
@@ -195,8 +194,8 @@ void GlobalSecuritySettings::suscribeToSupportChannel(SettingsRequest& request) 
 		}
 	}
 
-	auto username = str_const_toString(CLOUDVEIL_CHANNEL_USERNAME);
-	MTP::send(MTPcontacts_ResolveUsername(MTP_string(username)), 
+	auto username = MTP_string(CLOUDVEIL_CHANNEL_USERNAME);
+	MTP::send(MTPcontacts_ResolveUsername(username), 
 		rpcDone(&GlobalSecuritySettings::usernameResolveDone),
 		rpcFail(&GlobalSecuritySettings::usernameResolveFail));
 }

@@ -11,7 +11,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/localstorage.h"
 #include "mainwindow.h"
 #include "ui/widgets/checkbox.h"
+#include "facades.h"
+#include "styles/style_layers.h"
 #include "styles/style_boxes.h"
+
+AutoLockBox::AutoLockBox(QWidget*, not_null<Main::Session*> session)
+: _session(session) {
+}
 
 void AutoLockBox::prepare() {
 	setTitle(tr::lng_passcode_autolock());
@@ -39,6 +45,6 @@ void AutoLockBox::durationChanged(int seconds) {
 	Local::writeUserSettings();
 	Global::RefLocalPasscodeChanged().notify();
 
-	Auth().checkAutoLock();
+	_session->checkAutoLock();
 	closeBox();
 }

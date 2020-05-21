@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Platform {
 namespace Notifications {
 
+#ifndef __MINGW32__
 class Manager : public Window::Notifications::NativeManager {
 public:
 	Manager(Window::Notifications::System *system);
@@ -23,9 +24,16 @@ public:
 	~Manager();
 
 protected:
-	void doShowNativeNotification(PeerData *peer, MsgId msgId, const QString &title, const QString &subtitle, const QString &msg, bool hideNameAndPhoto, bool hideReplyButton) override;
+	void doShowNativeNotification(
+		not_null<PeerData*> peer,
+		MsgId msgId,
+		const QString &title,
+		const QString &subtitle,
+		const QString &msg,
+		bool hideNameAndPhoto,
+		bool hideReplyButton) override;
 	void doClearAllFast() override;
-	void doClearFromHistory(History *history) override;
+	void doClearFromHistory(not_null<History*> history) override;
 	void onBeforeNotificationActivated(PeerId peerId, MsgId msgId) override;
 	void onAfterNotificationActivated(PeerId peerId, MsgId msgId) override;
 
@@ -34,6 +42,7 @@ private:
 	const std::unique_ptr<Private> _private;
 
 };
+#endif // !__MINGW32__
 
 } // namespace Notifications
 } // namespace Platform

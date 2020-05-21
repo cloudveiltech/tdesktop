@@ -9,17 +9,20 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "data/data_session.h"
 #include "data/data_channel.h"
+#include "data/data_histories.h"
 #include "dialogs/dialogs_key.h"
 #include "history/history.h"
 #include "history/history_item.h"
 #include "lang/lang_keys.h"
 #include "storage/storage_facade.h"
 #include "core/application.h"
+#include "main/main_account.h"
 //#include "storage/storage_feed_messages.h" // #feed
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "observer_peer.h"
 #include "apiwrap.h"
 #include "mainwidget.h"
+#include "facades.h"
 #include "styles/style_dialogs.h"
 
 namespace Data {
@@ -28,11 +31,12 @@ namespace {
 constexpr auto kLoadedChatsMinCount = 20;
 constexpr auto kShowChatNamesCount = 8;
 
-rpl::producer<int> PinnedDialogsInFolderMaxValue() {
+rpl::producer<int> PinnedDialogsInFolderMaxValue(
+		not_null<Main::Session*> session) {
 	return rpl::single(
 		rpl::empty_value()
 	) | rpl::then(
-		Core::App().configUpdates()
+		session->account().configUpdates()
 	) | rpl::map([=] {
 		return Global::PinnedDialogsInFolderMax();
 	});
@@ -53,7 +57,7 @@ rpl::producer<int> PinnedDialogsInFolderMaxValue() {
 Folder::Folder(not_null<Data::Session*> owner, FolderId id)
 : Entry(owner, this)
 , _id(id)
-, _chatsList(PinnedDialogsInFolderMaxValue())
+, _chatsList(FilterId(), PinnedDialogsInFolderMaxValue(&owner->session()))
 , _name(tr::lng_archived_name(tr::now)) {
 	indexNameParts();
 
@@ -63,11 +67,38 @@ Folder::Folder(not_null<Data::Session*> owner, FolderId id)
 		for (const auto history : _lastHistories) {
 			if (history->peer == update.peer) {
 				++_chatListViewVersion;
-				updateChatListEntry();
+				updateChatListEntryPostponed();
 				return;
 			}
 		}
 	}, _lifetime);
+
+	_chatsList.setAllAreMuted(true);
+
+	_chatsList.unreadStateChanges(
+	) | rpl::filter([=] {
+		return inChatList();
+	}) | rpl::start_with_next([=](const Dialogs::UnreadState &old) {
+		++_chatListViewVersion;
+		notifyUnreadStateChange(old);
+		updateChatListEntryPostponed();
+	}, _lifetime);
+
+	_chatsList.fullSize().changes(
+	) | rpl::start_with_next([=] {
+		updateChatListEntryPostponed();
+	}, _lifetime);
+}
+
+void Folder::updateChatListEntryPostponed() {
+	if (_updateChatListEntryPostponed) {
+		return;
+	}
+	_updateChatListEntryPostponed = true;
+	Ui::PostponeCall(this, [=] {
+		updateChatListEntry();
+		_updateChatListEntryPostponed = false;
+	});
 }
 
 FolderId Folder::id() const {
@@ -104,8 +135,8 @@ void Folder::indexNameParts() {
 void Folder::registerOne(not_null<History*> history) {
 	if (_chatsList.indexed()->size() == 1) {
 		updateChatListSortPosition();
-		if (!_cloudUnread.known) {
-			session().api().requestDialogEntry(this);
+		if (!_chatsList.cloudUnreadKnown()) {
+			owner().histories().requestDialogEntry(this);
 		}
 	} else {
 		updateChatListEntry();
@@ -287,29 +318,6 @@ void Folder::paintUserpic(
 	//}
 }
 
-bool Folder::chatsListLoaded() const {
-	return _chatsList.loaded();
-}
-
-void Folder::setChatsListLoaded(bool loaded) {
-	if (_chatsList.loaded() == loaded) {
-		return;
-	}
-	const auto notifier = unreadStateChangeNotifier(true);
-	_chatsList.setLoaded(loaded);
-}
-
-void Folder::setCloudChatsListSize(int size) {
-	_cloudChatsListSize = size;
-	updateChatListEntry();
-}
-
-int Folder::chatsListSize() const {
-	return std::max(
-		_chatsList.indexed()->size(),
-		_chatsList.loaded() ? 0 : _cloudChatsListSize);
-}
-
 const std::vector<not_null<History*>> &Folder::lastHistories() const {
 	return _lastHistories;
 }
@@ -320,7 +328,7 @@ uint32 Folder::chatListViewVersion() const {
 
 void Folder::requestChatListMessage() {
 	if (!chatListMessageKnown()) {
-		session().api().requestDialogEntry(this);
+		owner().histories().requestDialogEntry(this);
 	}
 }
 
@@ -329,7 +337,7 @@ TimeId Folder::adjustedChatListTimeId() const {
 }
 
 void Folder::applyDialog(const MTPDdialogFolder &data) {
-	updateCloudUnread(data);
+	_chatsList.updateCloudUnread(data);
 	if (const auto peerId = peerFromMTP(data.vpeer())) {
 		const auto history = owner().history(peerId);
 		const auto fullId = FullMsgId(
@@ -345,87 +353,12 @@ void Folder::applyDialog(const MTPDdialogFolder &data) {
 	}
 }
 
-void Folder::updateCloudUnread(const MTPDdialogFolder &data) {
-	const auto notifier = unreadStateChangeNotifier(!_chatsList.loaded());
-
-	_cloudUnread.messages = data.vunread_muted_messages_count().v
-		+ data.vunread_unmuted_messages_count().v;
-	_cloudUnread.chats = data.vunread_muted_peers_count().v
-			+ data.vunread_unmuted_peers_count().v;
-	finalizeCloudUnread();
-
-	_cloudUnread.known = true;
-}
-
-void Folder::finalizeCloudUnread() {
-	// Cloud state for archive folder always counts everything as muted.
-	_cloudUnread.messagesMuted = _cloudUnread.messages;
-	_cloudUnread.chatsMuted = _cloudUnread.chats;
-
-	// We don't know the real value of marked chats counts in _cloudUnread.
-	_cloudUnread.marksMuted = _cloudUnread.marks = 0;
-}
-
-Dialogs::UnreadState Folder::chatListUnreadState() const {
-	const auto localUnread = _chatsList.unreadState();
-	auto result = _chatsList.loaded() ? localUnread : _cloudUnread;
-	result.messagesMuted = result.messages;
-	result.chatsMuted = result.chats;
-
-	// We don't know the real value of marked chats counts in _cloudUnread.
-	result.marksMuted = result.marks = localUnread.marks;
-
-	return result;
-}
-
 void Folder::applyPinnedUpdate(const MTPDupdateDialogPinned &data) {
 	const auto folderId = data.vfolder_id().value_or_empty();
 	if (folderId != 0) {
 		LOG(("API Error: Nested folders detected."));
 	}
-	owner().setChatPinned(this, data.is_pinned());
-}
-
-void Folder::unreadStateChanged(
-		const Dialogs::Key &key,
-		const Dialogs::UnreadState &wasState,
-		const Dialogs::UnreadState &nowState) {
-	if (const auto history = key.history()) {
-		if (wasState.empty() != nowState.empty()) {
-			++_chatListViewVersion;
-			updateChatListEntry();
-		}
-	}
-
-	const auto updateCloudUnread = _cloudUnread.known && wasState.known;
-	const auto notify = _chatsList.loaded() || updateCloudUnread;
-	const auto notifier = unreadStateChangeNotifier(notify);
-
-	_chatsList.unreadStateChanged(wasState, nowState);
-	if (updateCloudUnread) {
-		Assert(nowState.known);
-		_cloudUnread += nowState - wasState;
-		finalizeCloudUnread();
-	}
-}
-
-void Folder::unreadEntryChanged(
-		const Dialogs::Key &key,
-		const Dialogs::UnreadState &state,
-		bool added) {
-	const auto updateCloudUnread = _cloudUnread.known && state.known;
-	const auto notify = _chatsList.loaded() || updateCloudUnread;
-	const auto notifier = unreadStateChangeNotifier(notify);
-
-	_chatsList.unreadEntryChanged(state, added);
-	if (updateCloudUnread) {
-		if (added) {
-			_cloudUnread += state;
-		} else {
-			_cloudUnread -= state;
-		}
-		finalizeCloudUnread();
-	}
+	owner().setChatPinned(this, FilterId(), data.is_pinned());
 }
 
 // #feed
@@ -436,10 +369,6 @@ void Folder::unreadEntryChanged(
 //rpl::producer<MessagePosition> Folder::unreadPositionChanges() const {
 //	return _unreadPosition.changes();
 //}
-
-bool Folder::toImportant() const {
-	return false;
-}
 
 int Folder::fixedOnTopIndex() const {
 	return kArchiveFixOnTopIndex;
@@ -455,6 +384,10 @@ int Folder::chatListUnreadCount() const {
 		+ (session().settings().countUnreadMessages()
 			? state.messages
 			: state.chats);
+}
+
+Dialogs::UnreadState Folder::chatListUnreadState() const {
+	return _chatsList.unreadState();
 }
 
 bool Folder::chatListUnreadMark() const {

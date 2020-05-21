@@ -12,8 +12,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_controller.h"
 #include "core/application.h"
 #include "media/player/media_player_instance.h"
-#include "platform/platform_info.h"
+#include "base/platform/base_platform_info.h"
 #include "base/parse_helper.h"
+#include "facades.h"
+
+#include <QtWidgets/QShortcut>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
+#include <QtCore/QJsonArray>
 
 namespace Shortcuts {
 namespace {
@@ -49,47 +55,81 @@ const auto SupportCommands = base::flat_set<Command>{
 };
 
 const auto CommandByName = base::flat_map<QString, Command>{
-	{ qsl("close_telegram")   , Command::Close },
-	{ qsl("lock_telegram")    , Command::Lock },
-	{ qsl("minimize_telegram"), Command::Minimize },
-	{ qsl("quit_telegram")    , Command::Quit },
+	{ qsl("close_telegram")    , Command::Close },
+	{ qsl("lock_telegram")     , Command::Lock },
+	{ qsl("minimize_telegram") , Command::Minimize },
+	{ qsl("quit_telegram")     , Command::Quit },
 
-	{ qsl("media_play")       , Command::MediaPlay },
-	{ qsl("media_pause")      , Command::MediaPause },
-	{ qsl("media_playpause")  , Command::MediaPlayPause },
-	{ qsl("media_stop")       , Command::MediaStop },
-	{ qsl("media_previous")   , Command::MediaPrevious },
-	{ qsl("media_next")       , Command::MediaNext },
+	{ qsl("media_play")        , Command::MediaPlay },
+	{ qsl("media_pause")       , Command::MediaPause },
+	{ qsl("media_playpause")   , Command::MediaPlayPause },
+	{ qsl("media_stop")        , Command::MediaStop },
+	{ qsl("media_previous")    , Command::MediaPrevious },
+	{ qsl("media_next")        , Command::MediaNext },
 
-	{ qsl("search")           , Command::Search },
+	{ qsl("search")            , Command::Search },
 
-	{ qsl("previous_chat")    , Command::ChatPrevious },
-	{ qsl("next_chat")        , Command::ChatNext },
-	{ qsl("first_chat")       , Command::ChatFirst },
-	{ qsl("last_chat")        , Command::ChatLast },
-	{ qsl("self_chat")        , Command::ChatSelf },
+	{ qsl("previous_chat")     , Command::ChatPrevious },
+	{ qsl("next_chat")         , Command::ChatNext },
+	{ qsl("first_chat")        , Command::ChatFirst },
+	{ qsl("last_chat")         , Command::ChatLast },
+	{ qsl("self_chat")         , Command::ChatSelf },
+	
+	{ qsl("previous_folder")   , Command::FolderPrevious },
+	{ qsl("next_folder")       , Command::FolderNext },
+	{ qsl("all_chats")         , Command::ShowAllChats },
+	
+	{ qsl("folder1")           , Command::ShowFolder1 },
+	{ qsl("folder2")           , Command::ShowFolder2 },
+	{ qsl("folder3")           , Command::ShowFolder3 },
+	{ qsl("folder4")           , Command::ShowFolder4 },
+	{ qsl("folder5")           , Command::ShowFolder5 },
+	{ qsl("folder6")           , Command::ShowFolder6 },
+	{ qsl("last_folder")       , Command::ShowFolderLast },
+
+	{ qsl("show_archive")      , Command::ShowArchive },
+
+	// Shortcuts that have no default values.
+	{ qsl("message")           , Command::JustSendMessage },
+	{ qsl("message_silently")  , Command::SendSilentMessage },
+	{ qsl("message_scheduled") , Command::ScheduleMessage },
+	//
 };
 
 const auto CommandNames = base::flat_map<Command, QString>{
-	{ Command::Close         , qsl("close_telegram") },
-	{ Command::Lock          , qsl("lock_telegram") },
-	{ Command::Minimize      , qsl("minimize_telegram") },
-	{ Command::Quit          , qsl("quit_telegram") },
+	{ Command::Close          , qsl("close_telegram") },
+	{ Command::Lock           , qsl("lock_telegram") },
+	{ Command::Minimize       , qsl("minimize_telegram") },
+	{ Command::Quit           , qsl("quit_telegram") },
 
-	{ Command::MediaPlay     , qsl("media_play") },
-	{ Command::MediaPause    , qsl("media_pause") },
-	{ Command::MediaPlayPause, qsl("media_playpause") },
-	{ Command::MediaStop     , qsl("media_stop") },
-	{ Command::MediaPrevious , qsl("media_previous") },
-	{ Command::MediaNext     , qsl("media_next") },
+	{ Command::MediaPlay      , qsl("media_play") },
+	{ Command::MediaPause     , qsl("media_pause") },
+	{ Command::MediaPlayPause , qsl("media_playpause") },
+	{ Command::MediaStop      , qsl("media_stop") },
+	{ Command::MediaPrevious  , qsl("media_previous") },
+	{ Command::MediaNext      , qsl("media_next") },
 
-	{ Command::Search        , qsl("search") },
+	{ Command::Search         , qsl("search") },
 
-	{ Command::ChatPrevious  , qsl("previous_chat") },
-	{ Command::ChatNext      , qsl("next_chat") },
-	{ Command::ChatFirst     , qsl("first_chat") },
-	{ Command::ChatLast      , qsl("last_chat") },
-	{ Command::ChatSelf      , qsl("self_chat") },
+	{ Command::ChatPrevious   , qsl("previous_chat") },
+	{ Command::ChatNext       , qsl("next_chat") },
+	{ Command::ChatFirst      , qsl("first_chat") },
+	{ Command::ChatLast       , qsl("last_chat") },
+	{ Command::ChatSelf       , qsl("self_chat") },
+	
+	{ Command::FolderPrevious , qsl("previous_folder") },
+	{ Command::FolderNext     , qsl("next_folder") },
+	{ Command::ShowAllChats   , qsl("all_chats") },
+	                                                   
+	{ Command::ShowFolder1    , qsl("folder1") },
+	{ Command::ShowFolder2    , qsl("folder2") },
+	{ Command::ShowFolder3    , qsl("folder3") },
+	{ Command::ShowFolder4    , qsl("folder4") },
+	{ Command::ShowFolder5    , qsl("folder5") },
+	{ Command::ShowFolder6    , qsl("folder6") },
+	{ Command::ShowFolderLast , qsl("last_folder") },
+
+	{ Command::ShowArchive    , qsl("show_archive") },
 };
 
 class Manager {
@@ -97,7 +137,7 @@ public:
 	void fill();
 	void clear();
 
-	std::optional<Command> lookup(int shortcutId) const;
+	[[nodiscard]] std::vector<Command> lookup(int shortcutId) const;
 	void toggleMedia(bool toggled);
 	void toggleSupport(bool toggled);
 
@@ -108,14 +148,14 @@ private:
 	void writeDefaultFile();
 	bool readCustomFile();
 
-	void set(const QString &keys, Command command);
+	void set(const QString &keys, Command command, bool replace = false);
 	void remove(const QString &keys);
 	void unregister(base::unique_qptr<QShortcut> shortcut);
 
 	QStringList _errors;
 
 	base::flat_map<QKeySequence, base::unique_qptr<QShortcut>> _shortcuts;
-	base::flat_map<int, Command> _commandByShortcutId;
+	base::flat_multi_map<int, Command> _commandByShortcutId;
 
 	base::flat_set<QShortcut*> _mediaShortcuts;
 	base::flat_set<QShortcut*> _supportShortcuts;
@@ -190,11 +230,14 @@ const QStringList &Manager::errors() const {
 	return _errors;
 }
 
-std::optional<Command> Manager::lookup(int shortcutId) const {
-	const auto i = _commandByShortcutId.find(shortcutId);
-	return (i != end(_commandByShortcutId))
-		? base::make_optional(i->second)
-		: std::nullopt;
+std::vector<Command> Manager::lookup(int shortcutId) const {
+	auto result = std::vector<Command>();
+	auto i = _commandByShortcutId.findFirst(shortcutId);
+	const auto end = _commandByShortcutId.end();
+	for (; i != end && (i->first == shortcutId); ++i) {
+		result.push_back(i->second);
+	}
+	return result;
 }
 
 void Manager::toggleMedia(bool toggled) {
@@ -262,7 +305,7 @@ bool Manager::readCustomFile() {
 			const auto name = (*command).toString();
 			const auto i = CommandByName.find(name);
 			if (i != end(CommandByName)) {
-				set((*keys).toString(), i->second);
+				set((*keys).toString(), i->second, true);
 			} else {
 				LOG(("Shortcut Warning: "
 					"could not find shortcut command handler '%1'"
@@ -279,6 +322,8 @@ bool Manager::readCustomFile() {
 }
 
 void Manager::fillDefaults() {
+	const auto ctrl = Platform::IsMac() ? qsl("meta") : qsl("ctrl");
+
 	set(qsl("ctrl+w"), Command::Close);
 	set(qsl("ctrl+f4"), Command::Close);
 	set(qsl("ctrl+l"), Command::Lock);
@@ -300,15 +345,11 @@ void Manager::fillDefaults() {
 	set(qsl("alt+down"), Command::ChatNext);
 	set(qsl("ctrl+pgup"), Command::ChatPrevious);
 	set(qsl("alt+up"), Command::ChatPrevious);
-	if (Platform::IsMac()) {
-		set(qsl("meta+tab"), Command::ChatNext);
-		set(qsl("meta+shift+tab"), Command::ChatPrevious);
-		set(qsl("meta+backtab"), Command::ChatPrevious);
-	} else {
-		set(qsl("ctrl+tab"), Command::ChatNext);
-		set(qsl("ctrl+shift+tab"), Command::ChatPrevious);
-		set(qsl("ctrl+backtab"), Command::ChatPrevious);
-	}
+
+	set(qsl("%1+tab").arg(ctrl), Command::ChatNext);
+	set(qsl("%1+shift+tab").arg(ctrl), Command::ChatPrevious);
+	set(qsl("%1+backtab").arg(ctrl), Command::ChatPrevious);
+
 	set(qsl("ctrl+alt+home"), Command::ChatFirst);
 	set(qsl("ctrl+alt+end"), Command::ChatLast);
 
@@ -324,7 +365,20 @@ void Manager::fillDefaults() {
 	set(qsl("ctrl+4"), Command::ChatPinned4);
 	set(qsl("ctrl+5"), Command::ChatPinned5);
 
+	auto &&folders = ranges::view::zip(
+		kShowFolder,
+		ranges::view::ints(1, ranges::unreachable));
+
+	for (const auto [command, index] : folders) {
+		set(qsl("%1+%2").arg(ctrl).arg(index), command);
+	}
+
+	set(qsl("%1+shift+down").arg(ctrl), Command::FolderNext);
+	set(qsl("%1+shift+up").arg(ctrl), Command::FolderPrevious);
+
 	set(qsl("ctrl+0"), Command::ChatSelf);
+
+	set(qsl("ctrl+9"), Command::ShowArchive);
 }
 
 void Manager::writeDefaultFile() {
@@ -346,10 +400,12 @@ void Manager::writeDefaultFile() {
 	shortcuts.push_back(version);
 
 	for (const auto &[sequence, shortcut] : _shortcuts) {
-		const auto i = _commandByShortcutId.find(shortcut->id());
-		if (i != end(_commandByShortcutId)) {
+		const auto shortcutId = shortcut->id();
+		auto i = _commandByShortcutId.findFirst(shortcutId);
+		const auto end = _commandByShortcutId.end();
+		for (; i != end && i->first == shortcutId; ++i) {
 			const auto j = CommandNames.find(i->second);
-			if (j != end(CommandNames)) {
+			if (j != CommandNames.end()) {
 				QJsonObject entry;
 				entry.insert(qsl("keys"), sequence.toString().toLower());
 				entry.insert(qsl("command"), j->second);
@@ -363,7 +419,7 @@ void Manager::writeDefaultFile() {
 	file.write(document.toJson(QJsonDocument::Indented));
 }
 
-void Manager::set(const QString &keys, Command command) {
+void Manager::set(const QString &keys, Command command, bool replace) {
 	if (keys.isEmpty()) {
 		return;
 	}
@@ -388,22 +444,24 @@ void Manager::set(const QString &keys, Command command) {
 	if (isMediaShortcut || isSupportShortcut) {
 		shortcut->setEnabled(false);
 	}
-	const auto id = shortcut->id();
+	auto id = shortcut->id();
+	auto i = _shortcuts.find(result);
+	if (i == end(_shortcuts)) {
+		i = _shortcuts.emplace(result, std::move(shortcut)).first;
+	} else if (replace) {
+		unregister(std::exchange(i->second, std::move(shortcut)));
+	} else {
+		id = i->second->id();
+	}
 	if (!id) {
 		_errors.push_back(qsl("Could not create shortcut '%1'!").arg(keys));
 		return;
 	}
-	auto i = _shortcuts.find(result);
-	if (i == end(_shortcuts)) {
-		i = _shortcuts.emplace(result, std::move(shortcut)).first;
-	} else {
-		unregister(std::exchange(i->second, std::move(shortcut)));
-	}
 	_commandByShortcutId.emplace(id, command);
-	if (isMediaShortcut) {
+	if (!shortcut && isMediaShortcut) {
 		_mediaShortcuts.emplace(i->second.get());
 	}
-	if (isSupportShortcut) {
+	if (!shortcut && isSupportShortcut) {
 		_supportShortcuts.emplace(i->second.get());
 	}
 }
@@ -438,11 +496,13 @@ Manager Data;
 
 } // namespace
 
-Request::Request(Command command) : _command(command) {
+Request::Request(std::vector<Command> commands)
+: _commands(std::move(commands)) {
 }
 
 bool Request::check(Command command, int priority) {
-	if (_command == command && priority > _handlerPriority) {
+	if (ranges::contains(_commands, command)
+		&& priority > _handlerPriority) {
 		_handlerPriority = priority;
 		return true;
 	}
@@ -454,14 +514,25 @@ bool Request::handle(FnMut<bool()> handler) {
 	return true;
 }
 
-FnMut<bool()> RequestHandler(Command command) {
-	auto request = Request(command);
+FnMut<bool()> RequestHandler(std::vector<Command> commands) {
+	auto request = Request(std::move(commands));
 	RequestsStream.fire(&request);
 	return std::move(request._handler);
 }
 
+FnMut<bool()> RequestHandler(Command command) {
+	return RequestHandler(std::vector<Command>{ command });
+}
+
 bool Launch(Command command) {
 	if (auto handler = RequestHandler(command)) {
+		return handler();
+	}
+	return false;
+}
+
+bool Launch(std::vector<Command> commands) {
+	if (auto handler = RequestHandler(std::move(commands))) {
 		return handler();
 	}
 	return false;
@@ -482,10 +553,7 @@ const QStringList &Errors() {
 }
 
 bool HandleEvent(not_null<QShortcutEvent*> event) {
-	if (const auto command = Data.lookup(event->shortcutId())) {
-		return Launch(*command);
-	}
-	return false;
+	return Launch(Data.lookup(event->shortcutId()));
 }
 
 void ToggleMediaShortcuts(bool toggled) {

@@ -8,12 +8,15 @@ Copyright (C) 2017, Nicholas Guriev <guriev-ns@ya.ru>
 #include "boxes/mute_settings_box.h"
 
 #include "lang/lang_keys.h"
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "data/data_session.h"
-#include "styles/style_boxes.h"
+#include "data/data_peer.h"
 #include "ui/special_buttons.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/labels.h"
+#include "app.h"
+#include "styles/style_layers.h"
+#include "styles/style_boxes.h"
 
 namespace {
 
@@ -43,7 +46,7 @@ void MuteSettingsBox::prepare() {
 	icon->moveToLeft(st::boxPadding.left(), y);
 
 	object_ptr<Ui::FlatLabel> title(this, st::muteChatTitle);
-	title->setText(App::peerName(_peer, true));
+	title->setText(_peer->name);
 	title->moveToLeft(
 		st::boxPadding.left() + st::muteChatTitleLeft,
 		y + (icon->height() / 2) - (title->height() / 2));
@@ -73,7 +76,7 @@ void MuteSettingsBox::prepare() {
 
 	_save = [=] {
 		const auto muteForSeconds = group->value() * 3600;
-		Auth().data().updateNotifySettings(
+		_peer->owner().updateNotifySettings(
 			_peer,
 			muteForSeconds);
 		closeBox();

@@ -25,6 +25,7 @@ struct StateRequest;
 enum class CursorState : char;
 enum class PointState : char;
 class EmptyPainter;
+class Element;
 } // namespace HistoryView
 
 namespace Window {
@@ -48,9 +49,11 @@ public:
 
 	HistoryInner(
 		not_null<HistoryWidget*> historyWidget,
+		not_null<Ui::ScrollArea*> scroll,
 		not_null<Window::SessionController*> controller,
-		Ui::ScrollArea *scroll,
 		not_null<History*> history);
+
+	Main::Session &session() const;
 
 	void messagesReceived(PeerData *peer, const QVector<MTPMessage> &messages);
 	void messagesReceivedDown(PeerData *peer, const QVector<MTPMessage> &messages);
@@ -59,6 +62,7 @@ public:
 
 	void touchScrollUpdated(const QPoint &screenPos);
 
+	void checkHistoryActivation();
 	void recountHistoryGeometry();
 	void updateSize();
 
@@ -77,6 +81,13 @@ public:
 		not_null<const Element*> view,
 		int from,
 		int till) const;
+	void elementStartStickerLoop(not_null<const Element*> view);
+	void elementShowPollResults(
+		not_null<PollData*> poll,
+		FullMsgId context);
+	void elementShowTooltip(
+		const TextWithEntities &text,
+		Fn<void()> hiddenCallback);
 
 	void updateBotInfo(bool recount = true);
 
@@ -106,6 +117,7 @@ public:
 	// Ui::AbstractTooltipShower interface.
 	QString tooltipText() const override;
 	QPoint tooltipPos() const override;
+	bool tooltipWindowActive() const override;
 
 	// HistoryView::ElementDelegate interface.
 	static not_null<HistoryView::ElementDelegate*> ElementDelegate();
@@ -302,13 +314,19 @@ private:
 
 	static HistoryInner *Instance;
 
-	not_null<Window::SessionController*> _controller;
-
+	const not_null<HistoryWidget*> _widget;
+	const not_null<Ui::ScrollArea*> _scroll;
+	const not_null<Window::SessionController*> _controller;
 	const not_null<PeerData*> _peer;
 	const not_null<History*> _history;
+
 	History *_migrated = nullptr;
 	int _contentWidth = 0;
 	int _historyPaddingTop = 0;
+
+	// Save visible area coords for painting / pressing userpics.
+	int _visibleAreaTop = 0;
+	int _visibleAreaBottom = 0;
 
 	// With migrated history we perhaps do not need to display
 	// the first _history message date (just skip it by height).
@@ -317,8 +335,6 @@ private:
 	std::unique_ptr<BotAbout> _botAbout;
 	std::unique_ptr<HistoryView::EmptyPainter> _emptyPainter;
 
-	HistoryWidget *_widget = nullptr;
-	Ui::ScrollArea *_scroll = nullptr;
 	mutable History *_curHistory = nullptr;
 	mutable int _curBlock = 0;
 	mutable int _curItem = 0;
@@ -327,6 +343,8 @@ private:
 
 	style::cursor _cursor = style::cur_default;
 	SelectedItems _selected;
+
+	base::flat_set<not_null<const HistoryItem*>> _animatedStickersPlayed;
 
 	MouseAction _mouseAction = MouseAction::None;
 	TextSelectType _mouseSelectType = TextSelectType::Letters;
@@ -363,10 +381,6 @@ private:
 	QTimer _touchScrollTimer;
 
 	base::unique_qptr<Ui::PopupMenu> _menu;
-
-	// save visible area coords for painting / pressing userpics
-	int _visibleAreaTop = 0;
-	int _visibleAreaBottom = 0;
 
 	bool _scrollDateShown = false;
 	Ui::Animations::Simple _scrollDateOpacity;

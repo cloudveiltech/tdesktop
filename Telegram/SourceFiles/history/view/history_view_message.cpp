@@ -10,25 +10,31 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_cursor_state.h"
 #include "history/history_item_components.h"
 #include "history/history_message.h"
-#include "history/media/history_media.h"
-#include "history/media/history_media_web_page.h"
+#include "history/view/media/history_view_media.h"
+#include "history/view/media/history_view_web_page.h"
 #include "history/history.h"
 #include "ui/toast/toast.h"
+#include "ui/text/text_utilities.h"
+#include "ui/text/text_entity.h"
 #include "data/data_session.h"
 #include "data/data_user.h"
 #include "data/data_channel.h"
 #include "lang/lang_keys.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "window/window_session_controller.h"
 #include "layout.h"
+#include "facades.h"
+#include "app.h"
 #include "styles/style_widgets.h"
 #include "styles/style_history.h"
 #include "styles/style_dialogs.h"
 
 namespace HistoryView {
 namespace {
+
+const auto kPsaTooltipPrefix = "cloud_lng_tooltip_psa_";
 
 class KeyboardStyle : public ReplyKeyboard::Style {
 public:
@@ -123,12 +129,6 @@ int KeyboardStyle::minButtonWidth(
 	return result;
 }
 
-QString MessageBadgeText(not_null<const HistoryMessage*> message) {
-	return message->hasAdminBadge()
-		? tr::lng_admin_badge(tr::now)
-		: tr::lng_channel_badge(tr::now);
-}
-
 QString FastReplyText() {
 	return tr::lng_fast_reply(tr::now);
 }
@@ -204,6 +204,7 @@ Message::Message(
 	not_null<HistoryMessage*> data)
 : Element(delegate, data) {
 	initLogEntryOriginal();
+	initPsa();
 }
 
 not_null<HistoryMessage*> Message::message() const {
@@ -238,9 +239,6 @@ QSize Message::performCountOptimalSize() {
 		}
 		if (reply) {
 			reply->updateName();
-		}
-		if (displayFromName()) {
-			item->updateAdminBadgeState();
 		}
 
 		auto mediaDisplayed = false;
@@ -307,8 +305,7 @@ QSize Message::performCountOptimalSize() {
 					? st::msgFont->width(FastReplyText())
 					: 0;
 				if (item->hasMessageBadge()) {
-					const auto badgeWidth = st::msgFont->width(
-						MessageBadgeText(item));
+					const auto badgeWidth = item->messageBadge().maxWidth();
 					namew += st::msgPadding.right()
 						+ std::max(badgeWidth, replyWidth);
 				} else if (replyWidth) {
@@ -319,7 +316,10 @@ QSize Message::performCountOptimalSize() {
 				accumulate_max(maxWidth, st::msgPadding.left() + via->maxWidth + st::msgPadding.right());
 			}
 			if (displayForwardedFrom()) {
-				auto namew = st::msgPadding.left() + forwarded->text.maxWidth() + st::msgPadding.right();
+				const auto skip1 = forwarded->psaType.isEmpty()
+					? 0
+					: st::historyPsaIconSkip1;
+				auto namew = st::msgPadding.left() + forwarded->text.maxWidth() + skip1 + st::msgPadding.right();
 				if (via) {
 					namew += st::msgServiceFont->spacew + via->maxWidth;
 				}
@@ -417,6 +417,15 @@ void Message::draw(
 
 	paintHighlight(p, g.height());
 
+	const auto roll = media ? media->bubbleRoll() : Media::BubbleRoll();
+	if (roll) {
+		p.save();
+		p.translate(g.center());
+		p.rotate(roll.rotate);
+		p.scale(roll.scale, roll.scale);
+		p.translate(-g.center());
+	}
+
 	p.setTextPalette(selected
 		? (outbg ? st::outTextPaletteSelected : st::inTextPaletteSelected)
 		: (outbg ? st::outTextPalette : st::inTextPalette));
@@ -504,6 +513,10 @@ void Message::draw(
 			const auto fastShareTop = g.top() + g.height() - fastShareSkip - st::historyFastShareSize;
 			drawRightAction(p, fastShareLeft, fastShareTop, width());
 		}
+
+		if (media) {
+			media->paintBubbleFireworks(p, g, ms);
+		}
 	} else if (media && media->isDisplayed()) {
 		p.translate(g.topLeft());
 		media->draw(p, clip.translated(-g.topLeft()), skipTextSelection(selection), ms);
@@ -511,6 +524,10 @@ void Message::draw(
 	}
 
 	p.restoreTextPalette();
+
+	if (roll) {
+		p.restore();
+	}
 
 	const auto reply = item->Get<HistoryMessageReply>();
 	if (reply && reply->isNameUpdated()) {
@@ -526,7 +543,7 @@ void Message::paintFromName(
 	if (displayFromName()) {
 		const auto badgeWidth = [&] {
 			if (item->hasMessageBadge()) {
-				return st::msgFont->width(MessageBadgeText(item));
+				return item->messageBadge().maxWidth();
 			}
 			return 0;
 		}();
@@ -578,10 +595,18 @@ void Message::paintFromName(
 			p.setFont(ClickHandler::showAsActive(_fastReplyLink)
 				? st::msgFont->underline()
 				: st::msgFont);
-			p.drawText(
-				trect.left() + trect.width() - rightWidth,
-				trect.top() + st::msgFont->ascent,
-				replyWidth ? FastReplyText() : MessageBadgeText(item));
+			if (replyWidth) {
+				p.drawText(
+					trect.left() + trect.width() - rightWidth,
+					trect.top() + st::msgFont->ascent,
+					FastReplyText());
+			} else {
+				item->messageBadge().draw(
+					p,
+					trect.left() + trect.width() - rightWidth,
+					trect.top(),
+					rightWidth);
+			}
 		}
 		trect.setY(trect.y() + st::msgNameFont->height);
 	}
@@ -589,21 +614,75 @@ void Message::paintFromName(
 
 void Message::paintForwardedInfo(Painter &p, QRect &trect, bool selected) const {
 	if (displayForwardedFrom()) {
-		const auto &serviceFont = st::msgServiceFont;
-		const auto &serviceName = st::msgServiceNameFont;
-
 		const auto item = message();
 		const auto outbg = hasOutLayout();
-		p.setPen(selected ? (outbg ? st::msgOutServiceFgSelected : st::msgInServiceFgSelected) : (outbg ? st::msgOutServiceFg : st::msgInServiceFg));
-		p.setFont(serviceFont);
+		const auto forwarded = item->Get<HistoryMessageForwarded>();
 
-		auto forwarded = item->Get<HistoryMessageForwarded>();
-		auto breakEverywhere = (forwarded->text.countHeight(trect.width()) > 2 * serviceFont->height);
-		p.setTextPalette(selected ? (outbg ? st::outFwdTextPaletteSelected : st::inFwdTextPaletteSelected) : (outbg ? st::outFwdTextPalette : st::inFwdTextPalette));
-		forwarded->text.drawElided(p, trect.x(), trect.y(), trect.width(), 2, style::al_left, 0, -1, 0, breakEverywhere);
+		const auto &serviceFont = st::msgServiceFont;
+		const auto &serviceName = st::msgServiceNameFont;
+		const auto skip1 = forwarded->psaType.isEmpty()
+			? 0
+			: st::historyPsaIconSkip1;
+		const auto skip2 = forwarded->psaType.isEmpty()
+			? 0
+			: st::historyPsaIconSkip2;
+		const auto fits = (forwarded->text.maxWidth() + skip1 <= trect.width());
+		const auto skip = fits ? skip1 : skip2;
+		const auto useWidth = trect.width() - skip;
+		const auto countedHeight = forwarded->text.countHeight(useWidth);
+		const auto breakEverywhere = (countedHeight > 2 * serviceFont->height);
+		p.setPen(!forwarded->psaType.isEmpty()
+			? st::boxTextFgGood
+			: selected
+			? (outbg
+				? st::msgOutServiceFgSelected
+				: st::msgInServiceFgSelected)
+			: (outbg
+				? st::msgOutServiceFg
+				: st::msgInServiceFg));
+		p.setFont(serviceFont);
+		p.setTextPalette(!forwarded->psaType.isEmpty()
+			? st::historyPsaForwardPalette
+			: selected
+			? (outbg
+				? st::outFwdTextPaletteSelected
+				: st::inFwdTextPaletteSelected)
+			: (outbg
+				? st::outFwdTextPalette
+				: st::inFwdTextPalette));
+		forwarded->text.drawElided(p, trect.x(), trect.y(), useWidth, 2, style::al_left, 0, -1, 0, breakEverywhere);
 		p.setTextPalette(selected ? (outbg ? st::outTextPaletteSelected : st::inTextPaletteSelected) : (outbg ? st::outTextPalette : st::inTextPalette));
 
-		trect.setY(trect.y() + (((forwarded->text.maxWidth() > trect.width()) ? 2 : 1) * serviceFont->height));
+		if (!forwarded->psaType.isEmpty()) {
+			const auto entry = Get<PsaTooltipState>();
+			Assert(entry != nullptr);
+			const auto shown = entry->buttonVisibleAnimation.value(
+				entry->buttonVisible ? 1. : 0.);
+			if (shown > 0) {
+				const auto &icon = selected
+					? (outbg
+						? st::historyPsaIconOutSelected
+						: st::historyPsaIconInSelected)
+					: (outbg ? st::historyPsaIconOut : st::historyPsaIconIn);
+				const auto position = fits
+					? st::historyPsaIconPosition1
+					: st::historyPsaIconPosition2;
+				const auto x = trect.x() + trect.width() - position.x() - icon.width();
+				const auto y = trect.y() + position.y();
+				if (shown == 1) {
+					icon.paint(p, x, y, trect.width());
+				} else {
+					p.save();
+					p.translate(x + icon.width() / 2, y + icon.height() / 2);
+					p.scale(shown, shown);
+					p.setOpacity(shown);
+					icon.paint(p, -icon.width() / 2, -icon.height() / 2, width());
+					p.restore();
+				}
+			}
+		}
+
+		trect.setY(trect.y() + ((fits ? 1 : 2) * serviceFont->height));
 	}
 }
 
@@ -848,7 +927,7 @@ TextState Message::textState(
 		result.symbol += item->_text.length();
 	}
 
-	if (keyboard && !item->isLogEntry()) {
+	if (keyboard && item->isHistoryEntry()) {
 		auto keyboardTop = g.top() + g.height() + st::msgBotKbButton.margin;
 		if (QRect(g.left(), keyboardTop, g.width(), keyboardHeight).contains(point)) {
 			result.link = keyboard->getLink(point - QPoint(g.left(), keyboardTop));
@@ -926,17 +1005,42 @@ bool Message::getStateForwardedInfo(
 		StateRequest request) const {
 	if (displayForwardedFrom()) {
 		const auto item = message();
-		auto forwarded = item->Get<HistoryMessageForwarded>();
-		auto fwdheight = ((forwarded->text.maxWidth() > trect.width()) ? 2 : 1) * st::semiboldFont->height;
+		const auto forwarded = item->Get<HistoryMessageForwarded>();
+		const auto skip1 = forwarded->psaType.isEmpty()
+			? 0
+			: st::historyPsaIconSkip1;
+		const auto skip2 = forwarded->psaType.isEmpty()
+			? 0
+			: st::historyPsaIconSkip2;
+		const auto fits = (forwarded->text.maxWidth() <= (trect.width() - skip1));
+		const auto fwdheight = (fits ? 1 : 2) * st::semiboldFont->height;
 		if (point.y() >= trect.top() && point.y() < trect.top() + fwdheight) {
-			auto breakEverywhere = (forwarded->text.countHeight(trect.width()) > 2 * st::semiboldFont->height);
+			if (skip1) {
+				const auto &icon = st::historyPsaIconIn;
+				const auto position = fits
+					? st::historyPsaIconPosition1
+					: st::historyPsaIconPosition2;
+				const auto iconRect = QRect(
+					trect.x() + trect.width() - position.x() - icon.width(),
+					trect.y() + position.y(),
+					icon.width(),
+					icon.height());
+				if (iconRect.contains(point)) {
+					if (const auto link = psaTooltipLink()) {
+						outResult->link = link;
+						return true;
+					}
+				}
+			}
+			const auto useWidth = trect.width() - (fits ? skip1 : skip2);
+			const auto breakEverywhere = (forwarded->text.countHeight(useWidth) > 2 * st::semiboldFont->height);
 			auto textRequest = request.forText();
 			if (breakEverywhere) {
 				textRequest.flags |= Ui::Text::StateRequest::Flag::BreakEverywhere;
 			}
 			*outResult = TextState(item, forwarded->text.getState(
 				point - trect.topLeft(),
-				trect.width(),
+				useWidth,
 				textRequest));
 			outResult->symbol = 0;
 			outResult->afterSymbol = false;
@@ -950,6 +1054,49 @@ bool Message::getStateForwardedInfo(
 		trect.setTop(trect.top() + fwdheight);
 	}
 	return false;
+}
+
+ClickHandlerPtr Message::psaTooltipLink() const {
+	const auto state = Get<PsaTooltipState>();
+	if (!state || !state->buttonVisible) {
+		return nullptr;
+	} else if (state->link) {
+		return state->link;
+	}
+	const auto type = state->type;
+	const auto handler = [=] {
+		const auto custom = type.isEmpty()
+			? QString()
+			: Lang::Current().getNonDefaultValue(
+				kPsaTooltipPrefix + type.toUtf8());
+		auto text = Ui::Text::RichLangValue(
+			(custom.isEmpty()
+				? tr::lng_tooltip_psa_default(tr::now)
+				: custom));
+		TextUtilities::ParseEntities(text, 0);
+		psaTooltipToggled(true);
+		delegate()->elementShowTooltip(text, crl::guard(this, [=] {
+			psaTooltipToggled(false);
+		}));
+	};
+	state->link = std::make_shared<LambdaClickHandler>(
+		crl::guard(this, handler));
+	return state->link;
+}
+
+void Message::psaTooltipToggled(bool tooltipShown) const {
+	const auto visible = !tooltipShown;
+	const auto state = Get<PsaTooltipState>();
+	if (state->buttonVisible == visible) {
+		return;
+	}
+	state->buttonVisible = visible;
+	history()->owner().notifyViewLayoutChange(this);
+	state->buttonVisibleAnimation.start(
+		[=] { history()->owner().requestViewRepaint(this); },
+		visible ? 0. : 1.,
+		visible ? 1. : 0.,
+		st::fadeWrapDuration);
 }
 
 bool Message::getStateReplyInfo(
@@ -1162,8 +1309,8 @@ void Message::drawInfo(
 		p.setPen(st::msgDateImgFg);
 	break;
 	case InfoDisplayType::Background:
-		infoRight -= st::msgDateImgDelta + st::msgDateImgPadding.x();
-		infoBottom -= st::msgDateImgDelta + st::msgDateImgPadding.y();
+		infoRight -= st::msgDateImgPadding.x();
+		infoBottom -= st::msgDateImgPadding.y();
 		p.setPen(st::msgServiceFg);
 	break;
 	}
@@ -1242,6 +1389,10 @@ bool Message::pointInTime(
 		infoRight -= st::msgDateImgDelta + st::msgDateImgPadding.x();
 		infoBottom -= st::msgDateImgDelta + st::msgDateImgPadding.y();
 		break;
+	case InfoDisplayType::Background:
+		infoRight -= st::msgDateImgPadding.x();
+		infoBottom -= st::msgDateImgPadding.y();
+		break;
 	}
 	const auto item = message();
 	auto dateX = infoRight - infoWidth() + timeLeft();
@@ -1265,10 +1416,24 @@ int Message::infoWidth() const {
 			result += st::historySendStateSpace;
 		}
 	}
-	if (hasOutLayout()) {
+
+	// When message is scheduled until online, time is not displayed,
+	// so message should have less space.
+	if (!item->_timeWidth) {
+		result += st::historyScheduledUntilOnlineStateSpace;
+	} else if (hasOutLayout()) {
 		result += st::historySendStateSpace;
 	}
 	return result;
+}
+
+auto Message::verticalRepaintRange() const -> VerticalRepaintRange {
+	const auto media = this->media();
+	const auto add = media ? media->bubbleRollRepaintMargins() : QMargins();
+	return {
+		.top = -add.top(),
+		.height = height() + add.top() + add.bottom()
+	};
 }
 
 void Message::refreshDataIdHook() {
@@ -1299,15 +1464,30 @@ int Message::plainMaxWidth() const {
 		+ st::msgPadding.right();
 }
 
+int Message::monospaceMaxWidth() const {
+	return st::msgPadding.left()
+		+ (hasVisibleText() ? message()->_text.countMaxMonospaceWidth() : 0)
+		+ st::msgPadding.right();
+}
+
 void Message::initLogEntryOriginal() {
 	if (const auto log = message()->Get<HistoryMessageLogEntryOriginal>()) {
 		AddComponents(LogEntryOriginal::Bit());
 		const auto entry = Get<LogEntryOriginal>();
-		entry->page = std::make_unique<HistoryWebPage>(this, log->page);
+		entry->page = std::make_unique<WebPage>(this, log->page);
 	}
 }
 
-HistoryWebPage *Message::logEntryOriginal() const {
+void Message::initPsa() {
+	if (const auto forwarded = message()->Get<HistoryMessageForwarded>()) {
+		if (!forwarded->psaType.isEmpty()) {
+			AddComponents(PsaTooltipState::Bit());
+			Get<PsaTooltipState>()->type = forwarded->psaType;
+		}
+	}
+}
+
+WebPage *Message::logEntryOriginal() const {
 	if (const auto entry = Get<LogEntryOriginal>()) {
 		return entry->page.get();
 	}
@@ -1332,9 +1512,10 @@ bool Message::hasFromName() const {
 }
 
 bool Message::displayFromName() const {
-	if (!hasFromName()) return false;
-	if (isAttachedToPrevious()) return false;
-	return true;
+	if (!hasFromName() || isAttachedToPrevious()) {
+		return false;
+	}
+	return !Has<PsaTooltipState>();
 }
 
 bool Message::displayForwardedFrom() const {
@@ -1417,7 +1598,7 @@ bool Message::displayFastShare() const {
 				&& forwarded->originalSender
 				&& forwarded->originalSender->isChannel()
 				&& !forwarded->originalSender->isMegagroup();
-		} else if (user->botInfo && !item->out()) {
+		} else if (user->isBot() && !item->out()) {
 			if (const auto media = this->media()) {
 				return media->allowsFastShare();
 			}
@@ -1443,7 +1624,7 @@ void Message::drawRightAction(
 	p.setBrush(st::msgServiceBg);
 	{
 		PainterHighQualityEnabler hq(p);
-		p.drawEllipse(rtlrect(
+		p.drawEllipse(style::rtlrect(
 			left,
 			top,
 			st::historyFastShareSize,
@@ -1459,12 +1640,13 @@ void Message::drawRightAction(
 
 ClickHandlerPtr Message::rightActionLink() const {
 	if (!_rightActionLink) {
+		const auto owner = &data()->history()->owner();
 		const auto itemId = data()->fullId();
 		const auto forwarded = data()->Get<HistoryMessageForwarded>();
 		const auto savedFromPeer = forwarded ? forwarded->savedFromPeer : nullptr;
 		const auto savedFromMsgId = forwarded ? forwarded->savedFromMsgId : 0;
 		_rightActionLink = std::make_shared<LambdaClickHandler>([=] {
-			if (const auto item = Auth().data().message(itemId)) {
+			if (const auto item = owner->message(itemId)) {
 				if (savedFromPeer && savedFromMsgId) {
 					App::wnd()->sessionController()->showPeerHistory(
 						savedFromPeer,
@@ -1481,9 +1663,10 @@ ClickHandlerPtr Message::rightActionLink() const {
 
 ClickHandlerPtr Message::fastReplyLink() const {
 	if (!_fastReplyLink) {
+		const auto owner = &data()->history()->owner();
 		const auto itemId = data()->fullId();
 		_fastReplyLink = std::make_shared<LambdaClickHandler>([=] {
-			if (const auto item = Auth().data().message(itemId)) {
+			if (const auto item = owner->message(itemId)) {
 				if (const auto main = App::main()) {
 					main->replyToItem(item);
 				}
@@ -1552,7 +1735,7 @@ void Message::fromNameUpdated(int width) const {
 		? st::msgFont->width(FastReplyText())
 		: 0;
 	if (item->hasMessageBadge()) {
-		const auto badgeWidth = st::msgFont->width(MessageBadgeText(item));
+		const auto badgeWidth = item->messageBadge().maxWidth();
 		width -= st::msgPadding.right() + std::max(badgeWidth, replyWidth);
 	} else if (replyWidth) {
 		width -= st::msgPadding.right() + replyWidth;
@@ -1610,7 +1793,7 @@ QRect Message::countGeometry() const {
 	//	contentLeft += st::msgPhotoSkip - (hmaxwidth - hwidth);
 	}
 	accumulate_min(contentWidth, maxWidth());
-	accumulate_min(contentWidth, st::msgMaxWidth);
+	accumulate_min(contentWidth, _bubbleWidthLimit);
 	if (mediaWidth < contentWidth) {
 		const auto textualWidth = plainMaxWidth();
 		if (mediaWidth < textualWidth
@@ -1652,7 +1835,8 @@ int Message::resizeContentGetHeight(int newWidth) {
 		contentWidth -= st::msgPhotoSkip;
 	}
 	accumulate_min(contentWidth, maxWidth());
-	accumulate_min(contentWidth, st::msgMaxWidth);
+	_bubbleWidthLimit = std::max(st::msgMaxWidth, monospaceMaxWidth());
+	accumulate_min(contentWidth, _bubbleWidthLimit);
 	if (mediaDisplayed) {
 		media->resizeGetHeight(contentWidth);
 		if (media->width() < contentWidth) {
@@ -1723,8 +1907,14 @@ int Message::resizeContentGetHeight(int newWidth) {
 		}
 
 		if (displayForwardedFrom()) {
-			auto forwarded = item->Get<HistoryMessageForwarded>();
-			auto fwdheight = ((forwarded->text.maxWidth() > (contentWidth - st::msgPadding.left() - st::msgPadding.right())) ? 2 : 1) * st::semiboldFont->height;
+			const auto forwarded = item->Get<HistoryMessageForwarded>();
+			const auto skip1 = forwarded->psaType.isEmpty()
+				? 0
+				: st::historyPsaIconSkip1;
+			const auto skip2 = forwarded->psaType.isEmpty()
+				? 0
+				: st::historyPsaIconSkip2;
+			const auto fwdheight = ((forwarded->text.maxWidth() > (contentWidth - st::msgPadding.left() - st::msgPadding.right() - skip1)) ? 2 : 1) * st::semiboldFont->height;
 			newHeight += fwdheight;
 		}
 
@@ -1825,21 +2015,9 @@ bool Message::displayEditedBadge() const {
 
 TimeId Message::displayedEditDate() const {
 	const auto item = message();
-	auto hasViaBotId = item->Has<HistoryMessageVia>();
-	auto hasInlineMarkup = (item->inlineReplyMarkup() != nullptr);
-	return displayedEditDate(hasViaBotId || hasInlineMarkup);
-}
-
-TimeId Message::displayedEditDate(
-		bool hasViaBotOrInlineMarkup) const {
-	if (hasViaBotOrInlineMarkup) {
+	if (item->hideEditedBadge()) {
 		return TimeId(0);
-	} else if (const auto fromUser = message()->from()->asUser()) {
-		if (fromUser->botInfo) {
-			return TimeId(0);
-		}
-	}
-	if (const auto edited = displayedEditBadge()) {
+	} else if (const auto edited = displayedEditBadge()) {
 		return edited->date;
 	}
 	return TimeId(0);

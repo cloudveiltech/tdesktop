@@ -13,7 +13,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/serialize_common.h"
 #include "data/data_file_origin.h"
 #include "base/overload.h"
-#include "auth_session.h"
+#include "main/main_session.h"
+
+#include <QtCore/QBuffer>
 
 namespace {
 
@@ -114,6 +116,12 @@ StorageFileLocation::StorageFileLocation(
 		_sizeLetter = data.vthumb_size().v.isEmpty()
 			? char(0)
 			: data.vthumb_size().v[0];
+	}, [&](const MTPDinputPhotoLegacyFileLocation &data) {
+		_type = Type::Legacy;
+		_volumeId = data.vvolume_id().v;
+		_localId = data.vlocal_id().v;
+		_accessHash = data.vsecret().v;
+		_fileReference = data.vfile_reference().v;
 	}, [&](const MTPDinputPeerPhotoFileLocation &data) {
 		_type = Type::PeerPhoto;
 		const auto fillPeer = base::overload([&](
@@ -157,7 +165,12 @@ StorageFileLocation::StorageFileLocation(
 			_id = data.vid().v;
 			_accessHash = data.vaccess_hash().v;
 		}, [&](const MTPDinputStickerSetShortName &data) {
-			Unexpected("inputStickerSetShortName in StorageFileLocation().");
+			Unexpected("inputStickerSetShortName in StorageFileLocation.");
+		}, [&](const MTPDinputStickerSetAnimatedEmoji &data) {
+			Unexpected(
+				"inputStickerSetAnimatedEmoji in StorageFileLocation.");
+		}, [&](const MTPDinputStickerSetDice &data) {
+			Unexpected("inputStickerSetDice in StorageFileLocation.");
 		});
 		_volumeId = data.vvolume_id().v;
 		_localId = data.vlocal_id().v;

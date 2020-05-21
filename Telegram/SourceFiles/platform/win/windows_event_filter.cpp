@@ -8,8 +8,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/win/windows_event_filter.h"
 
 #include "platform/win/windows_dlls.h"
+#include "core/sandbox.h"
+#include "ui/inactive_press.h"
 #include "mainwindow.h"
-#include "auth_session.h"
+#include "main/main_session.h"
+#include "facades.h"
+#include "app.h"
+
+#include <QtGui/QWindow>
 
 namespace Platform {
 namespace {
@@ -53,21 +59,23 @@ bool EventFilter::nativeEventFilter(
 		const QByteArray &eventType,
 		void *message,
 		long *result) {
-	const auto msg = static_cast<MSG*>(message);
-	if (msg->message == WM_ENDSESSION) {
-		App::quit();
+	return Core::Sandbox::Instance().customEnterFromEventLoop([&] {
+		const auto msg = static_cast<MSG*>(message);
+		if (msg->message == WM_ENDSESSION) {
+			App::quit();
+			return false;
+		}
+		if (msg->hwnd == _window->psHwnd()
+			|| msg->hwnd && !_window->psHwnd()) {
+			return mainWindowEvent(
+				msg->hwnd,
+				msg->message,
+				msg->wParam,
+				msg->lParam,
+				(LRESULT*)result);
+		}
 		return false;
-	}
-	if (msg->hwnd == _window->psHwnd()
-		|| msg->hwnd && !_window->psHwnd()) {
-		return mainWindowEvent(
-			msg->hwnd,
-			msg->message,
-			msg->wParam,
-			msg->lParam,
-			(LRESULT*)result);
-	}
-	return false;
+	});
 }
 
 bool EventFilter::mainWindowEvent(
@@ -87,7 +95,7 @@ bool EventFilter::mainWindowEvent(
 	switch (msg) {
 
 	case WM_TIMECHANGE: {
-		if (AuthSession::Exists()) {
+		if (Main::Session::Exists()) {
 			Auth().checkAutoLockIn(100);
 		}
 	} return false;
@@ -106,7 +114,7 @@ bool EventFilter::mainWindowEvent(
 
 	case WM_ACTIVATE: {
 		if (LOWORD(wParam) == WA_CLICKACTIVE) {
-			_window->setInactivePress(true);
+			Ui::MarkInactivePress(_window, true);
 		}
 		if (LOWORD(wParam) != WA_INACTIVE) {
 			_window->shadowsActivate();
@@ -183,7 +191,7 @@ bool EventFilter::mainWindowEvent(
 	} return false;
 
 	case WM_SHOWWINDOW: {
-		LONG style = GetWindowLong(hWnd, GWL_STYLE);
+		LONG style = GetWindowLongPtr(hWnd, GWL_STYLE);
 		auto changes = ShadowsChange::Resized | ((wParam && !(style & (WS_MAXIMIZE | WS_MINIMIZE))) ? ShadowsChange::Shown : ShadowsChange::Hidden);
 		_window->shadowsUpdate(changes);
 	} return false;
@@ -230,13 +238,24 @@ bool EventFilter::mainWindowEvent(
 	} return false;
 
 	case WM_COMMAND: {
-		if (HIWORD(wParam)) return false;
+		if (HIWORD(wParam)) {
+			return false;
+		}
 		int cmd = LOWORD(wParam);
 		switch (cmd) {
-		case SC_CLOSE: _window->close(); return true;
-		case SC_MINIMIZE: _window->setWindowState(Qt::WindowMinimized); return true;
-		case SC_MAXIMIZE: _window->setWindowState(Qt::WindowMaximized); return true;
-		case SC_RESTORE: _window->setWindowState(Qt::WindowNoState); return true;
+		case SC_CLOSE:
+			_window->close();
+			return true;
+		case SC_MINIMIZE:
+			_window->setWindowState(
+				_window->windowState() | Qt::WindowMinimized);
+			return true;
+		case SC_MAXIMIZE:
+			_window->setWindowState(Qt::WindowMaximized);
+			return true;
+		case SC_RESTORE:
+			_window->setWindowState(Qt::WindowNoState);
+			return true;
 		}
 	} return true;
 

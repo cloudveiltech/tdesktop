@@ -9,19 +9,22 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "data/data_document.h"
 #include "data/data_session.h"
+#include "data/data_file_origin.h"
 #include "boxes/stickers_box.h"
 #include "boxes/confirm_box.h"
 #include "lang/lang_keys.h"
 #include "apiwrap.h"
 #include "storage/localstorage.h"
 #include "mainwidget.h"
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "mainwindow.h"
 #include "ui/toast/toast.h"
 #include "ui/emoji_config.h"
 #include "base/unixtime.h"
 #include "lottie/lottie_single_player.h"
 #include "lottie/lottie_multi_player.h"
+#include "facades.h"
+#include "app.h"
 #include "styles/style_chat_helpers.h"
 #include "cloudveil/GlobalSecuritySettings.h"
 
@@ -75,12 +78,12 @@ void ApplyArchivedResult(const MTPDmessages_stickerSetInstallResultArchive &d) {
 	Local::writeInstalledStickers();
 	Local::writeArchivedStickers();
 
-	Ui::Toast::Config toast;
-	toast.text = tr::lng_stickers_packs_archived(tr::now);
-	toast.maxWidth = st::stickersToastMaxWidth;
-	toast.padding = st::stickersToastPadding;
-	Ui::Toast::Show(toast);
-//	Ui::show(Box<StickersBox>(archived), LayerOption::KeepOther);
+	Ui::Toast::Show(Ui::Toast::Config{
+		.text = { tr::lng_stickers_packs_archived(tr::now) },
+		.st = &st::stickersToast,
+		.multiline = true,
+	});
+//	Ui::show(Box<StickersBox>(archived, &Auth()), Ui::LayerOption::KeepOther);
 
 	Auth().data().notifyStickersUpdated();
 }
@@ -185,7 +188,7 @@ void UndoInstallLocally(uint64 setId) {
 
 	Ui::show(
 		Box<InformBox>(tr::lng_stickers_not_found(tr::now)),
-		LayerOption::KeepOther);
+		Ui::LayerOption::KeepOther);
 }
 
 bool IsFaved(not_null<const DocumentData*> document) {
@@ -708,6 +711,7 @@ void GifsReceived(const QVector<MTPDocument> &items, int32 hash) {
 }
 
 std::vector<not_null<DocumentData*>> GetListByEmoji(
+		not_null<Main::Session*> session,
 		not_null<EmojiPtr> emoji,
 		uint64 seed) {
 	const auto original = emoji->original();
@@ -717,7 +721,7 @@ std::vector<not_null<DocumentData*>> GetListByEmoji(
 		TimeId date = 0;
 	};
 	auto result = std::vector<StickerWithDate>();
-	auto &sets = Auth().data().stickerSetsRef();
+	auto &sets = session->data().stickerSetsRef();
 	auto setsToRequest = base::flat_map<uint64, uint64>();
 
 	const auto add = [&](not_null<DocumentData*> document, TimeId date) {
@@ -799,7 +803,6 @@ std::vector<not_null<DocumentData*>> GetListByEmoji(
 				const auto date = usageDate
 					? usageDate
 					: InstallDate(document);
-
 				//CloudVeil start
 				if (GlobalSecuritySettings::getInstance()->getSettings().isStickerSetAllowed(document)) {
 					result.push_back({
@@ -840,21 +843,21 @@ std::vector<not_null<DocumentData*>> GetListByEmoji(
 	};
 
 	addList(
-		Auth().data().stickerSetsOrder(),
+		session->data().stickerSetsOrder(),
 		MTPDstickerSet::Flag::f_archived);
 	//addList(
-	//	Auth().data().featuredStickerSetsOrder(),
+	//	session->data().featuredStickerSetsOrder(),
 	//	MTPDstickerSet::Flag::f_installed_date);
 
 	if (!setsToRequest.empty()) {
 		for (const auto &[setId, accessHash] : setsToRequest) {
-			Auth().api().scheduleStickerSetRequest(setId, accessHash);
+			session->api().scheduleStickerSetRequest(setId, accessHash);
 		}
-		Auth().api().requestStickerSets();
+		session->api().requestStickerSets();
 	}
 
-	if (Global::SuggestStickersByEmoji()) {
-		const auto others = Auth().api().stickersByEmoji(original);
+	if (session->settings().suggestStickersByEmoji()) {
+		const auto others = session->api().stickersByEmoji(original);
 		if (!others) {
 			return {};
 		}
@@ -901,7 +904,7 @@ std::optional<std::vector<not_null<EmojiPtr>>> GetEmojiListFromSet(
 		if (result.empty()) {
 			return std::nullopt;
 		}
-		return std::move(result);
+		return result;
 	}
 	return std::nullopt;
 }
@@ -1127,13 +1130,13 @@ template <typename Method>
 auto LottieCachedFromContent(
 		Method &&method,
 		Storage::Cache::Key baseKey,
-		LottieSize sizeTag,
-		not_null<AuthSession*> session,
+		uint8 keyShift,
+		not_null<Main::Session*> session,
 		const QByteArray &content,
 		QSize box) {
 	const auto key = Storage::Cache::Key{
 		baseKey.high,
-		baseKey.low + int(sizeTag)
+		baseKey.low + keyShift
 	};
 	const auto get = [=](FnMut<void(QByteArray &&cached)> handler) {
 		session->data().cacheBigFile().get(
@@ -1157,7 +1160,7 @@ template <typename Method>
 auto LottieFromDocument(
 		Method &&method,
 		not_null<DocumentData*> document,
-		LottieSize sizeTag,
+		uint8 keyShift,
 		QSize box) {
 	const auto data = document->data();
 	const auto filepath = document->filepath();
@@ -1171,7 +1174,7 @@ auto LottieFromDocument(
 		return LottieCachedFromContent(
 			std::forward<Method>(method),
 			*baseKey,
-			sizeTag,
+			keyShift,
 			&document->session(),
 			Lottie::ReadContent(data, filepath),
 			box);
@@ -1187,11 +1190,32 @@ std::unique_ptr<Lottie::SinglePlayer> LottiePlayerFromDocument(
 		QSize box,
 		Lottie::Quality quality,
 		std::shared_ptr<Lottie::FrameRenderer> renderer) {
+	return LottiePlayerFromDocument(
+		document,
+		nullptr,
+		sizeTag,
+		box,
+		quality,
+		std::move(renderer));
+}
+
+std::unique_ptr<Lottie::SinglePlayer> LottiePlayerFromDocument(
+		not_null<DocumentData*> document,
+		const Lottie::ColorReplacements *replacements,
+		LottieSize sizeTag,
+		QSize box,
+		Lottie::Quality quality,
+		std::shared_ptr<Lottie::FrameRenderer> renderer) {
 	const auto method = [&](auto &&...args) {
 		return std::make_unique<Lottie::SinglePlayer>(
-			std::forward<decltype(args)>(args)..., quality, std::move(renderer));
+			std::forward<decltype(args)>(args)...,
+			quality,
+			replacements,
+			std::move(renderer));
 	};
-	return LottieFromDocument(method, document, sizeTag, box);
+	const auto tag = replacements ? replacements->tag : uint8(0);
+	const auto keyShift = ((tag << 4) & 0xF0) | (uint8(sizeTag) & 0x0F);
+	return LottieFromDocument(method, document, uint8(keyShift), box);
 }
 
 not_null<Lottie::Animation*> LottieAnimationFromDocument(
@@ -1202,7 +1226,7 @@ not_null<Lottie::Animation*> LottieAnimationFromDocument(
 	const auto method = [&](auto &&...args) {
 		return player->append(std::forward<decltype(args)>(args)...);
 	};
-	return LottieFromDocument(method, document, sizeTag, box);
+	return LottieFromDocument(method, document, uint8(sizeTag), box);
 }
 
 bool HasLottieThumbnail(
@@ -1255,7 +1279,7 @@ std::unique_ptr<Lottie::SinglePlayer> LottieThumbnail(
 	return LottieCachedFromContent(
 		method,
 		*baseKey,
-		sizeTag,
+		uint8(sizeTag),
 		&sticker->session(),
 		content,
 		box);

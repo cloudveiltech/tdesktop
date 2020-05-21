@@ -5,6 +5,8 @@
 #include "data/data_document.h"
 #include "history/history.h"
 #include "data/data_user.h"
+#include <QtCore/QJsonArray>
+#include <QtCore/QJsonDocument>
 
 void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 {

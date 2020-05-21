@@ -11,13 +11,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/labels.h"
 #include "apiwrap.h"
-#include "auth_session.h"
+#include "api/api_self_destruct.h"
+#include "main/main_session.h"
+#include "styles/style_layers.h"
 #include "styles/style_boxes.h"
 
 SelfDestructionBox::SelfDestructionBox(
 	QWidget*,
+	not_null<Main::Session*> session,
 	rpl::producer<int> preloaded)
-: _ttlValues{ 30, 90, 180, 365 }
+: _session(session)
+, _ttlValues{ 30, 90, 180, 365 }
 , _loading(
 		this,
 		tr::lng_contacts_loading(tr::now),
@@ -73,7 +77,7 @@ void SelfDestructionBox::showContent() {
 
 	clearButtons();
 	addButton(tr::lng_settings_save(), [=] {
-		Auth().api().saveSelfDestruct(_ttlGroup->value());
+		_session->api().selfDestruct().update(_ttlGroup->value());
 		closeBox();
 	});
 	addButton(tr::lng_cancel(), [=] { closeBox(); });

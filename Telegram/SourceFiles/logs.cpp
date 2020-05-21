@@ -8,9 +8,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "logs.h"
 
 #include "platform/platform_specific.h"
-#include "mtproto/connection.h"
 #include "core/crash_reports.h"
 #include "core/launcher.h"
+
+namespace {
+
+std::atomic<int> ThreadCounter/* = 0*/;
+
+} // namespace
 
 enum LogDataType {
 	LogDataMain,
@@ -45,11 +50,10 @@ QString _logsFilePath(LogDataType type, const QString &postfix = QString()) {
 
 int32 LogsStartIndexChosen = -1;
 QString _logsEntryStart() {
-	static int32 index = 0;
-	QDateTime tm(QDateTime::currentDateTime());
+	static thread_local auto threadId = ThreadCounter++;
+	static auto index = 0;
 
-	auto thread = qobject_cast<MTP::internal::Thread*>(QThread::currentThread());
-	auto threadId = thread ? thread->getThreadIndex() : 0;
+	const auto tm = QDateTime::currentDateTime();
 
 	return QString("[%1 %2-%3]").arg(tm.toString("hh:mm:ss.zzz")).arg(QString("%1").arg(threadId, 2, 10, QChar('0'))).arg(++index, 7, 10, QChar('0'));
 }
@@ -337,9 +341,10 @@ void start(not_null<Core::Launcher*> launcher) {
 
 	if (cAlphaVersion()) {
 		workingDirChosen = true;
+	} else {
 
 #if defined Q_OS_MAC || defined Q_OS_LINUX
-	} else {
+
 		if (!cWorkingDir().isEmpty()) {
 			// This value must come from TelegramForcePortable
 			// or from the "-workdir" command line argument.
@@ -358,11 +363,12 @@ void start(not_null<Core::Launcher*> launcher) {
 #endif // Q_OS_LINUX && !_DEBUG
 
 #elif defined Q_OS_WINRT // Q_OS_MAC || Q_OS_LINUX
-	} else {
+
 		cForceWorkingDir(psAppDataPath());
 		workingDirChosen = true;
 
 #elif defined OS_WIN_STORE // Q_OS_MAC || Q_OS_LINUX || Q_OS_WINRT
+
 #ifdef _DEBUG
 		cForceWorkingDir(cExeDir());
 #else // _DEBUG
@@ -371,7 +377,7 @@ void start(not_null<Core::Launcher*> launcher) {
 		workingDirChosen = true;
 
 #elif defined Q_OS_WIN
-	} else {
+
 		if (!cWorkingDir().isEmpty()) {
 			// This value must come from TelegramForcePortable
 			// or from the "-workdir" command line argument.
@@ -380,6 +386,7 @@ void start(not_null<Core::Launcher*> launcher) {
 		}
 
 #endif // Q_OS_MAC || Q_OS_LINUX || Q_OS_WINRT || OS_WIN_STORE
+
 	}
 
 	LogsData = new LogsDataFields();

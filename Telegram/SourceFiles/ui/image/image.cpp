@@ -13,7 +13,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "data/data_file_origin.h"
 #include "chat_helpers/stickers.h"
-#include "auth_session.h"
+#include "main/main_session.h"
+#include "app.h"
 
 using namespace Images;
 
@@ -847,7 +848,7 @@ QPixmap Image::pixNoCache(
 		outerh *= cIntRetinaFactor();
 
 		QImage result(outerw, outerh, QImage::Format_ARGB32_Premultiplied);
-		result.setDevicePixelRatio(cRetinaFactor());
+		result.setDevicePixelRatio(style::DevicePixelRatio());
 
 		{
 			QPainter p(&result);

@@ -7,8 +7,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+namespace Window {
+class SessionController;
+} // namespace Main
+
 namespace Settings {
 
-void CodesFeedString(const QString &text);
+void CodesFeedString(Window::SessionController *window, const QString &text);
 
 } // namespace Settings

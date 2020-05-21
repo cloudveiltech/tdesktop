@@ -8,17 +8,22 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/emoji_suggestions_widget.h"
 
 #include "chat_helpers/emoji_keywords.h"
-#include "chat_helpers/emoji_suggestions_helper.h"
+#include "emoji_suggestions_helper.h"
 #include "ui/effects/ripple_animation.h"
 #include "ui/widgets/shadow.h"
 #include "ui/widgets/inner_dropdown.h"
 #include "ui/widgets/input_fields.h"
 #include "ui/emoji_config.h"
+#include "ui/ui_utility.h"
 #include "platform/platform_specific.h"
 #include "core/application.h"
-#include "core/event_filter.h"
-#include "auth_session.h"
+#include "base/event_filter.h"
+#include "main/main_session.h"
+#include "app.h"
 #include "styles/style_chat_helpers.h"
+
+#include <QtWidgets/QApplication>
+#include <QtGui/QTextBlock>
 
 namespace Ui {
 namespace Emoji {
@@ -110,7 +115,7 @@ auto SuggestionsWidget::getRowsByQuery() const -> std::vector<Row> {
 	}) | ranges::to_vector;
 
 	auto lastRecent = begin(result);
-	const auto &recent = GetRecent();
+	const auto &recent = GetRecentEmoji();
 	for (const auto &item : recent) {
 		const auto emoji = item.first->original()
 			? item.first->original()
@@ -503,8 +508,10 @@ void SuggestionsWidget::leaveEventHook(QEvent *e) {
 SuggestionsController::SuggestionsController(
 	not_null<QWidget*> outer,
 	not_null<QTextEdit*> field,
+	not_null<Main::Session*> session,
 	const Options &options)
 : _field(field)
+, _session(session)
 , _showExactTimer([=] { showWithQuery(getEmojiQuery()); })
 , _options(options) {
 	_container = base::make_unique_q<InnerDropdown>(
@@ -516,12 +523,20 @@ SuggestionsController::SuggestionsController(
 
 	setReplaceCallback(nullptr);
 
-	_fieldFilter.reset(Core::InstallEventFilter(
-		_field,
-		[=](not_null<QEvent*> event) { return fieldFilter(event); }));
-	_outerFilter.reset(Core::InstallEventFilter(
-		outer,
-		[=](not_null<QEvent*> event) { return outerFilter(event); }));
+	const auto fieldCallback = [=](not_null<QEvent*> event) {
+		return fieldFilter(event)
+			? base::EventFilterResult::Cancel
+			: base::EventFilterResult::Continue;
+	};
+	_fieldFilter.reset(base::install_event_filter(_field, fieldCallback));
+
+	const auto outerCallback = [=](not_null<QEvent*> event) {
+		return outerFilter(event)
+			? base::EventFilterResult::Cancel
+			: base::EventFilterResult::Continue;
+	};
+	_outerFilter.reset(base::install_event_filter(outer, outerCallback));
+
 	QObject::connect(
 		_field,
 		&QTextEdit::textChanged,
@@ -557,11 +572,13 @@ SuggestionsController::SuggestionsController(
 SuggestionsController *SuggestionsController::Init(
 		not_null<QWidget*> outer,
 		not_null<Ui::InputField*> field,
+		not_null<Main::Session*> session,
 		const Options &options) {
 	const auto result = Ui::CreateChild<SuggestionsController>(
 		field.get(),
 		outer,
 		field->rawTextEdit(),
+		session,
 		options);
 	result->setReplaceCallback([=](
 			int from,
@@ -590,7 +607,8 @@ void SuggestionsController::setReplaceCallback(
 }
 
 void SuggestionsController::handleTextChange() {
-	if (Global::SuggestEmoji() && _field->textCursor().position() > 0) {
+	if (_session->settings().suggestEmoji()
+		&& _field->textCursor().position() > 0) {
 		Core::App().emojiKeywords().refresh();
 	}
 
@@ -619,7 +637,7 @@ void SuggestionsController::showWithQuery(const QString &query) {
 }
 
 QString SuggestionsController::getEmojiQuery() {
-	if (!Global::SuggestEmoji()) {
+	if (!_session->settings().suggestEmoji()) {
 		return QString();
 	}
 

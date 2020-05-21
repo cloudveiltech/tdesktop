@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "SimpleUpdater.h"
 #include "cloudveil/response/UpdateResponse.h"
+#include <QtCore/QJsonDocument>
 
 //one day
 #define UPDATE_PERIOD_MS 86400000 

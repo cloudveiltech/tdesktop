@@ -11,18 +11,22 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_document.h"
 #include "data/data_session.h"
 #include "data/data_media_types.h"
-#include "history/media/history_media.h"
+#include "history/view/media/history_view_media.h"
 #include "history/history_item.h"
 #include "history/view/history_view_element.h"
 #include "media/audio/media_audio.h"
-#include "media/streaming/media_streaming_player.h"
+#include "media/streaming/media_streaming_instance.h"
 #include "media/view/media_view_playback_progress.h"
 #include "media/player/media_player_instance.h"
 #include "window/window_session_controller.h"
 #include "window/section_widget.h"
-#include "auth_session.h"
+#include "main/main_session.h"
+#include "facades.h"
+#include "app.h"
 #include "styles/style_media_player.h"
 #include "styles/style_history.h"
+
+#include <QtWidgets/QApplication>
 
 namespace Media {
 namespace Player {
@@ -51,13 +55,14 @@ Float::Float(
 
 	prepareShadow();
 
-	Auth().data().itemRepaintRequest(
+	_controller->session().data().itemRepaintRequest(
 	) | rpl::start_with_next([this](auto item) {
 		if (_item == item) {
 			repaintItem();
 		}
 	}, lifetime());
-	Auth().data().itemRemoved(
+
+	_controller->session().data().itemRemoved(
 	) | rpl::start_with_next([this](auto item) {
 		if (_item == item) {
 			detach();
@@ -127,11 +132,11 @@ void Float::mouseDoubleClickEvent(QMouseEvent *e) {
 }
 
 void Float::pauseResume() {
-	if (const auto player = instance()->roundVideoPlayer(_item)) {
-		if (player->paused()) {
-			player->resume();
+	if (const auto streamed = getStreamed()) {
+		if (streamed->paused()) {
+			streamed->resume();
 		} else {
-			player->pause();
+			streamed->pause();
 		}
 	}
 }
@@ -201,8 +206,8 @@ void Float::paintEvent(QPaintEvent *e) {
 	}
 }
 
-Streaming::Player *Float::getPlayer() const {
-	return instance()->roundVideoPlayer(_item);
+Streaming::Instance *Float::getStreamed() const {
+	return instance()->roundVideoStreamed(_item);
 }
 
 View::PlaybackProgress *Float::getPlayback() const {
@@ -210,7 +215,7 @@ View::PlaybackProgress *Float::getPlayback() const {
 }
 
 bool Float::hasFrame() const {
-	return (getPlayer() != nullptr);
+	return (getStreamed() != nullptr);
 }
 
 bool Float::fillFrame() {
@@ -224,11 +229,11 @@ bool Float::fillFrame() {
 	auto frameInner = [&] {
 		return QRect(QPoint(), _frame.size() / cIntRetinaFactor());
 	};
-	if (const auto player = getPlayer()) {
+	if (const auto streamed = getStreamed()) {
 		auto request = Streaming::FrameRequest::NonStrict();
 		request.outer = request.resize = _frame.size();
 		request.radius = ImageRoundRadius::Ellipse;
-		auto frame = player->frame(request);
+		auto frame = streamed->frame(request);
 		if (!frame.isNull()) {
 			_frame.fill(Qt::transparent);
 
@@ -360,7 +365,7 @@ void FloatController::checkCurrent() {
 	if (last) {
 		last->widget->detach();
 	}
-	if (const auto item = Auth().data().message(fullId)) {
+	if (const auto item = _controller->session().data().message(fullId)) {
 		if (const auto media = item->media()) {
 			if (const auto document = media->document()) {
 				if (document->isVideoMessage()) {
@@ -383,8 +388,8 @@ void FloatController::create(not_null<HistoryItem*> item) {
 		[=](not_null<Item*> instance, bool closed) {
 			finishDrag(instance, closed);
 		}));
-	current()->column = Auth().settings().floatPlayerColumn();
-	current()->corner = Auth().settings().floatPlayerCorner();
+	current()->column = _controller->session().settings().floatPlayerColumn();
+	current()->corner = _controller->session().settings().floatPlayerCorner();
 	checkVisibility();
 }
 
@@ -557,8 +562,8 @@ void FloatController::updateColumnCorner(QPoint center) {
 
 	auto size = _items.back()->widget->size();
 	auto min = INT_MAX;
-	auto column = Auth().settings().floatPlayerColumn();
-	auto corner = Auth().settings().floatPlayerCorner();
+	auto column = _controller->session().settings().floatPlayerColumn();
+	auto corner = _controller->session().settings().floatPlayerCorner();
 	auto checkSection = [&](
 			not_null<Window::AbstractSectionWidget*> widget,
 			Window::Column widgetColumn) {
@@ -583,13 +588,13 @@ void FloatController::updateColumnCorner(QPoint center) {
 
 	_delegate->floatPlayerEnumerateSections(checkSection);
 
-	if (Auth().settings().floatPlayerColumn() != column) {
-		Auth().settings().setFloatPlayerColumn(column);
-		Auth().saveSettingsDelayed();
+	if (_controller->session().settings().floatPlayerColumn() != column) {
+		_controller->session().settings().setFloatPlayerColumn(column);
+		_controller->session().saveSettingsDelayed();
 	}
-	if (Auth().settings().floatPlayerCorner() != corner) {
-		Auth().settings().setFloatPlayerCorner(corner);
-		Auth().saveSettingsDelayed();
+	if (_controller->session().settings().floatPlayerCorner() != corner) {
+		_controller->session().settings().setFloatPlayerCorner(corner);
+		_controller->session().saveSettingsDelayed();
 	}
 }
 
@@ -601,8 +606,8 @@ void FloatController::finishDrag(not_null<Item*> instance, bool closed) {
 		instance->animationSide = getSide(center);
 	}
 	updateColumnCorner(center);
-	instance->column = Auth().settings().floatPlayerColumn();
-	instance->corner = Auth().settings().floatPlayerCorner();
+	instance->column = _controller->session().settings().floatPlayerColumn();
+	instance->corner = _controller->session().settings().floatPlayerCorner();
 
 	instance->draggedAnimation.stop();
 	instance->draggedAnimation.start(

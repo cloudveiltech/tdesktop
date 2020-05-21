@@ -12,27 +12,37 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_chat.h"
 #include "data/data_user.h"
 #include "data/data_peer_values.h"
+#include "data/data_file_origin.h"
 #include "mainwindow.h"
 #include "apiwrap.h"
 #include "storage/localstorage.h"
 #include "lottie/lottie_single_player.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/image/image.h"
-#include "auth_session.h"
+#include "ui/ui_utility.h"
 #include "chat_helpers/stickers.h"
 #include "base/unixtime.h"
+#include "window/window_session_controller.h"
+#include "facades.h"
+#include "app.h"
 #include "styles/style_history.h"
 #include "styles/style_widgets.h"
 #include "styles/style_chat_helpers.h"
+
+#include <QtWidgets/QApplication>
 #include "cloudveil/GlobalSecuritySettings.h"
 
-FieldAutocomplete::FieldAutocomplete(QWidget *parent)
+FieldAutocomplete::FieldAutocomplete(
+	QWidget *parent,
+	not_null<Window::SessionController*> controller)
 : RpWidget(parent)
+, _controller(controller)
 , _scroll(this, st::mentionScroll) {
 	_scroll->setGeometry(rect());
 
 	_inner = _scroll->setOwnedWidget(
 		object_ptr<internal::FieldAutocompleteInner>(
+			_controller,
 			this,
 			&_mrows,
 			&_hrows,
@@ -161,6 +171,7 @@ inline int indexOfInFirstN(const T &v, const U &elem, int last) {
 
 internal::StickerRows FieldAutocomplete::getStickerSuggestions() {
 	const auto list = Stickers::GetListByEmoji(
+		&_controller->session(),
 		_emoji,
 		_stickersSeed
 	);
@@ -197,8 +208,7 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 		if (_chat) {
 			maxListSize += (_chat->participants.empty() ? _chat->lastAuthors.size() : _chat->participants.size());
 		} else if (_channel && _channel->isMegagroup()) {
-			if (_channel->mgInfo->lastParticipants.empty() || _channel->lastParticipantsCountOutdated()) {
-			} else {
+			if (!_channel->lastParticipantsRequestNeeded()) {
 				maxListSize += _channel->mgInfo->lastParticipants.size();
 			}
 		}
@@ -270,7 +280,7 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 			}
 		} else if (_channel && _channel->isMegagroup()) {
 			QMultiMap<int32, UserData*> ordered;
-			if (_channel->mgInfo->lastParticipants.empty() || _channel->lastParticipantsCountOutdated()) {
+			if (_channel->lastParticipantsRequestNeeded()) {
 				Auth().api().requestLastParticipants(_channel);
 			} else {
 				mrows.reserve(mrows.size() + _channel->mgInfo->lastParticipants.size());
@@ -304,36 +314,42 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 		int32 cnt = 0;
 		if (_chat) {
 			if (_chat->noParticipantInfo()) {
-				Auth().api().requestFullPeer(_chat);
+				_chat->session().api().requestFullPeer(_chat);
 			} else if (!_chat->participants.empty()) {
 				for (const auto user : _chat->participants) {
-					if (!user->botInfo) continue;
-					if (!user->botInfo->inited) {
-						Auth().api().requestFullPeer(user);
+					if (!user->isBot()) {
+						continue;
+					} else if (!user->botInfo->inited) {
+						user->session().api().requestFullPeer(user);
 					}
-					if (user->botInfo->commands.isEmpty()) continue;
+					if (user->botInfo->commands.isEmpty()) {
+						continue;
+					}
 					bots.insert(user, true);
 					cnt += user->botInfo->commands.size();
 				}
 			}
-		} else if (_user && _user->botInfo) {
+		} else if (_user && _user->isBot()) {
 			if (!_user->botInfo->inited) {
-				Auth().api().requestFullPeer(_user);
+				_user->session().api().requestFullPeer(_user);
 			}
 			cnt = _user->botInfo->commands.size();
 			bots.insert(_user, true);
 		} else if (_channel && _channel->isMegagroup()) {
 			if (_channel->mgInfo->bots.empty()) {
 				if (!_channel->mgInfo->botStatus) {
-					Auth().api().requestBots(_channel);
+					_channel->session().api().requestBots(_channel);
 				}
 			} else {
-				for_const (auto user, _channel->mgInfo->bots) {
-					if (!user->botInfo) continue;
-					if (!user->botInfo->inited) {
-						Auth().api().requestFullPeer(user);
+				for (const auto user : _channel->mgInfo->bots) {
+					if (!user->isBot()) {
+						continue;
+					} else if (!user->botInfo->inited) {
+						user->session().api().requestFullPeer(user);
 					}
-					if (user->botInfo->commands.isEmpty()) continue;
+					if (user->botInfo->commands.isEmpty()) {
+						continue;
+					}
 					bots.insert(user, true);
 					cnt += user->botInfo->commands.size();
 				}
@@ -344,12 +360,16 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 			int32 botStatus = _chat ? _chat->botStatus : ((_channel && _channel->isMegagroup()) ? _channel->mgInfo->botStatus : -1);
 			if (_chat) {
 				for (const auto &user : _chat->lastAuthors) {
-					if (!user->botInfo) continue;
-					if (!bots.contains(user)) continue;
-					if (!user->botInfo->inited) {
-						Auth().api().requestFullPeer(user);
+					if (!user->isBot()) {
+						continue;
+					} else if (!bots.contains(user)) {
+						continue;
+					} else if (!user->botInfo->inited) {
+						user->session().api().requestFullPeer(user);
 					}
-					if (user->botInfo->commands.isEmpty()) continue;
+					if (user->botInfo->commands.isEmpty()) {
+						continue;
+					}
 					bots.remove(user);
 					for (auto j = 0, l = user->botInfo->commands.size(); j != l; ++j) {
 						if (!listAllSuggestions) {
@@ -571,12 +591,14 @@ bool FieldAutocomplete::eventFilter(QObject *obj, QEvent *e) {
 namespace internal {
 
 FieldAutocompleteInner::FieldAutocompleteInner(
+	not_null<Window::SessionController*> controller,
 	not_null<FieldAutocomplete*> parent,
 	not_null<MentionRows*> mrows,
 	not_null<HashtagRows*> hrows,
 	not_null<BotCommandRows*> brows,
 	not_null<StickerRows*> srows)
-: _parent(parent)
+: _controller(controller)
+, _parent(parent)
 , _mrows(mrows)
 , _hrows(hrows)
 , _brows(brows)
@@ -634,9 +656,24 @@ void FieldAutocompleteInner::paintEvent(QPaintEvent *e) {
 				}
 
 				document->checkStickerSmall();
+				auto w = 1;
+				auto h = 1;
+				if (sticker.animated && !document->dimensions.isEmpty()) {
+					const auto request = Lottie::FrameRequest{ stickerBoundingBox() * cIntRetinaFactor() };
+					const auto size = request.size(document->dimensions, true) / cIntRetinaFactor();
+					w = std::max(size.width(), 1);
+					h = std::max(size.height(), 1);
+				} else {
+					const auto coef = std::min(
+						std::min(
+							(st::stickerPanSize.width() - st::buttonRadius * 2) / float64(document->dimensions.width()),
+							(st::stickerPanSize.height() - st::buttonRadius * 2) / float64(document->dimensions.height())),
+						1.);
+					w = std::max(qRound(coef * document->dimensions.width()), 1);
+					h = std::max(qRound(coef * document->dimensions.height()), 1);
+				}
 				if (sticker.animated && sticker.animated->ready()) {
 					const auto frame = sticker.animated->frame();
-					sticker.animated->markFrameShown();
 					const auto size = frame.size() / cIntRetinaFactor();
 					const auto ppos = pos + QPoint(
 						(st::stickerPanSize.width() - size.width()) / 2,
@@ -644,12 +681,12 @@ void FieldAutocompleteInner::paintEvent(QPaintEvent *e) {
 					p.drawImage(
 						QRect(ppos, size),
 						frame);
+					const auto paused = _controller->isGifPausedAtLeastFor(
+						Window::GifPauseReason::SavedGifs);
+					if (!paused) {
+						sticker.animated->markFrameShown();
+					}
 				} else if (const auto image = document->getStickerSmall()) {
-					float64 coef = qMin((st::stickerPanSize.width() - st::buttonRadius * 2) / float64(document->dimensions.width()), (st::stickerPanSize.height() - st::buttonRadius * 2) / float64(document->dimensions.height()));
-					if (coef > 1) coef = 1;
-					int32 w = qRound(coef * document->dimensions.width()), h = qRound(coef * document->dimensions.height());
-					if (w < 1) w = 1;
-					if (h < 1) h = 1;
 					QPoint ppos = pos + QPoint((st::stickerPanSize.width() - w) / 2, (st::stickerPanSize.height() - h) / 2);
 					p.drawPixmapLeft(ppos, width(), image->pix(document->stickerSetOrigin(), w, h));
 				}
@@ -974,10 +1011,7 @@ void FieldAutocompleteInner::setupLottie(StickerSuggestion &suggestion) {
 	suggestion.animated = Stickers::LottiePlayerFromDocument(
 		document,
 		Stickers::LottieSize::InlineResults,
-		QSize(
-			st::stickerPanSize.width() - st::buttonRadius * 2,
-			st::stickerPanSize.height() - st::buttonRadius * 2
-		) * cIntRetinaFactor(),
+		stickerBoundingBox() * cIntRetinaFactor(),
 		Lottie::Quality::Default,
 		getLottieRenderer());
 
@@ -985,6 +1019,12 @@ void FieldAutocompleteInner::setupLottie(StickerSuggestion &suggestion) {
 	) | rpl::start_with_next([=] {
 		repaintSticker(document);
 	}, _stickersLifetime);
+}
+
+QSize FieldAutocompleteInner::stickerBoundingBox() const {
+	return QSize(
+		st::stickerPanSize.width() - st::buttonRadius * 2,
+		st::stickerPanSize.height() - st::buttonRadius * 2);
 }
 
 void FieldAutocompleteInner::repaintSticker(

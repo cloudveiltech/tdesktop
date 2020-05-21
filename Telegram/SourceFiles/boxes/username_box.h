@@ -8,15 +8,20 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "boxes/abstract_box.h"
+#include "mtproto/mtproto_rpc_sender.h"
 
 namespace Ui {
 class UsernameInput;
 class LinkButton;
 } // namespace Ui
 
-class UsernameBox : public BoxContent, public RPCSender {
+namespace Main {
+class Session;
+} // namespace Main
+
+class UsernameBox : public Ui::BoxContent, public RPCSender {
 public:
-	UsernameBox(QWidget*);
+	UsernameBox(QWidget*, not_null<Main::Session*> session);
 
 protected:
 	void prepare() override;
@@ -41,6 +46,8 @@ private:
 
 	QString getName() const;
 	void updateLinkText();
+
+	const not_null<Main::Session*> _session;
 
 	object_ptr<Ui::UsernameInput> _username;
 	object_ptr<Ui::LinkButton> _link;

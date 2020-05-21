@@ -10,7 +10,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/toast/toast.h"
 #include "data/data_session.h"
 #include "core/shortcuts.h"
-#include "auth_session.h"
+#include "main/main_session.h"
+
+#include <QtNetwork/QNetworkAccessManager>
 
 namespace Support {
 namespace details {
@@ -448,7 +450,7 @@ struct Templates::Updates {
 	std::map<QString, QNetworkReply*> requests;
 };
 
-Templates::Templates(not_null<AuthSession*> session) : _session(session) {
+Templates::Templates(not_null<Main::Session*> session) : _session(session) {
 	load();
 	Shortcuts::Requests(
 	) | rpl::start_with_next([=](not_null<Shortcuts::Request*> request) {

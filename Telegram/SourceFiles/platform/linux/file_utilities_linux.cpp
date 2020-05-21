@@ -7,14 +7,25 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "platform/linux/file_utilities_linux.h"
 
-#include <private/qguiapplication_p.h>
 #include "platform/linux/linux_libs.h"
 #include "platform/linux/linux_gdk_helper.h"
+#include "platform/linux/specific_linux.h"
 #include "core/application.h"
 #include "mainwindow.h"
+#include "boxes/abstract_box.h"
 #include "storage/localstorage.h"
+#include "base/platform/base_platform_file_utilities.h"
+#include "base/call_delayed.h"
+#include "facades.h"
+
+#include <QtCore/QProcess>
+#include <QtGui/QDesktopServices>
+
+#ifndef TDESKTOP_DISABLE_GTK_INTEGRATION
+#include <private/qguiapplication_p.h>
 
 QStringList qt_make_filter_list(const QString &filter);
+#endif // !TDESKTOP_DISABLE_GTK_INTEGRATION
 
 namespace Platform {
 namespace File {
@@ -48,35 +59,48 @@ QByteArray EscapeShell(const QByteArray &content) {
 
 } // namespace internal
 
+void UnsafeOpenUrl(const QString &url) {
+	if (InSnap()) {
+		const QStringList arguments{
+			url
+		};
+		QProcess process;
+		process.startDetached(qsl("xdg-open"), arguments);
+	} else {
+		QDesktopServices::openUrl(url);
+	}
+}
+
+void UnsafeOpenEmailLink(const QString &email) {
+	const auto url = qstr("mailto:") + email;
+
+	if (InSnap()) {
+		const QStringList arguments{
+			url
+		};
+		QProcess process;
+		process.startDetached(qsl("xdg-open"), arguments);
+	} else {
+		QDesktopServices::openUrl(QUrl(url));
+	}
+}
+
+void UnsafeLaunch(const QString &filepath) {
+	if (InSnap()) {
+		const QStringList arguments{
+			QFileInfo(filepath).absoluteFilePath()
+		};
+		QProcess process;
+		process.startDetached(qsl("xdg-open"), arguments);
+	} else {
+		QDesktopServices::openUrl(QUrl::fromLocalFile(filepath));
+	}
+}
+
 void UnsafeShowInFolder(const QString &filepath) {
 	// Hide mediaview to make other apps visible.
 	Ui::hideLayer(anim::type::instant);
-
-	auto absolutePath = QFileInfo(filepath).absoluteFilePath();
-	QProcess process;
-	process.start("xdg-mime", QStringList() << "query" << "default" << "inode/directory");
-	process.waitForFinished();
-	auto output = QString::fromLatin1(process.readLine().simplified());
-	auto command = qsl("xdg-open");
-	auto arguments = QStringList();
-	if (output == qstr("dolphin.desktop") || output == qstr("org.kde.dolphin.desktop")) {
-		command = qsl("dolphin");
-		arguments << "--select" << absolutePath;
-	} else if (output == qstr("nautilus.desktop") || output == qstr("org.gnome.Nautilus.desktop") || output == qstr("nautilus-folder-handler.desktop")) {
-		command = qsl("nautilus");
-		arguments << absolutePath;
-	} else if (output == qstr("nemo.desktop")) {
-		command = qsl("nemo");
-		arguments << "--no-desktop" << absolutePath;
-	} else if (output == qstr("konqueror.desktop") || output == qstr("kfmclient_dir.desktop")) {
-		command = qsl("konqueror");
-		arguments << "--select" << absolutePath;
-	} else {
-		arguments << QFileInfo(filepath).absoluteDir().absolutePath();
-	}
-	if (!process.startDetached(command, arguments)) {
-		LOG(("Failed to launch '%1 %2'").arg(command).arg(arguments.join(' ')));
-	}
+	base::Platform::ShowInFolder(filepath);
 }
 
 } // namespace File
@@ -99,11 +123,12 @@ constexpr auto kPreviewHeight = 512;
 using Type = ::FileDialog::internal::Type;
 
 #ifndef TDESKTOP_DISABLE_GTK_INTEGRATION
-bool NativeSupported() {
+bool NativeSupported(Type type = Type::ReadFile) {
 #ifndef TDESKTOP_FORCE_GTK_FILE_DIALOG
 	return false;
 #endif // TDESKTOP_FORCE_GTK_FILE_DIALOG
-	return Platform::internal::GdkHelperLoaded()
+	return (!Platform::UseXDGDesktopPortal() || type == Type::ReadFolder)
+		&& Platform::internal::GdkHelperLoaded()
 		&& (Libs::gtk_widget_hide_on_delete != nullptr)
 		&& (Libs::gtk_clipboard_store != nullptr)
 		&& (Libs::gtk_clipboard_get != nullptr)
@@ -207,7 +232,7 @@ bool Get(
 		parent = parent->window();
 	}
 #ifndef TDESKTOP_DISABLE_GTK_INTEGRATION
-	if (NativeSupported()) {
+	if (NativeSupported(type)) {
 		return GetNative(
 			parent,
 			files,
@@ -415,7 +440,7 @@ int GtkFileDialog::exec() {
 	show();
 
 	if (const auto parent = parentWidget()) {
-		App::CallDelayed(200, parent, [=] {
+		base::call_delayed(200, parent, [=] {
 			parent->activateWindow();
 		});
 	}

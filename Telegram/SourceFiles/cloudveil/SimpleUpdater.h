@@ -1,5 +1,8 @@
 #pragma once
 #include "cloudveil/response/UpdateResponse.h"
+#include "mtproto/sender.h"
+#include <QtNetwork/QNetworkReply>
+#include <QtCore/QTimer>
 
 class SimpleUpdater : public QObject, public RPCSender
 {

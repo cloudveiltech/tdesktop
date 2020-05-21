@@ -15,7 +15,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/localstorage.h"
 #include "mainwindow.h"
 #include "history/history_location_manager.h"
-#include "platform/mac/mac_utilities.h"
+#include "base/platform/mac/base_utilities_mac.h"
+#include "facades.h"
+
+#include <QtGui/QDesktopServices>
+#include <QtWidgets/QApplication>
+#include <QtWidgets/QDesktopWidget>
 
 #include <cstdlib>
 #include <execinfo.h>
@@ -28,10 +33,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <SPMediaKeyTap.h>
 #include <mach-o/dyld.h>
 #include <AVFoundation/AVFoundation.h>
-
-extern "C" {
-void _dispatch_main_queue_callback_4CF(mach_msg_header_t *msg);
-} // extern "C"
 
 namespace {
 
@@ -55,19 +56,11 @@ QRect psDesktopRect() {
 	return _monitorRect;
 }
 
-void psShowOverAll(QWidget *w, bool canFocus) {
-	objc_showOverAll(w->winId(), canFocus);
-}
-
-void psBringToBack(QWidget *w) {
-	objc_bringToBack(w->winId());
-}
-
 void psWriteDump() {
-#ifndef TDESKTOP_DISABLE_CRASH_REPORTS
+#ifndef DESKTOP_APP_DISABLE_CRASH_REPORTS
 	double v = objc_appkitVersion();
 	CrashReports::dump() << "OS-Version: " << v;
-#endif // TDESKTOP_DISABLE_CRASH_REPORTS
+#endif // DESKTOP_APP_DISABLE_CRASH_REPORTS
 }
 
 void psDeleteDir(const QString &dir) {
@@ -123,16 +116,16 @@ void finish() {
 	objc_finish();
 }
 
-void StartTranslucentPaint(QPainter &p, QPaintEvent *e) {
-#ifdef OS_MAC_OLD
-	p.setCompositionMode(QPainter::CompositionMode_Source);
-	p.fillRect(e->rect(), Qt::transparent);
-	p.setCompositionMode(QPainter::CompositionMode_SourceOver);
-#endif // OS_MAC_OLD
-}
-
 QString CurrentExecutablePath(int argc, char *argv[]) {
 	return NS2QString([[NSBundle mainBundle] bundlePath]);
+}
+
+QString SingleInstanceLocalServerName(const QString &hash) {
+#ifndef OS_MAC_STORE
+	return qsl("/tmp/") + hash + '-' + cGUIDStr();
+#else // OS_MAC_STORE
+	return objc_documentsPath() + hash.left(4);
+#endif // OS_MAC_STORE
 }
 
 void RemoveQuarantine(const QString &path) {
@@ -143,11 +136,7 @@ void RemoveQuarantine(const QString &path) {
 	removexattr(local.data(), kQuarantineAttribute, 0);
 }
 
-void DrainMainQueue() {
-	_dispatch_main_queue_callback_4CF(nullptr);
-}
-
-void RegisterCustomScheme() {
+void RegisterCustomScheme(bool force) {
 #ifndef TDESKTOP_DISABLE_REGISTER_CUSTOM_SCHEME
 	OSStatus result = LSSetDefaultHandlerForURLScheme(CFSTR("tg"), (CFStringRef)[[NSBundle mainBundle] bundleIdentifier]);
 	DEBUG_LOG(("App Info: set default handler for 'tg' scheme result: %1").arg(result));
@@ -269,6 +258,10 @@ std::optional<crl::time> LastUserInputTime() {
 	return (crl::now() - static_cast<crl::time>(idleTime));
 }
 
+void IgnoreApplicationActivationRightNow() {
+	objc_ignoreApplicationActivationRightNow();
+}
+
 } // namespace Platform
 
 void psNewVersion() {
@@ -279,9 +272,6 @@ void psAutoStart(bool start, bool silent) {
 }
 
 void psSendToMenu(bool send, bool silent) {
-}
-
-void psUpdateOverlayed(QWidget *widget) {
 }
 
 void psDownloadPathEnableAccess() {

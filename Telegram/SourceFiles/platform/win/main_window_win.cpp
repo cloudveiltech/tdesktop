@@ -13,13 +13,20 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/win/windows_event_filter.h"
 #include "window/notifications_manager.h"
 #include "mainwindow.h"
+#include "base/crc32hash.h"
 #include "core/application.h"
 #include "lang/lang_keys.h"
 #include "storage/localstorage.h"
 #include "ui/widgets/popup_menu.h"
 #include "window/themes/window_theme.h"
 #include "history/history.h"
+#include "facades.h"
+#include "app.h"
 
+#include <QtWidgets/QDesktopWidget>
+#include <QtWidgets/QStyleFactory>
+#include <QtWidgets/QApplication>
+#include <QtGui/QWindow>
 #include <qpa/qplatformnativeinterface.h>
 
 #include <Shobjidl.h>
@@ -28,8 +35,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <roapi.h>
 #include <wrl/client.h>
-#include "platform/win/wrapper_wrl_implements_h.h"
-#include <windows.ui.notifications.h>
 
 #include <Windowsx.h>
 #include <VersionHelpers.h>
@@ -40,9 +45,27 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #undef min
 #undef max
 
+// WM_POINTER support from Windows 8 onwards (WINVER >= 0x0602)
+#ifndef WM_POINTERUPDATE
+#  define WM_NCPOINTERUPDATE 0x0241
+#  define WM_NCPOINTERDOWN   0x0242
+#  define WM_NCPOINTERUP     0x0243
+#  define WM_POINTERUPDATE   0x0245
+#  define WM_POINTERDOWN     0x0246
+#  define WM_POINTERUP       0x0247
+#  define WM_POINTERENTER    0x0249
+#  define WM_POINTERLEAVE    0x024A
+#  define WM_POINTERACTIVATE 0x024B
+#  define WM_POINTERCAPTURECHANGED 0x024C
+#  define WM_POINTERWHEEL    0x024E
+#  define WM_POINTERHWHEEL   0x024F
+#endif // WM_POINTERUPDATE
+
 HICON qt_pixmapToWinHICON(const QPixmap &);
 
 using namespace Microsoft::WRL;
+
+Q_DECLARE_METATYPE(QMargins);
 
 namespace Platform {
 namespace {
@@ -185,7 +208,7 @@ public:
 		max_w = avail.width();
 		accumulate_max(max_w, st::windowMinWidth);
 		max_h = avail.height();
-		accumulate_max(max_h, st::titleHeight + st::windowMinHeight);
+		accumulate_max(max_h, st::defaultWindowTitle.height + st::windowMinHeight);
 
 		HINSTANCE appinst = (HINSTANCE)GetModuleHandle(0);
 		HWND hwnd = _window ? _window->psHwnd() : nullptr;
@@ -219,7 +242,7 @@ public:
 				destroy();
 				return false;
 			}
-			SetWindowLong(hwnds[i], GWL_HWNDPARENT, (LONG)hwnd);
+			SetWindowLongPtr(hwnds[i], GWLP_HWNDPARENT, (LONG)hwnd);
 
 			dcs[i] = CreateCompatibleDC(screenDC);
 			if (!dcs[i]) {
@@ -655,7 +678,7 @@ int32 MainWindow::screenNameChecksum(const QString &name) const {
 	} else {
 		memcpy(buffer, name.toStdWString().data(), sizeof(buffer));
 	}
-	return hashCrc32(buffer, sizeof(buffer));
+	return base::crc32(buffer, sizeof(buffer));
 }
 
 void MainWindow::psRefreshTaskbarIcon() {
@@ -691,7 +714,11 @@ void MainWindow::psSetupTrayIcon() {
 
 void MainWindow::showTrayTooltip() {
 	if (trayIcon && !cSeenTrayTooltip()) {
-		trayIcon->showMessage(str_const_toString(AppName), tr::lng_tray_icon_text(tr::now), QSystemTrayIcon::Information, 10000);
+		trayIcon->showMessage(
+			AppName.utf16(),
+			tr::lng_tray_icon_text(tr::now),
+			QSystemTrayIcon::Information,
+			10000);
 		cSetSeenTrayTooltip(true);
 		Local::writeSettings();
 	}
@@ -701,18 +728,18 @@ void MainWindow::workmodeUpdated(DBIWorkMode mode) {
 	switch (mode) {
 	case dbiwmWindowAndTray: {
 		psSetupTrayIcon();
-		HWND psOwner = (HWND)GetWindowLong(ps_hWnd, GWL_HWNDPARENT);
+		HWND psOwner = (HWND)GetWindowLongPtr(ps_hWnd, GWLP_HWNDPARENT);
 		if (psOwner) {
-			SetWindowLong(ps_hWnd, GWL_HWNDPARENT, 0);
+			SetWindowLongPtr(ps_hWnd, GWLP_HWNDPARENT, 0);
 			psRefreshTaskbarIcon();
 		}
 	} break;
 
 	case dbiwmTrayOnly: {
 		psSetupTrayIcon();
-		HWND psOwner = (HWND)GetWindowLong(ps_hWnd, GWL_HWNDPARENT);
+		HWND psOwner = (HWND)GetWindowLongPtr(ps_hWnd, GWLP_HWNDPARENT);
 		if (!psOwner) {
-			SetWindowLong(ps_hWnd, GWL_HWNDPARENT, (LONG)ps_tbHider_hWnd);
+			SetWindowLongPtr(ps_hWnd, GWLP_HWNDPARENT, (LONG)ps_tbHider_hWnd);
 		}
 	} break;
 
@@ -723,9 +750,9 @@ void MainWindow::workmodeUpdated(DBIWorkMode mode) {
 		}
 		trayIcon = 0;
 
-		HWND psOwner = (HWND)GetWindowLong(ps_hWnd, GWL_HWNDPARENT);
+		HWND psOwner = (HWND)GetWindowLongPtr(ps_hWnd, GWLP_HWNDPARENT);
 		if (psOwner) {
-			SetWindowLong(ps_hWnd, GWL_HWNDPARENT, 0);
+			SetWindowLongPtr(ps_hWnd, GWLP_HWNDPARENT, 0);
 			psRefreshTaskbarIcon();
 		}
 	} break;
@@ -797,41 +824,15 @@ void MainWindow::initHook() {
 	psInitSysMenu();
 }
 
-Q_DECLARE_METATYPE(QMargins);
-void MainWindow::psFirstShow() {
+void MainWindow::initShadows() {
 	_psShadowWindows.init(this, st::windowShadowFg->c);
 	_shadowsWorking = true;
-
 	psUpdateMargins();
-
 	shadowsUpdate(ShadowsChange::Hidden);
-	bool showShadows = true;
+}
 
-	show();
-	if (cWindowPos().maximized) {
-		DEBUG_LOG(("Window Pos: First show, setting maximized."));
-		setWindowState(Qt::WindowMaximized);
-	}
-
-	if (cStartInTray()
-		|| (cLaunchMode() == LaunchModeAutoStart
-			&& cStartMinimized()
-			&& !Core::App().passcodeLocked())) {
-		DEBUG_LOG(("Window Pos: First show, setting minimized after."));
-		setWindowState(Qt::WindowMinimized);
-		if (Global::WorkMode().value() == dbiwmTrayOnly
-			|| Global::WorkMode().value() == dbiwmWindowAndTray) {
-			hide();
-		} else {
-			show();
-		}
-		showShadows = false;
-	} else {
-		show();
-	}
-
-	setPositionInited();
-	if (showShadows) {
+void MainWindow::firstShadowsUpdate() {
+	if (!(windowState() & Qt::WindowMinimized) && !isHidden()) {
 		shadowsUpdate(ShadowsChange::Moved | ShadowsChange::Resized | ShadowsChange::Shown);
 	}
 }
@@ -899,7 +900,7 @@ void MainWindow::psUpdateMargins() {
 	GetClientRect(ps_hWnd, &r);
 	a = r;
 
-	LONG style = GetWindowLong(ps_hWnd, GWL_STYLE), styleEx = GetWindowLong(ps_hWnd, GWL_EXSTYLE);
+	LONG style = GetWindowLongPtr(ps_hWnd, GWL_STYLE), styleEx = GetWindowLongPtr(ps_hWnd, GWL_EXSTYLE);
 	AdjustWindowRectEx(&a, style, false, styleEx);
 	QMargins margins = QMargins(a.left - r.left, a.top - r.top, r.right - a.right, r.bottom - a.bottom);
 	if (style & WS_MAXIMIZE) {

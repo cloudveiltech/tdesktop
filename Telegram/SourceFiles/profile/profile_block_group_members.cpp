@@ -21,8 +21,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwidget.h"
 #include "apiwrap.h"
 #include "observer_peer.h"
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "lang/lang_keys.h"
+#include "facades.h"
 
 namespace Profile {
 namespace {
@@ -132,7 +133,8 @@ void GroupMembersWidget::refreshUserOnline(UserData *user) {
 	_now = base::unixtime::now();
 
 	auto member = getMember(it.value());
-	member->statusHasOnlineColor = !user->botInfo && Data::OnlineTextActive(user->onlineTill, _now);
+	member->statusHasOnlineColor = !user->isBot()
+		&& Data::OnlineTextActive(user->onlineTill, _now);
 	member->onlineTill = user->onlineTill;
 	member->onlineForSort = user->isSelf()
 		? std::numeric_limits<TimeId>::max()
@@ -159,7 +161,7 @@ void GroupMembersWidget::updateItemStatusText(Item *item) {
 	auto member = getMember(item);
 	auto user = member->user();
 	if (member->statusText.isEmpty() || (member->onlineTextTill <= _now)) {
-		if (user->botInfo) {
+		if (user->isBot()) {
 			auto seesAllMessages = (user->botInfo->readsAllHistory || (member->adminState != Item::AdminState::None));
 			member->statusText = seesAllMessages
 				? tr::lng_status_bot_reads_all(tr::now)
@@ -190,7 +192,7 @@ void GroupMembersWidget::refreshMembers() {
 		fillChatMembers(chat);
 	} else if (const auto megagroup = peer()->asMegagroup()) {
 		auto &megagroupInfo = megagroup->mgInfo;
-		if (megagroupInfo->lastParticipants.empty() || megagroup->lastParticipantsCountOutdated()) {
+		if (megagroup->lastParticipantsRequestNeeded()) {
 			Auth().api().requestLastParticipants(megagroup);
 		}
 		fillMegagroupMembers(megagroup);
@@ -229,7 +231,7 @@ void GroupMembersWidget::updateOnlineCount() {
 	for_const (auto item, items()) {
 		auto member = getMember(item);
 		auto user = member->user();
-		auto isOnline = !user->botInfo && Data::OnlineTextActive(member->onlineTill, _now);
+		auto isOnline = !user->isBot() && Data::OnlineTextActive(member->onlineTill, _now);
 		if (member->statusHasOnlineColor != isOnline) {
 			member->statusHasOnlineColor = isOnline;
 			member->statusText = QString();
@@ -288,7 +290,8 @@ void GroupMembersWidget::setItemFlags(
 	using AdminState = Item::AdminState;
 	const auto user = getMember(item)->user();
 	const auto isCreator = (peerFromUser(chat->creator) == item->peer->id);
-	const auto isAdmin = chat->hasAdminRights();
+	const auto isAdmin = (item->peer->isSelf() && chat->hasAdminRights())
+		|| chat->admins.contains(user);
 	const auto adminState = isCreator
 		? AdminState::Creator
 		: isAdmin
@@ -391,7 +394,7 @@ void GroupMembersWidget::setItemFlags(
 		item->adminState = adminState;
 		auto user = item->peer->asUser();
 		Assert(user != nullptr);
-		if (user->botInfo) {
+		if (user->isBot()) {
 			// Update "has access to messages" status.
 			item->statusText = QString();
 			updateItemStatusText(item);
@@ -412,7 +415,7 @@ auto GroupMembersWidget::computeMember(not_null<UserData*> user)
 	if (it == _membersByUser.cend()) {
 		auto member = new Member(user);
 		it = _membersByUser.insert(user, member);
-		member->statusHasOnlineColor = !user->botInfo
+		member->statusHasOnlineColor = !user->isBot()
 			&& Data::OnlineTextActive(user->onlineTill, _now);
 		member->onlineTill = user->onlineTill;
 		member->onlineForSort = Data::SortByOnlineValue(user, _now);
@@ -434,7 +437,7 @@ void GroupMembersWidget::onUpdateOnlineDisplay() {
 				}
 			}
 			auto member = getMember(item);
-			bool isOnline = !member->user()->botInfo
+			bool isOnline = !member->user()->isBot()
 				&& Data::OnlineTextActive(member->onlineTill, _now);
 			if (!isOnline) {
 				changed = true;

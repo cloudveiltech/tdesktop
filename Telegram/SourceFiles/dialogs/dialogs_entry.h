@@ -11,7 +11,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "dialogs/dialogs_key.h"
 
-class AuthSession;
+namespace Main {
+class Session;
+} // namespace Main
 
 namespace Data {
 class Session;
@@ -22,17 +24,17 @@ namespace Dialogs {
 
 class Row;
 class IndexedList;
-using RowsByLetter = base::flat_map<QChar, not_null<Row*>>;
+class MainList;
 
-enum class SortMode {
-	Date = 0x00,
-	Name = 0x01,
-	Add  = 0x02,
+struct RowsByLetter {
+	not_null<Row*> main;
+	base::flat_map<QChar, not_null<Row*>> letters;
 };
 
-enum class Mode {
-	All       = 0x00,
-	Important = 0x01,
+enum class SortMode {
+	Date    = 0x00,
+	Name    = 0x01,
+	Add     = 0x02,
 };
 
 struct PositionChange {
@@ -92,32 +94,37 @@ public:
 	Entry &operator=(const Entry &other) = delete;
 	virtual ~Entry() = default;
 
-	Data::Session &owner() const;
-	AuthSession &session() const;
+	[[nodiscard]] Data::Session &owner() const;
+	[[nodiscard]] Main::Session &session() const;
 
-	PositionChange adjustByPosInChatList(Mode list);
-	bool inChatList(Mode list = Mode::All) const {
-		return !chatListLinks(list).empty();
+	PositionChange adjustByPosInChatList(
+		FilterId filterId,
+		not_null<MainList*> list);
+	[[nodiscard]] bool inChatList(FilterId filterId = 0) const {
+		return _chatListLinks.contains(filterId);
 	}
-	int posInChatList(Mode list) const;
-	not_null<Row*> addToChatList(Mode list);
-	void removeFromChatList(Mode list);
-	void removeChatListEntryByLetter(Mode list, QChar letter);
+	[[nodiscard]] int posInChatList(FilterId filterId) const;
+	not_null<Row*> addToChatList(
+		FilterId filterId,
+		not_null<MainList*> list);
+	void removeFromChatList(
+		FilterId filterId,
+		not_null<MainList*> list);
+	void removeChatListEntryByLetter(FilterId filterId, QChar letter);
 	void addChatListEntryByLetter(
-		Mode list,
+		FilterId filterId,
 		QChar letter,
 		not_null<Row*> row);
 	void updateChatListEntry() const;
-	bool isPinnedDialog() const {
-		return _pinnedIndex > 0;
+	[[nodiscard]] bool isPinnedDialog(FilterId filterId) const {
+		return lookupPinnedIndex(filterId) != 0;
 	}
-	void cachePinnedIndex(int index);
-	bool isProxyPromoted() const {
-		return _isProxyPromoted;
-	}
-	void cacheProxyPromoted(bool promoted);
-	uint64 sortKeyInChatList() const {
-		return _sortKeyInChatList;
+	void cachePinnedIndex(FilterId filterId, int index);
+	[[nodiscard]] bool isTopPromoted() const;
+	[[nodiscard]] uint64 sortKeyInChatList(FilterId filterId) const {
+		return filterId
+			? computeSortPosition(filterId)
+			: _sortKeyInChatList;
 	}
 	void updateChatListSortPosition();
 	void setChatListTimeId(TimeId date);
@@ -127,9 +134,8 @@ public:
 
 	virtual int fixedOnTopIndex() const = 0;
 	static constexpr auto kArchiveFixOnTopIndex = 1;
-	static constexpr auto kProxyPromotionFixOnTopIndex = 2;
+	static constexpr auto kTopPromotionFixOnTopIndex = 2;
 
-	virtual bool toImportant() const = 0;
 	virtual bool shouldBeInChatList() const = 0;
 	virtual int chatListUnreadCount() const = 0;
 	virtual bool chatListUnreadMark() const = 0;
@@ -172,6 +178,7 @@ public:
 	mutable Ui::Text::String lastItemTextCache;
 
 protected:
+	void notifyUnreadStateChange(const UnreadState &wasState);
 	auto unreadStateChangeNotifier(bool required) {
 		const auto notify = required && inChatList();
 		const auto wasState = notify ? chatListUnreadState() : UnreadState();
@@ -182,25 +189,29 @@ protected:
 		});
 	}
 
+	[[nodiscard]] int lookupPinnedIndex(FilterId filterId) const;
+
+	void cacheTopPromoted(bool promoted);
+
 private:
 	virtual void changedChatListPinHook();
-
-	void notifyUnreadStateChange(const UnreadState &wasState);
+	void pinnedIndexChanged(int was, int now);
+	[[nodiscard]] uint64 computeSortPosition(FilterId filterId) const;
 
 	void setChatListExistence(bool exists);
-	RowsByLetter &chatListLinks(Mode list);
-	const RowsByLetter &chatListLinks(Mode list) const;
-	Row *mainChatListLink(Mode list) const;
-
-	not_null<IndexedList*> myChatsList(Mode list) const;
+	RowsByLetter *chatListLinks(FilterId filterId);
+	const RowsByLetter *chatListLinks(FilterId filterId) const;
+	not_null<Row*> mainChatListLink(FilterId filterId) const;
+	Row *maybeMainChatListLink(FilterId filterId) const;
 
 	not_null<Data::Session*> _owner;
 	Dialogs::Key _key;
-	RowsByLetter _chatListLinks[2];
+	base::flat_map<FilterId, RowsByLetter> _chatListLinks;
 	uint64 _sortKeyInChatList = 0;
-	int _pinnedIndex = 0;
-	bool _isProxyPromoted = false;
+	uint64 _sortKeyByDate = 0;
+	base::flat_map<FilterId, int> _pinnedIndex;
 	TimeId _timeId = 0;
+	bool _isTopPromoted = false;
 
 };
 

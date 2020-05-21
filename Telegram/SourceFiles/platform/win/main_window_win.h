@@ -8,8 +8,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "platform/platform_main_window.h"
-#include "platform/win/wrapper_windows_h.h"
+#include "base/platform/win/base_windows_h.h"
 #include "base/flags.h"
+
+#include <QtCore/QTimer>
 
 namespace Ui {
 class PopupMenu;
@@ -26,7 +28,6 @@ public:
 	HWND psHwnd() const;
 	HMENU psMenu() const;
 
-	void psFirstShow();
 	void psInitSysMenu();
 	void updateSystemMenu(Qt::WindowState state);
 	void psUpdateMargins();
@@ -75,6 +76,8 @@ protected:
 	int32 screenNameChecksum(const QString &name) const override;
 	void unreadCounterChangedHook() override;
 
+	void initShadows() override;
+	void firstShadowsUpdate() override;
 	void stateChangedHook(Qt::WindowState state) override;
 
 	bool hasTrayIcon() const override {

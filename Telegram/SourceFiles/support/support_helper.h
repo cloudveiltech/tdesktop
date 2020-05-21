@@ -11,7 +11,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "support/support_templates.h"
 #include "mtproto/sender.h"
 
-class AuthSession;
+class History;
+
+namespace Main {
+class Session;
+} // namespace Main
 
 namespace Window {
 class SessionController;
@@ -35,11 +39,11 @@ inline bool operator!=(const UserInfo &a, const UserInfo &b) {
 	return !(a == b);
 }
 
-class Helper : private MTP::Sender {
+class Helper final {
 public:
-	explicit Helper(not_null<AuthSession*> session);
+	explicit Helper(not_null<Main::Session*> session);
 
-	static std::unique_ptr<Helper> Create(not_null<AuthSession*> session);
+	static std::unique_ptr<Helper> Create(not_null<Main::Session*> session);
 
 	void registerWindow(not_null<Window::SessionController*> controller);
 	void cloudDraftChanged(not_null<History*> history);
@@ -82,7 +86,8 @@ private:
 		TextWithEntities text,
 		Fn<void(bool success)> done);
 
-	not_null<AuthSession*> _session;
+	not_null<Main::Session*> _session;
+	MTP::Sender _api;
 	Templates _templates;
 	QString _supportName;
 	QString _supportNameNormalized;

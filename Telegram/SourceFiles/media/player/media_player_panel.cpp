@@ -18,8 +18,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_chat.h"
 #include "ui/widgets/shadow.h"
 #include "ui/widgets/scroll_area.h"
+#include "ui/ui_utility.h"
 #include "mainwindow.h"
-#include "auth_session.h"
+#include "main/main_session.h"
+#include "app.h"
 #include "styles/style_overview.h"
 #include "styles/style_widgets.h"
 #include "styles/style_media_player.h"
@@ -227,10 +229,14 @@ void Panel::refreshList() {
 	const auto current = instance()->current(AudioMsgId::Type::Song);
 	const auto contextId = current.contextId();
 	const auto peer = [&]() -> PeerData* {
-		const auto item = contextId ? Auth().data().message(contextId) : nullptr;
+		const auto item = contextId
+			? session().data().message(contextId)
+			: nullptr;
 		const auto media = item ? item->media() : nullptr;
 		const auto document = media ? media->document() : nullptr;
-		if (!document || !document->isSharedMediaMusic()) {
+		if (!document
+			|| !document->isSharedMediaMusic()
+			|| !IsServerMsgId(item->id)) {
 			return nullptr;
 		}
 		const auto result = item->history()->peer;

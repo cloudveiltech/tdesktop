@@ -10,7 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/qthelp_url.h"
 
 namespace MTP {
-namespace internal {
+namespace details {
 namespace {
 
 constexpr auto kForceHttpPort = 80;
@@ -168,28 +168,24 @@ void HttpConnection::requestFinished(QNetworkReply *reply) {
 			if (_status == Status::Ready) {
 				_receivedQueue.push_back(data);
 				emit receivedData();
-			} else {
-				try {
-					const auto res_pq = readPQFakeReply(data);
-					const auto &data = res_pq.c_resPQ();
-					if (data.vnonce() == _checkNonce) {
-						DEBUG_LOG(("Connection Info: "
-							"HTTP-transport to %1 connected by pq-response"
-							).arg(_address));
-						_status = Status::Ready;
-						_pingTime = crl::now() - _pingTime;
-						emit connected();
-					} else {
-						DEBUG_LOG(("Connection Error: "
-							"Wrong nonce received in HTTP fake pq-responce"));
-						emit error(kErrorCodeOther);
-					}
-				} catch (Exception &e) {
+			} else if (const auto res_pq = readPQFakeReply(data)) {
+				const auto &data = res_pq->c_resPQ();
+				if (data.vnonce() == _checkNonce) {
+					DEBUG_LOG(("Connection Info: "
+						"HTTP-transport to %1 connected by pq-response"
+						).arg(_address));
+					_status = Status::Ready;
+					_pingTime = crl::now() - _pingTime;
+					emit connected();
+				} else {
 					DEBUG_LOG(("Connection Error: "
-						"Exception in parsing HTTP fake pq-responce, %1"
-						).arg(e.what()));
+						"Wrong nonce received in HTTP fake pq-responce"));
 					emit error(kErrorCodeOther);
 				}
+			} else {
+				DEBUG_LOG(("Connection Error: "
+					"Could not parse HTTP fake pq-responce"));
+				emit error(kErrorCodeOther);
 			}
 		}
 	} else {
@@ -251,5 +247,5 @@ QUrl HttpConnection::url() const {
 	return QUrl(pattern.arg(_address).arg(kForceHttpPort));
 }
 
-} // namespace internal
+} // namespace details
 } // namespace MTP

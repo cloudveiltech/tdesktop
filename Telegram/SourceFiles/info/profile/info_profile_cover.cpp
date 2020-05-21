@@ -17,7 +17,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/info_controller.h"
 #include "info/info_memento.h"
 #include "lang/lang_keys.h"
-#include "styles/style_info.h"
 #include "ui/widgets/labels.h"
 #include "ui/effects/ripple_animation.h"
 #include "ui/text/text_utilities.h" // Ui::Text::ToUpper
@@ -27,8 +26,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_session_controller.h"
 #include "observer_peer.h"
 #include "core/application.h"
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "apiwrap.h"
+#include "styles/style_boxes.h"
+#include "styles/style_info.h"
 #include "cloudveil/GlobalSecuritySettings.h"
 
 namespace Info {
@@ -76,7 +77,7 @@ void SectionToggle::paint(
 		int top,
 		int outerWidth) {
 	auto sqrt2 = sqrt(2.);
-	auto vLeft = rtlpoint(left + _st.skip, 0, outerWidth).x() + 0.;
+	auto vLeft = style::rtlpoint(left + _st.skip, 0, outerWidth).x() + 0.;
 	auto vTop = top + _st.skip + 0.;
 	auto vWidth = _st.size - 2 * _st.skip;
 	auto vHeight = _st.size - 2 * _st.skip;
@@ -146,10 +147,15 @@ auto ChatStatusText(int fullCount, int onlineCount, bool isGroup) {
 			lt_online_count,
 			OnlineStatusText(onlineCount));
 	} else if (fullCount > 0) {
-		return tr::lng_chat_status_members(
-			tr::now,
-			lt_count_decimal,
-			fullCount);
+		return isGroup
+			? tr::lng_chat_status_members(
+				tr::now,
+				lt_count_decimal,
+				fullCount)
+			: tr::lng_chat_status_subscribers(
+				tr::now,
+				lt_count_decimal,
+				fullCount);
 	}
 	return isGroup
 		? tr::lng_group_status(tr::now)

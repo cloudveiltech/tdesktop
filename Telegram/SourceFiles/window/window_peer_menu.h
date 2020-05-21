@@ -7,10 +7,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-class GenericBox;
+#include "data/data_poll.h"
+
+class History;
 
 namespace Ui {
 class RpWidget;
+class GenericBox;
 } // namespace Ui
 
 namespace Data {
@@ -21,6 +24,7 @@ namespace Window {
 
 class Controller;
 class SessionController;
+class SessionNavigation;
 
 enum class PeerMenuSource {
 	ChatsList,
@@ -35,6 +39,7 @@ using PeerMenuCallback = Fn<QAction*(
 void FillPeerMenu(
 	not_null<SessionController*> controller,
 	not_null<PeerData*> peer,
+	FilterId filterId,
 	const PeerMenuCallback &addAction,
 	PeerMenuSource source);
 void FillFolderMenu(
@@ -49,12 +54,19 @@ void PeerMenuAddMuteAction(
 
 void PeerMenuExportChat(not_null<PeerData*> peer);
 void PeerMenuDeleteContact(not_null<UserData*> user);
-void PeerMenuShareContactBox(not_null<UserData*> user);
-void PeerMenuAddChannelMembers(not_null<ChannelData*> channel);
+void PeerMenuShareContactBox(
+	not_null<Window::SessionNavigation*> navigation,
+	not_null<UserData*> user);
+void PeerMenuAddChannelMembers(
+	not_null<Window::SessionNavigation*> navigation,
+	not_null<ChannelData*> channel);
 //void PeerMenuUngroupFeed(not_null<Data::Feed*> feed); // #feed
-void PeerMenuCreatePoll(not_null<PeerData*> peer);
+void PeerMenuCreatePoll(
+	not_null<PeerData*> peer,
+	PollData::Flags chosen = PollData::Flags(),
+	PollData::Flags disabled = PollData::Flags());
 void PeerMenuBlockUserBox(
-	not_null<GenericBox*> box,
+	not_null<Ui::GenericBox*> box,
 	not_null<Window::Controller*> window,
 	not_null<UserData*> user,
 	bool suggestClearChat);
@@ -65,6 +77,13 @@ Fn<void()> ClearHistoryHandler(not_null<PeerData*> peer);
 Fn<void()> DeleteAndLeaveHandler(not_null<PeerData*> peer);
 
 QPointer<Ui::RpWidget> ShowForwardMessagesBox(
+	not_null<Window::SessionNavigation*> navigation,
+	MessageIdsList &&items,
+	FnMut<void()> &&successCallback = nullptr);
+
+QPointer<Ui::RpWidget> ShowSendNowMessagesBox(
+	not_null<Window::SessionNavigation*> navigation,
+	not_null<History*> history,
 	MessageIdsList &&items,
 	FnMut<void()> &&successCallback = nullptr);
 

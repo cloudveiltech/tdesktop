@@ -27,14 +27,8 @@ enum class SystemSettingsType {
 };
 
 void SetWatchingMediaKeys(bool watching);
-bool IsApplicationActive();
 void SetApplicationIcon(const QIcon &icon);
-bool TranslucentWindowsSupported(QPoint globalPosition);
-void StartTranslucentPaint(QPainter &p, QPaintEvent *e);
-void InitOnTopPanel(QWidget *panel);
-void DeInitOnTopPanel(QWidget *panel);
-void ReInitOnTopPanel(QWidget *panel);
-void RegisterCustomScheme();
+void RegisterCustomScheme(bool force = false);
 PermissionStatus GetPermissionStatus(PermissionType type);
 void RequestPermission(PermissionType type, Fn<void(PermissionStatus)> resultCallback);
 void OpenSystemSettingsForPermission(PermissionType type);
@@ -45,8 +39,7 @@ bool OpenSystemSettings(SystemSettingsType type);
 	return LastUserInputTime().has_value();
 }
 
-[[nodiscard]] constexpr bool UseMainQueueGeneric();
-void DrainMainQueue(); // Needed only if UseMainQueueGeneric() is false.
+void IgnoreApplicationActivationRightNow();
 
 namespace ThirdParty {
 

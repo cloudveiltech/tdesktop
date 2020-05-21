@@ -13,12 +13,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/win/windows_dlls.h"
 #include "history/history.h"
 #include "mainwindow.h"
+#include "facades.h"
 
 #include <Shobjidl.h>
 #include <shellapi.h>
 
 #include <roapi.h>
 #include <wrl/client.h>
+
+#ifndef __MINGW32__
 #include "platform/win/wrapper_wrl_implements_h.h"
 #include <windows.ui.notifications.h>
 
@@ -31,9 +34,12 @@ using namespace Microsoft::WRL;
 using namespace ABI::Windows::UI::Notifications;
 using namespace ABI::Windows::Data::Xml::Dom;
 using namespace Windows::Foundation;
+#endif // !__MINGW32__
 
 namespace Platform {
 namespace Notifications {
+
+#ifndef __MINGW32__
 namespace {
 
 class StringReferenceWrapper {
@@ -301,40 +307,33 @@ void Check() {
 }
 
 } // namespace
+#endif // !__MINGW32__
 
 bool Supported() {
+#ifndef __MINGW32__
 	if (!Checked) {
 		Checked = true;
 		Check();
 	}
 	return InitSucceeded;
+#endif // !__MINGW32__
+
+	return false;
 }
 
 std::unique_ptr<Window::Notifications::Manager> Create(Window::Notifications::System *system) {
+#ifndef __MINGW32__
 	if (Global::NativeNotifications() && Supported()) {
 		auto result = std::make_unique<Manager>(system);
 		if (result->init()) {
 			return std::move(result);
 		}
 	}
+#endif // !__MINGW32__
 	return nullptr;
 }
 
-void FlashBounce() {
-	auto window = App::wnd();
-	if (!window || GetForegroundWindow() == window->psHwnd()) {
-		return;
-	}
-
-	FLASHWINFO info;
-	info.cbSize = sizeof(info);
-	info.hwnd = window->psHwnd();
-	info.dwFlags = FLASHW_ALL;
-	info.dwTimeout = 0;
-	info.uCount = 1;
-	FlashWindowEx(&info);
-}
-
+#ifndef __MINGW32__
 class Manager::Private {
 public:
 	using Type = Window::Notifications::CachedUserpics::Type;
@@ -342,9 +341,16 @@ public:
 	explicit Private(Manager *instance, Type type);
 	bool init();
 
-	bool showNotification(PeerData *peer, MsgId msgId, const QString &title, const QString &subtitle, const QString &msg, bool hideNameAndPhoto, bool hideReplyButton);
+	bool showNotification(
+		not_null<PeerData*> peer,
+		MsgId msgId,
+		const QString &title,
+		const QString &subtitle,
+		const QString &msg,
+		bool hideNameAndPhoto,
+		bool hideReplyButton);
 	void clearAll();
-	void clearFromHistory(History *history);
+	void clearFromHistory(not_null<History*> history);
 	void beforeNotificationActivated(PeerId peerId, MsgId msgId);
 	void afterNotificationActivated(PeerId peerId, MsgId msgId);
 	void clearNotification(PeerId peerId, MsgId msgId);
@@ -413,7 +419,7 @@ void Manager::Private::clearAll() {
 	}
 }
 
-void Manager::Private::clearFromHistory(History *history) {
+void Manager::Private::clearFromHistory(not_null<History*> history) {
 	if (!_notifier) return;
 
 	auto i = _notifications.find(history->peer->id);
@@ -447,13 +453,24 @@ void Manager::Private::clearNotification(PeerId peerId, MsgId msgId) {
 	}
 }
 
-bool Manager::Private::showNotification(PeerData *peer, MsgId msgId, const QString &title, const QString &subtitle, const QString &msg, bool hideNameAndPhoto, bool hideReplyButton) {
+bool Manager::Private::showNotification(
+		not_null<PeerData*> peer,
+		MsgId msgId,
+		const QString &title,
+		const QString &subtitle,
+		const QString &msg,
+		bool hideNameAndPhoto,
+		bool hideReplyButton) {
 	if (!_notificationManager || !_notifier || !_notificationFactory) return false;
 
 	ComPtr<IXmlDocument> toastXml;
 	bool withSubtitle = !subtitle.isEmpty();
 
-	HRESULT hr = _notificationManager->GetTemplateContent(withSubtitle ? ToastTemplateType_ToastImageAndText04 : ToastTemplateType_ToastImageAndText02, &toastXml);
+	HRESULT hr = _notificationManager->GetTemplateContent(
+		(withSubtitle
+			? ToastTemplateType_ToastImageAndText04
+			: ToastTemplateType_ToastImageAndText02),
+		&toastXml);
 	if (!SUCCEEDED(hr)) return false;
 
 	hr = SetAudioSilent(toastXml.Get());
@@ -560,15 +577,29 @@ void Manager::clearNotification(PeerId peerId, MsgId msgId) {
 
 Manager::~Manager() = default;
 
-void Manager::doShowNativeNotification(PeerData *peer, MsgId msgId, const QString &title, const QString &subtitle, const QString &msg, bool hideNameAndPhoto, bool hideReplyButton) {
-	_private->showNotification(peer, msgId, title, subtitle, msg, hideNameAndPhoto, hideReplyButton);
+void Manager::doShowNativeNotification(
+		not_null<PeerData*> peer,
+		MsgId msgId,
+		const QString &title,
+		const QString &subtitle,
+		const QString &msg,
+		bool hideNameAndPhoto,
+		bool hideReplyButton) {
+	_private->showNotification(
+		peer,
+		msgId,
+		title,
+		subtitle,
+		msg,
+		hideNameAndPhoto,
+		hideReplyButton);
 }
 
 void Manager::doClearAllFast() {
 	_private->clearAll();
 }
 
-void Manager::doClearFromHistory(History *history) {
+void Manager::doClearFromHistory(not_null<History*> history) {
 	_private->clearFromHistory(history);
 }
 
@@ -579,6 +610,7 @@ void Manager::onBeforeNotificationActivated(PeerId peerId, MsgId msgId) {
 void Manager::onAfterNotificationActivated(PeerId peerId, MsgId msgId) {
 	_private->afterNotificationActivated(peerId, msgId);
 }
+#endif // !__MINGW32__
 
 namespace {
 
@@ -688,6 +720,10 @@ bool SkipToast() {
 		return true;
 	}
 	return false;
+}
+
+bool SkipFlashBounce() {
+	return SkipToast();
 }
 
 } // namespace Notifications

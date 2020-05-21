@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "platform/linux/linux_desktop_environment.h"
 
-#include <QDBusInterface>
+#include "platform/linux/specific_linux.h"
 
 namespace Platform {
 namespace DesktopEnvironment {
@@ -24,7 +24,14 @@ Type Compute() {
 	auto xdgCurrentDesktop = GetEnv("XDG_CURRENT_DESKTOP").toLower();
 	auto list = xdgCurrentDesktop.split(':', QString::SkipEmptyParts);
 	auto desktopSession = GetEnv("DESKTOP_SESSION").toLower();
+	auto slash = desktopSession.lastIndexOf('/');
 	auto kdeSession = GetEnv("KDE_SESSION_VERSION");
+
+	// DESKTOP_SESSION can contain a path
+	if (slash != -1) {
+		desktopSession = desktopSession.mid(slash + 1);
+	}
+
 	if (!list.isEmpty()) {
 		if (list.contains("unity")) {
 			// gnome-fallback sessions set XDG_CURRENT_DESKTOP to Unity
@@ -33,25 +40,20 @@ Type Compute() {
 				return Type::Gnome;
 			}
 			return Type::Unity;
-		} else if (list.contains("xfce")) {
-			return Type::XFCE;
-		} else if (list.contains("pantheon")) {
-			return Type::Pantheon;
 		} else if (list.contains("gnome")) {
-			if (list.contains("ubuntu"))
-				return Type::Ubuntu;
-
 			return Type::Gnome;
 		} else if (list.contains("kde")) {
 			if (kdeSession == qstr("5")) {
 				return Type::KDE5;
 			}
 			return Type::KDE4;
+		} else if (list.contains("mate")) {
+			return Type::MATE;
 		}
 	}
 
 	if (!desktopSession.isEmpty()) {
-		if (desktopSession == qstr("gnome") || desktopSession == qstr("mate")) {
+		if (desktopSession == qstr("gnome")) {
 			return Type::Gnome;
 		} else if (desktopSession == qstr("kde4") || desktopSession == qstr("kde-plasma")) {
 			return Type::KDE4;
@@ -61,10 +63,8 @@ Type Compute() {
 				return Type::KDE4;
 			}
 			return Type::KDE3;
-		} else if (desktopSession.indexOf(qstr("xfce")) >= 0 || desktopSession == qstr("xubuntu")) {
-			return Type::XFCE;
-		} else if (desktopSession == qstr("awesome")) {
-			return Type::Awesome;
+		} else if (desktopSession == qstr("mate")) {
+			return Type::MATE;
 		}
 	}
 
@@ -91,11 +91,8 @@ Type ComputeAndLog() {
 		case Type::KDE3: return "KDE3";
 		case Type::KDE4: return "KDE4";
 		case Type::KDE5: return "KDE5";
-		case Type::Ubuntu: return "Ubuntu";
 		case Type::Unity: return "Unity";
-		case Type::XFCE: return "XFCE";
-		case Type::Pantheon: return "Pantheon";
-		case Type::Awesome: return "Awesome";
+		case Type::MATE: return "MATE";
 		}
 		return QString::number(static_cast<int>(result));
 	};
@@ -109,19 +106,6 @@ Type ComputeAndLog() {
 Type Get() {
 	static const auto result = ComputeAndLog();
 	return result;
-}
-
-bool TryQtTrayIcon() {
-	return !IsPantheon() && !IsAwesome();
-}
-
-bool PreferAppIndicatorTrayIcon() {
-	return IsXFCE() || IsUnity() || IsUbuntu() ||
-	       (IsGnome() && QDBusInterface("org.kde.StatusNotifierWatcher", "/").isValid());
-}
-
-bool TryUnityCounter() {
-	return IsUnity() || IsPantheon() || IsUbuntu() || IsKDE5();
 }
 
 } // namespace DesktopEnvironment

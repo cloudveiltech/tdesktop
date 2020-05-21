@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/info_memento.h"
 #include "info/info_controller.h"
 #include "settings/settings_common.h"
+#include "ui/ui_utility.h"
 
 namespace Info {
 namespace Settings {
@@ -31,7 +32,7 @@ object_ptr<ContentWidget> Memento::createWidget(
 		parent,
 		controller);
 	result->setInternalState(geometry, this);
-	return std::move(result);
+	return result;
 }
 
 Memento::~Memento() = default;
@@ -42,11 +43,11 @@ Widget::Widget(
 : ContentWidget(parent, controller)
 , _self(controller->key().settingsSelf())
 , _type(controller->section().settingsType())
-, _inner(setInnerWidget(::Settings::CreateSection(
+, _inner(setInnerWidget(
+	::Settings::CreateSection(
 		_type,
 		this,
-		controller->parentController(),
-		_self))) {
+		controller->parentController()))) {
 	_inner->sectionShowOther(
 	) | rpl::start_with_next([=](Type type) {
 		controller->showSettings(type);
@@ -54,6 +55,8 @@ Widget::Widget(
 
 	controller->setCanSaveChanges(_inner->sectionCanSaveChanges());
 }
+
+Widget::~Widget() = default;
 
 not_null<UserData*> Widget::self() const {
 	return _self;
@@ -95,7 +98,7 @@ rpl::producer<bool> Widget::desiredShadowVisibility() const {
 std::unique_ptr<ContentMemento> Widget::doCreateMemento() {
 	auto result = std::make_unique<Memento>(self(), _type);
 	saveState(result.get());
-	return std::move(result);
+	return result;
 }
 
 void Widget::saveState(not_null<Memento*> memento) {

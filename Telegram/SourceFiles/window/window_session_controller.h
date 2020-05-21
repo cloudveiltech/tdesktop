@@ -10,12 +10,26 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <rpl/variable.h>
 #include "base/flags.h"
 #include "base/observer.h"
+#include "base/object_ptr.h"
 #include "dialogs/dialogs_key.h"
+#include "ui/effects/animation_value.h"
 
-class AuthSession;
 class MainWidget;
+class MainWindow;
 class HistoryMessage;
 class HistoryService;
+
+namespace Adaptive {
+enum class WindowLayout;
+} // namespace Adaptive
+
+namespace ChatHelpers {
+class TabbedSelector;
+} // namespace ChatHelpers
+
+namespace Main {
+class Session;
+} // namespace Main
 
 namespace Settings {
 enum class Type;
@@ -33,11 +47,16 @@ struct FormRequest;
 class FormController;
 } // namespace Passport
 
+namespace Ui {
+class LayerWidget;
+} // namespace Ui
+
 namespace Window {
 
-class LayerWidget;
 class MainWindow;
 class SectionMemento;
+class Controller;
+class FiltersMenu;
 
 enum class GifPauseReason {
 	Any           = 0,
@@ -104,9 +123,9 @@ class SessionController;
 
 class SessionNavigation {
 public:
-	explicit SessionNavigation(not_null<AuthSession*> session);
+	explicit SessionNavigation(not_null<Main::Session*> session);
 
-	AuthSession &session() const;
+	Main::Session &session() const;
 
 	virtual void showSection(
 		SectionMemento &&memento,
@@ -130,10 +149,15 @@ public:
 		const SectionShow &params = SectionShow());
 	void showSettings(const SectionShow &params = SectionShow());
 
+	void showPollResults(
+		not_null<PollData*> poll,
+		FullMsgId contextId,
+		const SectionShow &params = SectionShow());
+
 	virtual ~SessionNavigation() = default;
 
 private:
-	const not_null<AuthSession*> _session;
+	const not_null<Main::Session*> _session;
 
 };
 
@@ -142,12 +166,18 @@ class SessionController
 	, private base::Subscriber {
 public:
 	SessionController(
-		not_null<AuthSession*> session,
-		not_null<MainWindow*> window);
+		not_null<Main::Session*> session,
+		not_null<Controller*> window);
 
-	not_null<MainWindow*> window() const {
-		return _window;
+	[[nodiscard]] Controller &window() const {
+		return *_window;
 	}
+	[[nodiscard]] not_null<::MainWindow*> widget() const;
+
+	[[nodiscard]] auto tabbedSelector() const
+	-> not_null<ChatHelpers::TabbedSelector*>;
+	void takeTabbedSelectorOwnershipFrom(not_null<QWidget*> parent);
+	[[nodiscard]] bool hasTabbedSelectorOwnership() const;
 
 	// This is needed for History TopBar updating when searchInChat
 	// is changed in the Dialogs::Widget of the current window.
@@ -185,7 +215,7 @@ public:
 		int thirdWidth;
 		Adaptive::WindowLayout windowLayout;
 	};
-	ColumnLayout computeColumnLayout() const;
+	[[nodiscard]] ColumnLayout computeColumnLayout() const;
 	int dialogsSmallColumnWidth() const;
 	bool forceWideDialogs() const;
 	void updateColumnLayout();
@@ -223,7 +253,7 @@ public:
 	}
 
 	void showSpecialLayer(
-		object_ptr<LayerWidget> &&layer,
+		object_ptr<Ui::LayerWidget> &&layer,
 		anim::type animated = anim::type::normal);
 	void hideSpecialLayer(
 			anim::type animated = anim::type::normal) {
@@ -263,6 +293,14 @@ public:
 		not_null<Media::Player::FloatDelegate*> replacement);
 	rpl::producer<FullMsgId> floatPlayerClosed() const;
 
+	[[nodiscard]] int filtersWidth() const;
+	[[nodiscard]] rpl::producer<FilterId> activeChatsFilter() const;
+	[[nodiscard]] FilterId activeChatsFilterCurrent() const;
+	void setActiveChatsFilter(FilterId id);
+
+	void toggleFiltersMenu(bool enabled);
+	[[nodiscard]] rpl::producer<> filtersMenuChanged() const;
+
 	rpl::lifetime &lifetime() {
 		return _lifetime;
 	}
@@ -272,6 +310,8 @@ public:
 private:
 	void init();
 	void initSupportMode();
+	void refreshFiltersMenu();
+	void checkOpenedFilter();
 
 	int minimalThreeColumnWidth() const;
 	not_null<MainWidget*> chats() const;
@@ -288,14 +328,19 @@ private:
 
 	void pushToChatEntryHistory(Dialogs::RowDescriptor row);
 	bool chatEntryHistoryMove(int steps);
+	void resetFakeUnreadWhileOpened();
 
-	const not_null<MainWindow*> _window;
+	const not_null<Controller*> _window;
 
 	std::unique_ptr<Passport::FormController> _passportForm;
+	std::unique_ptr<FiltersMenu> _filters;
 
 	GifPauseReasons _gifPauseReasons = 0;
 	base::Observable<void> _gifPauseLevelChanged;
 	base::Observable<void> _floatPlayerAreaUpdated;
+
+	// Depends on _gifPause*.
+	const std::unique_ptr<ChatHelpers::TabbedSelector> _tabbedSelector;
 
 	rpl::variable<Dialogs::RowDescriptor> _activeChatEntry;
 	base::Variable<bool> _dialogsListFocused = { false };
@@ -303,12 +348,16 @@ private:
 	std::deque<Dialogs::RowDescriptor> _chatEntryHistory;
 	int _chatEntryHistoryPosition = -1;
 
+	rpl::variable<FilterId> _activeChatsFilter;
+
 	std::unique_ptr<Media::Player::FloatController> _floatPlayers;
 	Media::Player::FloatDelegate *_defaultFloatPlayerDelegate = nullptr;
 	Media::Player::FloatDelegate *_replacementFloatPlayerDelegate = nullptr;
 
 	PeerData *_showEditPeer = nullptr;
 	rpl::variable<Data::Folder*> _openedFolder;
+
+	rpl::event_stream<> _filtersMenuChanged;
 
 	rpl::lifetime _lifetime;
 

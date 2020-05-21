@@ -9,7 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "history/history.h"
 #include "history/history_service.h"
-#include "history/media/history_media.h"
+#include "history/view/media/history_view_media.h"
 #include "history/history_item_components.h"
 #include "history/view/history_view_cursor_state.h"
 #include "data/data_abstract_structure.h"
@@ -19,6 +19,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwidget.h"
 #include "layout.h"
 #include "lang/lang_keys.h"
+#include "facades.h"
+#include "app.h"
 #include "styles/style_history.h"
 
 namespace HistoryView {
@@ -195,6 +197,10 @@ void ServiceMessagePainter::paintDate(Painter &p, const QDateTime &date, int y, 
 	auto dateText = langDayOfMonthFull(date.date());
 	auto dateTextWidth = st::msgServiceFont->width(dateText);
 	paintPreparedDate(p, dateText, dateTextWidth, y, w);
+}
+
+void ServiceMessagePainter::paintDate(Painter &p, const QString &dateText, int y, int w) {
+	paintPreparedDate(p, dateText, st::msgServiceFont->width(dateText), y, w);
 }
 
 void ServiceMessagePainter::paintDate(Painter &p, const QString &dateText, int dateTextWidth, int y, int w) {

@@ -8,14 +8,28 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "data/data_wall_paper.h"
+#include "data/data_cloud_themes.h"
 
-class AuthSession;
+namespace Main {
+class Session;
+} // namespace Main
 
 namespace Window {
 namespace Theme {
 
-constexpr auto kMinimumTiledSize = 512;
+inline constexpr auto kThemeSchemeSizeLimit = 1024 * 1024;
+inline constexpr auto kThemeBackgroundSizeLimit = 4 * 1024 * 1024;
 
+struct ParsedTheme;
+
+[[nodiscard]] bool IsEmbeddedTheme(const QString &path);
+
+struct Object {
+	QString pathRelative;
+	QString pathAbsolute;
+	QByteArray content;
+	Data::CloudTheme cloud;
+};
 struct Cached {
 	QByteArray colors;
 	QByteArray background;
@@ -24,13 +38,11 @@ struct Cached {
 	int32 contentChecksum = 0;
 };
 struct Saved {
-	QString pathRelative;
-	QString pathAbsolute;
-	QByteArray content;
+	Object object;
 	Cached cache;
 };
-bool Load(Saved &&saved);
-void Unload();
+bool Initialize(Saved &&saved);
+void Uninitialize();
 
 struct Instance {
 	style::palette palette;
@@ -40,28 +52,45 @@ struct Instance {
 };
 
 struct Preview {
-	QString pathRelative;
-	QString pathAbsolute;
+	Object object;
 	Instance instance;
-	QByteArray content;
 	QImage preview;
 };
 
-bool Apply(const QString &filepath);
+bool Apply(
+	const QString &filepath,
+	const Data::CloudTheme &cloud = Data::CloudTheme());
 bool Apply(std::unique_ptr<Preview> preview);
 void ApplyDefaultWithPath(const QString &themePath);
-bool ApplyEditedPalette(const QString &path, const QByteArray &content);
+bool ApplyEditedPalette(const QByteArray &content);
 void KeepApplied();
+void KeepFromEditor(
+	const QByteArray &originalContent,
+	const ParsedTheme &originalParsed,
+	const Data::CloudTheme &cloud,
+	const QByteArray &themeContent,
+	const ParsedTheme &themeParsed,
+	const QImage &background);
 QString NightThemePath();
 [[nodiscard]] bool IsNightMode();
 void SetNightModeValue(bool nightMode);
 void ToggleNightMode();
 void ToggleNightMode(const QString &themePath);
+void ResetToSomeDefault();
 [[nodiscard]] bool IsNonDefaultBackground();
 void Revert();
 
-bool LoadFromFile(const QString &file, Instance *out, QByteArray *outContent);
-bool IsPaletteTestingPath(const QString &path);
+[[nodiscard]] QString EditingPalettePath();
+
+bool LoadFromFile(
+	const QString &file,
+	not_null<Instance*> out,
+	Cached *outCache,
+	not_null<QByteArray*> outContent);
+bool LoadFromContent(
+	const QByteArray &content,
+	not_null<Instance*> out,
+	Cached *outCache);
 QColor CountAverageColor(const QImage &image);
 QColor AdjustedColor(QColor original, QColor background);
 QImage ProcessBackgroundImage(QImage image);
@@ -74,15 +103,24 @@ struct BackgroundUpdate {
 		TestingTheme,
 		RevertingTheme,
 		ApplyingTheme,
+		ApplyingEdit,
 	};
 
 	BackgroundUpdate(Type type, bool tiled) : type(type), tiled(tiled) {
 	}
-	bool paletteChanged() const {
-		return (type == Type::TestingTheme || type == Type::RevertingTheme);
+	[[nodiscard]] bool paletteChanged() const {
+		return (type == Type::TestingTheme)
+			|| (type == Type::RevertingTheme)
+			|| (type == Type::ApplyingEdit);
 	}
 	Type type;
 	bool tiled;
+};
+
+enum class ClearEditing {
+	Temporary,
+	RevertChanges,
+	KeepChanges,
 };
 
 class ChatBackground
@@ -100,8 +138,11 @@ public:
 	void setTile(bool tile);
 	void setTileDayValue(bool tile);
 	void setTileNightValue(bool tile);
-	void setThemeAbsolutePath(const QString &path);
-	[[nodiscard]] QString themeAbsolutePath() const;
+	void setThemeObject(const Object &object);
+	[[nodiscard]] const Object &themeObject() const;
+	[[nodiscard]] std::optional<Data::CloudTheme> editingTheme() const;
+	void setEditingTheme(const Data::CloudTheme &editing);
+	void clearEditingTheme(ClearEditing clear = ClearEditing::Temporary);
 	void reset();
 
 	void setTestingTheme(Instance &&theme);
@@ -151,20 +192,30 @@ private:
 	void setNightModeValue(bool nightMode);
 	[[nodiscard]] bool nightMode() const;
 	void toggleNightMode(std::optional<QString> themePath);
-	void keepApplied(const QString &path, bool write);
+	void reapplyWithNightMode(
+		std::optional<QString> themePath,
+		bool newNightMode);
+	void keepApplied(const Object &object, bool write);
 	[[nodiscard]] bool isNonDefaultThemeOrBackground();
 	[[nodiscard]] bool isNonDefaultBackground();
 	void checkUploadWallPaper();
-	[[nodiscard]] bool testingPalette() const;
 
 	friend bool IsNightMode();
 	friend void SetNightModeValue(bool nightMode);
 	friend void ToggleNightMode();
 	friend void ToggleNightMode(const QString &themePath);
+	friend void ResetToSomeDefault();
 	friend void KeepApplied();
+	friend void KeepFromEditor(
+		const QByteArray &originalContent,
+		const ParsedTheme &originalParsed,
+		const Data::CloudTheme &cloud,
+		const QByteArray &themeContent,
+		const ParsedTheme &themeParsed,
+		const QImage &background);
 	friend bool IsNonDefaultBackground();
 
-	AuthSession *_session = nullptr;
+	Main::Session *_session = nullptr;
 	Data::WallPaper _paper = Data::details::UninitializedWallPaper();
 	std::optional<QColor> _paperColor;
 	QImage _original;
@@ -176,9 +227,10 @@ private:
 
 	bool _isMonoColorImage = false;
 
-	QString _themeAbsolutePath;
+	Object _themeObject;
 	QImage _themeImage;
 	bool _themeTile = false;
+	std::optional<Data::CloudTheme> _editingTheme;
 
 	Data::WallPaper _paperForRevert
 		= Data::details::UninitializedWallPaper();
@@ -197,8 +249,6 @@ private:
 ChatBackground *Background();
 
 void ComputeBackgroundRects(QRect wholeFill, QSize imageSize, QRect &to, QRect &from);
-
-bool CopyColorsToPalette(const QString &path, const QByteArray &themeContent);
 
 bool ReadPaletteValues(const QByteArray &content, Fn<bool(QLatin1String name, QLatin1String value)> callback);
 

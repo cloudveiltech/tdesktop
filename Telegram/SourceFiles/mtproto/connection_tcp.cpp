@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "mtproto/connection_tcp.h"
 
-#include "mtproto/mtp_abstract_socket.h"
+#include "mtproto/details/mtproto_abstract_socket.h"
 #include "base/bytes.h"
 #include "base/openssl_help.h"
 #include "base/qthelp_url.h"
@@ -17,7 +17,7 @@ extern "C" {
 } // extern "C"
 
 namespace MTP {
-namespace internal {
+namespace details {
 namespace {
 
 constexpr auto kPacketSizeMax = int(0x01000000 * sizeof(mtpPrime));
@@ -450,6 +450,7 @@ void TcpConnection::sendData(mtpBuffer &&buffer) {
 
 bytes::const_span TcpConnection::prepareConnectionStartPrefix(
 		bytes::span buffer) {
+	Expects(_socket != nullptr);
 	Expects(_protocol != nullptr);
 
 	if (_connectionStarted) {
@@ -460,26 +461,9 @@ bytes::const_span TcpConnection::prepareConnectionStartPrefix(
 	// prepare random part
 	char nonceBytes[64];
 	const auto nonce = bytes::make_span(nonceBytes);
-
-	const auto zero = reinterpret_cast<uchar*>(nonce.data());
-	const auto first = reinterpret_cast<uint32*>(nonce.data());
-	const auto second = first + 1;
-	const auto reserved01 = 0x000000EFU;
-	const auto reserved11 = 0x44414548U;
-	const auto reserved12 = 0x54534F50U;
-	const auto reserved13 = 0x20544547U;
-	const auto reserved14 = 0xEEEEEEEEU;
-	const auto reserved15 = 0xDDDDDDDDU;
-	const auto reserved21 = 0x00000000U;
 	do {
 		bytes::set_random(nonce);
-	} while (*zero == reserved01
-		|| *first == reserved11
-		|| *first == reserved12
-		|| *first == reserved13
-		|| *first == reserved14
-		|| *first == reserved15
-		|| *second == reserved21);
+	} while (!_socket->isGoodStartNonce(nonce));
 
 	// prepare encryption key/iv
 	_protocol->prepareKey(
@@ -615,9 +599,8 @@ void TcpConnection::socketPacket(bytes::const_span bytes) {
 		_receivedQueue.push_back(data);
 		emit receivedData();
 	} else if (_status == Status::Waiting) {
-		try {
-			const auto res_pq = readPQFakeReply(data);
-			const auto &data = res_pq.c_resPQ();
+		if (const auto res_pq = readPQFakeReply(data)) {
+			const auto &data = res_pq->c_resPQ();
 			if (data.vnonce() == _checkNonce) {
 				DEBUG_LOG(("Connection Info: Valid pq response by TCP."));
 				_status = Status::Ready;
@@ -629,10 +612,9 @@ void TcpConnection::socketPacket(bytes::const_span bytes) {
 					"Wrong nonce received in TCP fake pq-responce"));
 				emit error(kErrorCodeOther);
 			}
-		} catch (Exception &e) {
+		} else {
 			DEBUG_LOG(("Connection Error: "
-				"Exception in parsing TCP fake pq-responce, %1"
-				).arg(e.what()));
+				"Could not parse TCP fake pq-responce"));
 			emit error(kErrorCodeOther);
 		}
 	}
@@ -683,5 +665,5 @@ void TcpConnection::socketError() {
 
 TcpConnection::~TcpConnection() = default;
 
-} // namespace internal
+} // namespace details
 } // namespace MTP

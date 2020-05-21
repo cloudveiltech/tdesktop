@@ -7,12 +7,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_search_controller.h"
 
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "data/data_session.h"
 #include "data/data_messages.h"
 #include "data/data_channel.h"
+#include "data/data_histories.h"
 #include "history/history.h"
 #include "history/history_item.h"
+#include "apiwrap.h"
 
 namespace Api {
 namespace {
@@ -154,8 +156,12 @@ SearchResult ParseSearchResult(
 	const auto addType = NewMessageType::Existing;
 	result.messageIds.reserve(messages->size());
 	for (const auto &message : *messages) {
-		if (auto item = peer->owner().addNewMessage(message, addType)) {
-			auto itemId = item->id;
+		const auto item = peer->owner().addNewMessage(
+			message,
+			MTPDmessage_ClientFlags(),
+			addType);
+		if (item) {
+			const auto itemId = item->id;
 			if ((type == Storage::SharedMediaType::kCount)
 				|| item->sharedMediaTypes().test(type)) {
 				result.messageIds.push_back(itemId);
@@ -185,6 +191,10 @@ SearchController::CacheEntry::CacheEntry(const Query &query)
 , migratedData(query.migratedPeerId
 	? base::make_optional(Data(Auth().data().peer(query.migratedPeerId)))
 	: std::nullopt) {
+}
+
+SearchController::SearchController(not_null<Main::Session*> session)
+: _session(session) {
 }
 
 bool SearchController::hasInCache(const Query &query) const {
@@ -357,27 +367,37 @@ void SearchController::requestMore(
 	if (!prepared) {
 		return;
 	}
-	auto requestId = request(
-		std::move(*prepared)
-	).done([=](const MTPmessages_Messages &result) {
-		listData->requests.remove(key);
-		auto parsed = ParseSearchResult(
-			listData->peer,
-			query.type,
-			key.aroundId,
-			key.direction,
-			result);
-		listData->list.addSlice(
-			std::move(parsed.messageIds),
-			parsed.noSkipRange,
-			parsed.fullCount);
-	}).send();
+	auto &histories = _session->data().histories();
+	const auto type = ::Data::Histories::RequestType::History;
+	const auto history = _session->data().history(listData->peer);
+	auto requestId = histories.sendRequest(history, type, [=](Fn<void()> finish) {
+		return _session->api().request(
+			std::move(*prepared)
+		).done([=](const MTPmessages_Messages &result) {
+			listData->requests.remove(key);
+			auto parsed = ParseSearchResult(
+				listData->peer,
+				query.type,
+				key.aroundId,
+				key.direction,
+				result);
+			listData->list.addSlice(
+				std::move(parsed.messageIds),
+				parsed.noSkipRange,
+				parsed.fullCount);
+			finish();
+		}).fail([=](const RPCError &error) {
+			finish();
+		}).send();
+	});
 	listData->requests.emplace(key, [=] {
-		request(requestId).cancel();
+		_session->data().histories().cancelRequest(requestId);
 	});
 }
 
-DelayedSearchController::DelayedSearchController() {
+DelayedSearchController::DelayedSearchController(
+	not_null<Main::Session*> session)
+: _controller(session) {
 	_timer.setCallback([this] { setQueryFast(_nextQuery); });
 }
 

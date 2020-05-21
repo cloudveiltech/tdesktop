@@ -7,13 +7,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "dialogs/dialogs_key.h"
 #include "window/section_widget.h"
 #include "ui/effects/animations.h"
 #include "ui/widgets/scroll_area.h"
-#include "dialogs/dialogs_key.h"
 #include "ui/special_buttons.h"
+#include "api/api_single_message_search.h"
+#include "mtproto/mtproto_rpc_sender.h"
 
-class AuthSession;
+namespace Main {
+class Session;
+} // namespace Main
 
 namespace HistoryView {
 class TopBarWidget;
@@ -58,8 +62,9 @@ public:
 
 	void refreshDialog(Key key);
 	void removeDialog(Key key);
-	void repaintDialogRow(Mode list, not_null<Row*> row);
+	void repaintDialogRow(FilterId filterId, not_null<Row*> row);
 	void repaintDialogRow(RowDescriptor row);
+	void refreshDialogRow(RowDescriptor row);
 
 	void jumpToTop();
 
@@ -80,8 +85,6 @@ public:
 	// Float player interface.
 	bool wheelEventFromFloatPlayer(QEvent *e) override;
 	QRect rectForFloatPlayer() const override;
-
-	void notify_historyMuteUpdated(History *history);
 
 	~Widget();
 
@@ -134,6 +137,7 @@ private:
 		const MTPcontacts_Found &result,
 		mtpRequestId requestId);
 	void escape();
+	void cancelSearchRequest();
 
 	void setupSupportMode();
 	void setupConnectingWidget();
@@ -178,6 +182,7 @@ private:
 	object_ptr<Ui::RpWidget> _searchControls;
 	object_ptr<HistoryView::TopBarWidget> _folderTopBar = { nullptr } ;
 	object_ptr<Ui::IconButton> _mainMenuToggle;
+	object_ptr<Ui::IconButton> _searchForNarrowFilters;
 	object_ptr<Ui::FlatInput> _filter;
 	object_ptr<Ui::FadeWrapScaled<Ui::IconButton>> _chooseFromUser;
 	object_ptr<Ui::FadeWrapScaled<Ui::IconButton>> _jumpToDate;
@@ -217,19 +222,14 @@ private:
 	int32 _searchNextRate = 0;
 	bool _searchFull = false;
 	bool _searchFullMigrated = false;
+	int _searchInHistoryRequest = 0; // Not real mtpRequestId.
 	mtpRequestId _searchRequest = 0;
 
-	using SearchCache = QMap<QString, MTPmessages_Messages>;
-	SearchCache _searchCache;
-
-	using SearchQueries = QMap<mtpRequestId, QString>;
-	SearchQueries _searchQueries;
-
-	using PeerSearchCache = QMap<QString, MTPcontacts_Found>;
-	PeerSearchCache _peerSearchCache;
-
-	using PeerSearchQueries = QMap<mtpRequestId, QString>;
-	PeerSearchQueries _peerSearchQueries;
+	QMap<QString, MTPmessages_Messages> _searchCache;
+	Api::SingleMessageSearch _singleMessageSearch;
+	QMap<mtpRequestId, QString> _searchQueries;
+	QMap<QString, MTPcontacts_Found> _peerSearchCache;
+	QMap<mtpRequestId, QString> _peerSearchQueries;
 
 	QPixmap _widthAnimationCache;
 

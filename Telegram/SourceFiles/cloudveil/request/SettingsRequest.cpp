@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "SettingsRequest.h"
+#include <QtCore/QJsonArray>
 
 
 void SettingsRequest::writeToJson(QJsonObject & json)

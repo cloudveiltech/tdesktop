@@ -7,6 +7,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/effects/round_checkbox.h"
 
+#include "window/themes/window_theme.h"
+#include "ui/rp_widget.h"
+#include "ui/ui_utility.h"
+#include "app.h"
+
+#include <QtCore/QCoreApplication>
+
 namespace Ui {
 namespace {
 
@@ -237,11 +244,18 @@ QPixmap CheckCaches::paintFrame(
 CheckCaches *FrameCaches() {
 	static QPointer<CheckCaches> Instance;
 
-	if (auto instance = Instance.data()) {
+	if (const auto instance = Instance.data()) {
 		return instance;
 	}
-	auto result = new CheckCaches(QGuiApplication::instance());
+	const auto result = new CheckCaches(QCoreApplication::instance());
 	Instance = result;
+	const auto subscription = Ui::CreateChild<base::Subscription>(result);
+	*subscription = Window::Theme::Background()->add_subscription([=](
+			const Window::Theme::BackgroundUpdate &update) {
+		if (update.paletteChanged()) {
+			FrameCaches()->clear();
+		}
+	});
 	return result;
 }
 
@@ -309,15 +323,15 @@ void RoundCheckbox::paint(Painter &p, int x, int y, int outerWidth, float64 mast
 	}
 }
 
-void RoundCheckbox::setChecked(bool newChecked, SetStyle speed) {
+void RoundCheckbox::setChecked(bool newChecked, anim::type animated) {
 	if (_checked == newChecked) {
-		if (speed != SetStyle::Animated) {
+		if (animated == anim::type::instant) {
 			_checkedProgress.stop();
 		}
 		return;
 	}
 	_checked = newChecked;
-	if (speed == SetStyle::Animated) {
+	if (animated == anim::type::normal) {
 		_checkedProgress.start(
 			_updateCallback,
 			_checked ? 0. : 1.,
@@ -330,7 +344,6 @@ void RoundCheckbox::setChecked(bool newChecked, SetStyle speed) {
 }
 
 void RoundCheckbox::invalidateCache() {
-	FrameCaches()->clear();
 	if (!_inactiveCacheBg.isNull() || !_inactiveCacheFg.isNull()) {
 		prepareInactiveCache();
 	}
@@ -415,7 +428,7 @@ void RoundImageCheckbox::paint(Painter &p, int x, int y, int outerWidth) {
 		auto pen = _st.selectFg->p;
 		pen.setWidth(_st.selectWidth);
 		p.setPen(pen);
-		p.drawEllipse(rtlrect(x, y, _st.imageRadius * 2, _st.imageRadius * 2, outerWidth));
+		p.drawEllipse(style::rtlrect(x, y, _st.imageRadius * 2, _st.imageRadius * 2, outerWidth));
 		p.setOpacity(1.);
 	}
 
@@ -428,16 +441,16 @@ float64 RoundImageCheckbox::checkedAnimationRatio() const {
 	return snap(_selection.value(checked() ? 1. : 0.), 0., 1.);
 }
 
-void RoundImageCheckbox::setChecked(bool newChecked, SetStyle speed) {
+void RoundImageCheckbox::setChecked(bool newChecked, anim::type animated) {
 	auto changed = (checked() != newChecked);
-	_check.setChecked(newChecked, speed);
+	_check.setChecked(newChecked, animated);
 	if (!changed) {
-		if (speed != SetStyle::Animated) {
+		if (animated == anim::type::instant) {
 			_selection.stop();
 		}
 		return;
 	}
-	if (speed == SetStyle::Animated) {
+	if (animated == anim::type::normal) {
 		prepareWideCache();
 		_selection.start(_updateCallback, checked() ? 0 : 1, checked() ? 1 : 0, _st.selectDuration, anim::bumpy(1.25));
 	} else {

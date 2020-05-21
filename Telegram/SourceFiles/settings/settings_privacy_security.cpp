@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/settings_privacy_security.h"
 
+#include "api/api_self_destruct.h"
+#include "api/api_sensitive_content.h"
 #include "settings/settings_common.h"
 #include "settings/settings_privacy_controllers.h"
 #include "boxes/peer_list_box.h"
@@ -21,19 +23,23 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/wrap/fade_wrap.h"
 #include "ui/widgets/shadow.h"
 #include "ui/widgets/labels.h"
+#include "ui/widgets/buttons.h"
 #include "calls/calls_instance.h"
 #include "core/core_cloud_password.h"
 #include "core/update_checker.h"
-#include "info/profile/info_profile_button.h"
 #include "platform/platform_specific.h"
 #include "lang/lang_keys.h"
 #include "data/data_session.h"
 #include "data/data_chat.h"
 #include "data/data_channel.h"
-#include "auth_session.h"
+#include "main/main_session.h"
+#include "window/window_session_controller.h"
 #include "apiwrap.h"
+#include "facades.h"
 #include "styles/style_settings.h"
 #include "styles/style_boxes.h"
+
+#include <QtGui/QGuiApplication>
 
 namespace Settings {
 namespace {
@@ -72,9 +78,11 @@ QString PrivacyBase(Privacy::Key key, Privacy::Option option) {
 	}
 }
 
-rpl::producer<QString> PrivacyString(Privacy::Key key) {
-	Auth().api().reloadPrivacy(key);
-	return Auth().api().privacyValue(
+rpl::producer<QString> PrivacyString(
+		not_null<::Main::Session*> session,
+		Privacy::Key key) {
+	session->api().reloadPrivacy(key);
+	return session->api().privacyValue(
 		key
 	) | rpl::map([=](const Privacy &value) {
 		auto add = QStringList();
@@ -93,20 +101,23 @@ rpl::producer<QString> PrivacyString(Privacy::Key key) {
 	});
 }
 
-rpl::producer<int> BlockedUsersCount() {
-	Auth().api().reloadBlockedUsers();
-	return Auth().api().blockedUsersSlice(
+rpl::producer<int> BlockedUsersCount(not_null<::Main::Session*> session) {
+	session->api().reloadBlockedUsers();
+	return session->api().blockedUsersSlice(
 	) | rpl::map([=](const ApiWrap::BlockedUsersSlice &data) {
 		return data.total;
 	});
 }
 
-void SetupPrivacy(not_null<Ui::VerticalLayout*> container) {
+void SetupPrivacy(
+		not_null<Window::SessionController*> controller,
+		not_null<Ui::VerticalLayout*> container) {
 	AddSkip(container, st::settingsPrivacySkip);
 	AddSubsectionTitle(container, tr::lng_settings_privacy_title());
 
+	const auto session = &controller->session();
 	auto count = rpl::combine(
-		BlockedUsersCount(),
+		BlockedUsersCount(session),
 		tr::lng_settings_no_blocked_users()
 	) | rpl::map([](int count, const QString &none) {
 		return count ? QString::number(count) : none;
@@ -116,17 +127,17 @@ void SetupPrivacy(not_null<Ui::VerticalLayout*> container) {
 		tr::lng_settings_blocked_users(),
 		std::move(count),
 		st::settingsButton
-	)->addClickHandler([] {
-		const auto initBox = [](not_null<PeerListBox*> box) {
+	)->addClickHandler([=] {
+		const auto initBox = [=](not_null<PeerListBox*> box) {
 			box->addButton(tr::lng_close(), [=] {
 				box->closeBox();
 			});
-			box->addLeftButton(tr::lng_blocked_list_add(), [] {
-				BlockedBoxController::BlockNewUser();
+			box->addLeftButton(tr::lng_blocked_list_add(), [=] {
+				BlockedBoxController::BlockNewUser(controller);
 			});
 		};
 		Ui::show(Box<PeerListBox>(
-			std::make_unique<BlockedBoxController>(),
+			std::make_unique<BlockedBoxController>(controller),
 			initBox));
 	});
 
@@ -134,8 +145,13 @@ void SetupPrivacy(not_null<Ui::VerticalLayout*> container) {
 	const auto add = [&](
 			rpl::producer<QString> label,
 			Key key,
-			auto controller) {
-		AddPrivacyButton(container, std::move(label), key, controller);
+			auto controllerFactory) {
+		AddPrivacyButton(
+			controller,
+			container,
+			std::move(label),
+			key,
+			controllerFactory);
 	};
 	add(
 		tr::lng_settings_phone_number_privacy(),
@@ -144,11 +160,11 @@ void SetupPrivacy(not_null<Ui::VerticalLayout*> container) {
 	add(
 		tr::lng_settings_last_seen(),
 		Key::LastSeen,
-		[] { return std::make_unique<LastSeenPrivacyController>(); });
+		[=] { return std::make_unique<LastSeenPrivacyController>(session); });
 	add(
 		tr::lng_settings_forwards_privacy(),
 		Key::Forwards,
-		[] { return std::make_unique<ForwardsPrivacyController>(); });
+		[=] { return std::make_unique<ForwardsPrivacyController>(session); });
 	add(
 		tr::lng_settings_profile_photo_privacy(),
 		Key::ProfilePhoto,
@@ -161,6 +177,8 @@ void SetupPrivacy(not_null<Ui::VerticalLayout*> container) {
 		tr::lng_settings_groups_invite(),
 		Key::Invites,
 		[] { return std::make_unique<GroupsInvitePrivacyController>(); });
+
+	session->api().reloadPrivacy(ApiWrap::Privacy::Key::AddedByPhone);
 
 	AddSkip(container, st::settingsPrivacySecurityPadding);
 	AddDividerText(container, tr::lng_settings_group_privacy_about());
@@ -175,7 +193,9 @@ not_null<Ui::SlideWrap<Ui::PlainShadow>*> AddSeparator(
 			st::settingsSeparatorPadding));
 }
 
-void SetupLocalPasscode(not_null<Ui::VerticalLayout*> container) {
+void SetupLocalPasscode(
+		not_null<Window::SessionController*> controller,
+		not_null<Ui::VerticalLayout*> container) {
 	AddSkip(container);
 	AddSubsectionTitle(container, tr::lng_settings_passcode_title());
 
@@ -195,8 +215,8 @@ void SetupLocalPasscode(not_null<Ui::VerticalLayout*> container) {
 			container,
 			std::move(text),
 			st::settingsButton)
-	)->addClickHandler([] {
-		Ui::show(Box<PasscodeBox>(false));
+	)->addClickHandler([=] {
+		Ui::show(Box<PasscodeBox>(&controller->session(), false));
 	});
 
 	const auto wrap = container->add(
@@ -209,8 +229,8 @@ void SetupLocalPasscode(not_null<Ui::VerticalLayout*> container) {
 			inner,
 			tr::lng_settings_passcode_disable(),
 			st::settingsButton)
-	)->addClickHandler([] {
-		Ui::show(Box<PasscodeBox>(true));
+	)->addClickHandler([=] {
+		Ui::show(Box<PasscodeBox>(&controller->session(), true));
 	});
 
 	const auto label = Platform::LastUserInputTimeSupported()
@@ -229,8 +249,8 @@ void SetupLocalPasscode(not_null<Ui::VerticalLayout*> container) {
 		label(),
 		std::move(value),
 		st::settingsButton
-	)->addClickHandler([] {
-		Ui::show(Box<AutoLockBox>());
+	)->addClickHandler([=] {
+		Ui::show(Box<AutoLockBox>(&controller->session()));
 	});
 
 	wrap->toggleOn(base::duplicate(has));
@@ -238,7 +258,9 @@ void SetupLocalPasscode(not_null<Ui::VerticalLayout*> container) {
 	AddSkip(container);
 }
 
-void SetupCloudPassword(not_null<Ui::VerticalLayout*> container) {
+void SetupCloudPassword(
+		not_null<Window::SessionController*> controller,
+		not_null<Ui::VerticalLayout*> container) {
 	using namespace rpl::mappers;
 	using State = Core::CloudPasswordState;
 
@@ -246,15 +268,16 @@ void SetupCloudPassword(not_null<Ui::VerticalLayout*> container) {
 	AddSkip(container);
 	AddSubsectionTitle(container, tr::lng_settings_password_title());
 
+	const auto session = &controller->session();
 	auto has = rpl::single(
 		false
-	) | rpl::then(Auth().api().passwordState(
+	) | rpl::then(controller->session().api().passwordState(
 	) | rpl::map([](const State &state) {
 		return state.request
 			|| state.unknownAlgorithm
 			|| !state.unconfirmedPattern.isEmpty();
 	})) | rpl::distinct_until_changed();
-	auto pattern = Auth().api().passwordState(
+	auto pattern = session->api().passwordState(
 	) | rpl::map([](const State &state) {
 		return state.unconfirmedPattern;
 	});
@@ -318,9 +341,9 @@ void SetupCloudPassword(not_null<Ui::VerticalLayout*> container) {
 	) | rpl::map(
 		!_1
 	))->setDuration(0);
-	change->entity()->addClickHandler([] {
-		if (CheckEditCloudPassword()) {
-			Ui::show(EditCloudPasswordBox(&Auth()));
+	change->entity()->addClickHandler([=] {
+		if (CheckEditCloudPassword(session)) {
+			Ui::show(EditCloudPasswordBox(session));
 		} else {
 			Ui::show(CloudPasswordAppOutdatedBox());
 		}
@@ -338,8 +361,8 @@ void SetupCloudPassword(not_null<Ui::VerticalLayout*> container) {
 	) | rpl::then(rpl::duplicate(
 		unconfirmed
 	)))->setDuration(0);
-	confirm->entity()->addClickHandler([] {
-		const auto state = Auth().api().passwordStateCurrent();
+	confirm->entity()->addClickHandler([=] {
+		const auto state = session->api().passwordStateCurrent();
 		if (!state) {
 			return;
 		}
@@ -347,22 +370,22 @@ void SetupCloudPassword(not_null<Ui::VerticalLayout*> container) {
 
 		std::move(
 			validation.reloadRequests
-		) | rpl::start_with_next([] {
-			Auth().api().reloadPasswordState();
+		) | rpl::start_with_next([=] {
+			session->api().reloadPasswordState();
 		}, validation.box->lifetime());
 
 		std::move(
 			validation.cancelRequests
-		) | rpl::start_with_next([] {
-			Auth().api().clearUnconfirmedPassword();
+		) | rpl::start_with_next([=] {
+			session->api().clearUnconfirmedPassword();
 		}, validation.box->lifetime());
 
 		Ui::show(std::move(validation.box));
 	});
 
-	const auto remove = [] {
-		if (CheckEditCloudPassword()) {
-			RemoveCloudPassword();
+	const auto remove = [=] {
+		if (CheckEditCloudPassword(session)) {
+			RemoveCloudPassword(session);
 		} else {
 			Ui::show(CloudPasswordAppOutdatedBox());
 		}
@@ -395,7 +418,7 @@ void SetupCloudPassword(not_null<Ui::VerticalLayout*> container) {
 
 	const auto reloadOnActivation = [=](Qt::ApplicationState state) {
 		if (label->toggled() && state == Qt::ApplicationActive) {
-			Auth().api().reloadPasswordState();
+			controller->session().api().reloadPasswordState();
 		}
 	};
 	QObject::connect(
@@ -404,19 +427,59 @@ void SetupCloudPassword(not_null<Ui::VerticalLayout*> container) {
 		label,
 		reloadOnActivation);
 
-	Auth().api().reloadPasswordState();
+	session->api().reloadPasswordState();
 
 	AddSkip(container);
+	AddDivider(container);
 }
 
-void SetupSelfDestruction(not_null<Ui::VerticalLayout*> container) {
-	AddDivider(container);
+void SetupSensitiveContent(
+		not_null<Window::SessionController*> controller,
+		not_null<Ui::VerticalLayout*> container) {
+	using namespace rpl::mappers;
+
+	const auto wrap = container->add(
+		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
+			container,
+			object_ptr<Ui::VerticalLayout>(container)));
+	const auto inner = wrap->entity();
+
+	AddSkip(inner);
+	AddSubsectionTitle(inner, tr::lng_settings_sensitive_title());
+
+	const auto session = &controller->session();
+
+	session->api().sensitiveContent().reload();
+	AddButton(
+		inner,
+		tr::lng_settings_sensitive_disable_filtering(),
+		st::settingsButton
+	)->toggleOn(
+		session->api().sensitiveContent().enabled()
+	)->toggledChanges(
+	) | rpl::filter([=](bool toggled) {
+		return toggled != session->api().sensitiveContent().enabledCurrent();
+	}) | rpl::start_with_next([=](bool toggled) {
+		session->api().sensitiveContent().update(toggled);
+	}, container->lifetime());
+
+	AddSkip(inner);
+	AddDividerText(inner, tr::lng_settings_sensitive_about());
+
+	wrap->toggleOn(session->api().sensitiveContent().canChange());
+}
+
+void SetupSelfDestruction(
+		not_null<Window::SessionController*> controller,
+		not_null<Ui::VerticalLayout*> container) {
 	AddSkip(container);
 	AddSubsectionTitle(container, tr::lng_settings_destroy_title());
 
-	Auth().api().reloadSelfDestruct();
-	const auto label = [] {
-		return Auth().api().selfDestructValue(
+	const auto session = &controller->session();
+
+	session->api().selfDestruct().reload();
+	const auto label = [&] {
+		return session->api().selfDestruct().days(
 		) | rpl::map(
 			SelfDestructionBox::DaysLabel
 		);
@@ -427,14 +490,18 @@ void SetupSelfDestruction(not_null<Ui::VerticalLayout*> container) {
 		tr::lng_settings_destroy_if(),
 		label(),
 		st::settingsButton
-	)->addClickHandler([] {
-		Ui::show(Box<SelfDestructionBox>(Auth().api().selfDestructValue()));
+	)->addClickHandler([=] {
+		Ui::show(Box<SelfDestructionBox>(
+			session,
+			session->api().selfDestruct().days()));
 	});
 
 	AddSkip(container);
 }
 
-void SetupSessionsList(not_null<Ui::VerticalLayout*> container) {
+void SetupSessionsList(
+		not_null<Window::SessionController*> controller,
+		not_null<Ui::VerticalLayout*> container) {
 	AddSkip(container);
 	AddSubsectionTitle(container, tr::lng_settings_sessions_title());
 
@@ -442,8 +509,8 @@ void SetupSessionsList(not_null<Ui::VerticalLayout*> container) {
 		container,
 		tr::lng_settings_show_sessions(),
 		st::settingsButton
-	)->addClickHandler([] {
-		Ui::show(Box<SessionsBox>());
+	)->addClickHandler([=] {
+		Ui::show(Box<SessionsBox>(&controller->session()));
 	});
 	AddSkip(container, st::settingsPrivacySecurityPadding);
 	AddDividerText(container, tr::lng_settings_sessions_about());
@@ -463,8 +530,8 @@ int ExceptionUsersCount(const std::vector<not_null<PeerData*>> &exceptions) {
 	return ranges::accumulate(exceptions, 0, add);
 }
 
-bool CheckEditCloudPassword() {
-	const auto current = Auth().api().passwordStateCurrent();
+bool CheckEditCloudPassword(not_null<::Main::Session*> session) {
+	const auto current = session->api().passwordStateCurrent();
 	Assert(current.has_value());
 
 	if (!current->unknownAlgorithm
@@ -475,11 +542,13 @@ bool CheckEditCloudPassword() {
 	return false;
 }
 
-object_ptr<BoxContent> EditCloudPasswordBox(not_null<AuthSession*> session) {
+object_ptr<Ui::BoxContent> EditCloudPasswordBox(not_null<Main::Session*> session) {
 	const auto current = session->api().passwordStateCurrent();
 	Assert(current.has_value());
 
-	auto result = Box<PasscodeBox>(PasscodeBox::CloudFields::From(*current));
+	auto result = Box<PasscodeBox>(
+		session,
+		PasscodeBox::CloudFields::From(*current));
 	const auto box = result.data();
 
 	rpl::merge(
@@ -494,37 +563,37 @@ object_ptr<BoxContent> EditCloudPasswordBox(not_null<AuthSession*> session) {
 		session->api().clearUnconfirmedPassword();
 	}, box->lifetime());
 
-	return std::move(result);
+	return result;
 }
 
-void RemoveCloudPassword() {
-	const auto current = Auth().api().passwordStateCurrent();
+void RemoveCloudPassword(not_null<::Main::Session*> session) {
+	const auto current = session->api().passwordStateCurrent();
 	Assert(current.has_value());
 
 	if (!current->request) {
-		Auth().api().clearUnconfirmedPassword();
+		session->api().clearUnconfirmedPassword();
 		return;
 	}
 	auto fields = PasscodeBox::CloudFields::From(*current);
 	fields.turningOff = true;
-	const auto box = Ui::show(Box<PasscodeBox>(fields));
+	const auto box = Ui::show(Box<PasscodeBox>(session, fields));
 
 	rpl::merge(
 		box->newPasswordSet(
 		) | rpl::map([] { return rpl::empty_value(); }),
 		box->passwordReloadNeeded()
 	) | rpl::start_with_next([=] {
-		Auth().api().reloadPasswordState();
+		session->api().reloadPasswordState();
 	}, box->lifetime());
 
 	box->clearUnconfirmedPassword(
 	) | rpl::start_with_next([=] {
-		Auth().api().clearUnconfirmedPassword();
+		session->api().clearUnconfirmedPassword();
 	}, box->lifetime());
 }
 
-object_ptr<BoxContent> CloudPasswordAppOutdatedBox() {
-	auto box = std::make_shared<QPointer<BoxContent>>();
+object_ptr<Ui::BoxContent> CloudPasswordAppOutdatedBox() {
+	auto box = std::make_shared<QPointer<Ui::BoxContent>>();
 	const auto callback = [=] {
 		Core::UpdateApplication();
 		if (*box) (*box)->closeBox();
@@ -534,47 +603,56 @@ object_ptr<BoxContent> CloudPasswordAppOutdatedBox() {
 		tr::lng_menu_update(tr::now),
 		callback);
 	*box = result.data();
-	return std::move(result);
+	return result;
 }
 
 void AddPrivacyButton(
+		not_null<Window::SessionController*> controller,
 		not_null<Ui::VerticalLayout*> container,
 		rpl::producer<QString> label,
 		Privacy::Key key,
-		Fn<std::unique_ptr<EditPrivacyController>()> controller) {
+		Fn<std::unique_ptr<EditPrivacyController>()> controllerFactory) {
 	const auto shower = Ui::CreateChild<rpl::lifetime>(container.get());
+	const auto session = &controller->session();
 	AddButtonWithLabel(
 		container,
 		std::move(label),
-		PrivacyString(key),
+		PrivacyString(session, key),
 		st::settingsButton
 	)->addClickHandler([=] {
-		*shower = Auth().api().privacyValue(
+		*shower = session->api().privacyValue(
 			key
 		) | rpl::take(
 			1
 		) | rpl::start_with_next([=](const Privacy &value) {
 			Ui::show(
-				Box<EditPrivacyBox>(controller(), value),
-				LayerOption::KeepOther);
+				Box<EditPrivacyBox>(controller, controllerFactory(), value),
+				Ui::LayerOption::KeepOther);
 		});
 	});
 }
 
-PrivacySecurity::PrivacySecurity(QWidget *parent, not_null<UserData*> self)
-: Section(parent)
-, _self(self) {
-	setupContent();
+PrivacySecurity::PrivacySecurity(
+	QWidget *parent,
+	not_null<Window::SessionController*> controller)
+: Section(parent) {
+	setupContent(controller);
 }
 
-void PrivacySecurity::setupContent() {
+void PrivacySecurity::setupContent(
+		not_null<Window::SessionController*> controller) {
 	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
 
-	SetupPrivacy(content);
-	SetupSessionsList(content);
-	SetupLocalPasscode(content);
-	SetupCloudPassword(content);
-	SetupSelfDestruction(content);
+	SetupPrivacy(controller, content);
+	SetupSessionsList(controller, content);
+	SetupLocalPasscode(controller, content);
+	SetupCloudPassword(controller, content);
+#if !defined OS_MAC_STORE && !defined OS_WIN_STORE
+	SetupSensitiveContent(controller, content);
+#else // !OS_MAC_STORE && !OS_WIN_STORE
+	AddDivider(content);
+#endif // !OS_MAC_STORE && !OS_WIN_STORE
+	SetupSelfDestruction(controller, content);
 
 	Ui::ResizeFitChild(this, content);
 }

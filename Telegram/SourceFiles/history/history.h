@@ -22,13 +22,16 @@ class HistoryBlock;
 class HistoryItem;
 class HistoryMessage;
 class HistoryService;
-class HistoryMedia;
-class AuthSession;
+
+namespace Main {
+class Session;
+} // namespace Main
 
 namespace Data {
 struct Draft;
 class Session;
 class Folder;
+class ChatFilter;
 } // namespace Data
 
 namespace Dialogs {
@@ -39,10 +42,6 @@ class IndexedList;
 namespace HistoryView {
 class Element;
 } // namespace HistoryView
-
-namespace AdminLog {
-class LocalIdManager;
-} // namespace AdminLog
 
 enum class NewMessageType {
 	Unread,
@@ -70,8 +69,7 @@ public:
 	not_null<History*> migrateToOrMe() const;
 	History *migrateFrom() const;
 	MsgRange rangeForDifferenceRequest() const;
-	HistoryService *insertJoinedMessage(bool unread);
-	void checkJoinedMessage(bool createUnread = false);
+	void checkLocalMessages();
 	void removeJoinedMessage();
 
 	bool isEmpty() const;
@@ -91,27 +89,46 @@ public:
 	void clear(ClearType type);
 	void clearUpTill(MsgId availableMinId);
 
-	void applyGroupAdminChanges(
-		const base::flat_map<UserId, bool> &changes);
+	void applyGroupAdminChanges(const base::flat_set<UserId> &changes);
 
-	HistoryItem *addNewMessage(const MTPMessage &msg, NewMessageType type);
-	HistoryItem *addToHistory(const MTPMessage &msg);
-	not_null<HistoryItem*> addNewService(
-		MsgId msgId,
-		TimeId date,
-		const QString &text,
-		MTPDmessage::Flags flags = 0,
-		bool newMsg = true);
-	not_null<HistoryItem*> addNewForwarded(
+	template <typename ...Args>
+	not_null<HistoryMessage*> makeMessage(Args &&...args) {
+		return static_cast<HistoryMessage*>(
+			insertItem(
+				std::make_unique<HistoryMessage>(
+					this,
+					std::forward<Args>(args)...)).get());
+	}
+
+	template <typename ...Args>
+	not_null<HistoryService*> makeServiceMessage(Args &&...args) {
+		return static_cast<HistoryService*>(
+			insertItem(
+				std::make_unique<HistoryService>(
+					this,
+					std::forward<Args>(args)...)).get());
+	}
+	void destroyMessage(not_null<HistoryItem*> item);
+
+	HistoryItem *addNewMessage(
+		const MTPMessage &msg,
+		MTPDmessage_ClientFlags clientFlags,
+		NewMessageType type);
+	HistoryItem *addToHistory(
+		const MTPMessage &msg,
+		MTPDmessage_ClientFlags clientFlags);
+	not_null<HistoryItem*> addNewLocalMessage(
 		MsgId id,
 		MTPDmessage::Flags flags,
+		MTPDmessage_ClientFlags clientFlags,
 		TimeId date,
 		UserId from,
 		const QString &postAuthor,
-		not_null<HistoryMessage*> original);
-	not_null<HistoryItem*> addNewDocument(
+		not_null<HistoryMessage*> forwardOriginal);
+	not_null<HistoryItem*> addNewLocalMessage(
 		MsgId id,
 		MTPDmessage::Flags flags,
+		MTPDmessage_ClientFlags clientFlags,
 		UserId viaBotId,
 		MsgId replyTo,
 		TimeId date,
@@ -120,9 +137,10 @@ public:
 		not_null<DocumentData*> document,
 		const TextWithEntities &caption,
 		const MTPReplyMarkup &markup);
-	not_null<HistoryItem*> addNewPhoto(
+	not_null<HistoryItem*> addNewLocalMessage(
 		MsgId id,
 		MTPDmessage::Flags flags,
+		MTPDmessage_ClientFlags clientFlags,
 		UserId viaBotId,
 		MsgId replyTo,
 		TimeId date,
@@ -131,9 +149,10 @@ public:
 		not_null<PhotoData*> photo,
 		const TextWithEntities &caption,
 		const MTPReplyMarkup &markup);
-	not_null<HistoryItem*> addNewGame(
+	not_null<HistoryItem*> addNewLocalMessage(
 		MsgId id,
 		MTPDmessage::Flags flags,
+		MTPDmessage_ClientFlags clientFlags,
 		UserId viaBotId,
 		MsgId replyTo,
 		TimeId date,
@@ -145,6 +164,7 @@ public:
 	// Used only internally and for channel admin log.
 	HistoryItem *createItem(
 		const MTPMessage &message,
+		MTPDmessage_ClientFlags clientFlags,
 		bool detachExistingItem);
 	std::vector<not_null<HistoryItem*>> createItems(
 		const QVector<MTPMessage> &data);
@@ -154,7 +174,11 @@ public:
 
 	void newItemAdded(not_null<HistoryItem*> item);
 
-	MsgId readInbox();
+	void registerLocalMessage(not_null<HistoryItem*> item);
+	void unregisterLocalMessage(not_null<HistoryItem*> item);
+	[[nodiscard]] HistoryItem *latestSendingMessage() const;
+
+	[[nodiscard]] bool readInboxTillNeedsRequest(MsgId tillId);
 	void applyInboxReadUpdate(
 		FolderId folderId,
 		MsgId upTo,
@@ -164,34 +188,44 @@ public:
 	void inboxRead(not_null<const HistoryItem*> wasRead);
 	void outboxRead(MsgId upTo);
 	void outboxRead(not_null<const HistoryItem*> wasRead);
-	bool isServerSideUnread(not_null<const HistoryItem*> item) const;
-	MsgId loadAroundId() const;
+	[[nodiscard]] bool isServerSideUnread(
+		not_null<const HistoryItem*> item) const;
+	[[nodiscard]] MsgId loadAroundId() const;
 
-	int unreadCount() const;
-	bool unreadCountKnown() const;
+	[[nodiscard]] bool trackUnreadMessages() const;
+	[[nodiscard]] int unreadCount() const;
+	[[nodiscard]] bool unreadCountKnown() const;
+
+	// Some old unread count is known, but we read history till some place.
+	[[nodiscard]] bool unreadCountRefreshNeeded(MsgId readTillId) const;
+
 	void setUnreadCount(int newUnreadCount);
 	void setUnreadMark(bool unread);
-	bool unreadMark() const;
-	int unreadCountForBadge() const; // unreadCount || unreadMark ? 1 : 0.
-	bool mute() const;
+	[[nodiscard]] bool unreadMark() const;
+	void setFakeUnreadWhileOpened(bool enabled);
+	[[nodiscard]] bool fakeUnreadWhileOpened() const;
+	[[nodiscard]] int unreadCountForBadge() const; // unreadCount || unreadMark ? 1 : 0.
+	[[nodiscard]] bool mute() const;
 	bool changeMute(bool newMute);
 	void addUnreadBar();
 	void destroyUnreadBar();
-	bool hasNotFreezedUnreadBar() const;
-	Element *unreadBar() const;
+	[[nodiscard]] Element *unreadBar() const;
 	void calculateFirstUnreadMessage();
 	void unsetFirstUnreadMessage();
-	Element *firstUnreadMessage() const;
+	[[nodiscard]] Element *firstUnreadMessage() const;
 	void clearNotifications();
+	void clearIncomingNotifications();
 
-	bool loadedAtBottom() const; // last message is in the list
+	[[nodiscard]] bool loadedAtBottom() const; // last message is in the list
 	void setNotLoadedAtBottom();
-	bool loadedAtTop() const; // nothing was added after loading history back
-	bool isReadyFor(MsgId msgId); // has messages for showing history at msgId
+	[[nodiscard]] bool loadedAtTop() const; // nothing was added after loading history back
+	[[nodiscard]] bool isReadyFor(MsgId msgId); // has messages for showing history at msgId
 	void getReadyFor(MsgId msgId);
 
-	HistoryItem *lastMessage() const;
-	bool lastMessageKnown() const;
+	[[nodiscard]] HistoryItem *lastMessage() const;
+	[[nodiscard]] HistoryItem *lastServerMessage() const;
+	[[nodiscard]] bool lastMessageKnown() const;
+	[[nodiscard]] bool lastServerMessageKnown() const;
 	void unknownMessageDeleted(MsgId messageId);
 	void applyDialogTopMessage(MsgId topMessageId);
 	void applyDialog(Data::Folder *requestFolder, const MTPDdialog &data);
@@ -203,12 +237,22 @@ public:
 		MsgId maxOutboxRead);
 	void dialogEntryApplied();
 
+	void cacheTopPromotion(
+		bool promoted,
+		const QString &type,
+		const QString &message);
+	[[nodiscard]] QStringRef topPromotionType() const;
+	[[nodiscard]] QString topPromotionMessage() const;
+	[[nodiscard]] bool topPromotionAboutShown() const;
+	void markTopPromotionAboutShown();
+
 	MsgId minMsgId() const;
 	MsgId maxMsgId() const;
 	MsgId msgIdForRead() const;
 	HistoryItem *lastSentMessage() const;
 
 	void resizeToWidth(int newWidth);
+	void forceFullResize();
 	int height() const;
 
 	void itemRemoved(not_null<HistoryItem*> item);
@@ -295,11 +339,10 @@ public:
 	void setForwardDraft(MessageIdsList &&items);
 
 	History *migrateSibling() const;
-	bool useProxyPromotion() const;
+	[[nodiscard]] bool useTopPromotion() const;
 	int fixedOnTopIndex() const override;
 	void updateChatListExistence() override;
 	bool shouldBeInChatList() const override;
-	bool toImportant() const override;
 	int chatListUnreadCount() const override;
 	bool chatListUnreadMark() const override;
 	bool chatListMutedBadge() const override;
@@ -328,7 +371,7 @@ public:
 	// of the displayed window relative to the history start coordinate
 	void countScrollState(int top);
 
-	std::shared_ptr<AdminLog::LocalIdManager> adminLogIdManager();
+	MsgId nextNonHistoryEntryId();
 
 	bool folderKnown() const override;
 	Data::Folder *folder() const override;
@@ -336,6 +379,10 @@ public:
 		not_null<Data::Folder*> folder,
 		HistoryItem *folderDialogItem = nullptr);
 	void clearFolder();
+
+	// Interface for Data::Histories.
+	void setInboxReadTill(MsgId upTo);
+	std::optional<int> countStillUnreadLocal(MsgId readTillId) const;
 
 	// Still public data.
 	std::deque<std::unique_ptr<HistoryBlock>> blocks;
@@ -382,15 +429,17 @@ private:
 	// helper method for countScrollState(int top)
 	void countScrollTopItem(int top);
 
-	HistoryItem *addNewToLastBlock(const MTPMessage &msg, NewMessageType type);
-
 	// this method just removes a block from the blocks list
 	// when the last item from this block was detached and
 	// calls the required previousItemChanged()
 	void removeBlock(not_null<HistoryBlock*> block);
 	void clearSharedMedia();
 
+	not_null<HistoryItem*> insertItem(std::unique_ptr<HistoryItem> item);
 	not_null<HistoryItem*> addNewItem(
+		not_null<HistoryItem*> item,
+		bool unread);
+	not_null<HistoryItem*> addNewToBack(
 		not_null<HistoryItem*> item,
 		bool unread);
 	not_null<HistoryItem*> addNewInTheMiddle(
@@ -424,7 +473,6 @@ private:
 	TimeId adjustedChatListTimeId() const override;
 	void changedChatListPinHook() override;
 
-	void setInboxReadTill(MsgId upTo);
 	void setOutboxReadTill(MsgId upTo);
 	void readClientSideMessages();
 
@@ -438,6 +486,7 @@ private:
 	// After adding a new history slice check lastMessage / loadedAtBottom.
 	void checkLastMessage();
 	void setLastMessage(HistoryItem *item);
+	void setLastServerMessage(HistoryItem *item);
 
 	void refreshChatListMessage();
 	void setChatListMessage(HistoryItem *item);
@@ -460,7 +509,6 @@ private:
 	HistoryItem *lastAvailableMessage() const;
 	void getNextFirstUnreadMessage();
 	bool nonEmptyCountMoreThan(int count) const;
-	std::optional<int> countUnread(MsgId upTo) const;
 
 	// Creates if necessary a new block for adding item.
 	// Depending on isBuildingFrontBlock() gets front or back block.
@@ -469,6 +517,9 @@ private:
 	void viewReplaced(not_null<const Element*> was, Element *now);
 
 	void createLocalDraftFromCloud();
+
+	HistoryService *insertJoinedMessage();
+	void insertLocalMessage(not_null<HistoryItem*> item);
 
 	void setFolderPointer(Data::Folder *folder);
 
@@ -490,6 +541,9 @@ private:
 	std::optional<int> _unreadMentionsCount;
 	base::flat_set<MsgId> _unreadMentions;
 	std::optional<HistoryItem*> _lastMessage;
+	std::optional<HistoryItem*> _lastServerMessage;
+	base::flat_set<not_null<HistoryItem*>> _localMessages;
+	std::unordered_set<std::unique_ptr<HistoryItem>> _messages;
 
 	// This almost always is equal to _lastMessage. The only difference is
 	// for a group that migrated to a supergroup. Then _lastMessage can
@@ -497,6 +551,7 @@ private:
 	std::optional<HistoryItem*> _chatListMessage;
 
 	bool _unreadMark = false;
+	bool _fakeUnreadWhileOpened = false;
 
 	// A pointer to the block that is currently being built.
 	// We hold this pointer so we can destroy it while building
@@ -513,6 +568,9 @@ private:
 	TimeId _lastSentDraftTime = 0;
 	MessageIdsList _forwardDraft;
 
+	QString _topPromotedMessage;
+	QString _topPromotedType;
+
 	base::flat_map<not_null<UserData*>, crl::time> _typing;
 	base::flat_map<not_null<UserData*>, SendAction> _sendActions;
 	QString _sendActionString;
@@ -521,8 +579,6 @@ private:
 	base::flat_map<SendAction::Type, crl::time> _mySendActions;
 
 	std::deque<not_null<HistoryItem*>> _notifications;
-
-	std::weak_ptr<AdminLog::LocalIdManager> _adminLogIdManager;
 
  };
 

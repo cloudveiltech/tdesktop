@@ -13,11 +13,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_photo.h"
 #include "data/data_folder.h"
 #include "data/data_session.h"
+#include "data/data_file_origin.h"
+#include "data/data_histories.h"
+#include "base/unixtime.h"
+#include "base/crc32hash.h"
 #include "lang/lang_keys.h"
 #include "observer_peer.h"
 #include "apiwrap.h"
 #include "boxes/confirm_box.h"
-#include "auth_session.h"
+#include "main/main_session.h"
+#include "main/main_account.h"
+#include "main/main_app_config.h"
 #include "core/application.h"
 #include "mainwindow.h"
 #include "window/window_session_controller.h"
@@ -27,6 +33,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history.h"
 #include "history/view/history_view_element.h"
 #include "history/history_item.h"
+#include "facades.h"
+#include "app.h"
 #include "cloudveil/GlobalSecuritySettings.h"
 
 namespace {
@@ -67,7 +75,7 @@ style::color PeerUserpicColor(PeerId peerId) {
 PeerId FakePeerIdForJustName(const QString &name) {
 	return peerFromUser(name.isEmpty()
 		? 777
-		: hashCrc32(name.constData(), name.size() * sizeof(QChar)));
+		: base::crc32(name.constData(), name.size() * sizeof(QChar)));
 }
 
 } // namespace Data
@@ -79,10 +87,12 @@ PeerClickHandler::PeerClickHandler(not_null<PeerData*> peer)
 void PeerClickHandler::onClick(ClickContext context) const {
 	if (context.button == Qt::LeftButton && App::wnd()) {
 		const auto controller = App::wnd()->sessionController();
-		if (_peer
-			&& _peer->isChannel()
-			&& controller->activeChatCurrent().peer() != _peer) {
-			if (!_peer->asChannel()->isPublic() && !_peer->asChannel()->amIn()) {
+		const auto currentPeer = controller->activeChatCurrent().peer();
+		if (_peer && _peer->isChannel() && currentPeer != _peer) {
+			const auto clickedChannel = _peer->asChannel();
+			if (!clickedChannel->isPublic() && !clickedChannel->amIn()
+				&& (!currentPeer->isChannel()
+					|| currentPeer->asChannel()->linkedChat() != clickedChannel)) {
 				Ui::show(Box<InformBox>(_peer->isMegagroup()
 					? tr::lng_group_not_accessible(tr::now)
 					: tr::lng_channel_not_accessible(tr::now)));
@@ -108,7 +118,7 @@ Data::Session &PeerData::owner() const {
 	return *_owner;
 }
 
-AuthSession &PeerData::session() const {
+Main::Session &PeerData::session() const {
 	return _owner->session();
 }
 
@@ -376,11 +386,33 @@ void PeerData::setUserpicChecked(
 	}
 }
 
+auto PeerData::unavailableReasons() const
+-> const std::vector<Data::UnavailableReason> & {
+	static const auto result = std::vector<Data::UnavailableReason>();
+	return result;
+}
+
+QString PeerData::computeUnavailableReason() const {
+	const auto &list = unavailableReasons();
+	const auto &config = session().account().appConfig();
+	const auto skip = config.get<std::vector<QString>>(
+		"ignore_restriction_reasons",
+		std::vector<QString>());
+	auto &&filtered = ranges::view::all(
+		list
+	) | ranges::view::filter([&](const Data::UnavailableReason &reason) {
+		return ranges::find(skip, reason.reason) == end(skip);
+	});
+	const auto first = filtered.begin();
+	return (first != filtered.end()) ? first->text : QString();
+}
+
 bool PeerData::canPinMessages() const {
 	if (const auto user = asUser()) {
 		return user->fullFlags() & MTPDuserFull::Flag::f_can_pin_message;
 	} else if (const auto chat = asChat()) {
-		return chat->amIn() && !chat->amRestricted(ChatRestriction::f_pin_messages);
+		return chat->amIn()
+			&& !chat->amRestricted(ChatRestriction::f_pin_messages);
 	} else if (const auto channel = asChannel()) {
 		return channel->isMegagroup()
 			? !channel->amRestricted(ChatRestriction::f_pin_messages)
@@ -388,6 +420,19 @@ bool PeerData::canPinMessages() const {
 				|| channel->amCreator());
 	}
 	Unexpected("Peer type in PeerData::canPinMessages.");
+}
+
+bool PeerData::canEditMessagesIndefinitely() const {
+	if (const auto user = asUser()) {
+		return user->isSelf();
+	} else if (const auto chat = asChat()) {
+		return false;
+	} else if (const auto channel = asChannel()) {
+		return channel->isMegagroup()
+			? channel->canPinMessages()
+			: channel->canEditMessages();
+	}
+	Unexpected("Peer type in PeerData::canEditMessagesIndefinitely.");
 }
 
 void PeerData::setPinnedMessageId(MsgId messageId) {
@@ -432,7 +477,7 @@ void PeerData::checkFolder(FolderId folderId) {
 		: nullptr;
 	if (const auto history = owner().historyLoaded(this)) {
 		if (folder && history->folder() != folder) {
-			session().api().requestDialogEntry(history);
+			owner().histories().requestDialogEntry(history);
 		}
 	}
 }
@@ -702,8 +747,41 @@ Data::RestrictionCheckResult PeerData::amRestricted(
 
 bool PeerData::canRevokeFullHistory() const {
 	return isUser()
+		&& !isSelf()
 		&& Global::RevokePrivateInbox()
 		&& (Global::RevokePrivateTimeLimit() == 0x7FFFFFFF);
+}
+
+bool PeerData::slowmodeApplied() const {
+	if (const auto channel = asChannel()) {
+		return !channel->amCreator()
+			&& !channel->hasAdminRights()
+			&& (channel->flags() & MTPDchannel::Flag::f_slowmode_enabled);
+	}
+	return false;
+}
+
+int PeerData::slowmodeSecondsLeft() const {
+	if (const auto channel = asChannel()) {
+		if (const auto seconds = channel->slowmodeSeconds()) {
+			if (const auto last = channel->slowmodeLastMessage()) {
+				const auto now = base::unixtime::now();
+				return std::max(seconds - (now - last), 0);
+			}
+		}
+	}
+	return 0;
+}
+
+bool PeerData::canSendPolls() const {
+	if (const auto user = asUser()) {
+		return user->isBot() && !user->isSupport();
+	} else if (const auto chat = asChat()) {
+		return chat->canSendPolls();
+	} else if (const auto channel = asChannel()) {
+		return channel->canSendPolls();
+	}
+	return false;
 }
 
 namespace Data {
@@ -732,6 +810,38 @@ std::optional<QString> RestrictionError(
 	using Flag = ChatRestriction;
 	if (const auto restricted = peer->amRestricted(restriction)) {
 		const auto all = restricted.isWithEveryone();
+		const auto channel = peer->asChannel();
+		if (!all && channel) {
+			auto restrictedUntil = channel->restrictedUntil();
+			if (restrictedUntil > 0 && !ChannelData::IsRestrictedForever(restrictedUntil)) {
+				auto restrictedUntilDateTime = base::unixtime::parse(channel->restrictedUntil());
+				auto date = restrictedUntilDateTime.toString(qsl("dd.MM.yy"));
+				auto time = restrictedUntilDateTime.toString(cTimeFormat());
+
+				switch (restriction) {
+				case Flag::f_send_polls:
+					return tr::lng_restricted_send_polls_until(
+						tr::now, lt_date, date, lt_time, time);
+				case Flag::f_send_messages:
+					return tr::lng_restricted_send_message_until(
+						tr::now, lt_date, date, lt_time, time);
+				case Flag::f_send_media:
+					return tr::lng_restricted_send_media_until(
+						tr::now, lt_date, date, lt_time, time);
+				case Flag::f_send_stickers:
+					return tr::lng_restricted_send_stickers_until(
+						tr::now, lt_date, date, lt_time, time);
+				case Flag::f_send_gifs:
+					return tr::lng_restricted_send_gifs_until(
+						tr::now, lt_date, date, lt_time, time);
+				case Flag::f_send_inline:
+				case Flag::f_send_games:
+					return tr::lng_restricted_send_inline_until(
+						tr::now, lt_date, date, lt_time, time);
+				}
+				Unexpected("Restriction in Data::RestrictionErrorKey.");
+			}
+		}
 		switch (restriction) {
 		case Flag::f_send_polls:
 			return all

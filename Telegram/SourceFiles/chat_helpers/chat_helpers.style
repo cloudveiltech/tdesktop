@@ -5,7 +5,7 @@ the official desktop application for the Telegram messaging service.
 For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
-using "basic.style";
+using "ui/basic.style";
 
 using "boxes/boxes.style";
 using "ui/widgets/widgets.style";
@@ -41,8 +41,8 @@ stickersRemove: IconButton(defaultIconButton) {
 	width: 40px;
 	height: 40px;
 
-	icon: icon {{ "stickers_remove", menuIconFg }};
-	iconOver: icon {{ "stickers_remove", menuIconFgOver }};
+	icon: icon {{ "info_media_delete", menuIconFg }};
+	iconOver: icon {{ "info_media_delete", menuIconFgOver }};
 
 	rippleAreaSize: 40px;
 	rippleAreaPosition: point(0px, 0px);
@@ -79,7 +79,7 @@ stickersFeaturedInstalled: icon {{ "send_control_save", lightButtonFg }};
 stickersMaxHeight: 320px;
 stickersPadding: margins(19px, 13px, 19px, 13px);
 stickersSize: size(64px, 64px);
-stickersScroll: ScrollArea(boxLayerScroll) {
+stickersScroll: ScrollArea(boxScroll) {
 	deltat: 19px;
 	deltab: 9px;
 }
@@ -89,11 +89,20 @@ stickersRowDisabledOpacity: 0.4;
 stickersRowDuration: 200;
 
 stickersSettings: icon {{ "emoji_settings", emojiIconFg }};
-stickersTrending: icon {{ "emoji_trending", emojiIconFg }};
+stickersTrending: icon {{ "stickers_add", emojiIconFg }};
+stickersTrendingUnread: icon {
+	{ "stickers_add_unread", emojiIconFg },
+	{ "stickers_add_dot", dialogsUnreadBg }
+};
+stickersRecent: icon {{ "stickers_recent", emojiIconFg }};
 stickersSearch: icon {{ "stickers_search", emojiIconFg, point(0px, 1px) }};
 
-stickersSettingsUnreadSize: 17px;
-stickersSettingsUnreadPosition: point(4px, 5px);
+stickersSettingsUnreadSize: 6px;
+stickersSettingsUnreadPosition: point(6px, 10px);
+
+filtersRemove: IconButton(stickersRemove) {
+	ripple: defaultRippleAnimation;
+}
 
 emojiPanMargins: margins(10px, 10px, 10px, 10px);
 
@@ -209,8 +218,11 @@ stickerGroupCategoryAbout: defaultTextStyle;
 stickerGroupCategoryAddMargin: margins(0px, 10px, 0px, 5px);
 stickerGroupCategoryAdd: stickersTrendingAdd;
 
-stickersToastMaxWidth: 340px;
-stickersToastPadding: margins(16px, 13px, 16px, 12px);
+stickersToast: Toast(defaultToast) {
+	minWidth: 340px;
+	maxWidth: 340px;
+	padding: margins(16px, 13px, 16px, 12px);
+}
 
 stickersEmpty: icon {{ "stickers_empty", windowSubTextFg }};
 
@@ -262,7 +274,7 @@ autocompleteRowAnswer: defaultTextStyle;
 manageEmojiPreview: 22px;
 manageEmojiPreviewWidth: 48px;
 manageEmojiPreviewHeight: 48px;
-manageEmojiPreviewPadding: margins(23px, 9px, 19px, 9px);
+manageEmojiPreviewPadding: margins(22px, 9px, 19px, 9px);
 manageEmojiMarginRight: 21px;
 manageEmojiNameTop: 3px;
 manageEmojiStatusTop: 25px;

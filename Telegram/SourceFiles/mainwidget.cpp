@@ -22,6 +22,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_channel.h"
 #include "data/data_chat.h"
 #include "data/data_user.h"
+#include "data/data_chat_filters.h"
+#include "data/data_scheduled_messages.h"
+#include "data/data_file_origin.h"
+#include "data/data_histories.h"
+#include "api/api_text_entities.h"
 #include "ui/special_buttons.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/shadow.h"
@@ -36,6 +41,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/section_memento.h"
 #include "window/section_widget.h"
 #include "window/window_connecting_widget.h"
+#include "chat_helpers/tabbed_selector.h" // TabbedSelector::refreshStickers
 #include "chat_helpers/message_field.h"
 #include "chat_helpers/stickers.h"
 #include "info/info_memento.h"
@@ -47,7 +53,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history.h"
 #include "history/history_widget.h"
 #include "history/history_message.h"
-#include "history/media/history_media.h"
+#include "history/view/media/history_view_media.h"
 #include "history/view/history_view_service_message.h"
 #include "history/view/history_view_element.h"
 #include "lang/lang_keys.h"
@@ -89,14 +95,21 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "export/export_settings.h"
 #include "export/view/export_view_top_bar.h"
 #include "export/view/export_view_panel_controller.h"
-#include "auth_session.h"
+#include "main/main_session.h"
+#include "main/main_account.h"
 #include "support/support_helper.h"
 #include "storage/storage_facade.h"
 #include "storage/storage_shared_media.h"
 #include "storage/storage_user_photos.h"
+#include "app.h"
+#include "facades.h"
 #include "styles/style_dialogs.h"
 #include "styles/style_history.h"
 #include "styles/style_boxes.h"
+
+#include <QtCore/QCoreApplication>
+#include <QtCore/QMimeData>
+#include <QtGui/QDesktopServices>
 
 namespace {
 
@@ -156,7 +169,7 @@ bool HasForceLogoutNotification(const MTPUpdates &updates) {
 }
 
 bool ForwardedInfoDataLoaded(
-		not_null<AuthSession*> session,
+		not_null<Main::Session*> session,
 		const MTPMessageFwdHeader &header) {
 	return header.match([&](const MTPDmessageFwdHeader &data) {
 		if (const auto channelId = data.vchannel_id()) {
@@ -181,7 +194,7 @@ bool ForwardedInfoDataLoaded(
 }
 
 bool MentionUsersLoaded(
-		not_null<AuthSession*> session,
+		not_null<Main::Session*> session,
 		const MTPVector<MTPMessageEntity> &entities) {
 	for (const auto &entity : entities.v) {
 		auto type = entity.type();
@@ -202,7 +215,7 @@ bool MentionUsersLoaded(
 }
 
 DataIsLoadedResult AllDataLoadedForMessage(
-		not_null<AuthSession*> session,
+		not_null<Main::Session*> session,
 		const MTPMessage &message) {
 	return message.match([&](const MTPDmessage &message) {
 		if (const auto fromId = message.vfrom_id()) {
@@ -435,6 +448,16 @@ MainWidget::MainWidget(
 		[this] { updateControlsGeometry(); },
 		lifetime());
 
+	session().account().mtpUpdates(
+	) | rpl::start_with_next([=](const MTPUpdates &updates) {
+		mtpUpdateReceived(updates);
+	}, lifetime());
+
+	session().account().mtpNewSessionCreated(
+	) | rpl::start_with_next([=] {
+		mtpNewSessionCreated();
+	}, lifetime());
+
 	// MSVC BUG + REGRESSION rpl::mappers::tuple :(
 	using namespace rpl::mappers;
 	_controller->activeChatValue(
@@ -510,7 +533,7 @@ void MainWidget::simpleUpdateReceived(UpdateResponse* response) {
 	Ui::show(Box<ConfirmBox>(response->message, tr::lng_download_click(tr::now), [response] {
 		Ui::hideLayer();
 		QDesktopServices::openUrl(response->url);
-	}), LayerOption::KeepOther);
+	}), Ui::LayerOption::KeepOther);
 }
 
 void MainWidget::requestCloudVeil() {
@@ -519,7 +542,7 @@ void MainWidget::requestCloudVeil() {
 }
 //CloudVeil end
 
-AuthSession &MainWidget::session() const {
+Main::Session &MainWidget::session() const {
 	return _controller->session();
 }
 
@@ -626,11 +649,12 @@ bool MainWidget::setForwardDraft(PeerId peerId, MessageIdsList &&items) {
 	Expects(peerId != 0);
 
 	const auto peer = session().data().peer(peerId);
-	const auto error = GetErrorTextForForward(
+	const auto error = GetErrorTextForSending(
 		peer,
-		session().data().idsToItems(items));
+		session().data().idsToItems(items),
+		true);
 	if (!error.isEmpty()) {
-		Ui::show(Box<InformBox>(error), LayerOption::KeepOther);
+		Ui::show(Box<InformBox>(error), Ui::LayerOption::KeepOther);
 		return false;
 	}
 
@@ -709,11 +733,16 @@ void MainWidget::cancelForwarding(not_null<History*> history) {
 	_history->updateForwarding();
 }
 
-void MainWidget::finishForwarding(not_null<History*> history) {
+void MainWidget::finishForwarding(Api::SendAction action) {
+	const auto history = action.history;
 	auto toForward = history->validateForwardDraft();
 	if (!toForward.empty()) {
-		auto options = ApiWrap::SendOptions(history);
-		session().api().forwardMessages(std::move(toForward), options);
+		const auto error = GetErrorTextForSending(history->peer, toForward);
+		if (!error.isEmpty()) {
+			return;
+		}
+
+		session().api().forwardMessages(std::move(toForward), action);
 		cancelForwarding(history);
 	}
 
@@ -787,10 +816,6 @@ void MainWidget::notify_userIsBotChanged(UserData *bot) {
 	_history->notify_userIsBotChanged(bot);
 }
 
-void MainWidget::notify_historyMuteUpdated(History *history) {
-	_dialogs->notify_historyMuteUpdated(history);
-}
-
 void MainWidget::clearHider(not_null<Window::HistoryHider*> instance) {
 	if (_hider != instance) {
 		return;
@@ -826,6 +851,7 @@ void MainWidget::hiderLayer(base::unique_qptr<Window::HistoryHider> hider) {
 	_hider->hidden(
 	) | rpl::start_with_next([=, instance = _hider.get()] {
 		clearHider(instance);
+		instance->hide();
 		instance->deleteLater();
 	}, _hider->lifetime());
 
@@ -947,23 +973,6 @@ bool MainWidget::selectingPeer() const {
 
 void MainWidget::removeDialog(Dialogs::Key key) {
 	_dialogs->removeDialog(key);
-}
-
-bool MainWidget::sendMessageFail(const RPCError &error) {
-	if (MTP::isDefaultHandledError(error)) return false;
-
-	if (error.type() == qstr("PEER_FLOOD")) {
-		Ui::show(Box<InformBox>(PeerFloodErrorText(PeerFloodType::Send)));
-		return true;
-	} else if (error.type() == qstr("USER_BANNED_IN_CHANNEL")) {
-		const auto link = textcmdLink(
-			Core::App().createInternalLinkFull(qsl("spambot")),
-			tr::lng_cant_more_info(tr::now));
-		const auto text = tr::lng_error_public_groups_denied(tr::now, lt_more_info, link);
-		Ui::show(Box<InformBox>(text));
-		return true;
-	}
-	return false;
 }
 
 void MainWidget::cacheBackground() {
@@ -1614,7 +1623,7 @@ void MainWidget::ui_showPeerHistory(
 			peerId = peer->id;
 			if (showAtMsgId > 0) showAtMsgId = -showAtMsgId;
 		}
-		const auto unavailable = peer->unavailableReason();
+		const auto unavailable = peer->computeUnavailableReason();
 		if (!unavailable.isEmpty()) {
 			if (params.activation != anim::activation::background) {
 				Ui::show(Box<InformBox>(unavailable));
@@ -1708,11 +1717,7 @@ void MainWidget::ui_showPeerHistory(
 
 	auto noPeer = !_history->peer();
 	auto onlyDialogs = noPeer && Adaptive::OneColumn();
-	if (_mainSection) {
-		_mainSection->hide();
-		_mainSection->deleteLater();
-		_mainSection = nullptr;
-	}
+	_mainSection.destroy();
 
 	updateControlsGeometry();
 
@@ -1923,8 +1928,8 @@ void MainWidget::showNewSection(
 	using Column = Window::Column;
 
 	auto saveInStack = (params.way == SectionShow::Way::Forward);
-	auto thirdSectionTop = getThirdSectionTop();
-	auto newThirdGeometry = QRect(
+	const auto thirdSectionTop = getThirdSectionTop();
+	const auto newThirdGeometry = QRect(
 		width() - st::columnMinimalWidthThird,
 		thirdSectionTop,
 		st::columnMinimalWidthThird,
@@ -1936,9 +1941,10 @@ void MainWidget::showNewSection(
 			Column::Third,
 			newThirdGeometry)
 		: nullptr;
+	const auto layerRect = parentWidget()->rect();
 	if (newThirdSection) {
 		saveInStack = false;
-	} else if (auto layer = memento.createLayer(_controller, rect())) {
+	} else if (auto layer = memento.createLayer(_controller, layerRect)) {
 		if (params.activation != anim::activation::background) {
 			Ui::hideLayer(anim::type::instant);
 		}
@@ -2010,11 +2016,6 @@ void MainWidget::showNewSection(
 		}
 		updateControlsGeometry();
 	} else {
-		if (_mainSection) {
-			_mainSection->hide();
-			_mainSection->deleteLater();
-			_mainSection = nullptr;
-		}
 		_mainSection = std::move(newMainSection);
 		updateControlsGeometry();
 		_history->finishAnimating();
@@ -2212,13 +2213,17 @@ QPixmap MainWidget::grabForShowAnimation(const Window::SectionSlideParams &param
 }
 
 void MainWidget::repaintDialogRow(
-		Dialogs::Mode list,
+		FilterId filterId,
 		not_null<Dialogs::Row*> row) {
-	_dialogs->repaintDialogRow(list, row);
+	_dialogs->repaintDialogRow(filterId, row);
 }
 
 void MainWidget::repaintDialogRow(Dialogs::RowDescriptor row) {
 	_dialogs->repaintDialogRow(row);
+}
+
+void MainWidget::refreshDialogRow(Dialogs::RowDescriptor row) {
+	_dialogs->refreshDialogRow(row);
 }
 
 void MainWidget::windowShown() {
@@ -2247,16 +2252,8 @@ void MainWidget::dialogsToUp() {
 	_dialogs->jumpToTop();
 }
 
-void MainWidget::newUnreadMsg(
-		not_null<History*> history,
-		not_null<HistoryItem*> item) {
-	_history->newUnreadMsg(history, item);
-}
-
-void MainWidget::markActiveHistoryAsRead() {
-	if (const auto activeHistory = _history->history()) {
-		session().api().readServerHistory(activeHistory);
-	}
+void MainWidget::checkHistoryActivation() {
+	_history->checkHistoryActivation();
 }
 
 void MainWidget::showAnimated(const QPixmap &bgAnimCache, bool back) {
@@ -2419,11 +2416,11 @@ void MainWidget::updateControlsGeometry() {
 				Window::SectionShow::Way::ClearStack,
 				anim::type::instant,
 				anim::activation::background);
-			if (session().settings().tabbedSelectorSectionEnabled()) {
-				_history->pushTabbedSelectorToThirdSection(params);
-			} else if (session().settings().thirdSectionInfoEnabled()) {
-				const auto active = _controller->activeChatCurrent();
-				if (const auto peer = active.peer()) {
+			const auto active = _controller->activeChatCurrent();
+			if (const auto peer = active.peer()) {
+				if (session().settings().tabbedSelectorSectionEnabled()) {
+					_history->pushTabbedSelectorToThirdSection(peer, params);
+				} else if (session().settings().thirdSectionInfoEnabled()) {
 					_controller->showSection(
 						Info::Memento::Default(peer),
 						params.withThirdColumn());
@@ -2672,9 +2669,9 @@ void MainWidget::updateThirdColumnToCurrentChat(
 			std::move(*thirdSectionForCurrentMainSection(key)),
 			params.withThirdColumn());
 	};
-	auto switchTabbedFast = [&] {
+	auto switchTabbedFast = [&](not_null<PeerData*> peer) {
 		saveOldThirdSection();
-		_history->pushTabbedSelectorToThirdSection(params);
+		return _history->pushTabbedSelectorToThirdSection(peer, params);
 	};
 	if (Adaptive::ThreeColumn()
 		&& session().settings().tabbedSelectorSectionEnabled()
@@ -2683,9 +2680,10 @@ void MainWidget::updateThirdColumnToCurrentChat(
 			switchInfoFast();
 			session().settings().setTabbedSelectorSectionEnabled(true);
 			session().settings().setTabbedReplacedWithInfo(true);
-		} else if (session().settings().tabbedReplacedWithInfo()) {
+		} else if (session().settings().tabbedReplacedWithInfo()
+			&& key.history()
+			&& switchTabbedFast(key.history()->peer)) {
 			session().settings().setTabbedReplacedWithInfo(false);
-			switchTabbedFast();
 		}
 	} else {
 		session().settings().setTabbedReplacedWithInfo(false);
@@ -2727,6 +2725,12 @@ void MainWidget::updateMediaPlaylistPosition(int x) {
 
 int MainWidget::contentScrollAddToY() const {
 	return _contentScrollAddToY;
+}
+
+void MainWidget::returnTabbedSelector() {
+	if (!_mainSection || !_mainSection->returnTabbedSelector()) {
+		_history->returnTabbedSelector();
+	}
 }
 
 void MainWidget::keyPressEvent(QKeyEvent *e) {
@@ -2808,7 +2812,7 @@ void MainWidget::updateWindowAdaptiveLayout() {
 	// dialogs widget to provide a wide enough chat history column.
 	// Don't shrink the column on the first call, when window is inited.
 	if (layout.windowLayout == Adaptive::WindowLayout::ThreeColumn
-		&& _started && _controller->window()->positionInited()) {
+		&& _started && _controller->widget()->positionInited()) {
 		//auto chatWidth = layout.chatWidth;
 		//if (_history->willSwitchToTabbedSelectorWithWidth(chatWidth)) {
 		//	auto thirdColumnWidth = _history->tabbedSelectorSectionWidth();
@@ -3265,6 +3269,8 @@ void MainWidget::start() {
 	if (const auto availableAt = Local::ReadExportSettings().availableAt) {
 		session().data().suggestStartExport(availableAt);
 	}
+	session().data().notifyStickersUpdated();
+	session().data().notifySavedGifsUpdated();
 
 	_history->start();
 
@@ -3284,9 +3290,11 @@ void MainWidget::openPeerByName(
 
 	if (const auto peer = session().data().peerByUsername(username)) {
 		if (msgId == ShowAtGameShareMsgId) {
-			if (peer->isUser() && peer->asUser()->botInfo && !startToken.isEmpty()) {
+			if (peer->isUser() && peer->asUser()->isBot() && !startToken.isEmpty()) {
 				peer->asUser()->botInfo->shareGameShortName = startToken;
-				AddBotToGroupBoxController::Start(peer->asUser());
+				AddBotToGroupBoxController::Start(
+					_controller,
+					peer->asUser());
 			} else {
 				InvokeQueued(this, [this, peer] {
 					_controller->showPeerHistory(
@@ -3295,10 +3303,12 @@ void MainWidget::openPeerByName(
 				});
 			}
 		} else if (msgId == ShowAtProfileMsgId && !peer->isChannel()) {
-			if (peer->isUser() && peer->asUser()->botInfo && !peer->asUser()->botInfo->cantJoinGroups && !startToken.isEmpty()) {
+			if (peer->isUser() && peer->asUser()->isBot() && !peer->asUser()->botInfo->cantJoinGroups && !startToken.isEmpty()) {
 				peer->asUser()->botInfo->startGroupToken = startToken;
-				AddBotToGroupBoxController::Start(peer->asUser());
-			} else if (peer->isUser() && peer->asUser()->botInfo) {
+				AddBotToGroupBoxController::Start(
+					_controller,
+					peer->asUser());
+			} else if (peer->isUser() && peer->asUser()->isBot()) {
 				// Always open bot chats, even from mention links.
 				InvokeQueued(this, [this, peer] {
 					_controller->showPeerHistory(
@@ -3312,7 +3322,7 @@ void MainWidget::openPeerByName(
 			if (msgId == ShowAtProfileMsgId || !peer->isChannel()) { // show specific posts only in channels / supergroups
 				msgId = ShowAtUnreadMsgId;
 			}
-			if (peer->isUser() && peer->asUser()->botInfo) {
+			if (peer->isUser() && peer->asUser()->isBot()) {
 				peer->asUser()->botInfo->startToken = startToken;
 				if (peer == _history->peer()) {
 					_history->updateControlsVisibility();
@@ -3357,10 +3367,12 @@ void MainWidget::usernameResolveDone(QPair<MsgId, QString> msgIdAndStartToken, c
 	MsgId msgId = msgIdAndStartToken.first;
 	QString startToken = msgIdAndStartToken.second;
 	if (msgId == ShowAtProfileMsgId && !peer->isChannel()) {
-		if (peer->isUser() && peer->asUser()->botInfo && !peer->asUser()->botInfo->cantJoinGroups && !startToken.isEmpty()) {
+		if (peer->isUser() && peer->asUser()->isBot() && !peer->asUser()->botInfo->cantJoinGroups && !startToken.isEmpty()) {
 			peer->asUser()->botInfo->startGroupToken = startToken;
-			AddBotToGroupBoxController::Start(peer->asUser());
-		} else if (peer->isUser() && peer->asUser()->botInfo) {
+			AddBotToGroupBoxController::Start(
+				_controller,
+				peer->asUser());
+		} else if (peer->isUser() && peer->asUser()->isBot()) {
 			// Always open bot chats, even from mention links.
 			InvokeQueued(this, [this, peer] {
 				_controller->showPeerHistory(
@@ -3374,7 +3386,7 @@ void MainWidget::usernameResolveDone(QPair<MsgId, QString> msgIdAndStartToken, c
 		if (msgId == ShowAtProfileMsgId || !peer->isChannel()) { // show specific posts only in channels / supergroups
 			msgId = ShowAtUnreadMsgId;
 		}
-		if (peer->isUser() && peer->asUser()->botInfo) {
+		if (peer->isUser() && peer->asUser()->isBot()) {
 			peer->asUser()->botInfo->startToken = startToken;
 			if (peer == _history->peer()) {
 				_history->updateControlsVisibility();
@@ -3506,7 +3518,7 @@ void MainWidget::incrementSticker(DocumentData *sticker) {
 	if (writeRecentStickers) {
 		Local::writeRecentStickers();
 	}
-	_history->updateRecentStickers();
+	_controller->tabbedSelector()->refreshStickers();
 }
 
 void MainWidget::activate() {
@@ -3514,7 +3526,7 @@ void MainWidget::activate() {
 	if (!_mainSection) {
 		if (_hider) {
 			_dialogs->setInnerFocus();
-        } else if (App::wnd() && !Ui::isLayerShown()) {
+		} else if (App::wnd() && !Ui::isLayerShown()) {
 			if (!cSendPaths().isEmpty()) {
 				const auto interpret = qstr("interpret://");
 				const auto path = cSendPaths()[0];
@@ -3541,15 +3553,8 @@ bool MainWidget::isActive() const {
 	return !_isIdle && isVisible() && !_a_show.animating();
 }
 
-bool MainWidget::doWeReadServerHistory() const {
-	return isActive()
-		&& !session().supportMode()
-		&& !_mainSection
-		&& _history->doWeReadServerHistory();
-}
-
-bool MainWidget::doWeReadMentions() const {
-	return isActive() && !_mainSection && _history->doWeReadMentions();
+bool MainWidget::doWeMarkAsRead() const {
+	return isActive() && !_mainSection;
 }
 
 bool MainWidget::lastWasOnline() const {
@@ -3707,35 +3712,22 @@ void MainWidget::checkIdleFinish() {
 	}
 }
 
-void MainWidget::updateReceived(const mtpPrime *from, const mtpPrime *end) {
-	if (end <= from) return;
-
+void MainWidget::mtpNewSessionCreated() {
 	session().checkAutoLock();
+	updSeq = 0;
+	MTP_LOG(0, ("getDifference { after new_session_created }%1"
+		).arg(cTestMode() ? " TESTMODE" : ""));
+	getDifference();
+}
 
-	if (mtpTypeId(*from) == mtpc_new_session_created) {
-		try {
-			MTPNewSession newSession;
-			newSession.read(from, end);
-		} catch (mtpErrorUnexpected &) {
-		}
-		updSeq = 0;
-		MTP_LOG(0, ("getDifference { after new_session_created }%1").arg(cTestMode() ? " TESTMODE" : ""));
-		return getDifference();
-	} else {
-		try {
-			MTPUpdates updates;
-			updates.read(from, end);
-
-			_lastUpdateTime = crl::now();
-			_noUpdatesTimer.callOnce(kNoUpdatesTimeout);
-			if (!requestingDifference()
-				|| HasForceLogoutNotification(updates)) {
-				feedUpdates(updates);
-			}
-		} catch (mtpErrorUnexpected &) { // just some other type
-		}
+void MainWidget::mtpUpdateReceived(const MTPUpdates &updates) {
+	session().checkAutoLock();
+	_lastUpdateTime = crl::now();
+	_noUpdatesTimer.callOnce(kNoUpdatesTimeout);
+	if (!requestingDifference()
+		|| HasForceLogoutNotification(updates)) {
+		feedUpdates(updates);
 	}
-	update();
 }
 
 void MainWidget::feedUpdates(const MTPUpdates &updates, uint64 randomId) {
@@ -3834,14 +3826,19 @@ void MainWidget::feedUpdates(const MTPUpdates &updates, uint64 randomId) {
 		if (!IsServerMsgId(d.vid().v)) {
 			LOG(("API Error: Bad msgId got from server: %1").arg(d.vid().v));
 		} else if (randomId) {
-			const auto sent = session().data().messageSentData(randomId);
+			auto &owner = session().data();
+			const auto sent = owner.messageSentData(randomId);
 			const auto lookupMessage = [&] {
 				return sent.peerId
-					? session().data().message(
-						peerToChannel(sent.peerId),
-						d.vid().v)
+					? owner.message(peerToChannel(sent.peerId), d.vid().v)
 					: nullptr;
 			};
+			if (const auto id = owner.messageIdByRandomId(randomId)) {
+				const auto local = owner.message(id);
+				if (local && local->isScheduled()) {
+					owner.scheduledMessages().sendNowSimpleMessage(d, local);
+				}
+			}
 			const auto wasAlready = (lookupMessage() != nullptr);
 			feedUpdate(MTP_updateMessageID(d.vid(), MTP_long(randomId))); // ignore real date
 			if (const auto item = lookupMessage()) {
@@ -3852,11 +3849,11 @@ void MainWidget::feedUpdates(const MTPUpdates &updates, uint64 randomId) {
 						item->id,
 						ApiWrap::RequestMessageDataCallback());
 				}
-				item->setText({
+				item->updateSentContent({
 					sent.text,
-					TextUtilities::EntitiesFromMTP(list.value_or_empty())
-				});
-				item->updateSentMedia(d.vmedia());
+					Api::EntitiesFromMTP(list.value_or_empty())
+				}, d.vmedia());
+				item->contributeToSlowmode(d.vdate().v);
 				if (!wasAlready) {
 					item->indexAsNewItem();
 				}
@@ -3934,19 +3931,25 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 		const auto &d = update.c_updateMessageID();
 		const auto randomId = d.vrandom_id().v;
 		if (const auto id = session().data().messageIdByRandomId(randomId)) {
-			const auto channel = id.channel;
 			const auto newId = d.vid().v;
 			if (const auto local = session().data().message(id)) {
-				const auto existing = session().data().message(channel, newId);
-				if (existing && !local->mainView()) {
-					const auto history = local->history();
-					local->destroy();
-					history->requestChatListMessage();
+				if (local->isScheduled()) {
+					session().data().scheduledMessages().apply(d, local);
 				} else {
-					if (existing) {
-						existing->destroy();
+					const auto channel = id.channel;
+					const auto existing = session().data().message(
+						channel,
+						newId);
+					if (existing && !local->mainView()) {
+						const auto history = local->history();
+						local->destroy();
+						history->requestChatListMessage();
+					} else {
+						if (existing) {
+							existing->destroy();
+						}
+						local->setRealId(d.vid().v);
 					}
-					local->setRealId(d.vid().v);
 				}
 			}
 			session().data().unregisterMessageRandomId(randomId);
@@ -4060,7 +4063,7 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 	//				d.vunread_count()->v,
 	//				d.vunread_muted_count()->v);
 	//		} else {
-	//			session().api().requestDialogEntry(feed);
+	//			session().data().histories().requestDialogEntry(feed);
 	//		}
 	//	}
 	//} break;
@@ -4087,6 +4090,12 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 		ptsUpdateAndApply(data.vpts().v, data.vpts_count().v, update);
 	} break;
 
+	case mtpc_updateDialogFilter:
+	case mtpc_updateDialogFilterOrder:
+	case mtpc_updateDialogFilters: {
+		session().data().chatsFilters().apply(update);
+	} break;
+
 	// Deleted messages.
 	case mtpc_updateDeleteMessages: {
 		auto &d = update.c_updateDeleteMessages();
@@ -4106,6 +4115,16 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 		} else {
 			session().api().applyUpdateNoPtsCheck(update);
 		}
+	} break;
+
+	case mtpc_updateNewScheduledMessage: {
+		const auto &d = update.c_updateNewScheduledMessage();
+		session().data().scheduledMessages().apply(d);
+	} break;
+
+	case mtpc_updateDeleteScheduledMessages: {
+		const auto &d = update.c_updateDeleteScheduledMessages();
+		session().data().scheduledMessages().apply(d);
 	} break;
 
 	case mtpc_updateWebPage: {
@@ -4283,7 +4302,7 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 	} break;
 
 	case mtpc_updateConfig: {
-		Core::App().mtp()->requestConfig();
+		session().mtp()->requestConfig();
 	} break;
 
 	case mtpc_updateUserPhone: {
@@ -4327,7 +4346,7 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 	} break;
 
 	case mtpc_updatePhoneCall: {
-		Calls::Current().handleUpdate(update.c_updatePhoneCall());
+		session().calls().handleUpdate(update.c_updatePhoneCall());
 	} break;
 
 	case mtpc_updateUserBlocked: {
@@ -4341,7 +4360,7 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 		const auto &d = update.c_updateServiceNotification();
 		const auto text = TextWithEntities {
 			qs(d.vmessage()),
-			TextUtilities::EntitiesFromMTP(d.ventities().v)
+			Api::EntitiesFromMTP(d.ventities().v)
 		};
 		if (IsForceLogoutNotification(d)) {
 			Core::App().forceLogOut(text);
@@ -4426,7 +4445,7 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 			session().api().requestPinnedDialogs(folder);
 		}
 		if (!loaded) {
-			session().api().requestDialogEntry(folder);
+			session().data().histories().requestDialogEntry(folder);
 		}
 	} break;
 
@@ -4475,16 +4494,21 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 		if (const auto channel = session().data().channelLoaded(d.vchannel_id().v)) {
 			channel->inviter = UserId(0);
 			if (channel->amIn()) {
+				if (channel->isMegagroup()
+					&& !channel->amCreator()
+					&& !channel->hasAdminRights()) {
+					channel->updateFullForced();
+				}
 				const auto history = channel->owner().history(channel);
 				//if (const auto feed = channel->feed()) { // #feed
 				//	feed->requestChatListMessage();
 				//	if (!feed->unreadCountKnown()) {
-				//		feed->session().api().requestDialogEntry(feed);
+				//		feed->owner().histories().requestDialogEntry(feed);
 				//	}
 				//} else {
 					history->requestChatListMessage();
 					if (!history->unreadCountKnown()) {
-						history->session().api().requestDialogEntry(history);
+						history->owner().histories().requestDialogEntry(history);
 					}
 				//}
 				if (!channel->amCreator()) {
@@ -4631,5 +4655,22 @@ void MainWidget::feedUpdate(const MTPUpdate &update) {
 		}
 	} break;
 
+	////// Cloud themes
+	case mtpc_updateTheme: {
+		const auto &data = update.c_updateTheme();
+		session().data().cloudThemes().applyUpdate(data.vtheme());
+	} break;
+
 	}
 }
+
+namespace App {
+
+MainWidget *main() {
+	if (const auto window = wnd()) {
+		return window->mainWidget();
+	}
+	return nullptr;
+}
+
+} // namespace App

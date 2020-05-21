@@ -9,6 +9,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "history/history_location_manager.h"
 
+class History;
+
 namespace InlineBots {
 
 class Result;
@@ -31,6 +33,7 @@ public:
 		const Result *owner,
 		not_null<History*> history,
 		MTPDmessage::Flags flags,
+		MTPDmessage_ClientFlags clientFlags,
 		MsgId msgId,
 		UserId fromId,
 		MTPint mtpDate,
@@ -69,6 +72,7 @@ public:
 		const Result *owner,
 		not_null<History*> history,
 		MTPDmessage::Flags flags,
+		MTPDmessage_ClientFlags clientFlags,
 		MsgId msgId,
 		UserId fromId,
 		MTPint mtpDate,
@@ -203,6 +207,7 @@ public:
 		const Result *owner,
 		not_null<History*> history,
 		MTPDmessage::Flags flags,
+		MTPDmessage_ClientFlags clientFlags,
 		MsgId msgId,
 		UserId fromId,
 		MTPint mtpDate,
@@ -242,6 +247,7 @@ public:
 		const Result *owner,
 		not_null<History*> history,
 		MTPDmessage::Flags flags,
+		MTPDmessage_ClientFlags clientFlags,
 		MsgId msgId,
 		UserId fromId,
 		MTPint mtpDate,
@@ -276,6 +282,7 @@ public:
 		const Result *owner,
 		not_null<History*> history,
 		MTPDmessage::Flags flags,
+		MTPDmessage_ClientFlags clientFlags,
 		MsgId msgId,
 		UserId fromId,
 		MTPint mtpDate,

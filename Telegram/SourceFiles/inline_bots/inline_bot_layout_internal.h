@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/flags.h"
 #include "inline_bots/inline_bot_layout_item.h"
+#include "media/clip/media_clip_reader.h"
 #include "ui/effects/animations.h"
 #include "ui/effects/radial_animation.h"
 #include "ui/text/text.h"
@@ -73,6 +74,8 @@ public:
 	void clickHandlerActiveChanged(const ClickHandlerPtr &p, bool active) override;
 
 	int resizeGetHeight(int width) override;
+
+	void unloadAnimation() override;
 
 private:
 	QSize countFrameSize() const;
@@ -368,6 +371,8 @@ public:
 	TextState getState(
 		QPoint point,
 		StateRequest request) const override;
+
+	void unloadAnimation() override;
 
 private:
 	void countFrameSize();

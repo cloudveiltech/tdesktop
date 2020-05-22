@@ -1,6 +1,6 @@
 #define MyAppShortName "CloudVeil Messenger"
 #define MyAppName "CloudVeil Messenger Desktop"
-#define MyAppPublisher "Telegram FZ-LLC"
+#define MyAppPublisher "CloudVeil"
 #define MyAppURL "https://github.com/cloudveiltech"
 #define MyAppExeName "CloudVeilMessenger.exe"
 #define MyAppId "7BF3C861-C022-41EC-8C16-87EBECBDCE4B"     
@@ -50,7 +50,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; OnlyBelowVersion: 0,6.1
 
 [Files]
-Source: "{#ReleasePath}\CloudVeil Messenger.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ReleasePath}\CloudVeilMessenger.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ReleasePath}\Updater.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 

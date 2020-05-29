@@ -86,7 +86,7 @@ QSize WebPage::countOptimalSize() {
 	}
 	const auto versionChanged = (_dataVersion != _data->version);
 	if (versionChanged) {
-		_dataVersion = _data->version;
+		_dataVersion = _data->version; 
 		_openl = nullptr;
 		_attach = nullptr;
 		_collage = PrepareCollageMedia(_parent->data(), _data->collage);

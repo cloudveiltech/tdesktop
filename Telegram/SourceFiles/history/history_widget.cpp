@@ -1983,6 +1983,7 @@ void HistoryWidget::showHistory(
 	crl::on_main(App::wnd(), [] { App::wnd()->setInnerFocus(); });
 	//CloudVeil start	
 	if (!inList) {
+		_list->hide();
 		_scroll->hide();
 	}
 	//CloudVeil end

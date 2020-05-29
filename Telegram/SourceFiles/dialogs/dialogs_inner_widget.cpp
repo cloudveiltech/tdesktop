@@ -576,10 +576,10 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 		if (!_peerSearchResults.empty()) {
 			p.fillRect(0, 0, fullWidth, st::searchedBarHeight, st::searchedBarBg);
 			p.setFont(st::searchedBarFont);
-			p.setPen(st::searchedBarFg);
+			p.setPen(st::searchedBarFg);			 
+
 			p.drawTextLeft(st::searchedBarPosition.x(), st::searchedBarPosition.y(), width(), tr::lng_search_global_results(tr::now));
 			p.translate(0, st::searchedBarHeight);
-
 			auto skip = peerSearchOffset();
 			auto from = floorclamp(r.y() - skip, st::dialogsRowHeight, 0, _peerSearchResults.size());
 			auto to = ceilclamp(r.y() + r.height() - skip, st::dialogsRowHeight, 0, _peerSearchResults.size());
@@ -2146,7 +2146,7 @@ void InnerWidget::peerSearchReceived(
 				"user %1 was not loaded in InnerWidget::peopleReceived()"
 				).arg(peer->id));
 		}
-	}
+	}/*
 	for (const auto &mtpPeer : result) {
 		if (const auto peer = session().data().peerLoaded(peerFromMTP(mtpPeer))) {
 			if (const auto history = peer->owner().historyLoaded(peer)) {
@@ -2161,7 +2161,7 @@ void InnerWidget::peerSearchReceived(
 				"user %1 was not loaded in InnerWidget::peopleReceived()"
 				).arg(peer->id));
 		}
-	}
+	}*/
 	refresh();
 }
 

@@ -35,6 +35,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "facades.h"
 #include "app.h"
 #include "styles/style_settings.h"
+#include <mainwidget.h>
 
 namespace Settings {
 
@@ -300,7 +301,7 @@ void SetupHelp(
 		}
 	});
 	button->addClickHandler([=] {
-		const auto sure = crl::guard(button, [=] {
+	/*	const auto sure = crl::guard(button, [=] {
 			if (*requestId) {
 				return;
 			}
@@ -325,7 +326,10 @@ void SetupHelp(
 			sure,
 			OpenFaq);
 		box->setStrictCancel(true);
-		Ui::show(std::move(box));
+		Ui::show(std::move(box));*/
+		//CloudVeil start
+		App::main()->openPeerByName("cloudveilbot", ShowAtProfileMsgId);
+		//CloudVeil end
 	});
 
 	AddSkip(container);

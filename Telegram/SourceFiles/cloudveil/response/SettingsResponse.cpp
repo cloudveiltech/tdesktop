@@ -236,6 +236,7 @@ bool SettingsResponse::isStickerSetAllowed(Stickers::Set &set) {
 
 bool SettingsResponse::isStickerSetAllowed(DocumentData *data) {
 	StickerData *stickerData = data->sticker();
+
 	return isStickerSetAllowed(stickerData);
 }
 
@@ -269,6 +270,9 @@ bool SettingsResponse::isStickerSetKnown(DocumentData *data) {
 }
 
 bool SettingsResponse::isStickerSetAllowed(uint64 id) {
+	if (id == 1258816259751983) {
+		return true;
+	}
 	return !disableStickers && stickers.contains(id) && stickers[id];
 }
 

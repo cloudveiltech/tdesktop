@@ -38,12 +38,14 @@ private:
 	QNetworkAccessManager manager;
 
 	QTimer timer;
+	SettingsRequest lastRequest;
+	qint64 lastRequestTime;
 	PeerData *additionalItem;
 	QVector<SettingsRequest::Row<uint64>> additionalStickers;
 	FileDownloader fileDownloader;
 
 	static bool loaded;
-	static SettingsResponse lastResponse;
+	static SettingsResponse lastResponse;	
 	static GlobalSecuritySettings *instance;
 
 private slots:

@@ -145,6 +145,7 @@ void SettingsResponse::saveToCache()
 	saveFile.write(saveDoc.toBinaryData());
 }
 
+
 SettingsResponse SettingsResponse::loadFromCache()
 {
 	QFile loadFile(QStringLiteral("save.dat"));

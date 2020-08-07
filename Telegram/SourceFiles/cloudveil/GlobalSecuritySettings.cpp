@@ -14,6 +14,7 @@
 #include "apiwrap.h"
 #include <QtCore/QJsonDocument>
 
+#define MAX_REQUEST_INTERVAL_MS 10*60*1000
 
 SettingsResponse GlobalSecuritySettings::lastResponse;
 GlobalSecuritySettings* GlobalSecuritySettings::instance;
@@ -37,8 +38,7 @@ GlobalSecuritySettings::~GlobalSecuritySettings() {
 }
 
 
-void GlobalSecuritySettings::updateFromServer()
-{
+void GlobalSecuritySettings::updateFromServer() {
 	timer.stop();
 	timer.setSingleShot(true);
 	timer.start(200);
@@ -46,9 +46,25 @@ void GlobalSecuritySettings::updateFromServer()
 
 void GlobalSecuritySettings::doServerRequest() {
 	SettingsRequest request;
+	
 	buildRequest(request);
-	sendRequest(request);
 
+	if (lastRequest.equalsTo(request)) {
+		auto now = QDateTime::currentDateTime().toMSecsSinceEpoch();
+		if (now - lastRequestTime < MAX_REQUEST_INTERVAL_MS) {
+			qDebug() << "Sync Request the same, skipping it";
+			emit this->settingsReady();
+			return;
+		}
+		else {
+			qDebug() << "Timeout sync. Sending request despite it's the same";
+			lastRequestTime = now;
+		}
+	} 
+
+	lastRequest = request;
+
+	sendRequest(request);
 	suscribeToSupportChannel(request);
 }
 

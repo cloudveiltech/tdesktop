@@ -21,6 +21,14 @@ public:
 				json["is_public"] = isPublic;
 			}
 		}
+
+		bool equalsTo(Row& r) {
+			return this->id == r.id && 
+				this->title == r.title &&
+				this->userName == r.userName && 
+				this->isMegagroup == r.isMegagroup && 
+				this->isPublic == r.isPublic;
+		}
 	};
 
 	int32 userId;
@@ -34,11 +42,13 @@ public:
 	QVector<Row<int32>> users;
 
 	void writeToJson(QJsonObject &json);
-	
+	bool equalsTo(SettingsRequest& request);
+
 	SettingsRequest();
 	~SettingsRequest();
 
 private:
 	template<typename T> void writeArrayToJson(QJsonArray &jsonArray, QVector<Row<T>> &objects, bool writeIsMegagroup=false, bool writeIsPublic=false);
+	template<typename T> bool arraysEqual(QVector<Row<T>> array1, QVector<Row<T>> array2);
 };
 

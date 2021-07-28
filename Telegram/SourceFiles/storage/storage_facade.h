@@ -10,6 +10,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <rpl/producer.h>
 #include "base/enum_mask.h"
 
+namespace Data {
+struct MessagesResult;
+} // namespace Data
+
 namespace Storage {
 
 struct SparseIdsListResult;
@@ -19,7 +23,9 @@ struct SharedMediaAddExisting;
 struct SharedMediaAddSlice;
 struct SharedMediaRemoveOne;
 struct SharedMediaRemoveAll;
+struct SharedMediaInvalidateBottom;
 struct SharedMediaQuery;
+struct SharedMediaKey;
 using SharedMediaResult = SparseIdsListResult;
 struct SharedMediaSliceUpdate;
 
@@ -40,11 +46,15 @@ public:
 	void add(SharedMediaAddSlice &&query);
 	void remove(SharedMediaRemoveOne &&query);
 	void remove(SharedMediaRemoveAll &&query);
+	void invalidate(SharedMediaInvalidateBottom &&query);
 
 	rpl::producer<SharedMediaResult> query(SharedMediaQuery &&query) const;
+	SharedMediaResult snapshot(const SharedMediaQuery &query) const;
+	bool empty(const SharedMediaKey &key) const;
 	rpl::producer<SharedMediaSliceUpdate> sharedMediaSliceUpdated() const;
 	rpl::producer<SharedMediaRemoveOne> sharedMediaOneRemoved() const;
 	rpl::producer<SharedMediaRemoveAll> sharedMediaAllRemoved() const;
+	rpl::producer<SharedMediaInvalidateBottom> sharedMediaBottomInvalidated() const;
 
 	void add(UserPhotosAddNew &&query);
 	void add(UserPhotosAddSlice &&query);

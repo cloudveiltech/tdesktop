@@ -8,14 +8,19 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/win/launcher_win.h"
 
 #include "core/crash_reports.h"
-#include "platform/platform_specific.h"
+#include "core/update_checker.h"
+#include "base/platform/win/base_windows_h.h"
 
-#include <windows.h>
 #include <shellapi.h>
+#include <VersionHelpers.h>
 
 namespace Platform {
 
-base::optional<QStringList> Launcher::readArgumentsHook(
+Launcher::Launcher(int argc, char *argv[])
+: Core::Launcher(argc, argv) {
+}
+
+std::optional<QStringList> Launcher::readArgumentsHook(
 		int argc,
 		char *argv[]) const {
 	auto count = 0;
@@ -30,7 +35,7 @@ base::optional<QStringList> Launcher::readArgumentsHook(
 			return result;
 		}
 	}
-	return base::none;
+	return std::nullopt;
 }
 
 bool Launcher::launchUpdater(UpdaterLaunch action) {
@@ -56,15 +61,20 @@ bool Launcher::launchUpdater(UpdaterLaunch action) {
 	if (cLaunchMode() == LaunchModeAutoStart) {
 		pushArgument(qsl("-autostart"));
 	}
-	if (cDebug()) {
+	if (Logs::DebugEnabled()) {
 		pushArgument(qsl("-debug"));
 	}
 	if (cStartInTray()) {
 		pushArgument(qsl("-startintray"));
 	}
-	if (cTestMode()) {
-		pushArgument(qsl("-testmode"));
+	if (cUseFreeType()) {
+		pushArgument(qsl("-freetype"));
 	}
+#ifndef TDESKTOP_DISABLE_AUTOUPDATE
+	if (Core::UpdaterDisabled()) {
+		pushArgument(qsl("-externalupdater"));
+	}
+#endif // !TDESKTOP_DISABLE_AUTOUPDATE
 	if (customWorkingDir()) {
 		pushArgument(qsl("-workdir"));
 		pushArgument('"' + cWorkingDir() + '"');
@@ -118,15 +128,15 @@ bool Launcher::launch(
 		arguments.toStdWString().c_str(),
 		nativeWorkingDir.empty() ? nullptr : nativeWorkingDir.c_str(),
 		SW_SHOWNORMAL);
-	if (long(result) < 32) {
+	if (int64(result) < 32) {
 		DEBUG_LOG(("Application Error: failed to execute %1, working directory: '%2', result: %3"
 			).arg(binaryPath
 			).arg(cWorkingDir()
-			).arg(long(result)
+			).arg(int64(result)
 			));
 		return false;
 	}
 	return true;
 }
 
-} // namespace
+} // namespace Platform

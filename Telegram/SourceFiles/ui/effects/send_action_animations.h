@@ -7,61 +7,34 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+namespace Api {
+enum class SendProgressType;
+} // namespace Api
+
 namespace Ui {
 
 class SendActionAnimation {
 public:
-	using Type = SendAction::Type;
+	using Type = Api::SendProgressType;
+	class Impl;
+
+	SendActionAnimation();
+	~SendActionAnimation();
 
 	void start(Type type);
-	void stop();
+	void tryToFinish();
 
-	int width() const {
-		return _impl ? _impl->width() : 0;
-	}
-	void paint(Painter &p, style::color color, int x, int y, int outerWidth, TimeMs ms) {
-		if (_impl) {
-			_impl->paint(p, color, x, y, outerWidth, ms);
-		}
-	}
+	int width() const;
+	void paint(Painter &p, style::color color, int x, int y, int outerWidth, crl::time ms) const;
 
 	explicit operator bool() const {
 		return _impl != nullptr;
 	}
 
-	class Impl {
-	public:
-		using Type = SendAction::Type;
-
-		Impl(int period) : _period(period), _started(getms()) {
-		}
-
-		struct MetaData {
-			int index;
-			std::unique_ptr<Impl> (*creator)();
-		};
-		virtual const MetaData *metaData() const = 0;
-		bool supports(Type type) const;
-
-		virtual int width() const = 0;
-		void paint(Painter &p, style::color color, int x, int y, int outerWidth, TimeMs ms) {
-			paintFrame(p, color, x, y, outerWidth, qMax(ms - _started, 0LL) % _period);
-		}
-
-		virtual ~Impl() = default;
-
-	private:
-		virtual void paintFrame(Painter &p, style::color color, int x, int y, int outerWidth, int frameMs) = 0;
-
-		int _period = 1;
-		TimeMs _started = 0;
-
-	};
-
-	~SendActionAnimation();
+	static void PaintSpeakingIdle(Painter &p, style::color color, int x, int y, int outerWidth);
 
 private:
-	std::unique_ptr<Impl> createByType(Type type);
+	[[nodiscard]] static std::unique_ptr<Impl> CreateByType(Type type);
 
 	std::unique_ptr<Impl> _impl;
 

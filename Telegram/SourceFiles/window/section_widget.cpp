@@ -7,16 +7,24 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/section_widget.h"
 
-#include <rpl/range.h>
-#include "application.h"
+#include "mainwidget.h"
+#include "ui/ui_utility.h"
 #include "window/section_memento.h"
 #include "window/window_slide_animation.h"
+#include "window/themes/window_theme.h"
+#include "window/window_session_controller.h"
+
+#include <rpl/range.h>
 
 namespace Window {
 
+Main::Session &AbstractSectionWidget::session() const {
+	return _controller->session();
+}
+
 SectionWidget::SectionWidget(
 	QWidget *parent,
-	not_null<Window::Controller*> controller)
+	not_null<Window::SessionController*> controller)
 : AbstractSectionWidget(parent, controller) {
 }
 
@@ -26,7 +34,7 @@ void SectionWidget::setGeometryWithTopMoved(
 	_topDelta = topDelta;
 	bool willBeResized = (size() != newGeometry.size());
 	if (geometry() != newGeometry) {
-		auto weak = make_weak(this);
+		auto weak = Ui::MakeWeak(this);
 		setGeometry(newGeometry);
 		if (!weak) {
 			return;
@@ -62,13 +70,64 @@ void SectionWidget::showAnimated(
 	show();
 }
 
-std::unique_ptr<SectionMemento> SectionWidget::createMemento() {
+std::shared_ptr<SectionMemento> SectionWidget::createMemento() {
 	return nullptr;
 }
 
 void SectionWidget::showFast() {
 	show();
 	showFinished();
+}
+
+QPixmap SectionWidget::grabForShowAnimation(
+		const SectionSlideParams &params) {
+	return Ui::GrabWidget(this);
+}
+
+void SectionWidget::PaintBackground(
+		not_null<Window::SessionController*> controller,
+		not_null<QWidget*> widget,
+		QRect clip) {
+	Painter p(widget);
+
+	auto fill = QRect(0, 0, widget->width(), controller->content()->height());
+	if (const auto color = Window::Theme::Background()->colorForFill()) {
+		p.fillRect(fill, *color);
+		return;
+	}
+	auto fromy = controller->content()->backgroundFromY();
+	auto x = 0, y = 0;
+	auto cached = controller->content()->cachedBackground(fill, x, y);
+	if (cached.isNull()) {
+		if (Window::Theme::Background()->tile()) {
+			auto &pix = Window::Theme::Background()->pixmapForTiled();
+			auto left = clip.left();
+			auto top = clip.top();
+			auto right = clip.left() + clip.width();
+			auto bottom = clip.top() + clip.height();
+			auto w = pix.width() / cRetinaFactor();
+			auto h = pix.height() / cRetinaFactor();
+			auto sx = qFloor(left / w);
+			auto sy = qFloor((top - fromy) / h);
+			auto cx = qCeil(right / w);
+			auto cy = qCeil((bottom - fromy) / h);
+			for (auto i = sx; i < cx; ++i) {
+				for (auto j = sy; j < cy; ++j) {
+					p.drawPixmap(QPointF(i * w, fromy + j * h), pix);
+				}
+			}
+		} else {
+			PainterHighQualityEnabler hq(p);
+
+			auto &pix = Window::Theme::Background()->pixmap();
+			QRect to, from;
+			Window::Theme::ComputeBackgroundRects(fill, pix.size(), to, from);
+			to.moveTop(to.top() + fromy);
+			p.drawPixmap(to, pix, from);
+		}
+	} else {
+		p.drawPixmap(x, fromy + y, cached);
+	}
 }
 
 void SectionWidget::paintEvent(QPaintEvent *e) {

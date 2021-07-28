@@ -7,31 +7,51 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "ui/twidget.h"
-#include "chat_helpers/stickers.h"
+#include "api/api_common.h"
+#include "ui/effects/animations.h"
+#include "ui/rp_widget.h"
+#include "base/timer.h"
+#include "base/object_ptr.h"
 
 namespace Ui {
+class PopupMenu;
 class ScrollArea;
+class InputField;
 } // namespace Ui
 
-namespace internal {
+namespace Lottie {
+class SinglePlayer;
+class FrameRenderer;
+} // namespace Lottie;
 
-using MentionRows = QList<UserData*>;
-using HashtagRows = QList<QString>;
-using BotCommandRows = QList<QPair<UserData*, const BotCommand*>>;
+namespace Window {
+class SessionController;
+} // namespace Window
 
-class FieldAutocompleteInner;
+namespace Data {
+class DocumentMedia;
+class CloudImageView;
+} // namespace Data
 
-} // namespace internal
+namespace SendMenu {
+enum class Type;
+} // namespace SendMenu
 
-class FieldAutocomplete final : public TWidget {
-	Q_OBJECT
 
+class FieldAutocomplete final : public Ui::RpWidget {
 public:
-	FieldAutocomplete(QWidget *parent);
+	FieldAutocomplete(
+		QWidget *parent,
+		not_null<Window::SessionController*> controller);
+	~FieldAutocomplete();
+
+	[[nodiscard]] not_null<Window::SessionController*> controller() const;
 
 	bool clearFilteredBotCommands();
-	void showFiltered(PeerData *peer, QString query, bool addInlineBots);
+	void showFiltered(
+		not_null<PeerData*> peer,
+		QString query,
+		bool addInlineBots);
 	void showStickers(EmojiPtr emoji);
 	void setBoundings(QRect boundings);
 
@@ -50,10 +70,28 @@ public:
 		ByTab,
 		ByClick,
 	};
+	struct MentionChosen {
+		not_null<UserData*> user;
+		ChooseMethod method;
+	};
+	struct HashtagChosen {
+		QString hashtag;
+		ChooseMethod method;
+	};
+	struct BotCommandChosen {
+		QString command;
+		ChooseMethod method;
+	};
+	struct StickerChosen {
+		not_null<DocumentData*> sticker;
+		Api::SendOptions options;
+		ChooseMethod method;
+	};
+
 	bool chooseSelected(ChooseMethod method) const;
 
 	bool stickersShown() const {
-		return !_srows.isEmpty();
+		return !_srows.empty();
 	}
 
 	bool overlaps(const QRect &globalRect) {
@@ -62,19 +100,19 @@ public:
 		return rect().contains(QRect(mapFromGlobal(globalRect.topLeft()), globalRect.size()));
 	}
 
+	void setModerateKeyActivateCallback(Fn<bool(int)> callback) {
+		_moderateKeyActivateCallback = std::move(callback);
+	}
+	void setSendMenuType(Fn<SendMenu::Type()> &&callback);
+
 	void hideFast();
 
-	~FieldAutocomplete();
+	rpl::producer<MentionChosen> mentionChosen() const;
+	rpl::producer<HashtagChosen> hashtagChosen() const;
+	rpl::producer<BotCommandChosen> botCommandChosen() const;
+	rpl::producer<StickerChosen> stickerChosen() const;
 
-signals:
-	void mentionChosen(UserData *user, FieldAutocomplete::ChooseMethod method) const;
-	void hashtagChosen(QString hashtag, FieldAutocomplete::ChooseMethod method) const;
-	void botCommandChosen(QString command, FieldAutocomplete::ChooseMethod method) const;
-	void stickerChosen(DocumentData *sticker, FieldAutocomplete::ChooseMethod method) const;
-
-	void moderateKeyActivate(int key, bool *outHandled) const;
-
-public slots:
+public Q_SLOTS:
 	void showAnimated();
 	void hideAnimated();
 
@@ -82,27 +120,62 @@ protected:
 	void paintEvent(QPaintEvent *e) override;
 
 private:
+	class Inner;
+	friend class Inner;
+
+	struct StickerSuggestion {
+		not_null<DocumentData*> document;
+		std::shared_ptr<Data::DocumentMedia> documentMedia;
+		std::unique_ptr<Lottie::SinglePlayer> animated;
+	};
+
+	struct MentionRow {
+		not_null<UserData*> user;
+		std::shared_ptr<Data::CloudImageView> userpic;
+	};
+
+	struct BotCommandRow {
+		not_null<UserData*> user;
+		QString command;
+		QString description;
+		std::shared_ptr<Data::CloudImageView> userpic;
+		Ui::Text::String descriptionText;
+	};
+
+	using HashtagRows = std::vector<QString>;
+	using BotCommandRows = std::vector<BotCommandRow>;
+	using StickerRows = std::vector<StickerSuggestion>;
+	using MentionRows = std::vector<MentionRow>;
+
 	void animationCallback();
 	void hideFinish();
 
 	void updateFiltered(bool resetScroll = false);
 	void recount(bool resetScroll = false);
+	StickerRows getStickerSuggestions();
 
+	const not_null<Window::SessionController*> _controller;
 	QPixmap _cache;
-	internal::MentionRows _mrows;
-	internal::HashtagRows _hrows;
-	internal::BotCommandRows _brows;
-	Stickers::Pack _srows;
+	MentionRows _mrows;
+	HashtagRows _hrows;
+	BotCommandRows _brows;
+	StickerRows _srows;
 
-	void rowsUpdated(const internal::MentionRows &mrows, const internal::HashtagRows &hrows, const internal::BotCommandRows &brows, const Stickers::Pack &srows, bool resetScroll);
+	void rowsUpdated(
+		MentionRows &&mrows,
+		HashtagRows &&hrows,
+		BotCommandRows &&brows,
+		StickerRows &&srows,
+		bool resetScroll);
 
 	object_ptr<Ui::ScrollArea> _scroll;
-	QPointer<internal::FieldAutocompleteInner> _inner;
+	QPointer<Inner> _inner;
 
 	ChatData *_chat = nullptr;
 	UserData *_user = nullptr;
 	ChannelData *_channel = nullptr;
 	EmojiPtr _emoji;
+	uint64 _stickersSeed = 0;
 	enum class Type {
 		Mentions,
 		Hashtags,
@@ -114,71 +187,10 @@ private:
 	QRect _boundings;
 	bool _addInlineBots;
 
-	int32 _width, _height;
 	bool _hiding = false;
 
-	Animation _a_opacity;
+	Ui::Animations::Simple _a_opacity;
 
-	friend class internal::FieldAutocompleteInner;
-
-};
-
-namespace internal {
-
-class FieldAutocompleteInner final : public TWidget, private base::Subscriber {
-	Q_OBJECT
-
-public:
-	FieldAutocompleteInner(FieldAutocomplete *parent, MentionRows *mrows, HashtagRows *hrows, BotCommandRows *brows, Stickers::Pack *srows);
-
-	void clearSel(bool hidden = false);
-	bool moveSel(int key);
-	bool chooseSelected(FieldAutocomplete::ChooseMethod method) const;
-
-	void setRecentInlineBotsInRows(int32 bots);
-
-signals:
-	void mentionChosen(UserData *user, FieldAutocomplete::ChooseMethod method) const;
-	void hashtagChosen(QString hashtag, FieldAutocomplete::ChooseMethod method) const;
-	void botCommandChosen(QString command, FieldAutocomplete::ChooseMethod method) const;
-	void stickerChosen(DocumentData *sticker, FieldAutocomplete::ChooseMethod method) const;
-	void mustScrollTo(int scrollToTop, int scrollToBottom);
-
-public slots:
-	void onParentGeometryChanged();
-	void onUpdateSelected(bool force = false);
-	void onPreview();
-
-private:
-	void paintEvent(QPaintEvent *e) override;
-	void resizeEvent(QResizeEvent *e) override;
-
-	void enterEventHook(QEvent *e) override;
-	void leaveEventHook(QEvent *e) override;
-
-	void mousePressEvent(QMouseEvent *e) override;
-	void mouseMoveEvent(QMouseEvent *e) override;
-	void mouseReleaseEvent(QMouseEvent *e) override;
-
-	void updateSelectedRow();
-	void setSel(int sel, bool scroll = false);
-
-	FieldAutocomplete *_parent;
-	MentionRows *_mrows;
-	HashtagRows *_hrows;
-	BotCommandRows *_brows;
-	Stickers::Pack *_srows;
-	int32 _stickersPerRow, _recentInlineBotsInRows;
-	int32 _sel, _down;
-	bool _mouseSel;
-	QPoint _mousePos;
-
-	bool _overDelete;
-
-	bool _previewShown;
-
-	QTimer _previewTimer;
+	Fn<bool(int)> _moderateKeyActivateCallback;
 
 };
-
-} // namespace internal

@@ -7,46 +7,22 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "data/data_abstract_sparse_ids.h"
+#include "data/data_messages.h"
+
 namespace Storage {
 struct SparseIdsListResult;
 struct SparseIdsSliceUpdate;
 } // namespace Storage
 
-enum class SparseIdsLoadDirection {
-	Around,
-	Before,
-	After,
-};
-
-class SparseIdsSlice {
+class SparseIdsSlice final : public AbstractSparseIds<base::flat_set<MsgId>> {
 public:
 	using Key = MsgId;
-
-	SparseIdsSlice() = default;
-	SparseIdsSlice(
-		const base::flat_set<MsgId> &ids,
-		MsgRange range,
-		base::optional<int> fullCount,
-		base::optional<int> skippedBefore,
-		base::optional<int> skippedAfter);
-
-	base::optional<int> fullCount() const { return _fullCount; }
-	base::optional<int> skippedBefore() const { return _skippedBefore; }
-	base::optional<int> skippedAfter() const { return _skippedAfter; }
-	base::optional<int> indexOf(MsgId msgId) const;
-	int size() const { return _ids.size(); }
-	MsgId operator[](int index) const;
-	base::optional<int> distance(MsgId a, MsgId b) const;
-	base::optional<MsgId> nearest(MsgId msgId) const;
-
-private:
-	base::flat_set<MsgId> _ids;
-	MsgRange _range;
-	base::optional<int> _fullCount;
-	base::optional<int> _skippedBefore;
-	base::optional<int> _skippedAfter;
+	using AbstractSparseIds<base::flat_set<MsgId>>::AbstractSparseIds;
 
 };
+
+using SparseUnsortedIdsSlice = AbstractSparseIds<std::vector<MsgId>>;
 
 class SparseIdsMergedSlice {
 public:
@@ -55,9 +31,11 @@ public:
 		Key(
 			PeerId peerId,
 			PeerId migratedPeerId,
-			UniversalMsgId universalId)
+			UniversalMsgId universalId,
+			bool scheduled = false)
 		: peerId(peerId)
-		, migratedPeerId(migratedPeerId)
+		, scheduled(scheduled)
+		, migratedPeerId(scheduled ? 0 : migratedPeerId)
 		, universalId(universalId) {
 		}
 
@@ -71,6 +49,7 @@ public:
 		}
 
 		PeerId peerId = 0;
+		bool scheduled = false;
 		PeerId migratedPeerId = 0;
 		UniversalMsgId universalId = 0;
 
@@ -80,16 +59,19 @@ public:
 	SparseIdsMergedSlice(
 		Key key,
 		SparseIdsSlice part,
-		base::optional<SparseIdsSlice> migrated);
+		std::optional<SparseIdsSlice> migrated);
+	SparseIdsMergedSlice(
+		Key key,
+		SparseUnsortedIdsSlice scheduled);
 
-	base::optional<int> fullCount() const;
-	base::optional<int> skippedBefore() const;
-	base::optional<int> skippedAfter() const;
-	base::optional<int> indexOf(FullMsgId fullId) const;
+	std::optional<int> fullCount() const;
+	std::optional<int> skippedBefore() const;
+	std::optional<int> skippedAfter() const;
+	std::optional<int> indexOf(FullMsgId fullId) const;
 	int size() const;
 	FullMsgId operator[](int index) const;
-	base::optional<int> distance(const Key &a, const Key &b) const;
-	base::optional<FullMsgId> nearest(UniversalMsgId id) const;
+	std::optional<int> distance(const Key &a, const Key &b) const;
+	std::optional<FullMsgId> nearest(UniversalMsgId id) const;
 
 	using SimpleViewerFunction = rpl::producer<SparseIdsSlice>(
 		PeerId peerId,
@@ -100,7 +82,7 @@ public:
 		SparseIdsMergedSlice::Key key,
 		int limitBefore,
 		int limitAfter,
-		base::lambda<SimpleViewerFunction> simpleViewer);
+		Fn<SimpleViewerFunction> simpleViewer);
 
 private:
 	static SparseIdsSlice::Key PartKey(const Key &key) {
@@ -111,10 +93,10 @@ private:
 			? (ServerMaxMsgId + key.universalId)
 			: (key.universalId > 0) ? (ServerMaxMsgId - 1) : 0;
 	}
-	static base::optional<SparseIdsSlice> MigratedSlice(const Key &key) {
+	static std::optional<SparseIdsSlice> MigratedSlice(const Key &key) {
 		return key.migratedPeerId
 			? base::make_optional(SparseIdsSlice())
-			: base::none;
+			: std::nullopt;
 	}
 
 	static bool IsFromSlice(PeerId peerId, FullMsgId fullId) {
@@ -123,19 +105,17 @@ private:
 			: !fullId.channel;
 	}
 	static FullMsgId ComputeId(PeerId peerId, MsgId msgId) {
-		return FullMsgId(
-			peerIsChannel(peerId) ? peerToBareInt(peerId) : 0,
-			msgId);
+		return FullMsgId(peerToChannel(peerId), msgId);
 	}
 	static FullMsgId ComputeId(const Key &key) {
 		return (key.universalId >= 0)
 			? ComputeId(key.peerId, key.universalId)
 			: ComputeId(key.migratedPeerId, ServerMaxMsgId + key.universalId);
 	}
-	static base::optional<int> Add(
-			const base::optional<int> &a,
-			const base::optional<int> &b) {
-		return (a && b) ? base::make_optional(*a + *b) : base::none;
+	static std::optional<int> Add(
+			const std::optional<int> &a,
+			const std::optional<int> &b) {
+		return (a && b) ? base::make_optional(*a + *b) : std::nullopt;
 	}
 
 	bool isFromPart(FullMsgId fullId) const {
@@ -160,7 +140,8 @@ private:
 
 	Key _key;
 	SparseIdsSlice _part;
-	base::optional<SparseIdsSlice> _migrated;
+	std::optional<SparseIdsSlice> _migrated;
+	std::optional<SparseUnsortedIdsSlice> _scheduled;
 
 };
 
@@ -174,12 +155,12 @@ public:
 	bool applyUpdate(const Storage::SparseIdsSliceUpdate &update);
 	bool removeOne(MsgId messageId);
 	bool removeAll();
+	bool invalidateBottom();
 
 	void checkInsufficient();
 	struct AroundData {
 		MsgId aroundId = 0;
-		SparseIdsLoadDirection direction
-			= SparseIdsLoadDirection::Around;
+		Data::LoadDirection direction = Data::LoadDirection::Around;
 
 		inline bool operator<(const AroundData &other) const {
 			return (aroundId < other.aroundId)
@@ -204,17 +185,16 @@ private:
 	void sliceToLimits();
 
 	void mergeSliceData(
-		base::optional<int> count,
+		std::optional<int> count,
 		const base::flat_set<MsgId> &messageIds,
-		base::optional<int> skippedBefore = base::none,
-		base::optional<int> skippedAfter = base::none);
+		std::optional<int> skippedBefore = std::nullopt,
+		std::optional<int> skippedAfter = std::nullopt);
 
 	Key _key;
 	base::flat_set<MsgId> _ids;
-	MsgRange _range;
-	base::optional<int> _fullCount;
-	base::optional<int> _skippedBefore;
-	base::optional<int> _skippedAfter;
+	std::optional<int> _fullCount;
+	std::optional<int> _skippedBefore;
+	std::optional<int> _skippedAfter;
 	int _limitBefore = 0;
 	int _limitAfter = 0;
 

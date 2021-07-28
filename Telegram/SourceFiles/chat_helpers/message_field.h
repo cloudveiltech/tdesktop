@@ -8,44 +8,98 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "ui/widgets/input_fields.h"
+#include "base/timer.h"
+#include "base/qt_connection.h"
 
-class HistoryWidget;
+#ifndef TDESKTOP_DISABLE_SPELLCHECK
+#include "boxes/dictionaries_manager.h"
+#include "spellcheck/spelling_highlighter.h"
+#endif // TDESKTOP_DISABLE_SPELLCHECK
+
+#include <QtGui/QClipboard>
+
+namespace Main {
+class Session;
+} // namespace Main
+
 namespace Window {
-class Controller;
+class SessionController;
 } // namespace Window
 
-QString ConvertTagToMimeTag(const QString &tagId);
+namespace Ui {
+class PopupMenu;
+} // namespace Ui
 
-EntitiesInText ConvertTextTagsToEntities(const TextWithTags::Tags &tags);
-TextWithTags::Tags ConvertEntitiesToTextTags(const EntitiesInText &entities);
-std::unique_ptr<QMimeData> MimeDataFromTextWithEntities(const TextWithEntities &forClipboard);
+QString PrepareMentionTag(not_null<UserData*> user);
+TextWithTags PrepareEditText(not_null<HistoryItem*> item);
 
-class MessageField final : public Ui::FlatTextarea {
-	Q_OBJECT
+Fn<bool(
+	Ui::InputField::EditLinkSelection selection,
+	QString text,
+	QString link,
+	Ui::InputField::EditLinkAction action)> DefaultEditLinkCallback(
+		not_null<Window::SessionController*> controller,
+		not_null<Ui::InputField*> field);
+void InitMessageField(
+	not_null<Window::SessionController*> controller,
+	not_null<Ui::InputField*> field);
 
+void InitSpellchecker(
+	not_null<Window::SessionController*> controller,
+	not_null<Ui::InputField*> field);
+
+bool HasSendText(not_null<const Ui::InputField*> field);
+
+struct InlineBotQuery {
+	QString query;
+	QString username;
+	UserData *bot = nullptr;
+	bool lookingUpBot = false;
+};
+InlineBotQuery ParseInlineBotQuery(
+	not_null<Main::Session*> session,
+	not_null<const Ui::InputField*> field);
+
+struct AutocompleteQuery {
+	QString query;
+	bool fromStart = false;
+};
+AutocompleteQuery ParseMentionHashtagBotCommandQuery(
+	not_null<const Ui::InputField*> field);
+
+class MessageLinksParser : private QObject {
 public:
-	MessageField(QWidget *parent, not_null<Window::Controller*> controller, const style::FlatTextarea &st, base::lambda<QString()> placeholderFactory = base::lambda<QString()>(), const QString &val = QString());
+	MessageLinksParser(not_null<Ui::InputField*> field);
 
-	bool hasSendText() const;
+	void parseNow();
 
-	void setInsertFromMimeDataHook(base::lambda<bool(const QMimeData *data)> hook) {
-		_insertFromMimeDataHook = std::move(hook);
-	}
-
-public slots:
-	void onEmojiInsert(EmojiPtr emoji);
-
-signals:
-	void focused();
+	[[nodiscard]] const rpl::variable<QStringList> &list() const;
 
 protected:
-	void focusInEvent(QFocusEvent *e) override;
-	void dropEvent(QDropEvent *e) override;
-	bool canInsertFromMimeData(const QMimeData *source) const override;
-	void insertFromMimeData(const QMimeData *source) override;
+	bool eventFilter(QObject *object, QEvent *event) override;
 
 private:
-	not_null<Window::Controller*> _controller;
-	base::lambda<bool(const QMimeData *data)> _insertFromMimeDataHook;
+	struct LinkRange {
+		int start;
+		int length;
+		QString custom;
+	};
+	friend inline bool operator==(const LinkRange &a, const LinkRange &b) {
+		return (a.start == b.start)
+			&& (a.length == b.length)
+			&& (a.custom == b.custom);
+	}
+	friend inline bool operator!=(const LinkRange &a, const LinkRange &b) {
+		return !(a == b);
+	}
+
+	void parse();
+	void apply(const QString &text, const QVector<LinkRange> &ranges);
+
+	not_null<Ui::InputField*> _field;
+	rpl::variable<QStringList> _list;
+	int _lastLength = 0;
+	base::Timer _timer;
+	base::qt_connection _connection;
 
 };

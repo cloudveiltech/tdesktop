@@ -35,8 +35,14 @@
 	<string>public.app-category.social-networking</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>LSFileQuarantineEnabled</key>
+	<true/>
 	<key>NOTE</key>
 	<string></string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>We need access to your microphone so that you can record voice messages and make calls.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>We need access to your camera so that you can record video messages and make video calls.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>

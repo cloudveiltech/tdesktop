@@ -7,9 +7,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "boxes/abstract_box.h"
+#include "base/timer.h"
+#include "base/object_ptr.h"
+#include "core/core_settings.h"
+#include "mtproto/connection_abstract.h"
+#include "mtproto/mtproto_proxy_data.h"
 
 namespace Ui {
+class BoxContent;
 class InputField;
 class PortInput;
 class PasswordInput;
@@ -20,67 +25,102 @@ template <typename Enum>
 class Radioenum;
 } // namespace Ui
 
-class ConnectionBox : public BoxContent {
-	Q_OBJECT
+namespace Main {
+class Account;
+} // namespace Main
 
+class ProxiesBoxController {
 public:
-	ConnectionBox(QWidget *parent);
+	using ProxyData = MTP::ProxyData;
+	using Type = ProxyData::Type;
 
-	static void ShowApplyProxyConfirmation(const QMap<QString, QString> &fields);
+	explicit ProxiesBoxController(not_null<Main::Account*> account);
 
-protected:
-	void prepare() override;
-	void setInnerFocus() override;
+	static void ShowApplyConfirmation(
+		Type type,
+		const QMap<QString, QString> &fields);
 
-	void resizeEvent(QResizeEvent *e) override;
+	static object_ptr<Ui::BoxContent> CreateOwningBox(
+		not_null<Main::Account*> account);
+	object_ptr<Ui::BoxContent> create();
 
-private slots:
-	void onSubmit();
-	void onFieldFocus();
-	void onSave();
+	enum class ItemState {
+		Connecting,
+		Online,
+		Checking,
+		Available,
+		Unavailable
+	};
+	struct ItemView {
+		int id = 0;
+		QString type;
+		QString host;
+		uint32 port = 0;
+		int ping = 0;
+		bool selected = false;
+		bool deleted = false;
+		bool supportsShare = false;
+		bool supportsCalls = false;
+		ItemState state = ItemState::Checking;
+
+	};
+
+	void deleteItem(int id);
+	void restoreItem(int id);
+	void shareItem(int id);
+	void applyItem(int id);
+	object_ptr<Ui::BoxContent> editItemBox(int id);
+	object_ptr<Ui::BoxContent> addNewItemBox();
+	bool setProxySettings(ProxyData::Settings value);
+	void setProxyForCalls(bool enabled);
+	void setTryIPv6(bool enabled);
+	rpl::producer<ProxyData::Settings> proxySettingsValue() const;
+
+	rpl::producer<ItemView> views() const;
+
+	~ProxiesBoxController();
 
 private:
-	void typeChanged(DBIConnectionType type);
-	void updateControlsVisibility();
-	void updateControlsPosition();
-	bool badProxyValue() const;
+	using Checker = MTP::details::ConnectionPointer;
+	struct Item {
+		int id = 0;
+		ProxyData data;
+		bool deleted = false;
+		Checker checker;
+		Checker checkerv6;
+		ItemState state = ItemState::Checking;
+		int ping = 0;
 
-	object_ptr<Ui::InputField> _hostInput;
-	object_ptr<Ui::PortInput> _portInput;
-	object_ptr<Ui::InputField> _userInput;
-	object_ptr<Ui::PasswordInput> _passwordInput;
-	std::shared_ptr<Ui::RadioenumGroup<DBIConnectionType>> _typeGroup;
-	object_ptr<Ui::Radioenum<DBIConnectionType>> _autoRadio;
-	object_ptr<Ui::Radioenum<DBIConnectionType>> _httpProxyRadio;
-	object_ptr<Ui::Radioenum<DBIConnectionType>> _tcpProxyRadio;
-	object_ptr<Ui::Checkbox> _tryIPv6;
+	};
 
-};
+	std::vector<Item>::iterator findById(int id);
+	std::vector<Item>::iterator findByProxy(const ProxyData &proxy);
+	void setDeleted(int id, bool deleted);
+	void updateView(const Item &item);
+	void share(const ProxyData &proxy);
+	void saveDelayed();
+	void refreshChecker(Item &item);
+	void setupChecker(int id, const Checker &checker);
 
-class AutoDownloadBox : public BoxContent {
-	Q_OBJECT
+	void replaceItemWith(
+		std::vector<Item>::iterator which,
+		std::vector<Item>::iterator with);
+	void replaceItemValue(
+		std::vector<Item>::iterator which,
+		const ProxyData &proxy);
+	void addNewItem(const ProxyData &proxy);
 
-public:
-	AutoDownloadBox(QWidget *parent);
+	const not_null<Main::Account*> _account;
+	Core::SettingsProxy &_settings;
+	int _idCounter = 0;
+	std::vector<Item> _list;
+	rpl::event_stream<ItemView> _views;
+	base::Timer _saveTimer;
+	rpl::event_stream<ProxyData::Settings> _proxySettingsChanges;
 
-protected:
-	void prepare() override;
+	ProxyData _lastSelectedProxy;
+	bool _lastSelectedProxyUsed = false;
 
-	void paintEvent(QPaintEvent *e) override;
-	void resizeEvent(QResizeEvent *e) override;
-
-private slots:
-	void onSave();
-
-private:
-	object_ptr<Ui::Checkbox> _photoPrivate;
-	object_ptr<Ui::Checkbox> _photoGroups;
-	object_ptr<Ui::Checkbox> _audioPrivate;
-	object_ptr<Ui::Checkbox> _audioGroups;
-	object_ptr<Ui::Checkbox> _gifPrivate;
-	object_ptr<Ui::Checkbox> _gifGroups;
-	object_ptr<Ui::Checkbox> _gifPlay;
-
-	int _sectionHeight = 0;
+	rpl::lifetime _lifetime;
 
 };

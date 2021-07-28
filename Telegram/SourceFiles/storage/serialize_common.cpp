@@ -9,21 +9,21 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Serialize {
 
-void writeStorageImageLocation(QDataStream &stream, const StorageImageLocation &loc) {
-	stream << qint32(loc.width()) << qint32(loc.height());
-	stream << qint32(loc.dc()) << quint64(loc.volume()) << qint32(loc.local()) << quint64(loc.secret());
+void writeColor(QDataStream &stream, const QColor &color) {
+	stream << (quint32(uchar(color.red()))
+		| (quint32(uchar(color.green())) << 8)
+		| (quint32(uchar(color.blue())) << 16)
+		| (quint32(uchar(color.alpha())) << 24));
 }
 
-StorageImageLocation readStorageImageLocation(QDataStream &stream) {
-	qint32 width, height, dc, local;
-	quint64 volume, secret;
-	stream >> width >> height >> dc >> volume >> local >> secret;
-	return StorageImageLocation(width, height, dc, volume, local, secret);
-}
-
-int storageImageLocationSize() {
-	// width + height + dc + volume + local + secret
-	return sizeof(qint32) + sizeof(qint32) + sizeof(qint32) + sizeof(quint64) + sizeof(qint32) + sizeof(quint64);
+QColor readColor(QDataStream &stream) {
+	auto value = quint32();
+	stream >> value;
+	return QColor(
+		int(value & 0xFFU),
+		int((value >> 8) & 0xFFU),
+		int((value >> 16) & 0xFFU),
+		int((value >> 24) & 0xFFU));
 }
 
 } // namespace Serialize

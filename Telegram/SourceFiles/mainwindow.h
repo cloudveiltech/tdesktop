@@ -7,27 +7,27 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "platform/platform_specific.h"
 #include "platform/platform_main_window.h"
-#include "core/single_timer.h"
+#include "base/unique_qptr.h"
+#include "ui/layers/layer_widget.h"
+#include "ui/effects/animation_value.h"
 
-class PasscodeWidget;
 class MainWidget;
-class BoxContent;
 
 namespace Intro {
 class Widget;
+enum class EnterPoint : uchar;
 } // namespace Intro
 
-namespace Local {
-class ClearManager;
-} // namespace Local
+namespace Media {
+class SystemMediaControlsManager;
+} // namespace Media
 
 namespace Window {
-class LayerWidget;
-class LayerStackWidget;
+class MediaPreviewWidget;
 class SectionMemento;
 struct SectionShow;
+class PasscodeLockWidget;
 namespace Theme {
 struct BackgroundUpdate;
 class WarningWidget;
@@ -36,82 +36,43 @@ class WarningWidget;
 
 namespace Ui {
 class LinkButton;
+class BoxContent;
+class LayerStackWidget;
 } // namespace Ui
-
-class ConnectingWidget : public TWidget {
-	Q_OBJECT
-
-public:
-	ConnectingWidget(QWidget *parent, const QString &text, const QString &reconnect);
-	void set(const QString &text, const QString &reconnect);
-
-protected:
-	void paintEvent(QPaintEvent *e) override;
-
-public slots:
-	void onReconnect();
-
-private:
-	QString _text;
-	int _textWidth = 0;
-	object_ptr<Ui::LinkButton> _reconnect;
-
-};
 
 class MediaPreviewWidget;
 
 class MainWindow : public Platform::MainWindow {
-	Q_OBJECT
-
 public:
-	MainWindow();
+	explicit MainWindow(not_null<Window::Controller*> controller);
 	~MainWindow();
 
-	void firstShow();
+	void finishFirstShow();
 
-	void setupPasscode();
-	void clearPasscode();
-	void setupIntro();
-	void setupMain(const MTPUser *user = nullptr);
-	void serviceNotification(const TextWithEntities &message, const MTPMessageMedia &media = MTP_messageMediaEmpty(), int32 date = 0, bool force = false);
-	void sendServiceHistoryRequest();
-	void showDelayedServiceMsgs();
+	void preventOrInvoke(Fn<void()> callback);
 
-	void mtpStateChanged(int32 dc, int32 state);
+	void setupPasscodeLock();
+	void clearPasscodeLock();
+	void setupIntro(Intro::EnterPoint point);
+	void setupMain();
 
-	MainWidget *chatsWidget() {
-		return mainWidget();
-	}
+	void showSettings();
 
-	MainWidget *mainWidget();
-	PasscodeWidget *passcodeWidget();
+	void setInnerFocus() override;
 
-	bool doWeReadServerHistory();
-	bool doWeReadMentions();
+	MainWidget *sessionContent() const;
 
-	void activate();
+	[[nodiscard]] bool doWeMarkAsRead();
 
-	void noIntro(Intro::Widget *was);
-	void noLayerStack(Window::LayerStackWidget *was);
-	void layerFinishedHide(Window::LayerStackWidget *was);
+
 	bool takeThirdSectionFromLayer();
 
 	void checkHistoryActivation();
 
-	void fixOrder();
-
-	enum TempDirState {
-		TempDirRemoving,
-		TempDirExists,
-		TempDirEmpty,
-	};
-	TempDirState tempDirState();
-	TempDirState localStorageState();
-	void tempDirDelete(int task);
-
 	void sendPaths();
 
 	QImage iconWithCounter(int size, int count, style::color bg, style::color fg, bool smallIcon) override;
+	void placeSmallCounter(QImage &img, int size, int count, style::color bg, const QPoint &shift, style::color color) override;
 
 	bool contentOverlapped(const QRect &globalRect);
 	bool contentOverlapped(QWidget *w, QPaintEvent *e) {
@@ -122,92 +83,89 @@ public:
 	}
 
 	void showMainMenu();
-	void updateTrayMenu(bool force = false) override;
+	void updateTrayMenu() override;
+	void fixOrder() override;
 
+	void showLayer(
+		std::unique_ptr<Ui::LayerWidget> &&layer,
+		Ui::LayerOptions options,
+		anim::type animated);
 	void showSpecialLayer(
-		object_ptr<Window::LayerWidget> layer,
+		object_ptr<Ui::LayerWidget> layer,
 		anim::type animated);
 	bool showSectionInExistingLayer(
 		not_null<Window::SectionMemento*> memento,
 		const Window::SectionShow &params);
 	void ui_showBox(
-		object_ptr<BoxContent> box,
-		LayerOptions options,
+		object_ptr<Ui::BoxContent> box,
+		Ui::LayerOptions options,
 		anim::type animated);
 	void ui_hideSettingsAndLayer(anim::type animated);
+	void ui_removeLayerBlackout();
 	bool ui_isLayerShown();
-	void ui_showMediaPreview(DocumentData *document);
-	void ui_showMediaPreview(PhotoData *photo);
-	void ui_hideMediaPreview();
+	bool showMediaPreview(
+		Data::FileOrigin origin,
+		not_null<DocumentData*> document);
+	bool showMediaPreview(
+		Data::FileOrigin origin,
+		not_null<PhotoData*> photo);
+	void hideMediaPreview();
+
+	void updateControlsGeometry() override;
 
 protected:
 	bool eventFilter(QObject *o, QEvent *e) override;
 	void closeEvent(QCloseEvent *e) override;
 
 	void initHook() override;
-	void updateIsActiveHook() override;
+	void activeChangedHook() override;
 	void clearWidgetsHook() override;
 
-	void updateControlsGeometry() override;
-
-public slots:
-	void showSettings();
-	void setInnerFocus();
-	void updateConnectingStatus();
-
-	void quitFromTray();
-	void showFromTray(QSystemTrayIcon::ActivationReason reason = QSystemTrayIcon::Unknown);
-	void toggleTray(QSystemTrayIcon::ActivationReason reason = QSystemTrayIcon::Unknown);
-	void toggleDisplayNotifyFromTray();
-
-	void onClearFinished(int task, void *manager);
-	void onClearFailed(int task, void *manager);
-
-	void onShowAddContact();
-	void onShowNewGroup();
-	void onShowNewChannel();
-	void onLogout();
-
-	void app_activateClickHandler(ClickHandlerPtr handler, Qt::MouseButton button);
-
-signals:
-	void tempDirCleared(int task);
-	void tempDirClearFailed(int task);
-	void checkNewAuthorization();
-
 private:
-	void showConnecting(const QString &text, const QString &reconnect = QString());
-	void hideConnecting();
+	[[nodiscard]] bool skipTrayClick() const;
 
+	void createTrayIconMenu();
+	void handleTrayIconActication(
+		QSystemTrayIcon::ActivationReason reason) override;
+
+	void applyInitialWorkMode();
 	void ensureLayerCreated();
-	void destroyLayerDelayed();
+	void destroyLayer();
+
+	void showBoxOrLayer(
+		std::variant<
+			v::null_t,
+			object_ptr<Ui::BoxContent>,
+			std::unique_ptr<Ui::LayerWidget>> &&layer,
+		Ui::LayerOptions options,
+		anim::type animated);
 
 	void themeUpdated(const Window::Theme::BackgroundUpdate &data);
 
+	void toggleDisplayNotifyFromTray();
+
 	QPixmap grabInner();
 
-	void placeSmallCounter(QImage &img, int size, int count, style::color bg, const QPoint &shift, style::color color) override;
+	std::unique_ptr<Media::SystemMediaControlsManager> _mediaControlsManager;
+
 	QImage icon16, icon32, icon64, iconbig16, iconbig32, iconbig64;
 
-	struct DelayedServiceMsg {
-		DelayedServiceMsg(const TextWithEntities &message, const MTPMessageMedia &media, int32 date) : message(message), media(media), date(date) {
-		}
-		TextWithEntities message;
-		MTPMessageMedia media;
-		int32 date;
-	};
-	QList<DelayedServiceMsg> _delayedServiceMsgs;
-	mtpRequestId _serviceHistoryRequest = 0;
+	crl::time _lastTrayClickTime = 0;
+	QPoint _lastMousePosition;
+	bool _activeForTrayIconAction = true;
 
-	object_ptr<PasscodeWidget> _passcode = { nullptr };
+	object_ptr<Window::PasscodeLockWidget> _passcodeLock = { nullptr };
 	object_ptr<Intro::Widget> _intro = { nullptr };
 	object_ptr<MainWidget> _main = { nullptr };
-	object_ptr<Window::LayerStackWidget> _layerBg = { nullptr };
-	object_ptr<MediaPreviewWidget> _mediaPreview = { nullptr };
+	base::unique_qptr<Ui::LayerStackWidget> _layer;
+	object_ptr<Window::MediaPreviewWidget> _mediaPreview = { nullptr };
 
-	object_ptr<ConnectingWidget> _connecting = { nullptr };
 	object_ptr<Window::Theme::WarningWidget> _testingThemeWarning = { nullptr };
 
-	Local::ClearManager *_clearManager = nullptr;
+	rpl::event_stream<> _updateTrayMenuTextActions;
 
 };
+
+namespace App {
+MainWindow *wnd();
+} // namespace App

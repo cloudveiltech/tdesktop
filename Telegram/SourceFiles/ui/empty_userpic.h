@@ -11,6 +11,8 @@ namespace Ui {
 
 class EmptyUserpic {
 public:
+	[[nodiscard]] static QString ExternalName();
+
 	EmptyUserpic(const style::color &color, const QString &name);
 
 	void paint(
@@ -32,9 +34,15 @@ public:
 		int outerWidth,
 		int size) const;
 	QPixmap generate(int size);
-	StorageKey uniqueKey() const;
+	InMemoryKey uniqueKey() const;
 
 	static void PaintSavedMessages(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		int size);
+	static void PaintSavedMessagesRounded(
 		Painter &p,
 		int x,
 		int y,
@@ -48,6 +56,47 @@ public:
 		int size,
 		const style::color &bg,
 		const style::color &fg);
+	static void PaintSavedMessagesRounded(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		int size,
+		const style::color &bg,
+		const style::color &fg);
+	static QPixmap GenerateSavedMessages(int size);
+	static QPixmap GenerateSavedMessagesRounded(int size);
+
+	static void PaintRepliesMessages(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		int size);
+	static void PaintRepliesMessagesRounded(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		int size);
+	static void PaintRepliesMessages(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		int size,
+		const style::color &bg,
+		const style::color &fg);
+	static void PaintRepliesMessagesRounded(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		int size,
+		const style::color &bg,
+		const style::color &fg);
+	static QPixmap GenerateRepliesMessages(int size);
+	static QPixmap GenerateRepliesMessagesRounded(int size);
 
 	~EmptyUserpic();
 

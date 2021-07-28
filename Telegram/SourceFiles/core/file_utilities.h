@@ -9,6 +9,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/observer.h"
 
+namespace Main {
+class Session;
+} // namespace Main
+
 // legacy
 bool filedialogGetSaveFile(
 	QString &file,
@@ -21,7 +25,7 @@ QString filedialogDefaultName(
 	const QString &extension,
 	const QString &path = QString(),
 	bool skipExistance = false,
-	int fileTime = 0);
+	TimeId fileTime = TimeId(0));
 QString filedialogNextFilename(
 	const QString &name,
 	const QString &cur,
@@ -30,10 +34,15 @@ QString filedialogNextFilename(
 namespace File {
 
 // Those functions are async wrappers to Platform::File::Unsafe* calls.
+void OpenUrl(const QString &url);
 void OpenEmailLink(const QString &email);
 void OpenWith(const QString &filepath, QPoint menuPosition);
 void Launch(const QString &filepath);
 void ShowInFolder(const QString &filepath);
+
+[[nodiscard]] QString DefaultDownloadPathFolder(
+	not_null<Main::Session*> session);
+[[nodiscard]] QString DefaultDownloadPath(not_null<Main::Session*> session);
 
 namespace internal {
 
@@ -41,6 +50,7 @@ inline QString UrlToLocalDefault(const QUrl &url) {
 	return url.toLocalFile();
 }
 
+void UnsafeOpenUrlDefault(const QString &url);
 void UnsafeOpenEmailLinkDefault(const QString &email);
 void UnsafeLaunchDefault(const QString &filepath);
 
@@ -54,28 +64,36 @@ struct OpenResult {
 	QByteArray remoteContent;
 };
 void GetOpenPath(
+	QPointer<QWidget> parent,
 	const QString &caption,
 	const QString &filter,
-	base::lambda<void(OpenResult &&result)> callback,
-	base::lambda<void()> failed = base::lambda<void()>());
+	Fn<void(OpenResult &&result)> callback,
+	Fn<void()> failed = Fn<void()>());
 void GetOpenPaths(
+	QPointer<QWidget> parent,
 	const QString &caption,
 	const QString &filter,
-	base::lambda<void(OpenResult &&result)> callback,
-	base::lambda<void()> failed = base::lambda<void()>());
+	Fn<void(OpenResult &&result)> callback,
+	Fn<void()> failed = Fn<void()>());
 void GetWritePath(
+	QPointer<QWidget> parent,
 	const QString &caption,
 	const QString &filter,
 	const QString &initialPath,
-	base::lambda<void(QString &&result)> callback,
-	base::lambda<void()> failed = base::lambda<void()>());
+	Fn<void(QString &&result)> callback,
+	Fn<void()> failed = Fn<void()>());
 void GetFolder(
+	QPointer<QWidget> parent,
 	const QString &caption,
 	const QString &initialPath,
-	base::lambda<void(QString &&result)> callback,
-	base::lambda<void()> failed = base::lambda<void()>());
+	Fn<void(QString &&result)> callback,
+	Fn<void()> failed = Fn<void()>());
 
-QString AllFilesFilter();
+[[nodiscard]] QString AllFilesFilter();
+[[nodiscard]] QString ImagesFilter();
+[[nodiscard]] QString AllOrImagesFilter();
+[[nodiscard]] QString ImagesOrAllFilter();
+[[nodiscard]] QString PhotoVideoFilesFilter();
 
 namespace internal {
 
@@ -89,6 +107,7 @@ enum class Type {
 void InitLastPathDefault();
 
 bool GetDefault(
+	QPointer<QWidget> parent,
 	QStringList &files,
 	QByteArray &remoteContent,
 	const QString &caption,

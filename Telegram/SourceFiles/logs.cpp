@@ -8,9 +8,25 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "logs.h"
 
 #include "platform/platform_specific.h"
-#include "mtproto/connection.h"
 #include "core/crash_reports.h"
 #include "core/launcher.h"
+
+namespace {
+
+std::atomic<int> ThreadCounter/* = 0*/;
+thread_local bool WritingEntryFlag/* = false*/;
+
+class WritingEntryScope final {
+public:
+	WritingEntryScope() {
+		WritingEntryFlag = true;
+	}
+	~WritingEntryScope() {
+		WritingEntryFlag = false;
+	}
+};
+
+} // namespace
 
 enum LogDataType {
 	LogDataMain,
@@ -45,13 +61,12 @@ QString _logsFilePath(LogDataType type, const QString &postfix = QString()) {
 
 int32 LogsStartIndexChosen = -1;
 QString _logsEntryStart() {
-	static int32 index = 0;
-	QDateTime tm(QDateTime::currentDateTime());
+	static thread_local auto threadId = ThreadCounter++;
+	static auto index = 0;
 
-	auto thread = qobject_cast<MTP::internal::Thread*>(QThread::currentThread());
-	auto threadId = thread ? thread->getThreadIndex() : 0;
+	const auto tm = QDateTime::currentDateTime();
 
-	return QString("[%1 %2-%3]").arg(tm.toString("hh:mm:ss.zzz")).arg(QString("%1").arg(threadId, 2, 10, QChar('0'))).arg(++index, 7, 10, QChar('0'));
+	return QString("[%1 %2-%3]").arg(tm.toString("hh:mm:ss.zzz"), QString("%1").arg(threadId, 2, 10, QChar('0'))).arg(++index, 7, 10, QChar('0'));
 }
 
 class LogsDataFields {
@@ -69,9 +84,11 @@ public:
 
 	void closeMain() {
 		QMutexLocker lock(_logsMutex(LogDataMain));
-		if (files[LogDataMain]) {
-			streams[LogDataMain].setDevice(0);
-			files[LogDataMain]->close();
+		WritingEntryScope scope;
+
+		const auto file = files[LogDataMain].get();
+		if (file && file->isOpen()) {
+			file->close();
 		}
 	}
 
@@ -80,11 +97,12 @@ public:
 	}
 
 	QString full() {
-		if (!streams[LogDataMain].device()) {
+		const auto file = files[LogDataMain].get();
+		if (!file || !file->isOpen()) {
 			return QString();
 		}
 
-		QFile out(files[LogDataMain]->fileName());
+		QFile out(file->fileName());
 		if (out.open(QIODevice::ReadOnly)) {
 			return QString::fromUtf8(out.readAll());
 		}
@@ -93,27 +111,31 @@ public:
 
 	void write(LogDataType type, const QString &msg) {
 		QMutexLocker lock(_logsMutex(type));
-		if (type != LogDataMain) reopenDebug();
-		if (!streams[type].device()) return;
+		WritingEntryScope scope;
 
-		streams[type] << msg;
-		streams[type].flush();
+		if (type != LogDataMain) {
+			reopenDebug();
+		}
+		const auto file = files[type].get();
+		if (!file || !file->isOpen()) {
+			return;
+		}
+		file->write(msg.toUtf8());
+		file->flush();
 	}
 
 private:
 	std::unique_ptr<QFile> files[LogDataCount];
-	QTextStream streams[LogDataCount];
 
 	int32 part = -1;
 
 	bool reopen(LogDataType type, int32 dayIndex, const QString &postfix) {
-		if (streams[type].device()) {
+		if (files[type] && files[type]->isOpen()) {
 			if (type == LogDataMain) {
 				if (!postfix.isEmpty()) {
 					return true;
 				}
 			} else {
-				streams[type].setDevice(0);
 				files[type]->close();
 			}
 		}
@@ -125,18 +147,16 @@ private:
 
 				auto to = std::make_unique<QFile>(_logsFilePath(type, postfix));
 				if (to->exists() && !to->remove()) {
-					LOG(("Could not delete '%1' file to start new logging!").arg(to->fileName()));
+					LOG(("Could not delete '%1' file to start new logging: %2").arg(to->fileName(), to->errorString()));
 					return false;
 				}
 				if (!QFile(files[type]->fileName()).copy(to->fileName())) { // don't close files[type] yet
-					LOG(("Could not copy '%1' to '%2' to start new logging!").arg(files[type]->fileName()).arg(to->fileName()));
+					LOG(("Could not copy '%1' to '%2' to start new logging: %3").arg(files[type]->fileName(), to->fileName(), to->errorString()));
 					return false;
 				}
 				if (to->open(mode | QIODevice::Append)) {
 					std::swap(files[type], to);
-					streams[type].setDevice(files[type].get());
-					streams[type].setCodec("UTF-8");
-					LOG(("Moved logging from '%1' to '%2'!").arg(to->fileName()).arg(files[type]->fileName()));
+					LOG(("Moved logging from '%1' to '%2'!").arg(to->fileName(), files[type]->fileName()));
 					to->remove();
 
 					LogsStartIndexChosen = -1;
@@ -146,14 +166,14 @@ private:
 					for (QStringList::const_iterator i = oldlogs.cbegin(), e = oldlogs.cend(); i != e; ++i) {
 						QString oldlog = cWorkingDir() + *i, oldlogend = i->mid(qstr("log_start").size());
 						if (oldlogend.size() == 1 + qstr(".txt").size() && oldlogend.at(0).isDigit() && oldlogend.midRef(1) == qstr(".txt")) {
-							bool removed = QFile(*i).remove();
-							LOG(("Old start log '%1' found, deleted: %2").arg(*i).arg(Logs::b(removed)));
+							bool removed = QFile(oldlog).remove();
+							LOG(("Old start log '%1' found, deleted: %2").arg(*i, Logs::b(removed)));
 						}
 					}
 
 					return true;
 				}
-				LOG(("Could not open '%1' file to start new logging!").arg(to->fileName()));
+				LOG(("Could not open '%1' file to start new logging: %2").arg(to->fileName(), to->errorString()));
 				return false;
 			} else {
 				bool found = false;
@@ -192,22 +212,19 @@ private:
 			}
 		}
 		if (files[type]->open(mode)) {
-			streams[type].setDevice(files[type].get());
-			streams[type].setCodec("UTF-8");
-
 			if (type != LogDataMain) {
-				streams[type] << ((mode & QIODevice::Append)
+				files[type]->write(((mode & QIODevice::Append)
 					? qsl("\
 ----------------------------------------------------------------\n\
 NEW LOGGING INSTANCE STARTED!!!\n\
 ----------------------------------------------------------------\n")
-					: qsl("%1\n").arg(dayIndex));
-				streams[type].flush();
+					: qsl("%1\n").arg(dayIndex)).toUtf8());
+				files[type]->flush();
 			}
 
 			return true;
 		} else if (type != LogDataMain) {
-			LOG(("Could not open debug log '%1'!").arg(files[type]->fileName()));
+			LOG(("Could not open debug log '%1': %2").arg(files[type]->fileName(), files[type]->errorString()));
 		}
 		return false;
 	}
@@ -235,7 +252,7 @@ NEW LOGGING INSTANCE STARTED!!!\n\
 
 LogsDataFields *LogsData = 0;
 
-typedef QList<QPair<LogDataType, QString> > LogsInMemoryList;
+using LogsInMemoryList = QList<QPair<LogDataType, QString>>;
 LogsInMemoryList *LogsInMemory = 0;
 LogsInMemoryList *DeletedLogsInMemory = SharedMemoryLocation<LogsInMemoryList, 0>();
 
@@ -243,7 +260,7 @@ QString LogsBeforeSingleInstanceChecked; // LogsInMemory already dumped in LogsD
 
 void _logsWrite(LogDataType type, const QString &msg) {
 	if (LogsData && (type == LogDataMain || LogsStartIndexChosen < 0)) {
-		if (type == LogDataMain || cDebug()) {
+		if (type == LogDataMain || Logs::DebugEnabled()) {
 			LogsData->write(type, msg);
 		}
 	} else if (LogsInMemory != DeletedLogsInMemory) {
@@ -259,10 +276,12 @@ void _logsWrite(LogDataType type, const QString &msg) {
 namespace Logs {
 namespace {
 
+bool DebugModeEnabled = false;
+
 void MoveOldDataFiles(const QString &wasDir) {
 	QFile data(wasDir + "data"), dataConfig(wasDir + "data_config"), tdataConfig(wasDir + "tdata/config");
-	if (data.exists() && dataConfig.exists() && !QFileInfo(cWorkingDir() + "data").exists() && !QFileInfo(cWorkingDir() + "data_config").exists()) { // move to home dir
-		LOG(("Copying data to home dir '%1' from '%2'").arg(cWorkingDir()).arg(wasDir));
+	if (data.exists() && dataConfig.exists() && !QFileInfo::exists(cWorkingDir() + "data") && !QFileInfo::exists(cWorkingDir() + "data_config")) { // move to home dir
+		LOG(("Copying data to home dir '%1' from '%2'").arg(cWorkingDir(), wasDir));
 		if (data.copy(cWorkingDir() + "data")) {
 			LOG(("Copied 'data' to home dir"));
 			if (dataConfig.copy(cWorkingDir() + "data_config")) {
@@ -307,10 +326,26 @@ void MoveOldDataFiles(const QString &wasDir) {
 
 } // namespace
 
-void start(not_null<Core::Launcher*> launcher) {
-	Assert(LogsData == 0);
+void SetDebugEnabled(bool enabled) {
+	DebugModeEnabled = enabled;
+}
 
-	if (!Sandbox::CheckBetaVersionDir()) {
+bool DebugEnabled() {
+#if defined _DEBUG
+	return true;
+#else
+	return DebugModeEnabled;
+#endif
+}
+
+bool WritingEntry() {
+	return WritingEntryFlag;
+}
+
+void start(not_null<Core::Launcher*> launcher) {
+	Assert(LogsData == nullptr);
+
+	if (!launcher->checkPortableVersionFolder()) {
 		return;
 	}
 
@@ -318,46 +353,54 @@ void start(not_null<Core::Launcher*> launcher) {
 	auto moveOldDataFrom = QString();
 	auto workingDirChosen = false;
 
-	if (cBetaVersion()) {
-		cSetDebug(true);
+	if (cAlphaVersion()) {
 		workingDirChosen = true;
-#if defined Q_OS_MAC || defined Q_OS_LINUX
 	} else {
-#ifdef _DEBUG
-		cForceWorkingDir(cExeDir());
-#else // _DEBUG
+
+#ifdef Q_OS_UNIX
+
 		if (!cWorkingDir().isEmpty()) {
-			// This value must come only from the "-workdir" argument.
+			// This value must come from TelegramForcePortable
+			// or from the "-workdir" command line argument.
 			cForceWorkingDir(cWorkingDir());
 		} else {
+#if defined _DEBUG && !defined OS_MAC_STORE
+			cForceWorkingDir(cExeDir());
+#else // _DEBUG
 			cForceWorkingDir(psAppDataPath());
-		}
 #endif // !_DEBUG
+		}
 		workingDirChosen = true;
 
-#if defined Q_OS_LINUX && !defined _DEBUG // fix first version
+#if !defined Q_OS_MAC && !defined _DEBUG // fix first version
 		moveOldDataFrom = initialWorkingDir;
-#endif // Q_OS_LINUX && !_DEBUG
+#endif // !Q_OS_MAC && !_DEBUG
 
-#elif defined Q_OS_WINRT // Q_OS_MAC || Q_OS_LINUX
-	} else {
+#elif defined Q_OS_WINRT // Q_OS_UNIX
+
 		cForceWorkingDir(psAppDataPath());
 		workingDirChosen = true;
-#elif defined OS_WIN_STORE // Q_OS_MAC || Q_OS_LINUX || Q_OS_WINRT
+
+#elif defined OS_WIN_STORE // Q_OS_UNIX || Q_OS_WINRT
+
 #ifdef _DEBUG
 		cForceWorkingDir(cExeDir());
 #else // _DEBUG
 		cForceWorkingDir(psAppDataPath());
 #endif // !_DEBUG
 		workingDirChosen = true;
+
 #elif defined Q_OS_WIN
-	} else {
+
 		if (!cWorkingDir().isEmpty()) {
-			// This value must come only from the "-workdir" argument.
+			// This value must come from TelegramForcePortable
+			// or from the "-workdir" command line argument.
 			cForceWorkingDir(cWorkingDir());
 			workingDirChosen = true;
 		}
-#endif // Q_OS_MAC || Q_OS_LINUX || Q_OS_WINRT || OS_WIN_STORE
+
+#endif // Q_OS_UNIX || Q_OS_WINRT || OS_WIN_STORE
+
 	}
 
 	LogsData = new LogsDataFields();
@@ -377,22 +420,27 @@ void start(not_null<Core::Launcher*> launcher) {
 
 	QDir().mkpath(cWorkingDir() + qstr("tdata"));
 
-	Sandbox::WorkingDirReady();
-	CrashReports::StartCatching();
+	launcher->workingFolderReady();
+	CrashReports::StartCatching(launcher);
 
 	if (!LogsData->openMain()) {
 		delete LogsData;
-		LogsData = 0;
+		LogsData = nullptr;
 	}
 
-	LOG(("Launched version: %1, alpha: %2, beta: %3, debug mode: %4, test dc: %5").arg(AppVersion).arg(Logs::b(cAlphaVersion())).arg(cBetaVersion()).arg(Logs::b(cDebug())).arg(Logs::b(cTestMode())));
-	LOG(("Executable dir: %1, name: %2").arg(cExeDir()).arg(cExeName()));
+	LOG(("Launched version: %1, install beta: %2, alpha: %3, debug mode: %4"
+		).arg(AppVersion
+		).arg(Logs::b(cInstallBetaVersion())
+		).arg(cAlphaVersion()
+		).arg(Logs::b(DebugEnabled())));
+	LOG(("Executable dir: %1, name: %2").arg(cExeDir(), cExeName()));
 	LOG(("Initial working dir: %1").arg(initialWorkingDir));
 	LOG(("Working dir: %1").arg(cWorkingDir()));
 	LOG(("Command line: %1").arg(launcher->argumentsString()));
 
 	if (!LogsData) {
-		LOG(("FATAL: Could not open '%1' for writing log!").arg(_logsFilePath(LogDataMain, qsl("_startXX"))));
+		LOG(("FATAL: Could not open '%1' for writing log!"
+			).arg(_logsFilePath(LogDataMain, qsl("_startXX"))));
 		return;
 	}
 
@@ -475,7 +523,7 @@ void multipleInstances() {
 	}
 	LogsInMemory = DeletedLogsInMemory;
 
-	if (cDebug()) {
+	if (Logs::DebugEnabled()) {
 		LOG(("WARNING: debug logs are not written in multiple instances mode!"));
 	}
 	LogsBeforeSingleInstanceChecked.clear();
@@ -493,47 +541,42 @@ void writeMain(const QString &v) {
 	struct tm tm;
 	mylocaltime(&tm, &t);
 
-	QString msg(QString("[%1.%2.%3 %4:%5:%6] %7\n").arg(tm.tm_year + 1900).arg(tm.tm_mon + 1, 2, 10, QChar('0')).arg(tm.tm_mday, 2, 10, QChar('0')).arg(tm.tm_hour, 2, 10, QChar('0')).arg(tm.tm_min, 2, 10, QChar('0')).arg(tm.tm_sec, 2, 10, QChar('0')).arg(v));
+	const auto msg = QString("[%1.%2.%3 %4:%5:%6] %7\n"
+	).arg(tm.tm_year + 1900
+	).arg(tm.tm_mon + 1, 2, 10, QChar('0')
+	).arg(tm.tm_mday, 2, 10, QChar('0')
+	).arg(tm.tm_hour, 2, 10, QChar('0')
+	).arg(tm.tm_min, 2, 10, QChar('0')
+	).arg(tm.tm_sec, 2, 10, QChar('0')
+	).arg(v);
 	_logsWrite(LogDataMain, msg);
 
-	QString debugmsg(QString("%1 %2\n").arg(_logsEntryStart()).arg(v));
-	_logsWrite(LogDataDebug, debugmsg);
+	writeDebug(v);
 }
 
-void writeDebug(const char *file, int32 line, const QString &v) {
-	const char *last = strstr(file, "/"), *found = 0;
-	while (last) {
-		found = last;
-		last = strstr(last + 1, "/");
-	}
-	last = strstr(file, "\\");
-	while (last) {
-		found = last;
-		last = strstr(last + 1, "\\");
-	}
-	if (found) {
-		file = found + 1;
-	}
-
-	QString msg(QString("%1 %2 (%3 : %4)\n").arg(_logsEntryStart()).arg(v).arg(file).arg(line));
+void writeDebug(const QString &v) {
+	const auto msg = QString("%1 %2\n").arg(_logsEntryStart(), v);
 	_logsWrite(LogDataDebug, msg);
 
 #ifdef Q_OS_WIN
 	//OutputDebugString(reinterpret_cast<const wchar_t *>(msg.utf16()));
 #elif defined Q_OS_MAC
 	//objc_outputDebugString(msg);
-#elif defined Q_OS_LINUX && defined _DEBUG
+#elif defined Q_OS_UNIX && defined _DEBUG
 	//std::cout << msg.toUtf8().constData();
 #endif
 }
 
 void writeTcp(const QString &v) {
-	QString msg(QString("%1 %2\n").arg(_logsEntryStart()).arg(v));
+	const auto msg = QString("%1 %2\n").arg(_logsEntryStart(), v);
 	_logsWrite(LogDataTcp, msg);
 }
 
 void writeMtp(int32 dc, const QString &v) {
-	QString msg(QString("%1 (dc:%2) %3\n").arg(_logsEntryStart()).arg(dc).arg(v));
+	const auto msg = QString("%1 (dc:%2) %3\n").arg(
+		_logsEntryStart(),
+		QString::number(dc),
+		v);
 	_logsWrite(LogDataMtp, msg);
 }
 

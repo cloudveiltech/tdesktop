@@ -7,29 +7,51 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "history/history_drag_area.h"
 #include "ui/widgets/tooltip.h"
 #include "mainwidget.h"
 #include "chat_helpers/field_autocomplete.h"
 #include "window/section_widget.h"
-#include "core/single_timer.h"
 #include "ui/widgets/input_fields.h"
+#include "ui/effects/animations.h"
 #include "ui/rp_widget.h"
+#include "mtproto/sender.h"
 #include "base/flags.h"
 #include "base/timer.h"
 
 struct FileLoadResult;
-struct FileMediaInformation;
 struct SendingAlbum;
 enum class SendMediaType;
-enum class CompressConfirm;
+class MessageLinksParser;
+
+namespace MTP {
+class Error;
+} // namespace MTP
+
+namespace Data {
+enum class PreviewState : char;
+} // namespace Data
+
+namespace SendMenu {
+enum class Type;
+} // namespace SendMenu
+
+namespace Api {
+struct SendOptions;
+} // namespace Api
 
 namespace InlineBots {
 namespace Layout {
 class ItemBase;
 class Widget;
 } // namespace Layout
-class Result;
+struct ResultSelected;
 } // namespace InlineBots
+
+namespace Support {
+class Autocomplete;
+struct Contact;
+} // namespace Support
 
 namespace Ui {
 class AbstractButton;
@@ -45,13 +67,18 @@ class SilentToggle;
 class FlatButton;
 class LinkButton;
 class RoundButton;
-namespace Emoji {
-class SuggestionsController;
-} // namespace Emoji
+class PinnedBar;
+class GroupCallBar;
+struct PreparedList;
+class SendFilesWay;
+enum class ReportReason;
+namespace Toast {
+class Instance;
+} // namespace Toast
 } // namespace Ui
 
 namespace Window {
-class Controller;
+class SessionController;
 } // namespace Window
 
 namespace ChatHelpers {
@@ -62,159 +89,75 @@ class TabbedSelector;
 
 namespace Storage {
 enum class MimeDataState;
-struct PreparedList;
 } // namespace Storage
+
+namespace HistoryView {
+class TopBarWidget;
+class ContactStatus;
+class Element;
+class PinnedTracker;
+class GroupCallTracker;
+namespace Controls {
+class RecordLock;
+class VoiceRecordBar;
+class TTLButton;
+} // namespace Controls
+} // namespace HistoryView
 
 class DragArea;
 class SendFilesBox;
 class BotKeyboard;
 class MessageField;
 class HistoryInner;
-class HistoryTopBarWidget;
 struct HistoryMessageMarkupButton;
 
-class ReportSpamPanel : public TWidget {
-	Q_OBJECT
-
+class HistoryWidget final : public Window::AbstractSectionWidget {
 public:
-	ReportSpamPanel(QWidget *parent);
+	using FieldHistoryAction = Ui::InputField::HistoryAction;
+	using RecordLock = HistoryView::Controls::RecordLock;
+	using VoiceRecordBar = HistoryView::Controls::VoiceRecordBar;
 
-	void setReported(bool reported, PeerData *onPeer);
-
-signals:
-	void hideClicked();
-	void reportClicked();
-	void clearClicked();
-
-protected:
-	void resizeEvent(QResizeEvent *e) override;
-	void paintEvent(QPaintEvent *e) override;
-
-private:
-	object_ptr<Ui::FlatButton> _report;
-	object_ptr<Ui::FlatButton> _hide;
-	object_ptr<Ui::LinkButton> _clear;
-
-};
-
-class HistoryHider : public Ui::RpWidget, private base::Subscriber {
-	Q_OBJECT
-
-public:
-	HistoryHider(MainWidget *parent, MessageIdsList &&items); // forward messages
-	HistoryHider(MainWidget *parent); // send path from command line argument
-	HistoryHider(MainWidget *parent, const QString &url, const QString &text); // share url
-	HistoryHider(MainWidget *parent, const QString &botAndQuery); // inline switch button handler
-
-	bool withConfirm() const;
-
-	bool offerPeer(PeerId peer);
-	QString offeredText() const;
-	QString botAndQuery() const {
-		return _botAndQuery;
-	}
-
-	bool wasOffered() const;
-
-	void forwardDone();
-
-	~HistoryHider();
-
-protected:
-	void paintEvent(QPaintEvent *e) override;
-	void keyPressEvent(QKeyEvent *e) override;
-	void mousePressEvent(QMouseEvent *e) override;
-	void resizeEvent(QResizeEvent *e) override;
-
-public slots:
-	void startHide();
-	void forward();
-
-signals:
-	void forwarded();
-
-private:
-	void refreshLang();
-	void updateControlsGeometry();
-	void animationCallback();
-	void init();
-	MainWidget *parent();
-
-	MessageIdsList _forwardItems;
-	bool _sendPath = false;
-
-	QString _shareUrl, _shareText;
-	QString _botAndQuery;
-
-	object_ptr<Ui::RoundButton> _send;
-	object_ptr<Ui::RoundButton> _cancel;
-	PeerData *_offered = nullptr;
-
-	Animation _a_opacity;
-
-	QRect _box;
-	bool _hiding = false;
-
-	mtpRequestId _forwardRequest = 0;
-
-	int _chooseWidth = 0;
-
-	Text _toText;
-	int32 _toTextWidth = 0;
-	QPixmap _cacheForAnim;
-
-};
-
-class HistoryWidget final : public Window::AbstractSectionWidget, public RPCSender {
-	Q_OBJECT
-
-public:
-	HistoryWidget(QWidget *parent, not_null<Window::Controller*> controller);
+	HistoryWidget(
+		QWidget *parent,
+		not_null<Window::SessionController*> controller);
 
 	void start();
 
-	void messagesReceived(PeerData *peer, const MTPmessages_Messages &messages, mtpRequestId requestId);
 	void historyLoaded();
 
+	[[nodiscard]] bool preventsClose(Fn<void()> &&continueCallback) const;
+
+	// When resizing the widget with top edge moved up or down and we
+	// want to add this top movement to the scroll position, so inner
+	// content will not move.
+	void setGeometryWithTopMoved(const QRect &newGeometry, int topDelta);
+
 	void windowShown();
-	bool doWeReadServerHistory() const;
-	bool doWeReadMentions() const;
+	[[nodiscard]] bool doWeReadServerHistory() const;
+	[[nodiscard]] bool doWeReadMentions() const;
+	bool skipItemRepaint();
+	void checkHistoryActivation();
 
 	void leaveToChildEvent(QEvent *e, QWidget *child) override;
-	void dragEnterEvent(QDragEnterEvent *e) override;
-	void dragLeaveEvent(QDragLeaveEvent *e) override;
-    void dropEvent(QDropEvent *e) override;
 
 	bool isItemCompletelyHidden(HistoryItem *item) const;
 	void updateTopBarSelection();
+	void updateTopBarChooseForReport();
 
 	void loadMessages();
 	void loadMessagesDown();
 	void firstLoadMessages();
 	void delayedShowAt(MsgId showAtMsgId);
-	void peerMessagesUpdated(PeerId peer);
-	void peerMessagesUpdated();
-
-	void newUnreadMsg(History *history, HistoryItem *item);
-	void historyToDown(History *history);
-	void unreadCountChanged(History *history);
 
 	QRect historyRect() const;
-	void pushTabbedSelectorToThirdSection(
-		const Window::SectionShow &params);
-	void pushInfoToThirdSection(
-		const Window::SectionShow &params);
-
-	void updateRecentStickers();
-
-	void destroyData();
 
 	void updateFieldPlaceholder();
 	void updateStickersByEmoji();
 
 	bool confirmSendingFiles(const QStringList &files);
-	bool confirmSendingFiles(const QMimeData *data);
-	void sendFileConfirmed(const std::shared_ptr<FileLoadResult> &file);
+	bool confirmSendingFiles(not_null<const QMimeData*> data);
+	void sendFileConfirmed(const std::shared_ptr<FileLoadResult> &file,
+		const std::optional<FullMsgId> &oldId = std::nullopt);
 
 	void updateControlsVisibility();
 	void updateControlsGeometry();
@@ -239,16 +182,18 @@ public:
 
 	bool touchScroll(const QPoint &delta);
 
-	void enqueueMessageHighlight(not_null<HistoryItem*> item);
-	TimeMs highlightStartTime(not_null<const HistoryItem*> item) const;
+	void enqueueMessageHighlight(not_null<HistoryView::Element*> view);
+	crl::time highlightStartTime(not_null<const HistoryItem*> item) const;
 
 	MessageIdsList getSelectedItems() const;
-	void itemEdited(HistoryItem *item);
+	void itemEdited(not_null<HistoryItem*> item);
 
-	void updateScrollColors();
+	void replyToMessage(FullMsgId itemId);
+	void replyToMessage(not_null<HistoryItem*> item);
+	void editMessage(FullMsgId itemId);
+	void editMessage(not_null<HistoryItem*> item);
 
 	MsgId replyToId() const;
-	void messageDataReceived(ChannelData *channel, MsgId msgId);
 	bool lastForceReplyReplied(const FullMsgId &replyTo) const;
 	bool lastForceReplyReplied() const;
 	bool cancelReply(bool lastKeyboardUsed = false);
@@ -257,7 +202,7 @@ public:
 	void updateForwardingTexts();
 
 	void clearReplyReturns();
-	void pushReplyReturn(HistoryItem *item);
+	void pushReplyReturn(not_null<HistoryItem*> item);
 	QList<MsgId> replyReturns();
 	void setReplyReturns(PeerId peer, const QList<MsgId> &replyReturns);
 	void calcNextReplyReturn();
@@ -265,13 +210,13 @@ public:
 	void updatePreview();
 	void previewCancel();
 
-	void step_recording(float64 ms, bool timer);
-	void stopRecording(bool send);
+	void escape();
 
-	void onListEscapePressed();
-	void onListEnterPressed();
-
-	void sendBotCommand(PeerData *peer, UserData *bot, const QString &cmd, MsgId replyTo);
+	void sendBotCommand(
+		not_null<PeerData*> peer,
+		UserData *bot,
+		const QString &cmd,
+		MsgId replyTo);
 	void hideSingleUseKeyboard(PeerData *peer, MsgId replyTo);
 	bool insertBotCommand(const QString &cmd);
 
@@ -282,10 +227,15 @@ public:
 	void updateBotKeyboard(History *h = nullptr, bool force = false);
 
 	void fastShowAtEnd(not_null<History*> history);
-	void applyDraft(bool parseLinks = true, Ui::FlatTextarea::UndoHistoryAction undoHistoryAction = Ui::FlatTextarea::ClearUndoHistory);
+	void applyDraft(
+		FieldHistoryAction fieldHistoryAction = FieldHistoryAction::Clear);
 	void showHistory(const PeerId &peer, MsgId showAtMsgId, bool reload = false);
-	void clearDelayedShowAt();
+	void setChooseReportMessagesDetails(
+		Ui::ReportReason reason,
+		Fn<void(MessageIdsList)> callback);
 	void clearAllLoadRequests();
+	void clearDelayedShowAtRequest();
+	void clearDelayedShowAt();
 	void saveFieldToHistoryLocalDraft();
 
 	void applyCloudDraft(History *history);
@@ -297,49 +247,47 @@ public:
 
 	void updateFieldSubmitSettings();
 
+	void activate();
 	void setInnerFocus();
+	[[nodiscard]] rpl::producer<> cancelRequests() const {
+		return _cancelRequests.events();
+	}
 
-	void updateNotifySettings();
-
-	void saveGif(DocumentData *doc);
+	void updateNotifyControls();
 
 	bool contentOverlapped(const QRect &globalRect);
 
-	void grabStart() override {
-		_inGrab = true;
-		updateControlsGeometry();
-	}
-	void grapWithoutTopBarShadow();
-	void grabFinish() override;
+	QPixmap grabForShowAnimation(const Window::SectionSlideParams &params);
 
-	bool isItemVisible(HistoryItem *item);
+	void forwardSelected();
+	void confirmDeleteSelected();
+	void clearSelected();
 
-	void confirmDeleteSelectedItems();
-	void deleteSelectedItems(bool forEveryone);
+	bool sendExistingDocument(
+		not_null<DocumentData*> document,
+		Api::SendOptions options);
+	bool sendExistingPhoto(
+		not_null<PhotoData*> photo,
+		Api::SendOptions options);
+
+	void showInfoTooltip(
+		const TextWithEntities &text,
+		Fn<void()> hiddenCallback);
+	void hideInfoTooltip(anim::type animated);
+
+	// Tabbed selector management.
+	bool pushTabbedSelectorToThirdSection(
+		not_null<PeerData*> peer,
+		const Window::SectionShow &params) override;
+	bool returnTabbedSelector() override;
 
 	// Float player interface.
-	bool wheelEventFromFloatPlayer(QEvent *e) override;
-	QRect rectForFloatPlayer() const override;
-
-	void app_sendBotCallback(
-		not_null<const HistoryMessageMarkupButton*> button,
-		not_null<const HistoryItem*> msg,
-		int row,
-		int column);
+	bool floatPlayerHandleWheelEvent(QEvent *e) override;
+	QRect floatPlayerAvailableRect() override;
 
 	PeerData *ui_getPeerForMouseAction();
 
-	void notify_botCommandsChanged(UserData *user);
-	void notify_inlineBotRequesting(bool requesting);
-	void notify_replyMarkupUpdated(const HistoryItem *item);
-	void notify_inlineKeyboardMoved(const HistoryItem *item, int oldKeyboardTop, int newKeyboardTop);
 	bool notify_switchInlineBotButtonReceived(const QString &query, UserData *samePeerBot, MsgId samePeerReplyTo);
-	void notify_userIsBotChanged(UserData *user);
-	void notify_migrateUpdated(PeerData *peer);
-
-	bool cmd_search();
-	bool cmd_next_chat();
-	bool cmd_previous_chat();
 
 	~HistoryWidget();
 
@@ -352,294 +300,9 @@ protected:
 	void mouseReleaseEvent(QMouseEvent *e) override;
 	void mouseMoveEvent(QMouseEvent *e) override;
 
-signals:
-	void cancelled();
-	void historyShown(History *history, MsgId atMsgId);
-
-public slots:
-	void onCancel();
-	void onReplyToMessage();
-	void onEditMessage();
-	void onPinMessage();
-	void onUnpinMessage();
-	void onPinnedHide();
-	void onCopyPostLink();
-	void onFieldBarCancel();
-
-	void onPreviewParse();
-	void onPreviewCheck();
-	void onPreviewTimeout();
-
-	void onPhotoUploaded(const FullMsgId &msgId, bool silent, const MTPInputFile &file);
-	void onDocumentUploaded(const FullMsgId &msgId, bool silent, const MTPInputFile &file);
-	void onThumbDocumentUploaded(const FullMsgId &msgId, bool silent, const MTPInputFile &file, const MTPInputFile &thumb);
-
-	void onPhotoProgress(const FullMsgId &msgId);
-	void onDocumentProgress(const FullMsgId &msgId);
-
-	void onPhotoFailed(const FullMsgId &msgId);
-	void onDocumentFailed(const FullMsgId &msgId);
-
-	void onReportSpamClicked();
-	void onReportSpamHide();
-	void onReportSpamClear();
-
-	void onScroll();
-
-	void onUnblock();
-	void onBotStart();
-	void onJoinChannel();
-	void onMuteUnmute();
-	void onBroadcastSilentChange();
-
-	void onKbToggle(bool manual = true);
-	void onCmdStart();
-
-	void activate();
-	void onTextChange();
-
-	void onFieldTabbed();
-	bool onStickerSend(DocumentData *sticker);
-	void onPhotoSend(PhotoData *photo);
-	void onInlineResultSend(InlineBots::Result *result, UserData *bot);
-
-	void onWindowVisibleChanged();
-
-	void onFieldFocused();
-	void onFieldResize();
-	void onCheckFieldAutocomplete();
-	void onScrollTimer();
-
-	void onForwardSelected();
-	void onClearSelected();
-
-	void onDraftSaveDelayed();
-	void onDraftSave(bool delayed = false);
-	void onCloudDraftSave();
-
-	void onRecordError();
-	void onRecordDone(QByteArray result, VoiceWaveform waveform, qint32 samples);
-	void onRecordUpdate(quint16 level, qint32 samples);
-
-	void onUpdateHistoryItems();
-
-	// checks if we are too close to the top or to the bottom
-	// in the scroll area and preloads history if needed
-	void preloadHistoryIfNeeded();
-
-private slots:
-	void onSend(bool ctrlShiftEnter = false);
-
-	void onHashtagOrBotCommandInsert(QString str, FieldAutocomplete::ChooseMethod method);
-	void onMentionInsert(UserData *user);
-	void onInlineBotCancel();
-	void onMembersDropdownShow();
-
-	void onModerateKeyActivate(int index, bool *outHandled);
-
-	void updateField();
-
 private:
 	using TabbedPanel = ChatHelpers::TabbedPanel;
 	using TabbedSelector = ChatHelpers::TabbedSelector;
-	using DragState = Storage::MimeDataState;
-
-	void repaintHistoryItem(not_null<const HistoryItem*> item);
-	void handlePendingHistoryUpdate();
-	void fullPeerUpdated(PeerData *peer);
-	void toggleTabbedSelectorMode();
-	void returnTabbedSelector(object_ptr<TabbedSelector> selector);
-	void recountChatWidth();
-	void setReportSpamStatus(DBIPeerReportSpamStatus status);
-	void historyDownClicked();
-	void showNextUnreadMention();
-	void handlePeerUpdate();
-	void setMembersShowAreaActive(bool active);
-	void forwardItems(MessageIdsList &&items);
-
-	void highlightMessage(MsgId universalMessageId);
-	void adjustHighlightedMessageToMigrated();
-	void checkNextHighlight();
-	void updateHighlightedMessage();
-	void clearHighlightMessages();
-	void stopMessageHighlight();
-
-	void updateSendAction(
-		not_null<History*> history,
-		SendAction::Type type,
-		int32 progress = 0);
-	void cancelSendAction(
-		not_null<History*> history,
-		SendAction::Type type);
-	void cancelTypingAction();
-	void sendActionDone(const MTPBool &result, mtpRequestId req);
-
-	void animationCallback();
-	void updateOverStates(QPoint pos);
-	void recordStartCallback();
-	void recordStopCallback(bool active);
-	void recordUpdateCallback(QPoint globalPos);
-	void chooseAttach();
-	void historyDownAnimationFinish();
-	void unreadMentionsAnimationFinish();
-	void sendButtonClicked();
-
-	bool confirmSendingFiles(
-		const QList<QUrl> &files,
-		CompressConfirm compressed,
-		const QString &insertTextOnCancel = QString());
-	bool confirmSendingFiles(
-		const QStringList &files,
-		CompressConfirm compressed,
-		const QString &insertTextOnCancel = QString());
-	bool confirmSendingFiles(
-		QImage &&image,
-		QByteArray &&content,
-		CompressConfirm compressed,
-		const QString &insertTextOnCancel = QString());
-	bool confirmSendingFiles(
-		const QMimeData *data,
-		CompressConfirm compressed,
-		const QString &insertTextOnCancel = QString());
-	bool confirmSendingFiles(
-		Storage::PreparedList &&list,
-		CompressConfirm compressed,
-		const QString &insertTextOnCancel = QString());
-	bool showSendingFilesError(const Storage::PreparedList &list) const;
-
-	void uploadFiles(Storage::PreparedList &&list, SendMediaType type);
-	void uploadFile(const QByteArray &fileContent, SendMediaType type);
-
-	void uploadFilesAfterConfirmation(
-		Storage::PreparedList &&list,
-		SendMediaType type,
-		QString caption,
-		MsgId replyTo,
-		std::shared_ptr<SendingAlbum> album = nullptr);
-
-	void itemRemoved(not_null<const HistoryItem*> item);
-
-	// Updates position of controls around the message field,
-	// like send button, emoji button and others.
-	void moveFieldControls();
-	void updateFieldSize();
-	void updateTabbedSelectorToggleTooltipGeometry();
-	void checkTabbedSelectorToggleTooltip();
-
-	bool historyHasNotFreezedUnreadBar(History *history) const;
-	bool canWriteMessage() const;
-	bool isRestrictedWrite() const;
-	void orderWidgets();
-
-	void clearInlineBot();
-	void inlineBotChanged();
-
-	// Look in the _field for the inline bot and query string.
-	void updateInlineBotQuery();
-
-	// Request to show results in the emoji panel.
-	void applyInlineBotQuery(UserData *bot, const QString &query);
-
-	void cancelReplyAfterMediaSend(bool lastKeyboardUsed);
-
-	void hideSelectorControlsAnimated();
-	int countMembersDropdownHeightMax() const;
-
-	void updateReplyToName();
-	void checkForwardingInfo();
-	bool editingMessage() const {
-		return _editMsgId != 0;
-	}
-
-	MsgId _replyToId = 0;
-	Text _replyToName;
-	int _replyToNameVersion = 0;
-
-	HistoryItemsList _toForward;
-	Text _toForwardFrom, _toForwardText;
-	int _toForwardNameVersion = 0;
-
-	MsgId _editMsgId = 0;
-
-	HistoryItem *_replyEditMsg = nullptr;
-	Text _replyEditMsgText;
-	mutable SingleTimer _updateEditTimeLeftDisplay;
-
-	object_ptr<Ui::IconButton> _fieldBarCancel;
-	void updateReplyEditTexts(bool force = false);
-
-	struct PinnedBar {
-		PinnedBar(MsgId msgId, HistoryWidget *parent);
-		~PinnedBar();
-
-		MsgId msgId = 0;
-		HistoryItem *msg = nullptr;
-		Text text;
-		object_ptr<Ui::IconButton> cancel;
-		object_ptr<Ui::PlainShadow> shadow;
-	};
-	std::unique_ptr<PinnedBar> _pinnedBar;
-	void updatePinnedBar(bool force = false);
-	bool pinnedMsgVisibilityUpdated();
-	void destroyPinnedBar();
-	void unpinDone(const MTPUpdates &updates);
-
-	bool sendExistingDocument(DocumentData *doc, const QString &caption);
-	void sendExistingPhoto(PhotoData *photo, const QString &caption);
-
-	void drawField(Painter &p, const QRect &rect);
-	void paintEditHeader(Painter &p, const QRect &rect, int left, int top) const;
-	void drawRecording(Painter &p, float64 recordActive);
-	void drawPinnedBar(Painter &p);
-	void drawRestrictedWrite(Painter &p);
-
-	void updateMouseTracking();
-
-	// destroys _history and _migrated unread bars
-	void destroyUnreadBar();
-
-	mtpRequestId _saveEditMsgRequestId = 0;
-	void saveEditMsg();
-	void saveEditMsgDone(History *history, const MTPUpdates &updates, mtpRequestId req);
-	bool saveEditMsgFail(History *history, const RPCError &error, mtpRequestId req);
-
-	static const mtpRequestId ReportSpamRequestNeeded = -1;
-	DBIPeerReportSpamStatus _reportSpamStatus = dbiprsUnknown;
-	mtpRequestId _reportSpamSettingRequestId = ReportSpamRequestNeeded;
-	void updateReportSpamStatus();
-	void requestReportSpamSetting();
-	void reportSpamSettingDone(const MTPPeerSettings &result, mtpRequestId req);
-	bool reportSpamSettingFail(const RPCError &error, mtpRequestId req);
-
-	QString _previewLinks;
-	WebPageData *_previewData = nullptr;
-	typedef QMap<QString, WebPageId> PreviewCache;
-	PreviewCache _previewCache;
-	mtpRequestId _previewRequest = 0;
-	Text _previewTitle;
-	Text _previewDescription;
-	SingleTimer _previewTimer;
-	bool _previewCancelled = false;
-	void gotPreview(QString links, const MTPMessageMedia &media, mtpRequestId req);
-
-	bool _replyForwardPressed = false;
-
-	HistoryItem *_replyReturn = nullptr;
-	QList<MsgId> _replyReturns;
-
-	bool messagesFailed(const RPCError &error, mtpRequestId requestId);
-	void addMessagesToFront(PeerData *peer, const QVector<MTPMessage> &messages);
-	void addMessagesToBack(PeerData *peer, const QVector<MTPMessage> &messages);
-
-	struct BotCallbackInfo {
-		UserData *bot;
-		FullMsgId msgId;
-		int row, col;
-		bool game;
-	};
-	void botCallbackDone(BotCallbackInfo info, const MTPmessages_BotCallbackAnswer &answer, mtpRequestId req);
-	bool botCallbackFail(BotCallbackInfo info, const RPCError &error, mtpRequestId req);
-
 	enum ScrollChangeType {
 		ScrollChangeNone,
 
@@ -653,18 +316,228 @@ private:
 		ScrollChangeType type;
 		int value;
 	};
+	struct ChooseMessagesForReport {
+		Ui::ReportReason reason = {};
+		Fn<void(MessageIdsList)> callback;
+		bool active = false;
+	};
+	enum class TextUpdateEvent {
+		SaveDraft = (1 << 0),
+		SendTyping = (1 << 1),
+	};
+	using TextUpdateEvents = base::flags<TextUpdateEvent>;
+	friend inline constexpr bool is_flag_type(TextUpdateEvent) { return true; };
+
+	void checkSuggestToGigagroup();
+
+	void initTabbedSelector();
+	void initVoiceRecordBar();
+	void refreshTabbedPanel();
+	void createTabbedPanel();
+	void setTabbedPanel(std::unique_ptr<TabbedPanel> panel);
+	void updateField();
+	void fieldChanged();
+	void fieldTabbed();
+	void fieldFocused();
+	void fieldResized();
+
+	void insertHashtagOrBotCommand(
+		QString str,
+		FieldAutocomplete::ChooseMethod method);
+	void insertMention(UserData *user);
+	void cancelInlineBot();
+	void saveDraft(bool delayed = false);
+	void saveCloudDraft();
+	void saveDraftDelayed();
+	void checkFieldAutocomplete();
+	void showMembersDropdown();
+	void windowIsVisibleChanged();
+
+	// Checks if we are too close to the top or to the bottom
+	// in the scroll area and preloads history if needed.
+	void preloadHistoryIfNeeded();
+
+	void handleScroll();
+	void scrollByTimer();
+	void updateHistoryItemsByTimer();
+
+	[[nodiscard]] Dialogs::EntryState computeDialogsEntryState() const;
+	void refreshTopBarActiveChat();
+
+	void requestMessageData(MsgId msgId);
+	void messageDataReceived(ChannelData *channel, MsgId msgId);
+
+	void send(Api::SendOptions options);
+	void sendWithModifiers(Qt::KeyboardModifiers modifiers);
+	void sendSilent();
+	void sendScheduled();
+	[[nodiscard]] SendMenu::Type sendMenuType() const;
+	[[nodiscard]] SendMenu::Type sendButtonMenuType() const;
+	void handlePendingHistoryUpdate();
+	void fullPeerUpdated(PeerData *peer);
+	void toggleTabbedSelectorMode();
+	void recountChatWidth();
+	void historyDownClicked();
+	void showNextUnreadMention();
+	void handlePeerUpdate();
+	void setMembersShowAreaActive(bool active);
+	void handleHistoryChange(not_null<const History*> history);
+	void showAboutTopPromotion();
+	void unreadCountUpdated();
+
+	[[nodiscard]] int computeMaxFieldHeight() const;
+	void toggleMuteUnmute();
+	void reportSelectedMessages();
+	void toggleKeyboard(bool manual = true);
+	void startBotCommand();
+	void hidePinnedMessage();
+	void cancelFieldAreaState();
+	void unblockUser();
+	void sendBotStartCommand();
+	void joinChannel();
+
+	void supportInitAutocomplete();
+	void supportInsertText(const QString &text);
+	void supportShareContact(Support::Contact contact);
+
+	void highlightMessage(MsgId universalMessageId);
+	void checkNextHighlight();
+	void updateHighlightedMessage();
+	void clearHighlightMessages();
+	void stopMessageHighlight();
+
+	auto computeSendButtonType() const;
+
+	void animationCallback();
+	void updateOverStates(QPoint pos);
+	void chooseAttach();
+	void historyDownAnimationFinish();
+	void unreadMentionsAnimationFinish();
+	void sendButtonClicked();
+	void unreadMessageAdded(not_null<HistoryItem*> item);
+
+	bool canSendFiles(not_null<const QMimeData*> data) const;
+	bool confirmSendingFiles(
+		const QStringList &files,
+		const QString &insertTextOnCancel);
+	bool confirmSendingFiles(
+		QImage &&image,
+		QByteArray &&content,
+		std::optional<bool> overrideSendImagesAsPhotos = std::nullopt,
+		const QString &insertTextOnCancel = QString());
+	bool confirmSendingFiles(
+		not_null<const QMimeData*> data,
+		std::optional<bool> overrideSendImagesAsPhotos,
+		const QString &insertTextOnCancel = QString());
+	bool confirmSendingFiles(
+		Ui::PreparedList &&list,
+		const QString &insertTextOnCancel = QString());
+	bool showSendingFilesError(const Ui::PreparedList &list) const;
+
+	void sendingFilesConfirmed(
+		Ui::PreparedList &&list,
+		Ui::SendFilesWay way,
+		TextWithTags &&caption,
+		Api::SendOptions options,
+		bool ctrlShiftEnter);
+
+	void uploadFile(const QByteArray &fileContent, SendMediaType type);
+	void itemRemoved(not_null<const HistoryItem*> item);
+
+	// Updates position of controls around the message field,
+	// like send button, emoji button and others.
+	void moveFieldControls();
+	void updateFieldSize();
+
+	bool canWriteMessage() const;
+	std::optional<QString> writeRestriction() const;
+	void orderWidgets();
+
+	void clearInlineBot();
+	void inlineBotChanged();
+
+	// Look in the _field for the inline bot and query string.
+	void updateInlineBotQuery();
+
+	// Request to show results in the emoji panel.
+	void applyInlineBotQuery(UserData *bot, const QString &query);
+
+	void cancelReplyAfterMediaSend(bool lastKeyboardUsed);
+	bool replyToPreviousMessage();
+	bool replyToNextMessage();
+	[[nodiscard]] bool showSlowmodeError();
+
+	void hideChildWidgets();
+	void hideSelectorControlsAnimated();
+	int countMembersDropdownHeightMax() const;
+
+	void updateReplyToName();
+	void checkForwardingInfo();
+	bool editingMessage() const {
+		return _editMsgId != 0;
+	}
+	bool jumpToDialogRow(const Dialogs::RowDescriptor &to);
+
+	void setupShortcuts();
+	bool showNextChat();
+	bool showPreviousChat();
+
+	void handlePeerMigration();
+
+	void updateReplyEditTexts(bool force = false);
+	void updateReplyEditText(not_null<HistoryItem*> item);
+
+	void updatePinnedViewer();
+	void setupPinnedTracker();
+	void checkPinnedBarState();
+	void refreshPinnedBarButton(bool many);
+	void checkLastPinnedClickedIdReset(
+		int wasScrollTop,
+		int nowScrollTop);
+
+	void checkMessagesTTL();
+	void setupGroupCallTracker();
+
+	void sendInlineResult(InlineBots::ResultSelected result);
+
+	void drawField(Painter &p, const QRect &rect);
+	void paintEditHeader(
+		Painter &p,
+		const QRect &rect,
+		int left,
+		int top) const;
+	void drawRestrictedWrite(Painter &p, const QString &error);
+	bool paintShowAnimationFrame();
+
+	void updateMouseTracking();
+
+	// destroys _history and _migrated unread bars
+	void destroyUnreadBar();
+	void destroyUnreadBarOnClose();
+	void createUnreadBarIfBelowVisibleArea(int withScrollTop);
+	[[nodiscard]] bool insideJumpToEndInsteadOfToUnread() const;
+	void createUnreadBarAndResize();
+
+	void saveEditMsg();
+
+	void checkPreview();
+	void requestPreview();
+	void gotPreview(QString links, const MTPMessageMedia &media, mtpRequestId req);
+	void messagesReceived(PeerData *peer, const MTPmessages_Messages &messages, int requestId);
+	void messagesFailed(const MTP::Error &error, int requestId);
+	void addMessagesToFront(PeerData *peer, const QVector<MTPMessage> &messages);
+	void addMessagesToBack(PeerData *peer, const QVector<MTPMessage> &messages);
+
 	void updateHistoryGeometry(bool initial = false, bool loadedDown = false, const ScrollChange &change = { ScrollChangeNone, 0 });
 	void updateListSize();
 
 	// Does any of the shown histories has this flag set.
-	bool hasPendingResizedItems() const {
-		return (_history && _history->hasPendingResizedItems()) || (_migrated && _migrated->hasPendingResizedItems());
-	}
+	bool hasPendingResizedItems() const;
 
 	// Counts scrollTop for placing the scroll right at the unread
 	// messages bar, choosing from _history and _migrated unreadBar.
-	int unreadBarTop() const;
-	int itemTopForHighlight(not_null<HistoryItem*> item) const;
+	std::optional<int> unreadBarTop() const;
+	int itemTopForHighlight(not_null<HistoryView::Element*> view) const;
 	void scrollToCurrentVoiceMessage(FullMsgId fromId, FullMsgId toId);
 
 	// Scroll to current y without updating the _lastUserScrolled time.
@@ -672,39 +545,20 @@ private:
 	// This one is syntetic.
 	void synteticScrollToY(int y);
 
-	void saveGifDone(DocumentData *doc, const MTPBool &result);
-
-	void reportSpamDone(PeerData *peer, const MTPBool &result, mtpRequestId request);
-	bool reportSpamFail(const RPCError &error, mtpRequestId request);
-
-	void unblockDone(PeerData *peer, const MTPBool &result, mtpRequestId req);
-	bool unblockFail(const RPCError &error, mtpRequestId req);
-	void blockDone(PeerData *peer, const MTPBool &result);
-
-	void joinDone(const MTPUpdates &result, mtpRequestId req);
-	bool joinFail(const RPCError &error, mtpRequestId req);
-
-	void countHistoryShowFrom();
-
-	enum class TextUpdateEvent {
-		SaveDraft  = (1 << 0),
-		SendTyping = (1 << 1),
-	};
-	using TextUpdateEvents = base::flags<TextUpdateEvent>;
-	friend inline constexpr bool is_flag_type(TextUpdateEvent) { return true; };
-
-	void writeDrafts(Data::Draft **localDraft, Data::Draft **editDraft);
-	void writeDrafts(History *history);
-	void setFieldText(const TextWithTags &textWithTags, TextUpdateEvents events = 0, Ui::FlatTextarea::UndoHistoryAction undoHistoryAction = Ui::FlatTextarea::ClearUndoHistory);
-	void clearFieldText(TextUpdateEvents events = 0, Ui::FlatTextarea::UndoHistoryAction undoHistoryAction = Ui::FlatTextarea::ClearUndoHistory) {
-		setFieldText(TextWithTags(), events, undoHistoryAction);
-	}
+	void writeDrafts();
+	void writeDraftTexts();
+	void writeDraftCursors();
+	void setFieldText(
+		const TextWithTags &textWithTags,
+		TextUpdateEvents events = 0,
+		FieldHistoryAction fieldHistoryAction = FieldHistoryAction::Clear);
+	void clearFieldText(
+		TextUpdateEvents events = 0,
+		FieldHistoryAction fieldHistoryAction = FieldHistoryAction::Clear);
 
 	HistoryItem *getItemFromHistoryOrMigrated(MsgId genericMsgId) const;
 	void animatedScrollToItem(MsgId msgId);
 	void animatedScrollToY(int scrollTo, HistoryItem *attachTo = nullptr);
-
-	void updateDragAreas();
 
 	// when scroll position or scroll area size changed this method
 	// updates the boundings of the visible area in HistoryInner
@@ -713,10 +567,80 @@ private:
 	int countAutomaticScrollTop();
 	void preloadHistoryByScroll();
 	void checkReplyReturns();
-	void scrollToAnimationCallback(FullMsgId attachToId);
+	void scrollToAnimationCallback(FullMsgId attachToId, int relativeTo);
 
 	bool readyToForward() const;
 	bool hasSilentToggle() const;
+
+	void handleSupportSwitch(not_null<History*> updated);
+
+	void inlineBotResolveDone(const MTPcontacts_ResolvedPeer &result);
+	void inlineBotResolveFail(const MTP::Error &error, const QString &username);
+
+	bool isRecording() const;
+
+	bool isBotStart() const;
+	bool isBlocked() const;
+	bool isJoinChannel() const;
+	bool isMuteUnmute() const;
+	bool isReportMessages() const;
+	bool updateCmdStartShown();
+	void updateSendButtonType();
+	bool showRecordButton() const;
+	bool showInlineBotCancel() const;
+	void refreshSilentToggle();
+
+	void setupScheduledToggle();
+	void refreshScheduledToggle();
+
+	bool kbWasHidden() const;
+
+	MTP::Sender _api;
+	MsgId _replyToId = 0;
+	Ui::Text::String _replyToName;
+	int _replyToNameVersion = 0;
+
+	HistoryItemsList _toForward;
+	Ui::Text::String _toForwardFrom, _toForwardText;
+	int _toForwardNameVersion = 0;
+
+	MsgId _editMsgId = 0;
+
+	HistoryItem *_replyEditMsg = nullptr;
+	Ui::Text::String _replyEditMsgText;
+	mutable base::Timer _updateEditTimeLeftDisplay;
+
+	object_ptr<Ui::IconButton> _fieldBarCancel;
+
+	std::unique_ptr<HistoryView::PinnedTracker> _pinnedTracker;
+	std::unique_ptr<Ui::PinnedBar> _pinnedBar;
+	int _pinnedBarHeight = 0;
+	FullMsgId _pinnedClickedId;
+	std::optional<FullMsgId> _minPinnedId;
+
+	std::unique_ptr<HistoryView::GroupCallTracker> _groupCallTracker;
+	std::unique_ptr<Ui::GroupCallBar> _groupCallBar;
+	int _groupCallBarHeight = 0;
+
+	bool _preserveScrollTop = false;
+
+	mtpRequestId _saveEditMsgRequestId = 0;
+
+	QStringList _parsedLinks;
+	QString _previewLinks;
+	WebPageData *_previewData = nullptr;
+	typedef QMap<QString, WebPageId> PreviewCache;
+	PreviewCache _previewCache;
+	mtpRequestId _previewRequest = 0;
+	Ui::Text::String _previewTitle;
+	Ui::Text::String _previewDescription;
+	base::Timer _previewTimer;
+	Data::PreviewState _previewState = Data::PreviewState();
+
+	bool _replyForwardPressed = false;
+
+	HistoryItem *_replyReturn = nullptr;
+	QList<MsgId> _replyReturns;
 
 	PeerData *_peer = nullptr;
 
@@ -724,143 +648,122 @@ private:
 	bool _canSendMessages = false;
 	MsgId _showAtMsgId = ShowAtUnreadMsgId;
 
-	mtpRequestId _firstLoadRequest = 0;
-	mtpRequestId _preloadRequest = 0;
-	mtpRequestId _preloadDownRequest = 0;
+	int _firstLoadRequest = 0; // Not real mtpRequestId.
+	int _preloadRequest = 0; // Not real mtpRequestId.
+	int _preloadDownRequest = 0; // Not real mtpRequestId.
 
-	MsgId _debug_preloadOffsetId = 0;
-	int32 _debug_preloadAddOffset = 0;
-	int32 _debug_preloadLoadCount = 0;
-	PeerId _debug_preloadPeer = 0;
-	MsgId _debug_preloadDownOffsetId = 0;
-	int32 _debug_preloadDownAddOffset = 0;
-	int32 _debug_preloadDownLoadCount = 0;
-	PeerId _debug_preloadDownPeer = 0;
+	MsgId _delayedShowAtMsgId = -1;
+	int _delayedShowAtRequest = 0; // Not real mtpRequestId.
 
-	MsgId _delayedShowAtMsgId = -1; // wtf?
-	mtpRequestId _delayedShowAtRequest = 0;
-
-	object_ptr<HistoryTopBarWidget> _topBar;
+	object_ptr<HistoryView::TopBarWidget> _topBar;
 	object_ptr<Ui::ScrollArea> _scroll;
 	QPointer<HistoryInner> _list;
 	History *_migrated = nullptr;
 	History *_history = nullptr;
-	bool _historyInited = false; // Initial updateHistoryGeometry() was called.
-	bool _updateHistoryGeometryRequired = false; // If updateListSize() was called without updateHistoryGeometry().
+	// Initial updateHistoryGeometry() was called.
+	bool _historyInited = false;
+	// If updateListSize() was called without updateHistoryGeometry().
+	bool _updateHistoryGeometryRequired = false;
 	int _addToScroll = 0;
 
 	int _lastScrollTop = 0; // gifs optimization
-	TimeMs _lastScrolled = 0;
-	QTimer _updateHistoryItems;
+	crl::time _lastScrolled = 0;
+	base::Timer _updateHistoryItems;
 
-	TimeMs _lastUserScrolled = 0;
+	crl::time _lastUserScrolled = 0;
 	bool _synteticScrollEvent = false;
-	Animation _scrollToAnimation;
+	Ui::Animations::Simple _scrollToAnimation;
 
-	Animation _historyDownShown;
+	Ui::Animations::Simple _historyDownShown;
 	bool _historyDownIsShown = false;
 	object_ptr<Ui::HistoryDownButton> _historyDown;
 
-	Animation _unreadMentionsShown;
+	Ui::Animations::Simple _unreadMentionsShown;
 	bool _unreadMentionsIsShown = false;
 	object_ptr<Ui::HistoryDownButton> _unreadMentions;
 
 	object_ptr<FieldAutocomplete> _fieldAutocomplete;
+	object_ptr<Support::Autocomplete> _supportAutocomplete;
+	std::unique_ptr<MessageLinksParser> _fieldLinksParser;
 
 	UserData *_inlineBot = nullptr;
 	QString _inlineBotUsername;
+	bool _inlineLookingUpBot = false;
 	mtpRequestId _inlineBotResolveRequestId = 0;
 	bool _isInlineBot = false;
-	void inlineBotResolveDone(const MTPcontacts_ResolvedPeer &result);
-	bool inlineBotResolveFail(QString name, const RPCError &error);
 
-	bool isBotStart() const;
-	bool isBlocked() const;
-	bool isJoinChannel() const;
-	bool isMuteUnmute() const;
-	bool updateCmdStartShown();
-	void updateSendButtonType();
-	bool showRecordButton() const;
-	bool showInlineBotCancel() const;
-	void refreshSilentToggle();
+	std::unique_ptr<HistoryView::ContactStatus> _contactStatus;
 
-	object_ptr<ReportSpamPanel> _reportSpamPanel = { nullptr };
-
-	object_ptr<Ui::SendButton> _send;
+	const std::shared_ptr<Ui::SendButton> _send;
 	object_ptr<Ui::FlatButton> _unblock;
 	object_ptr<Ui::FlatButton> _botStart;
 	object_ptr<Ui::FlatButton> _joinChannel;
 	object_ptr<Ui::FlatButton> _muteUnmute;
-	mtpRequestId _unblockRequest = 0;
-	mtpRequestId _reportSpamRequest = 0;
+	object_ptr<Ui::FlatButton> _reportMessages;
 	object_ptr<Ui::IconButton> _attachToggle;
 	object_ptr<Ui::EmojiButton> _tabbedSelectorToggle;
-	object_ptr<Ui::ImportantTooltip> _tabbedSelectorToggleTooltip = { nullptr };
-	bool _tabbedSelectorToggleTooltipShown = false;
 	object_ptr<Ui::IconButton> _botKeyboardShow;
 	object_ptr<Ui::IconButton> _botKeyboardHide;
 	object_ptr<Ui::IconButton> _botCommandStart;
 	object_ptr<Ui::SilentToggle> _silent = { nullptr };
+	object_ptr<Ui::IconButton> _scheduled = { nullptr };
+	std::unique_ptr<HistoryView::Controls::TTLButton> _ttlInfo;
+	const std::unique_ptr<VoiceRecordBar> _voiceRecordBar;
 	bool _cmdStartShown = false;
-	object_ptr<MessageField> _field;
-	bool _recording = false;
-	bool _inField = false;
+	object_ptr<Ui::InputField> _field;
 	bool _inReplyEditForward = false;
-	bool _inPinnedMsg = false;
 	bool _inClickable = false;
-	int _recordingSamples = 0;
-	int _recordCancelWidth;
-
-	// This can animate for a very long time (like in music playing),
-	// so it should be a BasicAnimation, not an Animation.
-	BasicAnimation _a_recording;
-	anim::value a_recordingLevel;
-
-	bool kbWasHidden() const;
 
 	bool _kbShown = false;
 	HistoryItem *_kbReplyTo = nullptr;
 	object_ptr<Ui::ScrollArea> _kbScroll;
-	QPointer<BotKeyboard> _keyboard;
+	const not_null<BotKeyboard*> _keyboard;
 
 	object_ptr<Ui::InnerDropdown> _membersDropdown = { nullptr };
-	QTimer _membersDropdownShowTimer;
+	base::Timer _membersDropdownShowTimer;
 
 	object_ptr<InlineBots::Layout::Widget> _inlineResults = { nullptr };
-	object_ptr<TabbedPanel> _tabbedPanel;
-	QPointer<TabbedSelector> _tabbedSelector;
-	DragState _attachDragState;
-	object_ptr<DragArea> _attachDragDocument, _attachDragPhoto;
+	std::unique_ptr<TabbedPanel> _tabbedPanel;
 
-	object_ptr<Ui::Emoji::SuggestionsController> _emojiSuggestions = { nullptr };
+	DragArea::Areas _attachDragAreas;
+
+	Fn<void()> _raiseEmojiSuggestions;
 
 	bool _nonEmptySelection = false;
 
 	TextUpdateEvents _textUpdateEvents = (TextUpdateEvents() | TextUpdateEvent::SaveDraft | TextUpdateEvent::SendTyping);
 
-	int64 _serviceImageCacheSize = 0;
 	QString _confirmSource;
 
-	Animation _a_show;
+	Ui::Animations::Simple _a_show;
 	Window::SlideDirection _showDirection;
 	QPixmap _cacheUnder, _cacheOver;
 
-	QTimer _scrollTimer;
+	base::Timer _scrollTimer;
 	int32 _scrollDelta = 0;
 
 	MsgId _highlightedMessageId = 0;
 	std::deque<MsgId> _highlightQueue;
 	base::Timer _highlightTimer;
-	TimeMs _highlightStart = 0;
+	crl::time _highlightStart = 0;
 
-	QMap<QPair<not_null<History*>, SendAction::Type>, mtpRequestId> _sendActionRequests;
-	base::Timer _sendActionStopTimer;
-
-	TimeMs _saveDraftStart = 0;
+	crl::time _saveDraftStart = 0;
 	bool _saveDraftText = false;
-	QTimer _saveDraftTimer, _saveCloudDraftTimer;
+	base::Timer _saveDraftTimer;
+	base::Timer _saveCloudDraftTimer;
+
+	base::weak_ptr<Ui::Toast::Instance> _topToast;
+	std::unique_ptr<ChooseMessagesForReport> _chooseForReport;
 
 	object_ptr<Ui::PlainShadow> _topShadow;
 	bool _inGrab = false;
 
+	int _topDelta = 0;
+
+	rpl::event_stream<> _cancelRequests;
+
+	//CloudVeil start
+private Q_SLOTS:
+	void onSettingsUpdate();
+	//CloudVeil end
 };

@@ -6,7 +6,7 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 
-using "basic.style";
+using "ui/basic.style";
 using "ui/widgets/widgets.style";
 using "overview/overview.style";
 
@@ -72,6 +72,32 @@ mediaPlayerRepeatInactiveIcon: icon {
 	{ "player_repeat", mediaPlayerInactiveFg, point(9px, 11px)}
 };
 
+mediaPlayerSpeedButton: IconButton {
+	width: 31px;
+	height: 30px;
+
+	icon: icon {
+		{ "voice2x", mediaPlayerActiveFg, point(8px, 11px) }
+	};
+	iconPosition: point(0px, 0px);
+
+	rippleAreaPosition: point(3px, 5px);
+	rippleAreaSize: 25px;
+	ripple: RippleAnimation(defaultRippleAnimation) {
+		color: lightButtonBgOver;
+	}
+}
+mediaPlayerSpeedDisabledIcon: icon {
+	{ "voice2x", menuIconFg, point(8px, 11px)}
+};
+mediaPlayerSpeedDisabledIconOver: icon {
+	{ "voice2x", menuIconFgOver, point(8px, 11px)}
+};
+mediaPlayerSpeedDisabledRippleBg: windowBgOver;
+mediaPlayerSpeedInactiveIcon: icon {
+	{ "voice2x", mediaPlayerInactiveFg, point(8px, 11px)}
+};
+
 mediaPlayerVolumeIcon0: icon {
 	{ "player_volume0", mediaPlayerActiveFg },
 };
@@ -126,6 +152,13 @@ mediaPlayerPreviousButton: IconButton(mediaPlayerNextButton) {
 mediaPlayerPreviousDisabledIcon: icon {
 	{ "player_next-flip_horizontal", mediaPlayerInactiveFg, mediaPlayerSkipIconPosition },
 };
+
+touchBarIconPlayerClose: icon {{ "player_close", windowFg }};
+touchBarIconPlayerPlay: icon {{ "media_play", windowFg }};
+touchBarIconPlayerPause: icon {{ "media_pause", windowFg }};
+touchBarIconPlayerNext: icon {{ "player_next", windowFg }};
+touchBarIconPlayerPrevious: icon {{ "player_next-flip_horizontal", windowFg }};
+
 mediaPlayerClose: IconButton(mediaPlayerRepeatButton) {
 	width: 37px;
 	icon: icon {{ "player_close", menuIconFg, point(10px, 12px) }};
@@ -193,17 +226,7 @@ mediaPlayerPanelPlaySkip: 7px;
 mediaPlayerPanelPlayTop: 58px;
 mediaPlayerPanelPlaybackTop: 32px;
 mediaPlayerPanelPlaybackPadding: 8px;
-mediaPlayerPanelPlayback: MediaSlider {
-	width: 3px;
-	activeFg: mediaPlayerActiveFg;
-	inactiveFg: mediaPlayerInactiveFg;
-	activeFgOver: mediaPlayerActiveFg;
-	inactiveFgOver: mediaPlayerInactiveFg;
-	activeFgDisabled: mediaPlayerInactiveFg;
-	inactiveFgDisabled: windowBg;
-	seekSize: size(9px, 9px);
-	duration: 150;
-}
+mediaPlayerPanelPlayback: defaultContinuousSlider;
 
 mediaPlayerPanelVolumeTop: 65px;
 mediaPlayerPanelVolumeSkip: 3px;

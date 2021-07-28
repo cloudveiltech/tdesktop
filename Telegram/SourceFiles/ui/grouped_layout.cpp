@@ -105,19 +105,19 @@ Layouter::Layouter(
 }
 
 std::vector<float64> Layouter::CountRatios(const std::vector<QSize> &sizes) {
-	return ranges::view::all(
+	return ranges::views::all(
 		sizes
-	) | ranges::view::transform([](const QSize &size) {
+	) | ranges::views::transform([](const QSize &size) {
 		return size.width() / float64(size.height());
 	}) | ranges::to_vector;
 }
 
 std::string Layouter::CountProportions(const std::vector<float64> &ratios) {
-	return ranges::view::all(
+	return ranges::views::all(
 		ratios
-	) | ranges::view::transform([](float64 ratio) {
+	) | ranges::views::transform([](float64 ratio) {
 		return (ratio > 1.2) ? 'w' : (ratio < 0.8) ? 'n' : 'q';
-	}) | ranges::to_<std::string>();
+	}) | ranges::to<std::string>();
 }
 
 std::vector<GroupMediaLayout> Layouter::layout() const {
@@ -374,7 +374,7 @@ std::vector<GroupMediaLayout> Layouter::layoutFourTopAndOther() const {
 		},
 		{
 			QRect(w0 + _spacing + w1 + _spacing, h0 + _spacing, w2, h1),
-			RectPart::Right | RectPart::BottomLeft
+			RectPart::Right | RectPart::Bottom
 		},
 	};
 }
@@ -438,14 +438,14 @@ ComplexLayouter::ComplexLayouter(
 std::vector<float64> ComplexLayouter::CropRatios(
 		const std::vector<float64> &ratios,
 		float64 averageRatio) {
-	return ranges::view::all(
+	return ranges::views::all(
 		ratios
-	) | ranges::view::transform([&](float64 ratio) {
+	) | ranges::views::transform([&](float64 ratio) {
 		constexpr auto kMaxRatio = 2.75;
 		constexpr auto kMinRatio = 0.6667;
 		return (averageRatio > 1.1)
-			? snap(ratio, 1., kMaxRatio)
-			: snap(ratio, kMinRatio, 1.);
+			? std::clamp(ratio, 1., kMaxRatio)
+			: std::clamp(ratio, kMinRatio, 1.);
 	}) | ranges::to_vector;
 }
 
@@ -510,7 +510,6 @@ std::vector<GroupMediaLayout> ComplexLayouter::layout() const {
 		const auto totalHeight = ranges::accumulate(heights, 0.)
 			+ _spacing * (lineCount - 1);
 		const auto minLineHeight = ranges::min(heights);
-		const auto maxLineHeight = ranges::max(heights);
 		const auto bad1 = (minLineHeight < _minWidth) ? 1.5 : 1.;
 		const auto bad2 = [&] {
 			for (auto line = 1; line != lineCount; ++line) {

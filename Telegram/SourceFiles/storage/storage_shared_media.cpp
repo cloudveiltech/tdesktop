@@ -56,6 +56,7 @@ void SharedMedia::add(SharedMediaAddExisting &&query) {
 
 void SharedMedia::add(SharedMediaAddSlice &&query) {
 	Expects(IsValidSharedMediaType(query.type));
+
 	auto peerIt = enforceLists(query.peerId);
 	auto index = static_cast<int>(query.type);
 	peerIt->second[index].addSlice(
@@ -81,14 +82,28 @@ void SharedMedia::remove(SharedMediaRemoveAll &&query) {
 	auto peerIt = _lists.find(query.peerId);
 	if (peerIt != _lists.end()) {
 		for (auto index = 0; index != kSharedMediaTypeCount; ++index) {
-			peerIt->second[index].removeAll();
+			auto type = static_cast<SharedMediaType>(index);
+			if (query.types.test(type)) {
+				peerIt->second[index].removeAll();
+			}
 		}
 		_allRemoved.fire(std::move(query));
 	}
 }
 
+void SharedMedia::invalidate(SharedMediaInvalidateBottom &&query) {
+	auto peerIt = _lists.find(query.peerId);
+	if (peerIt != _lists.end()) {
+		for (auto index = 0; index != kSharedMediaTypeCount; ++index) {
+			peerIt->second[index].invalidateBottom();
+		}
+		_bottomInvalidated.fire(std::move(query));
+	}
+}
+
 rpl::producer<SharedMediaResult> SharedMedia::query(SharedMediaQuery &&query) const {
 	Expects(IsValidSharedMediaType(query.key.type));
+
 	auto peerIt = _lists.find(query.key.peerId);
 	if (peerIt != _lists.end()) {
 		auto index = static_cast<int>(query.key.type);
@@ -103,6 +118,31 @@ rpl::producer<SharedMediaResult> SharedMedia::query(SharedMediaQuery &&query) co
 	};
 }
 
+SharedMediaResult SharedMedia::snapshot(const SharedMediaQuery &query) const {
+	Expects(IsValidSharedMediaType(query.key.type));
+
+	auto peerIt = _lists.find(query.key.peerId);
+	if (peerIt != _lists.end()) {
+		auto index = static_cast<int>(query.key.type);
+		return peerIt->second[index].snapshot(SparseIdsListQuery(
+			query.key.messageId,
+			query.limitBefore,
+			query.limitAfter));
+	}
+	return {};
+}
+
+bool SharedMedia::empty(const SharedMediaKey &key) const {
+	Expects(IsValidSharedMediaType(key.type));
+
+	auto peerIt = _lists.find(key.peerId);
+	if (peerIt != _lists.end()) {
+		auto index = static_cast<int>(key.type);
+		return peerIt->second[index].empty();
+	}
+	return true;
+}
+
 rpl::producer<SharedMediaSliceUpdate> SharedMedia::sliceUpdated() const {
 	return _sliceUpdated.events();
 }
@@ -113,6 +153,10 @@ rpl::producer<SharedMediaRemoveOne> SharedMedia::oneRemoved() const {
 
 rpl::producer<SharedMediaRemoveAll> SharedMedia::allRemoved() const {
 	return _allRemoved.events();
+}
+
+rpl::producer<SharedMediaInvalidateBottom> SharedMedia::bottomInvalidated() const {
+	return _bottomInvalidated.events();
 }
 
 } // namespace Storage

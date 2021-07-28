@@ -7,8 +7,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_user_photos.h"
 
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "apiwrap.h"
+#include "data/data_session.h"
+#include "data/data_user.h"
 #include "storage/storage_facade.h"
 #include "storage/storage_user_photos.h"
 
@@ -29,16 +31,16 @@ public:
 
 private:
 	void mergeSliceData(
-		base::optional<int> count,
+		std::optional<int> count,
 		const std::deque<PhotoId> &photoIds,
-		base::optional<int> skippedBefore,
+		std::optional<int> skippedBefore,
 		int skippedAfter);
 	void sliceToLimits();
 
 	Key _key;
 	std::deque<PhotoId> _ids;
-	base::optional<int> _fullCount;
-	base::optional<int> _skippedBefore;
+	std::optional<int> _fullCount;
+	std::optional<int> _skippedBefore;
 	int _skippedAfter = 0;
 	int _limitBefore = 0;
 	int _limitAfter = 0;
@@ -51,54 +53,38 @@ UserPhotosSlice::UserPhotosSlice(Key key)
 : UserPhotosSlice(
 	key,
 	{},
-	base::none,
-	base::none,
-	base::none) {
+	std::nullopt,
+	std::nullopt,
+	std::nullopt) {
 }
 
 UserPhotosSlice::UserPhotosSlice(
 	Key key,
 	std::deque<PhotoId> &&ids,
-	base::optional<int> fullCount,
-	base::optional<int> skippedBefore,
-	base::optional<int> skippedAfter)
-: _key(key)
-, _ids(std::move(ids))
-, _fullCount(fullCount)
-, _skippedBefore(skippedBefore)
-, _skippedAfter(skippedAfter) {
+	std::optional<int> fullCount,
+	std::optional<int> skippedBefore,
+	std::optional<int> skippedAfter)
+: AbstractSparseIds<std::deque<PhotoId>>(
+	ids,
+	fullCount,
+	skippedBefore,
+	skippedAfter)
+, _key(key) {
 }
 
-void UserPhotosSlice::reverse() {
-	ranges::reverse(_ids);
-	std::swap(_skippedBefore, _skippedAfter);
-}
-
-base::optional<int> UserPhotosSlice::indexOf(PhotoId photoId) const {
-	auto it = ranges::find(_ids, photoId);
-	if (it != _ids.end()) {
-		return (it - _ids.begin());
-	}
-	return base::none;
-}
-
-PhotoId UserPhotosSlice::operator[](int index) const {
-	Expects(index >= 0 && index < size());
-
-	return *(_ids.begin() + index);
-}
-
-base::optional<int> UserPhotosSlice::distance(const Key &a, const Key &b) const {
+std::optional<int> UserPhotosSlice::distance(
+		const Key &a,
+		const Key &b) const {
 	if (a.userId != _key.userId
 		|| b.userId != _key.userId) {
-		return base::none;
+		return std::nullopt;
 	}
-	if (auto i = indexOf(a.photoId)) {
-		if (auto j = indexOf(b.photoId)) {
+	if (const auto i = indexOf(a.photoId)) {
+		if (const auto j = indexOf(b.photoId)) {
 			return *j - *i;
 		}
 	}
-	return base::none;
+	return std::nullopt;
 }
 
 UserPhotosSliceBuilder::UserPhotosSliceBuilder(
@@ -137,9 +123,9 @@ void UserPhotosSliceBuilder::checkInsufficientPhotos() {
 }
 
 void UserPhotosSliceBuilder::mergeSliceData(
-		base::optional<int> count,
+		std::optional<int> count,
 		const std::deque<PhotoId> &photoIds,
-		base::optional<int> skippedBefore,
+		std::optional<int> skippedBefore,
 		int skippedAfter) {
 	if (photoIds.empty()) {
 		if (_fullCount != count) {
@@ -193,10 +179,11 @@ UserPhotosSlice UserPhotosSliceBuilder::snapshot() const {
 }
 
 rpl::producer<UserPhotosSlice> UserPhotosViewer(
+		not_null<Main::Session*> session,
 		UserPhotosSlice::Key key,
 		int limitBefore,
 		int limitAfter) {
-	return [key, limitBefore, limitAfter](auto consumer) {
+	return [=](auto consumer) {
 		auto lifetime = rpl::lifetime();
 		auto builder = lifetime.make_state<UserPhotosSliceBuilder>(
 			key,
@@ -207,17 +194,17 @@ rpl::producer<UserPhotosSlice> UserPhotosViewer(
 				consumer.put_next(builder->snapshot());
 			}
 		};
-		auto requestPhotosAround = [user = App::user(key.userId)](
+		auto requestPhotosAround = [user = session->data().user(key.userId)](
 				PhotoId photoId) {
-			Auth().api().requestUserPhotos(user, photoId);
+			user->session().api().requestUserPhotos(user, photoId);
 		};
 		builder->insufficientPhotosAround()
 			| rpl::start_with_next(requestPhotosAround, lifetime);
 
-		Auth().storage().userPhotosSliceUpdated()
+		session->storage().userPhotosSliceUpdated()
 			| rpl::start_with_next(applyUpdate, lifetime);
 
-		Auth().storage().query(Storage::UserPhotosQuery(
+		session->storage().query(Storage::UserPhotosQuery(
 			key,
 			limitBefore,
 			limitAfter
@@ -232,10 +219,12 @@ rpl::producer<UserPhotosSlice> UserPhotosViewer(
 
 
 rpl::producer<UserPhotosSlice> UserPhotosReversedViewer(
+		not_null<Main::Session*> session,
 		UserPhotosSlice::Key key,
 		int limitBefore,
 		int limitAfter) {
 	return UserPhotosViewer(
+		session,
 		key,
 		limitBefore,
 		limitAfter

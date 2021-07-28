@@ -1,10 +1,10 @@
 import os, sys, requests, pprint, re, json
 from uritemplate import URITemplate, expand
-from subprocess import call
+from subprocess import call, Popen, PIPE
 from os.path import expanduser
 
 changelog_file = '../../changelog.txt'
-token_file = '../../../TelegramPrivate/github-releases-token.txt'
+token_file = '../../../DesktopPrivate/github-releases-token.txt'
 
 version = ''
 commit = ''
@@ -53,14 +53,66 @@ def checkResponseCode(result, right_code):
     print('Wrong result code: ' + str(result.status_code) + ', should be ' + str(right_code))
     sys.exit(1)
 
+def getOutput(command):
+  p = Popen(command.split(), stdout=PIPE)
+  output, err = p.communicate()
+  if err != None or p.returncode != 0:
+    print('ERROR!')
+    print(err)
+    print(p.returncode)
+    sys.exit(1)
+  return output.decode('utf-8')
+
+def prepareSources():
+  workpath = os.getcwd()
+  os.chdir('../..')
+  rootpath = os.getcwd()
+  finalpath = rootpath + '/out/Release/sources.tar'
+  if os.path.exists(finalpath):
+    os.remove(finalpath)
+  if os.path.exists(finalpath + '.gz'):
+    os.remove(finalpath + '.gz')
+  tmppath = rootpath + '/out/Release/tmp.tar'
+  print('Preparing source tarball...')
+  if (call(('git archive --prefix=tdesktop-' + version + '-full/ -o ' + finalpath + ' v' + version).split()) != 0):
+    os.remove(finalpath)
+    sys.exit(1)
+  lines = getOutput('git submodule foreach').split('\n')
+  for line in lines:
+    if len(line) == 0:
+      continue
+    match = re.match(r"^Entering '([^']+)'$", line)
+    if not match:
+      print('Bad line: ' + line)
+      sys.exit(1)
+    path = match.group(1)
+    revision = getOutput('git rev-parse v' + version + ':' + path).split('\n')[0]
+    print('Adding submodule ' + path + '...')
+    os.chdir(path)
+    if (call(('git archive --prefix=tdesktop-' + version + '-full/' + path + '/ ' + revision + ' -o ' + tmppath).split()) != 0):
+      os.remove(finalpath)
+      os.remove(tmppath)
+      sys.exit(1)
+    if (call(('gtar --concatenate --file=' + finalpath + ' ' + tmppath).split()) != 0):
+      os.remove(finalpath)
+      os.remove(tmppath)
+      sys.exit(1)
+    os.remove(tmppath)
+    os.chdir(rootpath)
+  print('Compressing...')
+  if (call(('gzip -9 ' + finalpath).split()) != 0):
+    os.remove(finalpath)
+    sys.exit(1)
+  os.chdir(workpath)
+  return finalpath + '.gz'
+
 pp = pprint.PrettyPrinter(indent=2)
 url = 'https://api.github.com/'
 
 version_parts = version.split('.')
 
 stable = 1
-alpha = 0
-dev = 0
+beta = 0
 
 if len(version_parts) < 2:
   print('Error: expected at least major version ' + version)
@@ -76,14 +128,10 @@ else:
   version = version_major + '.' + version_parts[2]
   version_full = version
   if len(version_parts) == 4:
-    if version_parts[3] == 'dev':
-      dev = 1
+    if version_parts[3] == 'beta':
+      beta = 1
       stable = 0
-      version_full = version + '.dev'
-    elif version_parts[3] == 'alpha':
-      alpha = 1
-      stable = 0
-      version_full = version + '.alpha'
+      version_full = version + '.beta'
     else:
       print('Error: unexpected version part ' + version_parts[3])
       sys.exit(1)
@@ -98,20 +146,15 @@ if access_token == '':
   print('Access token not found!')
   sys.exit(1)
 
-print('Version: ' + version_full);
-local_folder = expanduser("~") + '/Telegram/backup/' + version_major + '/' + version_full
+print('Version: ' + version_full)
+local_folder = expanduser("~") + '/Projects/backup/tdesktop/' + version_major + '/' + version_full
 
 if stable == 1:
-  if os.path.isdir(local_folder + '.dev'):
-    dev = 1
+  if os.path.isdir(local_folder + '.beta'):
+    beta = 1
     stable = 0
-    version_full = version + '.dev'
-    local_folder = local_folder + '.dev'
-  elif os.path.isdir(local_folder + '.alpha'):
-    alpha = 1
-    stable = 0
-    version_full = version + '.alpha'
-    local_folder = local_folder + '.alpha'
+    version_full = version + '.beta'
+    local_folder = local_folder + '.beta'
 
 if not os.path.isdir(local_folder):
   print('Storage path not found: ' + local_folder)
@@ -125,28 +168,35 @@ files.append({
   'remote': 'tsetup.' + version_full + '.exe',
   'backup_folder': 'tsetup',
   'mime': 'application/octet-stream',
-  'label': 'Windows: Installer',
+  'label': 'Windows 32 bit: Installer',
 })
 files.append({
   'local': 'tportable.' + version_full + '.zip',
   'remote': 'tportable.' + version_full + '.zip',
   'backup_folder': 'tsetup',
   'mime': 'application/zip',
-  'label': 'Windows: Portable',
+  'label': 'Windows 32 bit: Portable',
+})
+files.append({
+  'local': 'tsetup-x64.' + version_full + '.exe',
+  'remote': 'tsetup-x64.' + version_full + '.exe',
+  'backup_folder': 'tx64',
+  'mime': 'application/octet-stream',
+  'label': 'Windows 64 bit: Installer',
+})
+files.append({
+  'local': 'tportable-x64.' + version_full + '.zip',
+  'remote': 'tportable-x64.' + version_full + '.zip',
+  'backup_folder': 'tx64',
+  'mime': 'application/zip',
+  'label': 'Windows 64 bit: Portable',
 })
 files.append({
   'local': 'tsetup.' + version_full + '.dmg',
   'remote': 'tsetup.' + version_full + '.dmg',
   'backup_folder': 'tmac',
   'mime': 'application/octet-stream',
-  'label': 'macOS and OS X 10.8+: Installer',
-})
-files.append({
-  'local': 'tsetup32.' + version_full + '.dmg',
-  'remote': 'tsetup32.' + version_full + '.dmg',
-  'backup_folder': 'tmac32',
-  'mime': 'application/octet-stream',
-  'label': 'OS X 10.6 and 10.7: Installer',
+  'label': 'macOS 10.12+: Installer',
 })
 files.append({
   'local': 'tsetup.' + version_full + '.tar.xz',
@@ -156,11 +206,10 @@ files.append({
   'label': 'Linux 64 bit: Binary',
 })
 files.append({
-  'local': 'tsetup32.' + version_full + '.tar.xz',
-  'remote': 'tsetup32.' + version_full + '.tar.xz',
-  'backup_folder': 'tlinux32',
-  'mime': 'application/octet-stream',
-  'label': 'Linux 32 bit: Binary',
+  'local': 'sources',
+  'remote': 'tdesktop-' + version + '-full.tar.gz',
+  'mime': 'application/x-gzip',
+  'label': 'Source code (tar.gz, full)',
 })
 
 r = requests.get(url + 'repos/telegramdesktop/tdesktop/releases/tags/v' + version)
@@ -178,9 +227,7 @@ if r.status_code == 404:
     for line in f:
       if started == 1:
         if re.match(r'^\d+\.\d+', line):
-          break;
-        if re.match(r'^\s+$', line):
-          continue
+          break
         changelog += line
       else:
         if re.match(r'^\d+\.\d+', line):
@@ -194,20 +241,28 @@ if r.status_code == 404:
     sys.exit(1)
 
   changelog = changelog.strip()
-  print('Changelog: ');
-  print(changelog);
+  print('Changelog: ')
+  print(changelog)
 
   r = requests.post(url + 'repos/telegramdesktop/tdesktop/releases', headers={'Authorization': 'token ' + access_token}, data=json.dumps({
     'tag_name': 'v' + version,
     'target_commitish': commit,
     'name': 'v ' + version,
     'body': changelog,
-    'prerelease': (dev == 1 or alpha == 1),
+    'prerelease': (beta == 1),
   }))
   checkResponseCode(r, 201)
 
+tagname = 'v' + version
+call("git fetch origin".split())
+if stable == 1:
+  call("git push launchpad {}:master".format(tagname).split())
+else:
+  call("git push launchpad {}:beta".format(tagname).split())
+call("git push --tags launchpad".split())
+
 r = requests.get(url + 'repos/telegramdesktop/tdesktop/releases/tags/v' + version)
-checkResponseCode(r, 200);
+checkResponseCode(r, 200)
 
 release_data = r.json()
 #pp.pprint(release_data)
@@ -215,8 +270,8 @@ release_data = r.json()
 release_id = release_data['id']
 print('Release ID: ' + str(release_id))
 
-r = requests.get(url + 'repos/telegramdesktop/tdesktop/releases/' + str(release_id) + '/assets');
-checkResponseCode(r, 200);
+r = requests.get(url + 'repos/telegramdesktop/tdesktop/releases/' + str(release_id) + '/assets')
+checkResponseCode(r, 200)
 
 assets = release_data['assets']
 for asset in assets:
@@ -234,12 +289,15 @@ for asset in assets:
 for file in files:
   if 'already' in file:
     continue
-  file_path = local_folder + file['backup_folder'] + '/' + file['local']
+  if file['local'] == 'sources':
+    file_path = prepareSources()
+  else:
+    file_path = local_folder + file['backup_folder'] + '/' + file['local']
   if not os.path.isfile(file_path):
     print('Warning: file not found ' + file['local'])
     continue
 
-  upload_url = expand(release_data['upload_url'], {'name': file['remote'], 'label': file['label']}) + '&access_token=' + access_token;
+  upload_url = expand(release_data['upload_url'], {'name': file['remote'], 'label': file['label']}) + '&access_token=' + access_token
 
   content = upload_in_chunks(file_path, 10)
 

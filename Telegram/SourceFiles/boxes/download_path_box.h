@@ -18,19 +18,20 @@ class Radioenum;
 class LinkButton;
 } // namespace Ui
 
-class DownloadPathBox : public BoxContent {
-	Q_OBJECT
+namespace Window {
+class SessionController;
+} // namespace Window
 
+class DownloadPathBox : public Ui::BoxContent {
 public:
-	DownloadPathBox(QWidget *parent);
+	DownloadPathBox(
+		QWidget *parent,
+		not_null<Window::SessionController*> controller);
 
 protected:
 	void prepare() override;
 
 	void resizeEvent(QResizeEvent *e) override;
-
-private slots:
-	void onEditPath();
 
 private:
 	enum class Directory {
@@ -51,7 +52,9 @@ private:
 	void save();
 	void updateControlsVisibility();
 	void setPathText(const QString &text);
+	void editPath();
 
+	const not_null<Window::SessionController*> _controller;
 	QString _path;
 	QByteArray _pathBookmark;
 

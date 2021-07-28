@@ -8,9 +8,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "ui/text/text.h"
+#include "ui/effects/animations.h"
+#include "dialogs/dialogs_key.h"
 
 class History;
 class HistoryItem;
+
+namespace Data {
+class CloudImageView;
+} // namespace Data
 
 namespace Ui {
 class RippleAnimation;
@@ -21,66 +27,128 @@ namespace Layout {
 class RowPainter;
 } // namespace Layout
 
-class RippleRow {
-public:
-	RippleRow();
-	~RippleRow();
+enum class SortMode;
 
-	void addRipple(QPoint origin, QSize size, base::lambda<void()> updateCallback);
+class BasicRow {
+public:
+	BasicRow();
+	~BasicRow();
+
+	void updateCornerBadgeShown(
+		not_null<PeerData*> peer,
+		Fn<void()> updateCallback = nullptr) const;
+	void paintUserpic(
+		Painter &p,
+		not_null<PeerData*> peer,
+		History *historyForCornerBadge,
+		crl::time now,
+		bool active,
+		int fullWidth) const;
+
+	void addRipple(QPoint origin, QSize size, Fn<void()> updateCallback);
 	void stopLastRipple();
 
-	void paintRipple(Painter &p, int x, int y, int outerWidth, TimeMs ms, const QColor *colorOverride = nullptr) const;
+	void paintRipple(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		const QColor *colorOverride = nullptr) const;
+
+	std::shared_ptr<Data::CloudImageView> &userpicView() const {
+		return _userpic;
+	}
 
 private:
+	struct CornerBadgeUserpic {
+		InMemoryKey key;
+		float64 shown = 0.;
+		bool active = false;
+		QImage frame;
+		Ui::Animations::Simple animation;
+	};
+
+	void setCornerBadgeShown(
+		bool shown,
+		Fn<void()> updateCallback) const;
+	void ensureCornerBadgeUserpic() const;
+	static void PaintCornerBadgeFrame(
+		not_null<CornerBadgeUserpic*> data,
+		not_null<PeerData*> peer,
+		std::shared_ptr<Data::CloudImageView> &view);
+
+	mutable std::shared_ptr<Data::CloudImageView> _userpic;
 	mutable std::unique_ptr<Ui::RippleAnimation> _ripple;
+	mutable std::unique_ptr<CornerBadgeUserpic> _cornerBadgeUserpic;
+	mutable bool _cornerBadgeShown = false;
 
 };
 
 class List;
-class Row : public RippleRow {
+class Row : public BasicRow {
 public:
-	Row(History *history, Row *prev, Row *next, int pos)
-		: _history(history)
-		, _prev(prev)
-		, _next(next)
-		, _pos(pos) {
+	explicit Row(std::nullptr_t) {
 	}
-	void *attached = nullptr; // for any attached data, for example View in contacts list
+	Row(Key key, int pos);
 
+	Key key() const {
+		return _id;
+	}
 	History *history() const {
-		return _history;
+		return _id.history();
+	}
+	Data::Folder *folder() const {
+		return _id.folder();
+	}
+	not_null<Entry*> entry() const {
+		return _id.entry();
 	}
 	int pos() const {
 		return _pos;
 	}
+	uint64 sortKey(FilterId filterId) const;
+
+	void validateListEntryCache() const;
+	const Ui::Text::String &listEntryCache() const {
+		return _listEntryCache;
+	}
+
+	// for any attached data, for example View in contacts list
+	void *attached = nullptr;
 
 private:
 	friend class List;
 
-	History *_history;
-	Row *_prev, *_next;
-	int _pos;
+	Key _id;
+	int _pos = 0;
+	mutable uint32 _listEntryCacheVersion = 0;
+	mutable Ui::Text::String _listEntryCache;
 
 };
 
-class FakeRow : public RippleRow {
+class FakeRow : public BasicRow {
 public:
-	FakeRow(PeerData *searchInPeer, not_null<HistoryItem*> item);
+	FakeRow(Key searchInChat, not_null<HistoryItem*> item);
 
-	PeerData *searchInPeer() const {
-		return _searchInPeer;
+	Key searchInChat() const {
+		return _searchInChat;
 	}
 	not_null<HistoryItem*> item() const {
 		return _item;
 	}
 
+	void invalidateCache() {
+		_cacheFor = nullptr;
+		_cache = Ui::Text::String();
+	}
+
 private:
 	friend class Layout::RowPainter;
 
-	PeerData *_searchInPeer = nullptr;
+	Key _searchInChat;
 	not_null<HistoryItem*> _item;
 	mutable const HistoryItem *_cacheFor = nullptr;
-	mutable Text _cache;
+	mutable Ui::Text::String _cache;
 
 };
 

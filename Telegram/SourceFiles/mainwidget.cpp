@@ -10,41 +10,65 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <rpl/combine.h>
 #include <rpl/merge.h>
 #include <rpl/flatten_latest.h>
+#include "api/api_updates.h"
 #include "data/data_photo.h"
 #include "data/data_document.h"
+#include "data/data_document_media.h"
+#include "data/data_document_resolver.h"
 #include "data/data_web_page.h"
 #include "data/data_game.h"
 #include "data/data_peer_values.h"
-#include "styles/style_dialogs.h"
-#include "styles/style_history.h"
+#include "data/data_drafts.h"
+#include "data/data_session.h"
+#include "data/data_changes.h"
+#include "data/data_media_types.h"
+#include "data/data_folder.h"
+#include "data/data_channel.h"
+#include "data/data_chat.h"
+#include "data/data_user.h"
+#include "data/data_chat_filters.h"
+#include "data/data_scheduled_messages.h"
+#include "data/data_file_origin.h"
+#include "data/data_histories.h"
+#include "data/stickers/data_stickers.h"
+#include "api/api_text_entities.h"
 #include "ui/special_buttons.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/shadow.h"
-#include "window/section_memento.h"
-#include "window/section_widget.h"
-#include "data/data_drafts.h"
+#include "ui/toasts/common_toasts.h"
 #include "ui/widgets/dropdown_menu.h"
+#include "ui/image/image.h"
 #include "ui/focus_persister.h"
 #include "ui/resize_area.h"
-#include "ui/text_options.h"
-#include "ui/toast/toast.h"
+#include "ui/text/text_options.h"
+#include "ui/emoji_config.h"
+#include "ui/ui_utility.h"
+#include "window/section_memento.h"
+#include "window/section_widget.h"
+#include "window/window_connecting_widget.h"
+#include "window/window_top_bar_wrap.h"
+#include "window/notifications_manager.h"
+#include "window/window_slide_animation.h"
+#include "window/window_session_controller.h"
+#include "window/window_history_hider.h"
+#include "window/window_controller.h"
+#include "window/themes/window_theme.h"
+#include "chat_helpers/tabbed_selector.h" // TabbedSelector::refreshStickers
 #include "chat_helpers/message_field.h"
-#include "chat_helpers/stickers.h"
 #include "info/info_memento.h"
 #include "info/info_controller.h"
-#include "observer_peer.h"
 #include "apiwrap.h"
 #include "dialogs/dialogs_widget.h"
+#include "dialogs/dialogs_key.h"
+#include "history/history.h"
 #include "history/history_widget.h"
 #include "history/history_message.h"
-#include "history/history_media.h"
-#include "history/history_service_layout.h"
+#include "history/view/media/history_view_media.h"
+#include "history/view/history_view_service_message.h"
+#include "history/view/history_view_element.h"
 #include "lang/lang_keys.h"
 #include "lang/lang_cloud_manager.h"
 #include "boxes/add_contact_box.h"
-#include "storage/file_upload.h"
-#include "messenger.h"
-#include "application.h"
 #include "mainwindow.h"
 #include "inline_bots/inline_bot_layout_item.h"
 #include "boxes/confirm_box.h"
@@ -52,9 +76,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/mute_settings_box.h"
 #include "boxes/peer_list_controllers.h"
 #include "boxes/download_path_box.h"
-#include "storage/localstorage.h"
-#include "shortcuts.h"
-#include "media/media_audio.h"
+#include "boxes/connection_box.h"
+#include "storage/storage_account.h"
+#include "media/audio/media_audio.h"
 #include "media/player/media_player_panel.h"
 #include "media/player/media_player_widget.h"
 #include "media/player/media_player_volume_controller.h"
@@ -63,21 +87,46 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/qthelp_regex.h"
 #include "base/qthelp_url.h"
 #include "base/flat_set.h"
-#include "window/player_wrap_widget.h"
-#include "window/notifications_manager.h"
-#include "window/window_slide_animation.h"
-#include "window/window_controller.h"
-#include "window/themes/window_theme.h"
-#include "styles/style_boxes.h"
-#include "mtproto/dc_options.h"
+#include "mtproto/mtproto_dc_options.h"
 #include "core/file_utilities.h"
-#include "auth_session.h"
+#include "core/update_checker.h"
+#include "core/shortcuts.h"
+#include "core/application.h"
+#include "core/changelogs.h"
+#include "base/unixtime.h"
+#include "calls/calls_call.h"
 #include "calls/calls_instance.h"
 #include "calls/calls_top_bar.h"
-#include "auth_session.h"
+#include "calls/group/calls_group_call.h"
+#include "export/export_settings.h"
+#include "export/export_manager.h"
+#include "export/view/export_view_top_bar.h"
+#include "export/view/export_view_panel_controller.h"
+#include "main/main_session.h"
+#include "main/main_session_settings.h"
+#include "main/main_account.h"
+#include "support/support_helper.h"
 #include "storage/storage_facade.h"
 #include "storage/storage_shared_media.h"
 #include "storage/storage_user_photos.h"
+#include "facades.h"
+#include "styles/style_dialogs.h"
+#include "styles/style_chat.h"
+#include "styles/style_boxes.h"
+
+#include <QtCore/QCoreApplication>
+#include <QtCore/QMimeData>
+#include <QtGui/qdesktopservices.h>
+
+namespace {
+
+// Send channel views each second.
+constexpr auto kSendViewsTimeout = crl::time(1000);
+
+// Cache background scaled image after 3s.
+constexpr auto kCacheBackgroundTimeout = 3000;
+
+} // namespace
 
 enum StackItemType {
 	HistoryStackItem,
@@ -94,8 +143,8 @@ public:
 	}
 
 	void setThirdSectionMemento(
-		std::unique_ptr<Window::SectionMemento> &&memento);
-	std::unique_ptr<Window::SectionMemento> takeThirdSectionMemento() {
+		std::shared_ptr<Window::SectionMemento> memento);
+	std::shared_ptr<Window::SectionMemento> takeThirdSectionMemento() {
 		return std::move(_thirdSectionMemento);
 	}
 
@@ -112,17 +161,18 @@ public:
 private:
 	PeerData *_peer = nullptr;
 	QPointer<Window::SectionWidget> _thirdSectionWeak;
-	std::unique_ptr<Window::SectionMemento> _thirdSectionMemento;
+	std::shared_ptr<Window::SectionMemento> _thirdSectionMemento;
 
 };
 
 class StackItemHistory : public StackItem {
 public:
 	StackItemHistory(
-		PeerData *peer,
+		not_null<History*> history,
 		MsgId msgId,
 		QList<MsgId> replyReturns)
-	: StackItem(peer)
+	: StackItem(history->peer)
+	, history(history)
 	, msgId(msgId)
 	, replyReturns(replyReturns) {
 	}
@@ -131,6 +181,7 @@ public:
 		return HistoryStackItem;
 	}
 
+	not_null<History*> history;
 	MsgId msgId;
 	QList<MsgId> replyReturns;
 
@@ -139,82 +190,117 @@ public:
 class StackItemSection : public StackItem {
 public:
 	StackItemSection(
-		std::unique_ptr<Window::SectionMemento> &&memento);
+		std::shared_ptr<Window::SectionMemento> memento);
 
 	StackItemType type() const override {
 		return SectionStackItem;
 	}
-	Window::SectionMemento *memento() const {
-		return _memento.get();
+	std::shared_ptr<Window::SectionMemento> takeMemento() {
+		return std::move(_memento);
 	}
 
 private:
-	std::unique_ptr<Window::SectionMemento> _memento;
+	std::shared_ptr<Window::SectionMemento> _memento;
 
 };
 
 void StackItem::setThirdSectionMemento(
-		std::unique_ptr<Window::SectionMemento> &&memento) {
+		std::shared_ptr<Window::SectionMemento> memento) {
 	_thirdSectionMemento = std::move(memento);
 }
 
 StackItemSection::StackItemSection(
-	std::unique_ptr<Window::SectionMemento> &&memento)
+	std::shared_ptr<Window::SectionMemento> memento)
 : StackItem(nullptr)
 , _memento(std::move(memento)) {
 }
 
-template <typename ToggleCallback, typename DraggedCallback>
-MainWidget::Float::Float(QWidget *parent, HistoryItem *item, ToggleCallback toggle, DraggedCallback dragged)
-: animationSide(RectPart::Right)
-, column(Window::Column::Second)
-, corner(RectPart::TopRight)
-, widget(parent, item, [this, toggle = std::move(toggle)](bool visible) {
-	toggle(this, visible);
-}, [this, dragged = std::move(dragged)](bool closed) {
-	dragged(this, closed);
-}) {
+struct MainWidget::SettingBackground {
+	explicit SettingBackground(const Data::WallPaper &data);
+
+	Data::WallPaper data;
+	std::shared_ptr<Data::DocumentMedia> dataMedia;
+	base::binary_guard generating;
+};
+
+MainWidget::SettingBackground::SettingBackground(
+	const Data::WallPaper &data)
+: data(data) {
 }
 
 MainWidget::MainWidget(
 	QWidget *parent,
-	not_null<Window::Controller*> controller)
+	not_null<Window::SessionController*> controller)
 : RpWidget(parent)
 , _controller(controller)
+, _api(&controller->session().mtp())
 , _dialogsWidth(st::columnMinimalWidthLeft)
 , _thirdColumnWidth(st::columnMinimalWidthThird)
 , _sideShadow(this)
 , _dialogs(this, _controller)
 , _history(this, _controller)
-, _playerPlaylist(
-	this,
-	_controller,
-	Media::Player::Panel::Layout::OnlyPlaylist)
-, _playerPanel(this, _controller, Media::Player::Panel::Layout::Full) {
-	Messenger::Instance().mtp()->setUpdatesHandler(rpcDone(&MainWidget::updateReceived));
-	Messenger::Instance().mtp()->setGlobalFailHandler(rpcFail(&MainWidget::updateFail));
+, _playerPlaylist(this, _controller)
+, _cacheBackgroundTimer([=] { cacheBackground(); })
+, _viewsIncrementTimer([=] { viewsIncrement(); })
+, _changelogs(Core::Changelogs::Create(&controller->session())) //CloudVeil start
+, globalSettings(this)
+, simpleUpdater(this) {
 
-	_ptsWaiter.setRequesting(true);
-	updateScrollColors();
+	banned.load(qsl(":/gui/art/banned.png"));
+	//CloudVeil end
+
+	setupConnectingWidget();
+
+	//CloudVeil start
+	connect(this, SIGNAL(dialogsUpdated()), this, SLOT(requestCloudVeil()));
+	connect(simpleUpdater, SIGNAL(updateReceived(UpdateResponse*)), this, SLOT(simpleUpdateReceived(UpdateResponse*)));
+	connect(globalSettings, SIGNAL(settingsReady()), _dialogs, SLOT(refreshOnUpdate()));
+	connect(globalSettings, SIGNAL(settingsReady()), _history, SLOT(onSettingsUpdate()));
+	//CloudVeil end
 
 	connect(_dialogs, SIGNAL(cancelled()), this, SLOT(dialogsCancelled()));
-	connect(this, SIGNAL(dialogsUpdated()), _dialogs, SLOT(onListScroll()));
-	connect(_history, SIGNAL(cancelled()), _dialogs, SLOT(activate()));
-	connect(&noUpdatesTimer, SIGNAL(timeout()), this, SLOT(mtpPing()));
-	connect(&_onlineTimer, SIGNAL(timeout()), this, SLOT(updateOnline()));
-	connect(&_idleFinishTimer, SIGNAL(timeout()), this, SLOT(checkIdleFinish()));
-	connect(&_bySeqTimer, SIGNAL(timeout()), this, SLOT(getDifference()));
-	connect(&_byPtsTimer, SIGNAL(timeout()), this, SLOT(onGetDifferenceTimeByPts()));
-	connect(&_byMinChannelTimer, SIGNAL(timeout()), this, SLOT(getDifference()));
-	connect(&_failDifferenceTimer, SIGNAL(timeout()), this, SLOT(onGetDifferenceTimeAfterFail()));
-	connect(_history, SIGNAL(historyShown(History*,MsgId)), this, SLOT(onHistoryShown(History*,MsgId)));
-	connect(&updateNotifySettingTimer, SIGNAL(timeout()), this, SLOT(onUpdateNotifySettings()));
-	subscribe(Media::Player::Updated(), [this](const AudioMsgId &audioId) {
-		if (audioId.type() != AudioMsgId::Type::Video) {
-			handleAudioUpdate(audioId);
-		}
-	});
-	subscribe(Auth().calls().currentCallChanged(), [this](Calls::Call *call) { setCurrentCall(call); });
+
+	_history->cancelRequests(
+	) | rpl::start_with_next([=] {
+		handleHistoryBack();
+	}, lifetime());
+
+	Core::App().calls().currentCallValue(
+	) | rpl::start_with_next([=](Calls::Call *call) {
+		setCurrentCall(call);
+	}, lifetime());
+	Core::App().calls().currentGroupCallValue(
+	) | rpl::start_with_next([=](Calls::GroupCall *call) {
+		setCurrentGroupCall(call);
+	}, lifetime());
+	if (_callTopBar) {
+		_callTopBar->finishAnimating();
+	}
+
+	Core::App().setDefaultFloatPlayerDelegate(floatPlayerDelegate());
+	Core::App().floatPlayerClosed(
+	) | rpl::start_with_next([=](FullMsgId itemId) {
+		floatPlayerClosed(itemId);
+	}, lifetime());
+
+	Core::App().exportManager().currentView(
+	) | rpl::start_with_next([=](Export::View::PanelController *view) {
+		setCurrentExportView(view);
+	}, lifetime());
+	if (_exportTopBar) {
+		_exportTopBar->finishAnimating();
+	}
+
+	Media::Player::instance()->updatedNotifier(
+	) | rpl::start_with_next([=](const Media::Player::TrackState &state) {
+		handleAudioUpdate(state);
+	}, lifetime());
+	handleAudioUpdate(Media::Player::instance()->getState(AudioMsgId::Type::Song));
+	handleAudioUpdate(Media::Player::instance()->getState(AudioMsgId::Type::Voice));
+	if (_player) {
+		_player->finishAnimating();
+	}
+
 	subscribe(_controller->dialogsListFocused(), [this](bool) {
 		updateDialogsWidthAnimated();
 	});
@@ -222,54 +308,66 @@ MainWidget::MainWidget(
 		updateDialogsWidthAnimated();
 	});
 	rpl::merge(
-		Auth().data().dialogsWidthRatioChanges()
-			| rpl::map([] { return rpl::empty_value(); }),
-		Auth().data().thirdColumnWidthChanges()
-			| rpl::map([] { return rpl::empty_value(); })
-	) | rpl::start_with_next(
-		[this] { updateControlsGeometry(); },
-		lifetime());
-	subscribe(_controller->floatPlayerAreaUpdated(), [this] {
-		checkFloatPlayerVisibility();
-	});
+		Core::App().settings().dialogsWidthRatioChanges() | rpl::to_empty,
+		Core::App().settings().thirdColumnWidthChanges() | rpl::to_empty
+	) | rpl::start_with_next([=] {
+		updateControlsGeometry();
+	}, lifetime());
 
+	session().changes().historyUpdates(
+		Data::HistoryUpdate::Flag::MessageSent
+		| Data::HistoryUpdate::Flag::LocalDraftSet
+	) | rpl::start_with_next([=](const Data::HistoryUpdate &update) {
+		const auto history = update.history;
+		if (update.flags & Data::HistoryUpdate::Flag::MessageSent) {
+			history->forgetScrollState();
+			if (const auto from = history->peer->migrateFrom()) {
+				auto &owner = history->owner();
+				if (const auto migrated = owner.historyLoaded(from)) {
+					migrated->forgetScrollState();
+				}
+			}
+		}
+		if (update.flags & Data::HistoryUpdate::Flag::LocalDraftSet) {
+			const auto opened = (_history->peer() == history->peer.get());
+			if (opened) {
+				_history->applyDraft();
+			} else {
+				Ui::showPeerHistory(history, ShowAtUnreadMsgId);
+			}
+			Ui::hideLayer();
+		}
+	}, lifetime());
+
+	// MSVC BUG + REGRESSION rpl::mappers::tuple :(
 	using namespace rpl::mappers;
-	_controller->activePeer.value(
-	) | rpl::map([](PeerData *peer) {
+	_controller->activeChatValue(
+	) | rpl::map([](Dialogs::Key key) {
+		const auto peer = key.peer();
 		auto canWrite = peer
 			? Data::CanWriteValue(peer)
 			: rpl::single(false);
-		return std::move(canWrite) | rpl::map(tuple(peer, _1));
+		return std::move(
+			canWrite
+		) | rpl::map([=](bool can) {
+			return std::make_tuple(key, can);
+		});
 	}) | rpl::flatten_latest(
-	) | rpl::start_with_next([this](PeerData *peer, bool canWrite) {
-		updateThirdColumnToCurrentPeer(peer, canWrite);
+	) | rpl::start_with_next([this](Dialogs::Key key, bool canWrite) {
+		updateThirdColumnToCurrentChat(key, canWrite);
 	}, lifetime());
 
 	QCoreApplication::instance()->installEventFilter(this);
 
-	connect(&_updateMutedTimer, SIGNAL(timeout()), this, SLOT(onUpdateMuted()));
-	connect(&_viewsIncrementTimer, SIGNAL(timeout()), this, SLOT(onViewsIncrement()));
-
-	_webPageOrGameUpdater.setSingleShot(true);
-	connect(&_webPageOrGameUpdater, SIGNAL(timeout()), this, SLOT(webPagesOrGamesUpdate()));
-
 	using Update = Window::Theme::BackgroundUpdate;
-	subscribe(Window::Theme::Background(), [this](const Update &update) {
-		if (update.type == Update::Type::New || update.type == Update::Type::Changed) {
+	Window::Theme::Background()->updates(
+	) | rpl::start_with_next([=](const Update &update) {
+		if (update.type == Update::Type::New
+			|| update.type == Update::Type::Changed) {
 			clearCachedBackground();
 		}
-	});
-	connect(&_cacheBackgroundTimer, SIGNAL(timeout()), this, SLOT(onCacheBackground()));
+	}, lifetime());
 
-	_playerPanel->setPinCallback([this] { switchToFixedPlayer(); });
-	_playerPanel->setCloseCallback([this] { closeBothPlayers(); });
-	subscribe(Media::Player::instance()->titleButtonOver(), [this](bool over) {
-		if (over) {
-			_playerPanel->showFromOther();
-		} else {
-			_playerPanel->hideFromOther();
-		}
-	});
 	subscribe(Media::Player::instance()->playerWidgetOver(), [this](bool over) {
 		if (over) {
 			if (_playerPlaylist->isHidden()) {
@@ -285,22 +383,25 @@ MainWidget::MainWidget(
 	});
 	subscribe(Media::Player::instance()->tracksFinishedNotifier(), [this](AudioMsgId::Type type) {
 		if (type == AudioMsgId::Type::Voice) {
-			auto songState = Media::Player::mixer()->currentState(AudioMsgId::Type::Song);
+			const auto songState = Media::Player::instance()->getState(AudioMsgId::Type::Song);
 			if (!songState.id || IsStoppedOrStopping(songState.state)) {
+				closeBothPlayers();
+			}
+		} else if (type == AudioMsgId::Type::Song) {
+			const auto songState = Media::Player::instance()->getState(AudioMsgId::Type::Song);
+			if (!songState.id) {
 				closeBothPlayers();
 			}
 		}
 	});
-	subscribe(Media::Player::instance()->trackChangedNotifier(), [this](AudioMsgId::Type type) {
-		if (type == AudioMsgId::Type::Voice) {
-			checkCurrentFloatPlayer();
-		}
-	});
 
-	subscribe(Adaptive::Changed(), [this]() { handleAdaptiveLayoutUpdate(); });
+	_controller->adaptive().changes(
+	) | rpl::start_with_next([=] {
+		handleAdaptiveLayoutUpdate();
+	}, lifetime());
 
 	_dialogs->show();
-	if (Adaptive::OneColumn()) {
+	if (isOneColumn()) {
 		_history->hide();
 	} else {
 		_history->show();
@@ -308,164 +409,63 @@ MainWidget::MainWidget(
 
 	orderWidgets();
 
-#ifndef TDESKTOP_DISABLE_AUTOUPDATE
-	Sandbox::startUpdateCheck();
-#endif // !TDESKTOP_DISABLE_AUTOUPDATE
+	if (!Core::UpdaterDisabled()) {
+		//Core::UpdateChecker checker;
+		//checker.start();
+	}
+
+	cSetOtherOnline(0);
+
+	_history->start();
+	
+	//CloudVeil start
+	simpleUpdater->startUpdateChecking(AppVersion);
+	//CloudVeil end
 }
 
-void MainWidget::checkCurrentFloatPlayer() {
-	auto state = Media::Player::instance()->current(AudioMsgId::Type::Voice);
-	auto fullId = state.contextId();
-	auto last = currentFloatPlayer();
-	if (!last || last->widget->detached() || last->widget->item()->fullId() != fullId) {
-		if (last) {
-			last->widget->detach();
-		}
-		if (auto item = App::histItemById(fullId)) {
-			if (auto media = item->getMedia()) {
-				if (auto document = media->getDocument()) {
-					if (document->isVideoMessage()) {
-						_playerFloats.push_back(std::make_unique<Float>(this, item, [this](not_null<Float*> instance, bool visible) {
-							instance->hiddenByWidget = !visible;
-							toggleFloatPlayer(instance);
-						}, [this](not_null<Float*> instance, bool closed) {
-							finishFloatPlayerDrag(instance, closed);
-						}));
-						currentFloatPlayer()->column = Auth().data().floatPlayerColumn();
-						currentFloatPlayer()->corner = Auth().data().floatPlayerCorner();
-						checkFloatPlayerVisibility();
-					}
-				}
-			}
-		}
-	}
+//CloudVeil start
+void MainWidget::simpleUpdateReceived(UpdateResponse* response) {
+	Ui::show(Box<ConfirmBox>(response->message, tr::lng_download_click(tr::now), [response] {
+		Ui::hideLayer();
+		QDesktopServices::openUrl(response->url);
+		}), Ui::LayerOption::KeepOther);
 }
 
-void MainWidget::toggleFloatPlayer(not_null<Float*> instance) {
-	auto visible = !instance->hiddenByHistory && !instance->hiddenByWidget && instance->widget->isReady();
-	if (instance->visible != visible) {
-		instance->widget->resetMouseState();
-		instance->visible = visible;
-		if (!instance->visibleAnimation.animating() && !instance->hiddenByDrag) {
-			auto finalRect = QRect(getFloatPlayerPosition(instance), instance->widget->size());
-			instance->animationSide = getFloatPlayerSide(finalRect.center());
-		}
-		instance->visibleAnimation.start([this, instance] {
-			updateFloatPlayerPosition(instance);
-		}, visible ? 0. : 1., visible ? 1. : 0., st::slideDuration, visible ? anim::easeOutCirc : anim::linear);
-		updateFloatPlayerPosition(instance);
-	}
+void MainWidget::requestCloudVeil() {
+	globalSettings->updateFromServer();
+	simpleUpdater->startUpdateChecking(AppVersion);
+}
+//CloudVeil end
+
+MainWidget::~MainWidget() = default;
+
+Main::Session &MainWidget::session() const {
+	return _controller->session();
 }
 
-void MainWidget::checkFloatPlayerVisibility() {
-	auto instance = currentFloatPlayer();
-	if (!instance) {
-		return;
-	}
-
-	auto amVisible = false;
-	if (auto item = instance->widget->item()) {
-		Auth().data().queryItemVisibility().notify({ item, &amVisible }, true);
-	}
-	instance->hiddenByHistory = amVisible;
-	toggleFloatPlayer(instance);
-	updateFloatPlayerPosition(instance);
+not_null<Window::SessionController*> MainWidget::controller() const {
+	return _controller;
 }
 
-void MainWidget::updateFloatPlayerPosition(not_null<Float*> instance) {
-	auto visible = instance->visibleAnimation.current(instance->visible ? 1. : 0.);
-	if (visible == 0. && !instance->visible) {
-		instance->widget->hide();
-		if (instance->widget->detached()) {
-			InvokeQueued(instance->widget, [this, instance] {
-				removeFloatPlayer(instance);
-			});
-		}
-		return;
-	}
-
-	if (!instance->widget->dragged()) {
-		if (instance->widget->isHidden()) {
-			instance->widget->show();
-		}
-
-		auto dragged = instance->draggedAnimation.current(1.);
-		auto position = QPoint();
-		if (instance->hiddenByDrag) {
-			instance->widget->setOpacity(instance->widget->countOpacityByParent());
-			position = getFloatPlayerHiddenPosition(instance->dragFrom, instance->widget->size(), instance->animationSide);
-		} else {
-			instance->widget->setOpacity(visible * visible);
-			position = getFloatPlayerPosition(instance);
-			if (visible < 1.) {
-				auto hiddenPosition = getFloatPlayerHiddenPosition(position, instance->widget->size(), instance->animationSide);
-				position.setX(anim::interpolate(hiddenPosition.x(), position.x(), visible));
-				position.setY(anim::interpolate(hiddenPosition.y(), position.y(), visible));
-			}
-		}
-		if (dragged < 1.) {
-			position.setX(anim::interpolate(instance->dragFrom.x(), position.x(), dragged));
-			position.setY(anim::interpolate(instance->dragFrom.y(), position.y(), dragged));
-		}
-		instance->widget->move(position);
-	}
+void MainWidget::setupConnectingWidget() {
+	using namespace rpl::mappers;
+	_connecting = std::make_unique<Window::ConnectionState>(
+		this,
+		&session().account(),
+		_controller->adaptive().oneColumnValue() | rpl::map(!_1));
 }
 
-QPoint MainWidget::getFloatPlayerHiddenPosition(QPoint position, QSize size, RectPart side) const {
-	switch (side) {
-	case RectPart::Left: return QPoint(-size.width(), position.y());
-	case RectPart::Top: return QPoint(position.x(), -size.height());
-	case RectPart::Right: return QPoint(width(), position.y());
-	case RectPart::Bottom: return QPoint(position.x(), height());
-	}
-	Unexpected("Bad side in MainWidget::getFloatPlayerHiddenPosition().");
+not_null<Media::Player::FloatDelegate*> MainWidget::floatPlayerDelegate() {
+	return static_cast<Media::Player::FloatDelegate*>(this);
 }
 
-QPoint MainWidget::getFloatPlayerPosition(not_null<Float*> instance) const {
-	auto section = getFloatPlayerSection(instance->column);
-	auto rect = section->rectForFloatPlayer();
-	auto position = rect.topLeft();
-	if (IsBottomCorner(instance->corner)) {
-		position.setY(position.y() + rect.height() - instance->widget->height());
-	}
-	if (IsRightCorner(instance->corner)) {
-		position.setX(position.x() + rect.width() - instance->widget->width());
-	}
-	return mapFromGlobal(position);
+not_null<Ui::RpWidget*> MainWidget::floatPlayerWidget() {
+	return this;
 }
 
-RectPart MainWidget::getFloatPlayerSide(QPoint center) const {
-	auto left = qAbs(center.x());
-	auto right = qAbs(width() - center.x());
-	auto top = qAbs(center.y());
-	auto bottom = qAbs(height() - center.y());
-	if (left < right && left < top && left < bottom) {
-		return RectPart::Left;
-	} else if (right < top && right < bottom) {
-		return RectPart::Right;
-	} else if (top < bottom) {
-		return RectPart::Top;
-	}
-	return RectPart::Bottom;
-}
-
-void MainWidget::removeFloatPlayer(not_null<Float*> instance) {
-	auto widget = std::move(instance->widget);
-	auto i = std::find_if(_playerFloats.begin(), _playerFloats.end(), [instance](auto &item) {
-		return (item.get() == instance);
-	});
-	Assert(i != _playerFloats.end());
-	_playerFloats.erase(i);
-
-	// ~QWidget() can call HistoryInner::enterEvent() which can
-	// lead to repaintHistoryItem() and we'll have an instance
-	// in _playerFloats with destroyed widget. So we destroy the
-	// instance first and only after that destroy the widget.
-	widget.destroy();
-}
-
-Window::AbstractSectionWidget *MainWidget::getFloatPlayerSection(Window::Column column) const {
-	if (Adaptive::ThreeColumn()) {
+auto MainWidget::floatPlayerGetSection(Window::Column column)
+-> not_null<Media::Player::FloatSectionDelegate*> {
+	if (isThreeColumn()) {
 		if (column == Window::Column::First) {
 			return _dialogs;
 		} else if (column == Window::Column::Second
@@ -476,7 +476,7 @@ Window::AbstractSectionWidget *MainWidget::getFloatPlayerSection(Window::Column 
 			return _history;
 		}
 		return _thirdSection;
-	} else if (Adaptive::Normal()) {
+	} else if (isNormalColumn()) {
 		if (column == Window::Column::First) {
 			return _dialogs;
 		} else if (_mainSection) {
@@ -484,169 +484,101 @@ Window::AbstractSectionWidget *MainWidget::getFloatPlayerSection(Window::Column 
 		}
 		return _history;
 	}
-	if (Adaptive::OneColumn() && selectingPeer()) {
+	if (isOneColumn() && selectingPeer()) {
 		return _dialogs;
 	} else if (_mainSection) {
 		return _mainSection;
-	} else if (!Adaptive::OneColumn() || _history->peer()) {
+	} else if (!isOneColumn() || _history->peer()) {
 		return _history;
 	}
 	return _dialogs;
 }
 
-void MainWidget::updateFloatPlayerColumnCorner(QPoint center) {
-	Expects(!_playerFloats.empty());
-	auto size = _playerFloats.back()->widget->size();
-	auto min = INT_MAX;
-	auto column = Auth().data().floatPlayerColumn();
-	auto corner = Auth().data().floatPlayerCorner();
-	auto checkSection = [this, center, size, &min, &column, &corner](
-			Window::AbstractSectionWidget *widget,
-			Window::Column widgetColumn) {
-		auto rect = mapFromGlobal(widget->rectForFloatPlayer());
-		auto left = rect.x() + (size.width() / 2);
-		auto right = rect.x() + rect.width() - (size.width() / 2);
-		auto top = rect.y() + (size.height() / 2);
-		auto bottom = rect.y() + rect.height() - (size.height() / 2);
-		auto checkCorner = [&](QPoint point, RectPart checked) {
-			auto distance = (point - center).manhattanLength();
-			if (min > distance) {
-				min = distance;
-				column = widgetColumn;
-				corner = checked;
-			}
-		};
-		checkCorner({ left, top }, RectPart::TopLeft);
-		checkCorner({ right, top }, RectPart::TopRight);
-		checkCorner({ left, bottom }, RectPart::BottomLeft);
-		checkCorner({ right, bottom }, RectPart::BottomRight);
-	};
-
-	if (Adaptive::ThreeColumn()) {
-		checkSection(_dialogs, Window::Column::First);
+void MainWidget::floatPlayerEnumerateSections(Fn<void(
+		not_null<Media::Player::FloatSectionDelegate*> widget,
+		Window::Column widgetColumn)> callback) {
+	if (isThreeColumn()) {
+		callback(_dialogs, Window::Column::First);
 		if (_mainSection) {
-			checkSection(_mainSection, Window::Column::Second);
+			callback(_mainSection, Window::Column::Second);
 		} else {
-			checkSection(_history, Window::Column::Second);
+			callback(_history, Window::Column::Second);
 		}
 		if (_thirdSection) {
-			checkSection(_thirdSection, Window::Column::Third);
+			callback(_thirdSection, Window::Column::Third);
 		}
-	} else if (Adaptive::Normal()) {
-		checkSection(_dialogs, Window::Column::First);
+	} else if (isNormalColumn()) {
+		callback(_dialogs, Window::Column::First);
 		if (_mainSection) {
-			checkSection(_mainSection, Window::Column::Second);
+			callback(_mainSection, Window::Column::Second);
 		} else {
-			checkSection(_history, Window::Column::Second);
+			callback(_history, Window::Column::Second);
 		}
 	} else {
-		if (Adaptive::OneColumn() && selectingPeer()) {
-			checkSection(_dialogs, Window::Column::First);
+		if (isOneColumn() && selectingPeer()) {
+			callback(_dialogs, Window::Column::First);
 		} else if (_mainSection) {
-			checkSection(_mainSection, Window::Column::Second);
-		} else if (!Adaptive::OneColumn() || _history->peer()) {
-			checkSection(_history, Window::Column::Second);
+			callback(_mainSection, Window::Column::Second);
+		} else if (!isOneColumn() || _history->peer()) {
+			callback(_history, Window::Column::Second);
 		} else {
-			checkSection(_dialogs, Window::Column::First);
+			callback(_dialogs, Window::Column::First);
 		}
-	}
-	if (Auth().data().floatPlayerColumn() != column) {
-		Auth().data().setFloatPlayerColumn(column);
-		Auth().saveDataDelayed();
-	}
-	if (Auth().data().floatPlayerCorner() != corner) {
-		Auth().data().setFloatPlayerCorner(corner);
-		Auth().saveDataDelayed();
 	}
 }
 
-void MainWidget::finishFloatPlayerDrag(not_null<Float*> instance, bool closed) {
-	instance->dragFrom = instance->widget->pos();
-	auto center = instance->widget->geometry().center();
-	if (closed) {
-		instance->hiddenByDrag = true;
-		instance->animationSide = getFloatPlayerSide(center);
-	}
-	updateFloatPlayerColumnCorner(center);
-	instance->column = Auth().data().floatPlayerColumn();
-	instance->corner = Auth().data().floatPlayerCorner();
+bool MainWidget::floatPlayerIsVisible(not_null<HistoryItem*> item) {
+	auto isVisible = false;
+	session().data().queryItemVisibility().notify({ item, &isVisible }, true);
+	return isVisible;
+}
 
-	instance->draggedAnimation.finish();
-	instance->draggedAnimation.start([this, instance] { updateFloatPlayerPosition(instance); }, 0., 1., st::slideDuration, anim::sineInOut);
-	updateFloatPlayerPosition(instance);
-
-	if (closed) {
-		if (auto item = instance->widget->item()) {
-			auto voiceData = Media::Player::instance()->current(AudioMsgId::Type::Voice);
-			if (_player && voiceData.contextId() == item->fullId()) {
-				_player->entity()->stopAndClose();
-			}
+void MainWidget::floatPlayerClosed(FullMsgId itemId) {
+	if (_player) {
+		const auto voiceData = Media::Player::instance()->current(
+			AudioMsgId::Type::Voice);
+		if (voiceData.contextId() == itemId) {
+			stopAndClosePlayer();
 		}
-		instance->widget->detach();
 	}
 }
 
-bool MainWidget::setForwardDraft(PeerId peerId, ForwardWhatMessages what) {
-	const auto collect = [&]() -> MessageIdsList {
-		if (what == ForwardSelectedMessages) {
-			return _history->getSelectedItems();
-		}
-		auto item = (HistoryItem*)nullptr;
-		if (what == ForwardContextMessage) {
-			item = App::contextItem();
-		} else if (what == ForwardPressedMessage) {
-			item = App::pressedItem();
-			if (const auto group = item ? item->getFullGroup() : nullptr) {
-				if (item->id > 0) {
-					return Auth().data().groupToIds(group);
-				}
-			}
-		} else if (what == ForwardPressedLinkMessage) {
-			item = App::pressedLinkItem();
-		}
-		if (item && item->toHistoryMessage() && item->id > 0) {
-			return { 1, item->fullId() };
-		}
-		return {};
-	};
-	const auto result = setForwardDraft(peerId, collect());
-	if (!result) {
-		if (what == ForwardPressedMessage || what == ForwardPressedLinkMessage) {
-			// We've already released the mouse button, so the forwarding is cancelled.
-			if (_hider) {
-				_hider->startHide();
-				noHider(_hider);
-			}
-		}
-	}
-	return result;
+void MainWidget::floatPlayerDoubleClickEvent(
+		not_null<const HistoryItem*> item) {
+	_controller->showPeerHistoryAtItem(item);
 }
 
 bool MainWidget::setForwardDraft(PeerId peerId, MessageIdsList &&items) {
 	Expects(peerId != 0);
-	const auto peer = App::peer(peerId);
-	const auto error = GetErrorTextForForward(
+
+	const auto peer = session().data().peer(peerId);
+	const auto error = GetErrorTextForSending(
 		peer,
-		Auth().data().idsToItems(items));
+		session().data().idsToItems(items),
+		true);
 	if (!error.isEmpty()) {
-		Ui::show(Box<InformBox>(error), LayerOption::KeepOther);
+		Ui::show(Box<InformBox>(error), Ui::LayerOption::KeepOther);
 		return false;
 	}
 
-	App::history(peer)->setForwardDraft(std::move(items));
-	if (_history->peer() == peer) {
-		_history->cancelReply();
-	}
-	Ui::showPeerHistory(peer, ShowAtUnreadMsgId);
+	peer->owner().history(peer)->setForwardDraft(std::move(items));
+	_controller->showPeerHistory(
+		peer,
+		SectionShow::Way::Forward,
+		ShowAtUnreadMsgId);
+	_history->cancelReply();
 	return true;
 }
 
 bool MainWidget::shareUrl(
-		not_null<PeerData*> peer,
+		PeerId peerId,
 		const QString &url,
 		const QString &text) {
+	Expects(peerId != 0);
+
+	const auto peer = session().data().peer(peerId);
 	if (!peer->canWrite()) {
-		Ui::show(Box<InformBox>(lang(lng_share_cant)));
+		Ui::show(Box<InformBox>(tr::lng_share_cant(tr::now)));
 		return false;
 	}
 	TextWithTags textWithTags = {
@@ -658,146 +590,84 @@ bool MainWidget::shareUrl(
 		url.size() + 1 + text.size(),
 		QFIXED_MAX
 	};
-	auto history = App::history(peer->id);
-	history->setLocalDraft(
-		std::make_unique<Data::Draft>(textWithTags, 0, cursor, false));
-	history->clearEditDraft();
-	if (_history->peer() == peer) {
-		_history->applyDraft();
-	} else {
-		Ui::showPeerHistory(peer, ShowAtUnreadMsgId);
-	}
+	auto history = peer->owner().history(peer);
+	history->setLocalDraft(std::make_unique<Data::Draft>(
+		textWithTags,
+		0,
+		cursor,
+		Data::PreviewState::Allowed));
+	history->clearLocalEditDraft();
+	history->session().changes().historyUpdated(
+		history,
+		Data::HistoryUpdate::Flag::LocalDraftSet);
 	return true;
 }
 
 void MainWidget::replyToItem(not_null<HistoryItem*> item) {
-	if (_history->peer() == item->history()->peer
-		|| _history->peer() == item->history()->peer->migrateTo()) {
-		App::contextItem(item);
-		_history->onReplyToMessage();
+	if ((!_mainSection || !_mainSection->replyToMessage(item))
+		&& (_history->peer() == item->history()->peer
+			|| _history->peer() == item->history()->peer->migrateTo())) {
+		_history->replyToMessage(item);
 	}
 }
 
-bool MainWidget::onInlineSwitchChosen(const PeerId &peer, const QString &botAndQuery) {
-	PeerData *p = App::peer(peer);
-	if (!peer || !p->canWrite()) {
-		Ui::show(Box<InformBox>(lang(lng_inline_switch_cant)));
+bool MainWidget::inlineSwitchChosen(PeerId peerId, const QString &botAndQuery) {
+	Expects(peerId != 0);
+
+	const auto peer = session().data().peer(peerId);
+	if (!peer->canWrite()) {
+		Ui::show(Box<InformBox>(tr::lng_inline_switch_cant(tr::now)));
 		return false;
 	}
-	History *h = App::history(peer);
+	const auto h = peer->owner().history(peer);
 	TextWithTags textWithTags = { botAndQuery, TextWithTags::Tags() };
 	MessageCursor cursor = { botAndQuery.size(), botAndQuery.size(), QFIXED_MAX };
-	h->setLocalDraft(std::make_unique<Data::Draft>(textWithTags, 0, cursor, false));
-	h->clearEditDraft();
-	bool opened = _history->peer() && (_history->peer()->id == peer);
-	if (opened) {
-		_history->applyDraft();
-	} else {
-		Ui::showPeerHistory(peer, ShowAtUnreadMsgId);
-	}
+	h->setLocalDraft(std::make_unique<Data::Draft>(
+		textWithTags,
+		0,
+		cursor,
+		Data::PreviewState::Allowed));
+	h->clearLocalEditDraft();
+	h->session().changes().historyUpdated(
+		h,
+		Data::HistoryUpdate::Flag::LocalDraftSet);
 	return true;
 }
 
-void MainWidget::cancelForwarding(not_null<History*> history) {
-	history->setForwardDraft({});
-	_history->updateForwarding();
-}
-
-void MainWidget::finishForwarding(not_null<History*> history) {
-	auto toForward = history->validateForwardDraft();
-	if (!toForward.empty()) {
-		auto options = ApiWrap::SendOptions(history);
-		Auth().api().forwardMessages(std::move(toForward), options);
-
-		if (_history->peer() == history->peer) {
-			_history->peerMessagesUpdated();
-		}
-		cancelForwarding(history);
-	}
-
-	historyToDown(history);
-	dialogsToUp();
-	_history->peerMessagesUpdated(history->peer->id);
-}
-
-void MainWidget::webPageUpdated(WebPageData *data) {
-	_webPagesUpdated.insert(data->id);
-	_webPageOrGameUpdater.start(0);
-}
-
-void MainWidget::gameUpdated(GameData *data) {
-	_gamesUpdated.insert(data->id);
-	_webPageOrGameUpdater.start(0);
-}
-
-void MainWidget::webPagesOrGamesUpdate() {
-	_webPageOrGameUpdater.stop();
-	if (!_webPagesUpdated.isEmpty()) {
-		auto &items = App::webPageItems();
-		for_const (auto webPageId, _webPagesUpdated) {
-			auto j = items.constFind(App::webPage(webPageId));
-			if (j != items.cend()) {
-				for_const (auto item, j.value()) {
-					item->setPendingInitDimensions();
-				}
-			}
-		}
-		_webPagesUpdated.clear();
-	}
-	if (!_gamesUpdated.isEmpty()) {
-		auto &items = App::gameItems();
-		for_const (auto gameId, _gamesUpdated) {
-			auto j = items.constFind(App::game(gameId));
-			if (j != items.cend()) {
-				for_const (auto item, j.value()) {
-					item->setPendingInitDimensions();
-				}
-			}
-		}
-		_gamesUpdated.clear();
-	}
-}
-
-void MainWidget::updateMutedIn(TimeMs delay) {
-	accumulate_max(delay, 24 * 3600 * 1000LL);
-	if (!_updateMutedTimer.isActive()
-		|| _updateMutedTimer.remainingTime() > delay) {
-		_updateMutedTimer.start(delay);
-	}
-}
-
-void MainWidget::onUpdateMuted() {
-	App::updateMuted();
-}
-
-bool MainWidget::onSendPaths(const PeerId &peerId) {
+bool MainWidget::sendPaths(PeerId peerId) {
 	Expects(peerId != 0);
-	auto peer = App::peer(peerId);
+
+	auto peer = session().data().peer(peerId);
 	if (!peer->canWrite()) {
-		Ui::show(Box<InformBox>(lang(lng_forward_send_files_cant)));
+		Ui::show(Box<InformBox>(tr::lng_forward_send_files_cant(tr::now)));
 		return false;
-	} else if (auto megagroup = peer->asMegagroup()) {
-		if (megagroup->restricted(ChannelRestriction::f_send_media)) {
-			Ui::show(Box<InformBox>(lang(lng_restricted_send_media)));
-			return false;
-		}
+	} else if (const auto error = Data::RestrictionError(
+			peer,
+			ChatRestriction::SendMedia)) {
+		Ui::show(Box<InformBox>(*error));
+		return false;
 	}
 	Ui::showPeerHistory(peer, ShowAtTheEndMsgId);
 	return _history->confirmSendingFiles(cSendPaths());
 }
 
-void MainWidget::onFilesOrForwardDrop(const PeerId &peerId, const QMimeData *data) {
+void MainWidget::onFilesOrForwardDrop(
+		const PeerId &peerId,
+		const QMimeData *data) {
 	Expects(peerId != 0);
-	if (data->hasFormat(qsl("application/x-td-forward-selected"))) {
-		setForwardDraft(peerId, ForwardSelectedMessages);
-	} else if (data->hasFormat(qsl("application/x-td-forward-pressed-link"))) {
-		setForwardDraft(peerId, ForwardPressedLinkMessage);
-	} else if (data->hasFormat(qsl("application/x-td-forward-pressed"))) {
-		setForwardDraft(peerId, ForwardPressedMessage);
+
+	if (data->hasFormat(qsl("application/x-td-forward"))) {
+		if (!setForwardDraft(peerId, session().data().takeMimeForwardIds())) {
+			// We've already released the mouse button, so the forwarding is cancelled.
+			if (_hider) {
+				_hider->startHide();
+				clearHider(_hider);
+			}
+		}
 	} else {
-		auto peer = App::peer(peerId);
+		auto peer = session().data().peer(peerId);
 		if (!peer->canWrite()) {
-			Ui::show(Box<InformBox>(lang(lng_forward_send_files_cant)));
+			Ui::show(Box<InformBox>(tr::lng_forward_send_files_cant(tr::now)));
 			return;
 		}
 		Ui::showPeerHistory(peer, ShowAtTheEndMsgId);
@@ -805,121 +675,71 @@ void MainWidget::onFilesOrForwardDrop(const PeerId &peerId, const QMimeData *dat
 	}
 }
 
-void MainWidget::notify_botCommandsChanged(UserData *bot) {
-	_history->notify_botCommandsChanged(bot);
-}
-
-void MainWidget::notify_inlineBotRequesting(bool requesting) {
-	_history->notify_inlineBotRequesting(requesting);
-}
-
-void MainWidget::notify_replyMarkupUpdated(const HistoryItem *item) {
-	_history->notify_replyMarkupUpdated(item);
-}
-
-void MainWidget::notify_inlineKeyboardMoved(const HistoryItem *item, int oldKeyboardTop, int newKeyboardTop) {
-	_history->notify_inlineKeyboardMoved(item, oldKeyboardTop, newKeyboardTop);
-}
-
 bool MainWidget::notify_switchInlineBotButtonReceived(const QString &query, UserData *samePeerBot, MsgId samePeerReplyTo) {
 	return _history->notify_switchInlineBotButtonReceived(query, samePeerBot, samePeerReplyTo);
 }
 
-void MainWidget::notify_userIsBotChanged(UserData *bot) {
-	_history->notify_userIsBotChanged(bot);
-}
-
-void MainWidget::notify_userIsContactChanged(UserData *user, bool fromThisApp) {
-	if (!user) return;
-
-	_dialogs->notify_userIsContactChanged(user, fromThisApp);
-
-	const SharedContactItems &items(App::sharedContactItems());
-	SharedContactItems::const_iterator i = items.constFind(peerToUser(user->id));
-	if (i != items.cend()) {
-		for_const (auto item, i.value()) {
-			item->setPendingInitDimensions();
-		}
+void MainWidget::clearHider(not_null<Window::HistoryHider*> instance) {
+	if (_hider != instance) {
+		return;
 	}
+	_hider.release();
+	controller()->setSelectingPeer(false);
 
-	if (user->contact > 0 && fromThisApp) {
-		Ui::showPeerHistory(user->id, ShowAtTheEndMsgId);
-	}
-}
-
-void MainWidget::notify_migrateUpdated(PeerData *peer) {
-	_history->notify_migrateUpdated(peer);
-}
-
-void MainWidget::notify_historyMuteUpdated(History *history) {
-	_dialogs->notify_historyMuteUpdated(history);
-}
-
-bool MainWidget::cmd_search() {
-	if (Ui::isLayerShown() || !isActiveWindow()) return false;
-	if (_mainSection) {
-		return _mainSection->cmd_search();
-	}
-	return _history->cmd_search();
-}
-
-bool MainWidget::cmd_next_chat() {
-	if (Ui::isLayerShown() || !isActiveWindow()) return false;
-	return _history->cmd_next_chat();
-}
-
-bool MainWidget::cmd_previous_chat() {
-	if (Ui::isLayerShown() || !isActiveWindow()) return false;
-	return _history->cmd_previous_chat();
-}
-
-void MainWidget::noHider(HistoryHider *destroyed) {
-	if (_hider == destroyed) {
-		_hider = nullptr;
-		if (Adaptive::OneColumn()) {
-			if (_forwardConfirm) {
-				_forwardConfirm->closeBox();
-				_forwardConfirm = nullptr;
-			}
-			onHistoryShown(_history->history(), _history->msgId());
-			if (_mainSection || (_history->peer() && _history->peer()->id)) {
-				auto animationParams = ([this] {
-					if (_mainSection) {
-						return prepareMainSectionAnimation(_mainSection);
-					}
-					return prepareHistoryAnimation(_history->peer() ? _history->peer()->id : 0);
-				})();
-				_dialogs->hide();
+	if (isOneColumn()) {
+		if (_mainSection || (_history->peer() && _history->peer()->id)) {
+			auto animationParams = ([=] {
 				if (_mainSection) {
-					_mainSection->showAnimated(Window::SlideDirection::FromRight, animationParams);
-				} else {
-					_history->showAnimated(Window::SlideDirection::FromRight, animationParams);
+					return prepareMainSectionAnimation(_mainSection);
 				}
-				checkFloatPlayerVisibility();
+				return prepareHistoryAnimation(_history->peer() ? _history->peer()->id : 0);
+			})();
+			_dialogs->hide();
+			if (_mainSection) {
+				_mainSection->showAnimated(Window::SlideDirection::FromRight, animationParams);
+			} else {
+				_history->showAnimated(Window::SlideDirection::FromRight, animationParams);
 			}
+			floatPlayerCheckVisibility();
 		} else {
-			if (_forwardConfirm) {
-				_forwardConfirm->deleteLater();
-				_forwardConfirm = nullptr;
-			}
+			_dialogs->updateForwardBar();
 		}
 	}
 }
 
-void MainWidget::hiderLayer(object_ptr<HistoryHider> h) {
-	if (App::passcoded()) {
+void MainWidget::hiderLayer(base::unique_qptr<Window::HistoryHider> hider) {
+	if (controller()->window().locked()) {
 		return;
 	}
 
-	_hider = std::move(h);
-	connect(_hider, SIGNAL(forwarded()), _dialogs, SLOT(onCancelSearch()));
-	if (Adaptive::OneColumn()) {
+	_hider = std::move(hider);
+	controller()->setSelectingPeer(true);
+
+	_dialogs->closeForwardBarRequests(
+	) | rpl::start_with_next([=] {
+		_hider->startHide();
+	}, _hider->lifetime());
+
+	_hider->setParent(this);
+
+	_hider->hidden(
+	) | rpl::start_with_next([=, instance = _hider.get()] {
+		clearHider(instance);
+		instance->hide();
+		instance->deleteLater();
+	}, _hider->lifetime());
+
+	_hider->confirmed(
+	) | rpl::start_with_next([=] {
+		_dialogs->onCancelSearch();
+	}, _hider->lifetime());
+
+	if (isOneColumn()) {
 		dialogsToUp();
 
 		_hider->hide();
 		auto animationParams = prepareDialogsAnimation();
 
-		onHistoryShown(0, 0);
 		if (_mainSection) {
 			_mainSection->hide();
 		} else {
@@ -933,71 +753,40 @@ void MainWidget::hiderLayer(object_ptr<HistoryHider> h) {
 	} else {
 		_hider->show();
 		updateControlsGeometry();
-		_dialogs->activate();
+		_dialogs->setInnerFocus();
 	}
-	checkFloatPlayerVisibility();
+	floatPlayerCheckVisibility();
 }
 
 void MainWidget::showForwardLayer(MessageIdsList &&items) {
-	hiderLayer(object_ptr<HistoryHider>(this, std::move(items)));
+	auto callback = [=, items = std::move(items)](PeerId peer) mutable {
+		return setForwardDraft(peer, std::move(items));
+	};
+	hiderLayer(base::make_unique_q<Window::HistoryHider>(
+		this,
+		tr::lng_forward_choose(tr::now),
+		std::move(callback),
+		_controller->adaptive().oneColumnValue()));
 }
 
 void MainWidget::showSendPathsLayer() {
-	hiderLayer(object_ptr<HistoryHider>(this));
-}
-
-void MainWidget::deleteLayer(int selectedCount) {
-	if (selectedCount) {
-		auto selected = _history->getSelectedItems();
-		if (!selected.empty()) {
-			Ui::show(Box<DeleteMessagesBox>(std::move(selected)));
-		}
-	} else if (const auto item = App::contextItem()) {
-		const auto suggestModerateActions = true;
-		Ui::show(Box<DeleteMessagesBox>(item, suggestModerateActions));
+	hiderLayer(base::make_unique_q<Window::HistoryHider>(
+		this,
+		tr::lng_forward_choose(tr::now),
+		[=](PeerId peer) { return sendPaths(peer); },
+		_controller->adaptive().oneColumnValue()));
+	if (_hider) {
+		connect(_hider, &QObject::destroyed, [] {
+			cSetSendPaths(QStringList());
+		});
 	}
-}
-
-void MainWidget::cancelUploadLayer() {
-	auto item = App::contextItem();
-	if (!item) {
-		return;
-	}
-
-	const auto itemId = item->fullId();
-	Auth().uploader().pause(itemId);
-	Ui::show(Box<ConfirmBox>(lang(lng_selected_cancel_sure_this), lang(lng_selected_upload_stop), lang(lng_continue), base::lambda_guarded(this, [=] {
-		Ui::hideLayer();
-		if (const auto item = App::histItemById(itemId)) {
-			const auto history = item->history();
-			const auto wasLast = (history->lastMsg == item);
-			item->destroy();
-			if (wasLast && !history->lastMsg) {
-				checkPeerHistory(history->peer);
-			}
-		}
-		Auth().uploader().unpause();
-	}), base::lambda_guarded(this, [] {
-		Auth().uploader().unpause();
-	})));
 }
 
 void MainWidget::deletePhotoLayer(PhotoData *photo) {
 	if (!photo) return;
-	Ui::show(Box<ConfirmBox>(lang(lng_delete_photo_sure), lang(lng_box_delete), base::lambda_guarded(this, [this, photo] {
+	Ui::show(Box<ConfirmBox>(tr::lng_delete_photo_sure(tr::now), tr::lng_box_delete(tr::now), crl::guard(this, [=] {
+		session().api().clearPeerPhoto(photo);
 		Ui::hideLayer();
-
-		auto me = App::self();
-		if (!me) return;
-
-		if (me->userpicPhotoId() == photo->id) {
-			Messenger::Instance().peerClearPhoto(me->id);
-		} else if (photo->peer && !photo->peer->isUser() && photo->peer->userpicPhotoId() == photo->id) {
-			Messenger::Instance().peerClearPhoto(photo->peer->id);
-		} else {
-			MTP::send(MTPphotos_DeletePhotos(MTP_vector<MTPInputPhoto>(1, MTP_inputPhoto(MTP_long(photo->id), MTP_long(photo->access)))));
-			Auth().storage().remove(Storage::UserPhotosRemoveOne(me->bareId(), photo->id));
-		}
 	})));
 }
 
@@ -1006,381 +795,41 @@ void MainWidget::shareUrlLayer(const QString &url, const QString &text) {
 	if (url.trimmed().startsWith('@')) {
 		return;
 	}
-	hiderLayer(object_ptr<HistoryHider>(this, url, text));
+	auto callback = [=](PeerId peer) {
+		return shareUrl(peer, url, text);
+	};
+	hiderLayer(base::make_unique_q<Window::HistoryHider>(
+		this,
+		tr::lng_forward_choose(tr::now),
+		std::move(callback),
+		_controller->adaptive().oneColumnValue()));
 }
 
 void MainWidget::inlineSwitchLayer(const QString &botAndQuery) {
-	hiderLayer(object_ptr<HistoryHider>(this, botAndQuery));
+	auto callback = [=](PeerId peer) {
+		return inlineSwitchChosen(peer, botAndQuery);
+	};
+	hiderLayer(base::make_unique_q<Window::HistoryHider>(
+		this,
+		tr::lng_inline_switch_choose(tr::now),
+		std::move(callback),
+		_controller->adaptive().oneColumnValue()));
 }
 
-bool MainWidget::selectingPeer(bool withConfirm) const {
-	return _hider ? (withConfirm ? _hider->withConfirm() : true) : false;
+bool MainWidget::selectingPeer() const {
+	return _hider ? true : false;
 }
 
-bool MainWidget::selectingPeerForInlineSwitch() {
-	return selectingPeer() ? !_hider->botAndQuery().isEmpty() : false;
-}
-
-void MainWidget::offerPeer(PeerId peer) {
-	Ui::hideLayer();
-	if (_hider->offerPeer(peer) && Adaptive::OneColumn()) {
-		_forwardConfirm = Ui::show(Box<ConfirmBox>(_hider->offeredText(), lang(lng_forward_send), base::lambda_guarded(this, [this] {
-			_hider->forward();
-			if (_forwardConfirm) _forwardConfirm->closeBox();
-			if (_hider) _hider->offerPeer(0);
-		}), base::lambda_guarded(this, [this] {
-			if (_hider && _forwardConfirm) _hider->offerPeer(0);
-		})));
-	}
-}
-
-void MainWidget::dialogsActivate() {
-	_dialogs->activate();
-}
-
-bool MainWidget::leaveChatFailed(PeerData *peer, const RPCError &error) {
-	if (MTP::isDefaultHandledError(error)) return false;
-
-	if (error.type() == qstr("USER_NOT_PARTICIPANT") || error.type() == qstr("CHAT_ID_INVALID") || error.type() == qstr("PEER_ID_INVALID")) { // left this chat already
-		deleteConversation(peer);
-		return true;
-	}
-	return false;
-}
-
-void MainWidget::deleteHistoryAfterLeave(PeerData *peer, const MTPUpdates &updates) {
-	sentUpdatesReceived(updates);
-	deleteConversation(peer);
-}
-
-void MainWidget::deleteHistoryPart(DeleteHistoryRequest request, const MTPmessages_AffectedHistory &result) {
-	auto peer = request.peer;
-
-	auto &d = result.c_messages_affectedHistory();
-	if (peer && peer->isChannel()) {
-		peer->asChannel()->ptsUpdateAndApply(d.vpts.v, d.vpts_count.v);
-	} else {
-		ptsUpdateAndApply(d.vpts.v, d.vpts_count.v);
-	}
-
-	auto offset = d.voffset.v;
-	if (offset <= 0) {
-		cRefReportSpamStatuses().remove(peer->id);
-		Local::writeReportSpamStatuses();
+void MainWidget::cacheBackground() {
+	if (Window::Theme::Background()->colorForFill()) {
 		return;
-	}
-
-	auto flags = MTPmessages_DeleteHistory::Flags(0);
-	if (request.justClearHistory) {
-		flags |= MTPmessages_DeleteHistory::Flag::f_just_clear;
-	}
-	MTP::send(MTPmessages_DeleteHistory(MTP_flags(flags), peer->input, MTP_int(0)), rpcDone(&MainWidget::deleteHistoryPart, request));
-}
-
-void MainWidget::deleteMessages(
-		not_null<PeerData*> peer,
-		const QVector<MTPint> &ids,
-		bool forEveryone) {
-	if (const auto channel = peer->asChannel()) {
-		MTP::send(
-			MTPchannels_DeleteMessages(
-				channel->inputChannel,
-				MTP_vector<MTPint>(ids)),
-			rpcDone(&MainWidget::messagesAffected, peer));
-	} else {
-		auto flags = MTPmessages_DeleteMessages::Flags(0);
-		if (forEveryone) {
-			flags |= MTPmessages_DeleteMessages::Flag::f_revoke;
-		}
-		MTP::send(
-			MTPmessages_DeleteMessages(
-				MTP_flags(flags),
-				MTP_vector<MTPint>(ids)),
-			rpcDone(&MainWidget::messagesAffected, peer));
-	}
-}
-
-void MainWidget::deletedContact(UserData *user, const MTPcontacts_Link &result) {
-	auto &d(result.c_contacts_link());
-	App::feedUsers(MTP_vector<MTPUser>(1, d.vuser));
-	App::feedUserLink(MTP_int(peerToUser(user->id)), d.vmy_link, d.vforeign_link);
-}
-
-void MainWidget::removeDialog(History *history) {
-	_dialogs->removeDialog(history);
-}
-
-void MainWidget::deleteConversation(PeerData *peer, bool deleteHistory) {
-	if (activePeer() == peer) {
-		Ui::showChatsList();
-	}
-	if (auto history = App::historyLoaded(peer->id)) {
-		history->setPinnedDialog(false);
-		removeDialog(history);
-		if (peer->isMegagroup() && peer->asChannel()->mgInfo->migrateFromPtr) {
-			if (auto migrated = App::historyLoaded(peer->asChannel()->mgInfo->migrateFromPtr->id)) {
-				if (migrated->lastMsg) { // return initial dialog
-					migrated->setLastMessage(migrated->lastMsg);
-				} else {
-					checkPeerHistory(migrated->peer);
-				}
-			}
-		}
-		history->clear();
-		history->newLoaded = true;
-		history->oldLoaded = deleteHistory;
-	}
-	if (peer->isChannel()) {
-		peer->asChannel()->ptsWaitingForShortPoll(-1);
-	}
-	if (deleteHistory) {
-		DeleteHistoryRequest request = { peer, false };
-		MTP::send(MTPmessages_DeleteHistory(MTP_flags(0), peer->input, MTP_int(0)), rpcDone(&MainWidget::deleteHistoryPart, request));
-	}
-}
-
-void MainWidget::deleteAndExit(ChatData *chat) {
-	PeerData *peer = chat;
-	MTP::send(MTPmessages_DeleteChatUser(chat->inputChat, App::self()->inputUser), rpcDone(&MainWidget::deleteHistoryAfterLeave, peer), rpcFail(&MainWidget::leaveChatFailed, peer));
-}
-
-void MainWidget::deleteAllFromUser(ChannelData *channel, UserData *from) {
-	Assert(channel != nullptr && from != nullptr);
-
-	QVector<MsgId> toDestroy;
-	if (auto history = App::historyLoaded(channel->id)) {
-		for_const (auto block, history->blocks) {
-			for_const (auto item, block->items) {
-				if (item->from() == from && item->canDelete()) {
-					toDestroy.push_back(item->id);
-				}
-			}
-		}
-		for_const (auto &msgId, toDestroy) {
-			if (auto item = App::histItemById(peerToChannel(channel->id), msgId)) {
-				item->destroy();
-			}
-		}
-	}
-	MTP::send(MTPchannels_DeleteUserHistory(channel->inputChannel, from->inputUser), rpcDone(&MainWidget::deleteAllFromUserPart, { channel, from }));
-}
-
-void MainWidget::deleteAllFromUserPart(DeleteAllFromUserParams params, const MTPmessages_AffectedHistory &result) {
-	auto &d = result.c_messages_affectedHistory();
-	params.channel->ptsUpdateAndApply(d.vpts.v, d.vpts_count.v);
-
-	auto offset = d.voffset.v;
-	if (offset > 0) {
-		MTP::send(MTPchannels_DeleteUserHistory(params.channel->inputChannel, params.from->inputUser), rpcDone(&MainWidget::deleteAllFromUserPart, params));
-	} else if (auto h = App::historyLoaded(params.channel)) {
-		if (!h->lastMsg) {
-			checkPeerHistory(params.channel);
-		}
-	}
-}
-
-void MainWidget::addParticipants(
-		not_null<PeerData*> chatOrChannel,
-		const std::vector<not_null<UserData*>> &users) {
-	if (auto chat = chatOrChannel->asChat()) {
-		for_const (auto user, users) {
-			MTP::send(
-				MTPmessages_AddChatUser(
-					chat->inputChat,
-					user->inputUser,
-					MTP_int(ForwardOnAdd)),
-				rpcDone(&MainWidget::sentUpdatesReceived),
-				rpcFail(&MainWidget::addParticipantFail, { user, chat }),
-				0,
-				5);
-		}
-	} else if (auto channel = chatOrChannel->asChannel()) {
-		QVector<MTPInputUser> inputUsers;
-		inputUsers.reserve(qMin(int(users.size()), int(MaxUsersPerInvite)));
-		for (auto i = users.cbegin(), e = users.cend(); i != e; ++i) {
-			inputUsers.push_back((*i)->inputUser);
-			if (inputUsers.size() == MaxUsersPerInvite) {
-				MTP::send(
-					MTPchannels_InviteToChannel(
-						channel->inputChannel,
-						MTP_vector<MTPInputUser>(inputUsers)),
-					rpcDone(&MainWidget::inviteToChannelDone, { channel }),
-					rpcFail(&MainWidget::addParticipantsFail, { channel }),
-					0,
-					5);
-				inputUsers.clear();
-			}
-		}
-		if (!inputUsers.isEmpty()) {
-			MTP::send(
-				MTPchannels_InviteToChannel(
-					channel->inputChannel,
-					MTP_vector<MTPInputUser>(inputUsers)),
-				rpcDone(&MainWidget::inviteToChannelDone, { channel }),
-				rpcFail(&MainWidget::addParticipantsFail, { channel }),
-				0,
-				5);
-		}
-	}
-}
-
-bool MainWidget::addParticipantFail(UserAndPeer data, const RPCError &error) {
-	if (MTP::isDefaultHandledError(error)) return false;
-
-	QString text = lang(lng_failed_add_participant);
-	if (error.type() == qstr("USER_LEFT_CHAT")) { // trying to return a user who has left
-	} else if (error.type() == qstr("USER_KICKED")) { // trying to return a user who was kicked by admin
-		text = lang(lng_cant_invite_banned);
-	} else if (error.type() == qstr("USER_PRIVACY_RESTRICTED")) {
-		text = lang(lng_cant_invite_privacy);
-	} else if (error.type() == qstr("USER_NOT_MUTUAL_CONTACT")) { // trying to return user who does not have me in contacts
-		text = lang(lng_failed_add_not_mutual);
-	} else if (error.type() == qstr("USER_ALREADY_PARTICIPANT") && data.user->botInfo) {
-		text = lang(lng_bot_already_in_group);
-	} else if (error.type() == qstr("PEER_FLOOD")) {
-		text = PeerFloodErrorText((data.peer->isChat() || data.peer->isMegagroup()) ? PeerFloodType::InviteGroup : PeerFloodType::InviteChannel);
-	}
-	Ui::show(Box<InformBox>(text));
-	return false;
-}
-
-bool MainWidget::addParticipantsFail(
-		not_null<ChannelData*> channel,
-		const RPCError &error) {
-	if (MTP::isDefaultHandledError(error)) return false;
-
-	QString text = lang(lng_failed_add_participant);
-	if (error.type() == qstr("USER_LEFT_CHAT")) { // trying to return banned user to his group
-	} else if (error.type() == qstr("USER_KICKED")) { // trying to return a user who was kicked by admin
-		text = lang(lng_cant_invite_banned);
-	} else if (error.type() == qstr("USER_PRIVACY_RESTRICTED")) {
-		text = lang(channel->isMegagroup() ? lng_cant_invite_privacy : lng_cant_invite_privacy_channel);
-	} else if (error.type() == qstr("USER_NOT_MUTUAL_CONTACT")) { // trying to return user who does not have me in contacts
-		text = lang(channel->isMegagroup() ? lng_failed_add_not_mutual : lng_failed_add_not_mutual_channel);
-	} else if (error.type() == qstr("PEER_FLOOD")) {
-		text = PeerFloodErrorText(PeerFloodType::InviteGroup);
-	}
-	Ui::show(Box<InformBox>(text));
-	return false;
-}
-
-void MainWidget::checkPeerHistory(PeerData *peer) {
-	auto offsetId = 0;
-	auto offsetDate = 0;
-	auto addOffset = 0;
-	auto limit = 1;
-	auto maxId = 0;
-	auto minId = 0;
-	auto historyHash = 0;
-	MTP::send(
-		MTPmessages_GetHistory(
-			peer->input,
-			MTP_int(offsetId),
-			MTP_int(offsetDate),
-			MTP_int(addOffset),
-			MTP_int(limit),
-			MTP_int(maxId),
-			MTP_int(minId),
-			MTP_int(historyHash)),
-		rpcDone(&MainWidget::checkedHistory, peer));
-}
-
-void MainWidget::checkedHistory(PeerData *peer, const MTPmessages_Messages &result) {
-	const QVector<MTPMessage> *v = 0;
-	switch (result.type()) {
-	case mtpc_messages_messages: {
-		auto &d(result.c_messages_messages());
-		App::feedUsers(d.vusers);
-		App::feedChats(d.vchats);
-		v = &d.vmessages.v;
-	} break;
-
-	case mtpc_messages_messagesSlice: {
-		auto &d(result.c_messages_messagesSlice());
-		App::feedUsers(d.vusers);
-		App::feedChats(d.vchats);
-		v = &d.vmessages.v;
-	} break;
-
-	case mtpc_messages_channelMessages: {
-		auto &d(result.c_messages_channelMessages());
-		if (peer && peer->isChannel()) {
-			peer->asChannel()->ptsReceived(d.vpts.v);
-		} else {
-			LOG(("API Error: received messages.channelMessages when no channel was passed! (MainWidget::checkedHistory)"));
-		}
-		App::feedUsers(d.vusers);
-		App::feedChats(d.vchats);
-		v = &d.vmessages.v;
-	} break;
-
-	case mtpc_messages_messagesNotModified: {
-		LOG(("API Error: received messages.messagesNotModified! (MainWidget::checkedHistory)"));
-	} break;
-	}
-
-	if (!v || v->isEmpty()) {
-		if (peer->isChat() && !peer->asChat()->haveLeft()) {
-			auto h = App::historyLoaded(peer->id);
-			if (h) Local::addSavedPeer(peer, h->lastMsgDate);
-		} else if (peer->isChannel()) {
-			if (peer->asChannel()->inviter > 0 && peer->asChannel()->amIn()) {
-				if (auto from = App::userLoaded(peer->asChannel()->inviter)) {
-					auto h = App::history(peer->id);
-					h->clear(true);
-					h->addNewerSlice(QVector<MTPMessage>());
-					h->asChannelHistory()->insertJoinedMessage(true);
-					_history->peerMessagesUpdated(h->peer->id);
-				}
-			}
-		} else {
-			deleteConversation(peer, false);
-		}
-	} else {
-		auto h = App::history(peer->id);
-		if (!h->lastMsg) {
-			h->addNewMessage((*v)[0], NewMessageLast);
-		}
-		if (!h->lastMsgDate.isNull() && h->loadedAtBottom()) {
-			if (peer->isChannel() && peer->asChannel()->inviter > 0 && h->lastMsgDate <= peer->asChannel()->inviteDate && peer->asChannel()->amIn()) {
-				if (auto from = App::userLoaded(peer->asChannel()->inviter)) {
-					h->asChannelHistory()->insertJoinedMessage(true);
-					_history->peerMessagesUpdated(h->peer->id);
-				}
-			}
-		}
-	}
-}
-
-bool MainWidget::sendMessageFail(const RPCError &error) {
-	if (MTP::isDefaultHandledError(error)) return false;
-
-	if (error.type() == qstr("PEER_FLOOD")) {
-		Ui::show(Box<InformBox>(PeerFloodErrorText(PeerFloodType::Send)));
-		return true;
-	} else if (error.type() == qstr("USER_BANNED_IN_CHANNEL")) {
-		const auto link = textcmdLink(
-			Messenger::Instance().createInternalLinkFull(qsl("spambot")),
-			lang(lng_cant_more_info));
-		const auto text = lng_error_public_groups_denied(lt_more_info, link);
-		Ui::show(Box<InformBox>(text));
-		return true;
-	}
-	return false;
-}
-
-void MainWidget::onCacheBackground() {
-	if (Window::Theme::Background()->tile()) {
+	} else if (Window::Theme::Background()->tile()) {
 		auto &bg = Window::Theme::Background()->pixmapForTiled();
 
 		auto result = QImage(_willCacheFor.width() * cIntRetinaFactor(), _willCacheFor.height() * cIntRetinaFactor(), QImage::Format_RGB32);
-        result.setDevicePixelRatio(cRetinaFactor());
+		result.setDevicePixelRatio(cRetinaFactor());
 		{
 			QPainter p(&result);
-			auto left = 0;
-			auto top = 0;
-			auto right = _willCacheFor.width();
-			auto bottom = _willCacheFor.height();
 			auto w = bg.width() / cRetinaFactor();
 			auto h = bg.height() / cRetinaFactor();
 			auto sx = 0;
@@ -1395,7 +844,7 @@ void MainWidget::onCacheBackground() {
 		}
 		_cachedX = 0;
 		_cachedY = 0;
-		_cachedBackground = App::pixmapFromImageInPlace(std::move(result));
+		_cachedBackground = Ui::PixmapFromImage(std::move(result));
 	} else {
 		auto &bg = Window::Theme::Background()->pixmap();
 
@@ -1403,186 +852,26 @@ void MainWidget::onCacheBackground() {
 		Window::Theme::ComputeBackgroundRects(_willCacheFor, bg.size(), to, from);
 		_cachedX = to.x();
 		_cachedY = to.y();
-		_cachedBackground = App::pixmapFromImageInPlace(bg.toImage().copy(from).scaled(to.width() * cIntRetinaFactor(), to.height() * cIntRetinaFactor(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
+		_cachedBackground = Ui::PixmapFromImage(
+			bg.toImage().copy(from).scaled(
+				to.width() * cIntRetinaFactor(),
+				to.height() * cIntRetinaFactor(),
+				Qt::IgnoreAspectRatio,
+				Qt::SmoothTransformation));
 		_cachedBackground.setDevicePixelRatio(cRetinaFactor());
 	}
 	_cachedFor = _willCacheFor;
 }
 
-void MainWidget::forwardSelectedItems() {
-	_history->onForwardSelected();
-}
-
-void MainWidget::confirmDeleteSelectedItems() {
-	_history->confirmDeleteSelectedItems();
-}
-
-void MainWidget::clearSelectedItems() {
-	_history->onClearSelected();
-}
-
-Dialogs::IndexedList *MainWidget::contactsList() {
-	return _dialogs->contactsList();
-}
-
-Dialogs::IndexedList *MainWidget::dialogsList() {
-	return _dialogs->dialogsList();
-}
-
-Dialogs::IndexedList *MainWidget::contactsNoDialogsList() {
-	return _dialogs->contactsNoDialogsList();
-}
-
-void MainWidget::sendMessage(const MessageToSend &message) {
-	const auto history = message.history;
-	const auto peer = history->peer;
-	auto &textWithTags = message.textWithTags;
-
-	auto options = ApiWrap::SendOptions(history);
-	options.clearDraft = message.clearDraft;
-	options.replyTo = message.replyTo;
-	options.generateLocal = true;
-	options.webPageId = message.webPageId;
-	Auth().api().sendAction(options);
-
-	if (!peer->canWrite()) {
-		return;
-	}
-	saveRecentHashtags(textWithTags.text);
-
-	auto sending = TextWithEntities();
-	auto left = TextWithEntities { textWithTags.text, ConvertTextTagsToEntities(textWithTags.tags) };
-	auto prepareFlags = Ui::ItemTextOptions(history, App::self()).flags;
-	TextUtilities::PrepareForSending(left, prepareFlags);
-
-	HistoryItem *lastMessage = nullptr;
-
-	while (TextUtilities::CutPart(sending, left, MaxMessageSize)) {
-		auto newId = FullMsgId(peerToChannel(peer->id), clientMsgId());
-		auto randomId = rand_value<uint64>();
-
-		TextUtilities::Trim(sending);
-
-		App::historyRegRandom(randomId, newId);
-		App::historyRegSentData(randomId, peer->id, sending.text);
-
-		MTPstring msgText(MTP_string(sending.text));
-		auto flags = NewMessageFlags(peer) | MTPDmessage::Flag::f_entities;
-		auto sendFlags = MTPmessages_SendMessage::Flags(0);
-		if (message.replyTo) {
-			flags |= MTPDmessage::Flag::f_reply_to_msg_id;
-			sendFlags |= MTPmessages_SendMessage::Flag::f_reply_to_msg_id;
-		}
-		MTPMessageMedia media = MTP_messageMediaEmpty();
-		if (message.webPageId == CancelledWebPageId) {
-			sendFlags |= MTPmessages_SendMessage::Flag::f_no_webpage;
-		} else if (message.webPageId) {
-			auto page = App::webPage(message.webPageId);
-			media = MTP_messageMediaWebPage(MTP_webPagePending(MTP_long(page->id), MTP_int(page->pendingTill)));
-			flags |= MTPDmessage::Flag::f_media;
-		}
-		bool channelPost = peer->isChannel() && !peer->isMegagroup();
-		bool silentPost = channelPost && peer->notifySilentPosts();
-		if (channelPost) {
-			flags |= MTPDmessage::Flag::f_views;
-			flags |= MTPDmessage::Flag::f_post;
-		}
-		if (!channelPost) {
-			flags |= MTPDmessage::Flag::f_from_id;
-		} else if (peer->asChannel()->addsSignature()) {
-			flags |= MTPDmessage::Flag::f_post_author;
-		}
-		if (silentPost) {
-			sendFlags |= MTPmessages_SendMessage::Flag::f_silent;
-		}
-		auto localEntities = TextUtilities::EntitiesToMTP(sending.entities);
-		auto sentEntities = TextUtilities::EntitiesToMTP(sending.entities, TextUtilities::ConvertOption::SkipLocal);
-		if (!sentEntities.v.isEmpty()) {
-			sendFlags |= MTPmessages_SendMessage::Flag::f_entities;
-		}
-		if (message.clearDraft) {
-			sendFlags |= MTPmessages_SendMessage::Flag::f_clear_draft;
-			history->clearCloudDraft();
-		}
-		auto messageFromId = channelPost ? 0 : Auth().userId();
-		auto messagePostAuthor = channelPost ? (Auth().user()->firstName + ' ' + Auth().user()->lastName) : QString();
-		lastMessage = history->addNewMessage(
-			MTP_message(
-				MTP_flags(flags),
-				MTP_int(newId.msg),
-				MTP_int(messageFromId),
-				peerToMTP(peer->id),
-				MTPnullFwdHeader,
-				MTPint(),
-				MTP_int(message.replyTo),
-				MTP_int(unixtime()),
-				msgText,
-				media,
-				MTPnullMarkup,
-				localEntities,
-				MTP_int(1),
-				MTPint(),
-				MTP_string(messagePostAuthor),
-				MTPlong()),
-			NewMessageUnread);
-		history->sendRequestId = MTP::send(
-			MTPmessages_SendMessage(
-				MTP_flags(sendFlags),
-				peer->input,
-				MTP_int(message.replyTo),
-				msgText,
-				MTP_long(randomId),
-				MTPnullMarkup,
-				sentEntities),
-			rpcDone(&MainWidget::sentUpdatesReceived, randomId),
-			rpcFail(&MainWidget::sendMessageFail),
-			0,
-			0,
-			history->sendRequestId);
-	}
-
-	history->lastSentMsg = lastMessage;
-
-	finishForwarding(history);
-}
-
-void MainWidget::saveRecentHashtags(const QString &text) {
-	bool found = false;
-	QRegularExpressionMatch m;
-	RecentHashtagPack recent(cRecentWriteHashtags());
-	for (int32 i = 0, next = 0; (m = TextUtilities::RegExpHashtag().match(text, i)).hasMatch(); i = next) {
-		i = m.capturedStart();
-		next = m.capturedEnd();
-		if (m.hasMatch()) {
-			if (!m.capturedRef(1).isEmpty()) {
-				++i;
-			}
-			if (!m.capturedRef(2).isEmpty()) {
-				--next;
-			}
-		}
-		if (!found && cRecentWriteHashtags().isEmpty() && cRecentSearchHashtags().isEmpty()) {
-			Local::readRecentHashtagsAndBots();
-			recent = cRecentWriteHashtags();
-		}
-		found = true;
-		Stickers::IncrementRecentHashtag(recent, text.mid(i + 1, next - i - 1));
-	}
-	if (found) {
-		cSetRecentWriteHashtags(recent);
-		Local::writeRecentHashtagsAndBots();
-	}
-}
-
-void MainWidget::unreadCountChanged(History *history) {
-	_history->unreadCountChanged(history);
-}
-
-TimeMs MainWidget::highlightStartTime(not_null<const HistoryItem*> item) const {
+crl::time MainWidget::highlightStartTime(not_null<const HistoryItem*> item) const {
 	return _history->highlightStartTime(item);
 }
 
-void MainWidget::sendBotCommand(PeerData *peer, UserData *bot, const QString &cmd, MsgId replyTo) {
+void MainWidget::sendBotCommand(
+		not_null<PeerData*> peer,
+		UserData *bot,
+		const QString &cmd,
+		MsgId replyTo) {
 	_history->sendBotCommand(peer, bot, cmd, replyTo);
 }
 
@@ -1590,165 +879,85 @@ void MainWidget::hideSingleUseKeyboard(PeerData *peer, MsgId replyTo) {
 	_history->hideSingleUseKeyboard(peer, replyTo);
 }
 
-void MainWidget::app_sendBotCallback(
-		not_null<const HistoryMessageMarkupButton*> button,
-		not_null<const HistoryItem*> msg,
-		int row,
-		int column) {
-	_history->app_sendBotCallback(button, msg, row, column);
-}
-
 bool MainWidget::insertBotCommand(const QString &cmd) {
 	return _history->insertBotCommand(cmd);
 }
 
-void MainWidget::searchMessages(const QString &query, PeerData *inPeer) {
-	_dialogs->searchMessages(query, inPeer);
-	if (Adaptive::OneColumn()) {
-		Ui::showChatsList();
+void MainWidget::searchMessages(const QString &query, Dialogs::Key inChat) {
+	_dialogs->searchMessages(query, inChat);
+	if (isOneColumn()) {
+		Ui::showChatsList(&session());
 	} else {
-		_dialogs->activate();
+		_dialogs->setInnerFocus();
 	}
 }
 
-void MainWidget::itemEdited(HistoryItem *item) {
-	if (_history->peer() == item->history()->peer || (_history->peer() && _history->peer() == item->history()->peer->migrateTo())) {
-		_history->itemEdited(item);
-	}
-}
-
-void MainWidget::checkLastUpdate(bool afterSleep) {
-	auto n = getms(true);
-	if (_lastUpdateTime && n > _lastUpdateTime + (afterSleep ? NoUpdatesAfterSleepTimeout : NoUpdatesTimeout)) {
-		_lastUpdateTime = n;
-		MTP::ping();
-	}
-}
-
-void MainWidget::messagesAffected(
-		not_null<PeerData*> peer,
-		const MTPmessages_AffectedMessages &result) {
-	const auto &data = result.c_messages_affectedMessages();
-	if (const auto channel = peer->asChannel()) {
-		channel->ptsUpdateAndApply(data.vpts.v, data.vpts_count.v);
-	} else {
-		ptsUpdateAndApply(data.vpts.v, data.vpts_count.v);
-	}
-
-	if (auto h = App::historyLoaded(peer ? peer->id : 0)) {
-		if (!h->lastMsg) {
-			checkPeerHistory(peer);
-		}
-	}
-}
-
-void MainWidget::messagesContentsRead(
-		const MTPmessages_AffectedMessages &result) {
-	const auto &data = result.c_messages_affectedMessages();
-	ptsUpdateAndApply(data.vpts.v, data.vpts_count.v);
-}
-
-void MainWidget::handleAudioUpdate(const AudioMsgId &audioId) {
+void MainWidget::handleAudioUpdate(const Media::Player::TrackState &state) {
 	using State = Media::Player::State;
-	auto state = Media::Player::mixer()->currentState(audioId.type());
-	if (state.id == audioId && state.state == State::StoppedAtStart) {
-		state.state = State::Stopped;
-		Media::Player::mixer()->clearStoppedAtStart(audioId);
+	const auto document = state.id.audio();
+	if (!Media::Player::IsStoppedOrStopping(state.state)) {
+		createPlayer();
+	} else if (state.state == State::StoppedAtStart) {
+		closeBothPlayers();
+	}
 
-		auto document = audioId.audio();
-		auto filepath = document->filepath(DocumentData::FilePathResolveSaveFromData);
-		if (!filepath.isEmpty()) {
-			if (documentIsValidMediaFile(filepath)) {
-				File::Launch(filepath);
+	if (const auto item = session().data().message(state.id.contextId())) {
+		session().data().requestItemRepaint(item);
+	}
+	if (document) {
+		if (const auto items = InlineBots::Layout::documentItems()) {
+			if (const auto i = items->find(document); i != items->end()) {
+				for (const auto item : i->second) {
+					item->update();
+				}
 			}
 		}
 	}
-
-	if (state.id == audioId && (audioId.type() == AudioMsgId::Type::Song || audioId.type() == AudioMsgId::Type::Voice)) {
-		if (!Media::Player::IsStoppedOrStopping(state.state)) {
-			createPlayer();
-		}
-	}
-
-	if (auto item = App::histItemById(audioId.contextId())) {
-		Auth().data().requestItemRepaint(item);
-		item->audioTrackUpdated();
-	}
-	if (auto items = InlineBots::Layout::documentItems()) {
-		for (auto item : items->value(audioId.audio())) {
-			item->update();
-		}
-	}
-}
-
-void MainWidget::switchToPanelPlayer() {
-	if (_playerUsingPanel) return;
-	_playerUsingPanel = true;
-
-	_player->hide(anim::type::normal);
-	_playerVolume.destroyDelayed();
-	_playerPlaylist->hideIgnoringEnterEvents();
-
-	Media::Player::instance()->usePanelPlayer().notify(true, true);
-}
-
-void MainWidget::switchToFixedPlayer() {
-	if (!_playerUsingPanel) return;
-	_playerUsingPanel = false;
-
-	if (!_player) {
-		createPlayer();
-	} else {
-		_player->show(anim::type::normal);
-		if (!_playerVolume) {
-			_playerVolume.create(this);
-			_player->entity()->volumeWidgetCreated(_playerVolume);
-			updateMediaPlayerPosition();
-		}
-	}
-
-	Media::Player::instance()->usePanelPlayer().notify(false, true);
-	_playerPanel->hideIgnoringEnterEvents();
 }
 
 void MainWidget::closeBothPlayers() {
-	if (_playerUsingPanel) {
-		_playerUsingPanel = false;
-		_player.destroyDelayed();
-	} else if (_player) {
+	if (_player) {
 		_player->hide(anim::type::normal);
 	}
 	_playerVolume.destroyDelayed();
 
-	Media::Player::instance()->usePanelPlayer().notify(false, true);
-	_playerPanel->hideIgnoringEnterEvents();
 	_playerPlaylist->hideIgnoringEnterEvents();
 	Media::Player::instance()->stop(AudioMsgId::Type::Voice);
 	Media::Player::instance()->stop(AudioMsgId::Type::Song);
 
-	Shortcuts::disableMediaShortcuts();
+	Shortcuts::ToggleMediaShortcuts(false);
+}
+
+void MainWidget::stopAndClosePlayer() {
+	if (_player) {
+		_player->entity()->stopAndClose();
+	}
 }
 
 void MainWidget::createPlayer() {
-	if (_playerUsingPanel) {
-		return;
-	}
 	if (!_player) {
-		_player.create(this);
+		_player.create(
+			this,
+			object_ptr<Media::Player::Widget>(this, &session()),
+			_controller->adaptive().oneColumnValue());
 		rpl::merge(
-			_player->heightValue() | rpl::map([] { return true; }),
+			_player->heightValue() | rpl::map_to(true),
 			_player->shownValue()
 		) | rpl::start_with_next(
 			[this] { playerHeightUpdated(); },
 			_player->lifetime());
-		_player->entity()->setCloseCallback([this] { closeBothPlayers(); });
-		_playerVolume.create(this);
+		_player->entity()->setCloseCallback([=] { closeBothPlayers(); });
+		_player->entity()->setShowItemCallback([=](
+				not_null<const HistoryItem*> item) {
+			_controller->showPeerHistoryAtItem(item);
+		});
+		_playerVolume.create(this, _controller);
 		_player->entity()->volumeWidgetCreated(_playerVolume);
 		orderWidgets();
 		if (_a_show.animating()) {
 			_player->show(anim::type::instant);
 			_player->setVisible(false);
-			Shortcuts::enableMediaShortcuts();
+			Shortcuts::ToggleMediaShortcuts(true);
 		} else {
 			_player->hide(anim::type::instant);
 		}
@@ -1758,7 +967,7 @@ void MainWidget::createPlayer() {
 			_player->show(anim::type::normal);
 			_playerHeight = _contentScrollAddToY = _player->contentHeight();
 			updateControlsGeometry();
-			Shortcuts::enableMediaShortcuts();
+			Shortcuts::ToggleMediaShortcuts(true);
 		}
 	}
 }
@@ -1775,7 +984,7 @@ void MainWidget::playerHeightUpdated() {
 		updateControlsGeometry();
 	}
 	if (!_playerHeight && _player->isHidden()) {
-		auto state = Media::Player::mixer()->currentState(Media::Player::instance()->getActiveType());
+		const auto state = Media::Player::instance()->getState(Media::Player::instance()->getActiveType());
 		if (!state.id || Media::Player::IsStoppedOrStopping(state.state)) {
 			_playerVolume.destroyDelayed();
 			_player.destroyDelayed();
@@ -1784,24 +993,62 @@ void MainWidget::playerHeightUpdated() {
 }
 
 void MainWidget::setCurrentCall(Calls::Call *call) {
+	if (!call && _currentGroupCall) {
+		return;
+	}
+	_currentCallLifetime.destroy();
 	_currentCall = call;
 	if (_currentCall) {
-		subscribe(_currentCall->stateChanged(), [this](Calls::Call::State state) {
+		_callTopBar.destroy();
+		_currentCall->stateValue(
+		) | rpl::start_with_next([=](Calls::Call::State state) {
 			using State = Calls::Call::State;
-			if (state == State::Established) {
-				createCallTopBar();
-			} else {
+			if (state != State::Established) {
 				destroyCallTopBar();
+			} else if (!_callTopBar) {
+				createCallTopBar();
 			}
-		});
+		}, _currentCallLifetime);
+	} else {
+		destroyCallTopBar();
+	}
+}
+
+void MainWidget::setCurrentGroupCall(Calls::GroupCall *call) {
+	if (!call && _currentCall) {
+		return;
+	}
+	_currentCallLifetime.destroy();
+	_currentGroupCall = call;
+	if (_currentGroupCall) {
+		_callTopBar.destroy();
+		_currentGroupCall->stateValue(
+		) | rpl::start_with_next([=](Calls::GroupCall::State state) {
+			using State = Calls::GroupCall::State;
+			if (state != State::Creating
+				&& state != State::Waiting
+				&& state != State::Joining
+				&& state != State::Joined
+				&& state != State::Connecting) {
+				destroyCallTopBar();
+			} else if (!_callTopBar) {
+				createCallTopBar();
+			}
+		}, _currentCallLifetime);
 	} else {
 		destroyCallTopBar();
 	}
 }
 
 void MainWidget::createCallTopBar() {
-	Expects(_currentCall != nullptr);
-	_callTopBar.create(this, object_ptr<Calls::TopBar>(this, _currentCall));
+	Expects(_currentCall != nullptr || _currentGroupCall != nullptr);
+
+	_callTopBar.create(
+		this,
+		(_currentCall
+			? object_ptr<Calls::TopBar>(this, _currentCall)
+			: object_ptr<Calls::TopBar>(this, _currentGroupCall)));
+	_callTopBar->entity()->initBlobsUnder(this, _callTopBar->geometryValue());
 	_callTopBar->heightValue(
 	) | rpl::start_with_next([this](int value) {
 		callTopBarHeightUpdated(value);
@@ -1825,7 +1072,7 @@ void MainWidget::destroyCallTopBar() {
 }
 
 void MainWidget::callTopBarHeightUpdated(int callTopBarHeight) {
-	if (!callTopBarHeight && !_currentCall) {
+	if (!callTopBarHeight && !_currentCall && !_currentGroupCall) {
 		_callTopBar.destroyDelayed();
 	}
 	if (callTopBarHeight != _callTopBarHeight) {
@@ -1835,54 +1082,78 @@ void MainWidget::callTopBarHeightUpdated(int callTopBarHeight) {
 	}
 }
 
-void MainWidget::documentLoadProgress(FileLoader *loader) {
-	if (auto documentId = loader ? loader->objId() : 0) {
-		documentLoadProgress(App::document(documentId));
-	}
-}
-
-void MainWidget::documentLoadProgress(DocumentData *document) {
-	if (document->loaded()) {
-		document->performActionOnLoad();
-	}
-
-	auto &items = App::documentItems();
-	auto i = items.constFind(document);
-	if (i != items.cend()) {
-		for_const (auto item, i.value()) {
-			Auth().data().requestItemRepaint(item);
-		}
-	}
-	Auth().documentUpdated.notify(document, true);
-
-	if (!document->loaded() && document->isAudioFile()) {
-		Media::Player::instance()->documentLoadProgress(document);
-	}
-}
-
-void MainWidget::documentLoadFailed(FileLoader *loader, bool started) {
-	auto documentId = loader ? loader->objId() : 0;
-	if (!documentId) return;
-
-	auto document = App::document(documentId);
-	if (started) {
-		auto failedFileName = loader->fileName();
-		Ui::show(Box<ConfirmBox>(lang(lng_download_finish_failed), base::lambda_guarded(this, [this, document, failedFileName] {
-			Ui::hideLayer();
-			if (document) document->save(failedFileName);
-		})));
+void MainWidget::setCurrentExportView(Export::View::PanelController *view) {
+	_currentExportView = view;
+	if (_currentExportView) {
+		_currentExportView->progressState(
+		) | rpl::start_with_next([=](Export::View::Content &&data) {
+			if (!data.rows.empty()
+				&& data.rows[0].id == Export::View::Content::kDoneId) {
+				LOG(("Export Info: Destroy top bar by Done."));
+				destroyExportTopBar();
+			} else if (!_exportTopBar) {
+				LOG(("Export Info: Create top bar by State."));
+				createExportTopBar(std::move(data));
+			} else {
+				_exportTopBar->entity()->updateData(std::move(data));
+			}
+		}, _exportViewLifetime);
 	} else {
-		Ui::show(Box<ConfirmBox>(lang(lng_download_path_failed), lang(lng_download_path_settings), base::lambda_guarded(this, [this] {
-			Global::SetDownloadPath(QString());
-			Global::SetDownloadPathBookmark(QByteArray());
-			Ui::show(Box<DownloadPathBox>());
-			Global::RefDownloadPathChanged().notify();
-		})));
-	}
+		_exportViewLifetime.destroy();
 
-	if (document) {
-		if (document->loading()) document->cancel();
-		document->status = FileDownloadFailed;
+		LOG(("Export Info: Destroy top bar by controller removal."));
+		destroyExportTopBar();
+	}
+}
+
+void MainWidget::createExportTopBar(Export::View::Content &&data) {
+	_exportTopBar.create(
+		this,
+		object_ptr<Export::View::TopBar>(this, std::move(data)),
+		_controller->adaptive().oneColumnValue());
+	_exportTopBar->entity()->clicks(
+	) | rpl::start_with_next([=] {
+		if (_currentExportView) {
+			_currentExportView->activatePanel();
+		}
+	}, _exportTopBar->lifetime());
+	orderWidgets();
+	if (_a_show.animating()) {
+		_exportTopBar->show(anim::type::instant);
+		_exportTopBar->setVisible(false);
+	} else {
+		_exportTopBar->hide(anim::type::instant);
+		_exportTopBar->show(anim::type::normal);
+		_exportTopBarHeight = _contentScrollAddToY = _exportTopBar->contentHeight();
+		updateControlsGeometry();
+	}
+	rpl::merge(
+		_exportTopBar->heightValue() | rpl::map_to(true),
+		_exportTopBar->shownValue()
+	) | rpl::start_with_next([=] {
+		exportTopBarHeightUpdated();
+	}, _exportTopBar->lifetime());
+}
+
+void MainWidget::destroyExportTopBar() {
+	if (_exportTopBar) {
+		_exportTopBar->hide(anim::type::normal);
+	}
+}
+
+void MainWidget::exportTopBarHeightUpdated() {
+	if (!_exportTopBar) {
+		// Player could be already "destroyDelayed", but still handle events.
+		return;
+	}
+	const auto exportTopBarHeight = _exportTopBar->contentHeight();
+	if (exportTopBarHeight != _exportTopBarHeight) {
+		_contentScrollAddToY += exportTopBarHeight - _exportTopBarHeight;
+		_exportTopBarHeight = exportTopBarHeight;
+		updateControlsGeometry();
+	}
+	if (!_exportTopBarHeight && _exportTopBar->isHidden()) {
+		_exportTopBar.destroyDelayed();
 	}
 }
 
@@ -1904,154 +1175,21 @@ void MainWidget::inlineResultLoadFailed(FileLoader *loader, bool started) {
 	//Ui::repaintInlineItem();
 }
 
-void MainWidget::mediaMarkRead(not_null<DocumentData*> data) {
-	auto &items = App::documentItems();
-	auto i = items.constFind(data);
-	if (i != items.cend()) {
-		mediaMarkRead({ i.value().begin(), i.value().end() });
-	}
-}
-
-void MainWidget::mediaMarkRead(
-		const base::flat_set<not_null<HistoryItem*>> &items) {
-	QVector<MTPint> markedIds;
-	base::flat_map<not_null<ChannelData*>, QVector<MTPint>> channelMarkedIds;
-	markedIds.reserve(items.size());
-	for (const auto item : items) {
-		if (!item->isMediaUnread() || (item->out() && !item->mentionsMe())) {
-			continue;
-		}
-		item->markMediaRead();
-		if (item->id > 0) {
-			if (const auto channel = item->history()->peer->asChannel()) {
-				channelMarkedIds[channel].push_back(MTP_int(item->id));
-			} else {
-				markedIds.push_back(MTP_int(item->id));
-			}
-		}
-	}
-	if (!markedIds.isEmpty()) {
-		MTP::send(
-			MTPmessages_ReadMessageContents(MTP_vector<MTPint>(markedIds)),
-			rpcDone(&MainWidget::messagesContentsRead));
-	}
-	for (const auto &channelIds : channelMarkedIds) {
-		MTP::send(MTPchannels_ReadMessageContents(
-			channelIds.first->inputChannel,
-			MTP_vector<MTPint>(channelIds.second)));
-	}
-}
-
-void MainWidget::mediaMarkRead(not_null<HistoryItem*> item) {
-	if ((!item->out() || item->mentionsMe()) && item->isMediaUnread()) {
-		item->markMediaRead();
-		if (item->id > 0) {
-			const auto ids = MTP_vector<MTPint>(1, MTP_int(item->id));
-			if (const auto channel = item->history()->peer->asChannel()) {
-				MTP::send(
-					MTPchannels_ReadMessageContents(
-						channel->inputChannel,
-						ids));
-			} else {
-				MTP::send(
-					MTPmessages_ReadMessageContents(ids),
-					rpcDone(&MainWidget::messagesContentsRead));
-			}
-		}
-	}
-}
-
-void MainWidget::onSendFileConfirm(
-		const std::shared_ptr<FileLoadResult> &file) {
-	_history->sendFileConfirmed(file);
-}
-
-bool MainWidget::onSendSticker(DocumentData *document) {
-	return _history->onStickerSend(document);
+bool MainWidget::sendExistingDocument(not_null<DocumentData*> document) {
+	return _history->sendExistingDocument(document, Api::SendOptions());
 }
 
 void MainWidget::dialogsCancelled() {
 	if (_hider) {
 		_hider->startHide();
-		noHider(_hider);
+		clearHider(_hider);
 	}
 	_history->activate();
 }
 
-void MainWidget::insertCheckedServiceNotification(const TextWithEntities &message, const MTPMessageMedia &media, int32 date) {
-	auto flags = MTPDmessage::Flag::f_entities | MTPDmessage::Flag::f_from_id | MTPDmessage_ClientFlag::f_clientside_unread;
-	auto sending = TextWithEntities(), left = message;
-	HistoryItem *item = nullptr;
-	while (TextUtilities::CutPart(sending, left, MaxMessageSize)) {
-		auto localEntities = TextUtilities::EntitiesToMTP(sending.entities);
-		item = App::histories().addNewMessage(
-			MTP_message(
-				MTP_flags(flags),
-				MTP_int(clientMsgId()),
-				MTP_int(ServiceUserId),
-				MTP_peerUser(MTP_int(Auth().userId())),
-				MTPnullFwdHeader,
-				MTPint(),
-				MTPint(),
-				MTP_int(date),
-				MTP_string(sending.text),
-				media,
-				MTPnullMarkup,
-				localEntities,
-				MTPint(),
-				MTPint(),
-				MTPstring(),
-				MTPlong()),
-			NewMessageUnread);
-	}
-	if (item) {
-		_history->peerMessagesUpdated(item->history()->peer->id);
-	}
-}
-
-void MainWidget::serviceHistoryDone(const MTPmessages_Messages &msgs) {
-	auto handleResult = [&](auto &&result) {
-		App::feedUsers(result.vusers);
-		App::feedChats(result.vchats);
-		App::feedMsgs(result.vmessages, NewMessageLast);
-	};
-
-	switch (msgs.type()) {
-	case mtpc_messages_messages:
-		handleResult(msgs.c_messages_messages());
-		break;
-
-	case mtpc_messages_messagesSlice:
-		handleResult(msgs.c_messages_messagesSlice());
-		break;
-
-	case mtpc_messages_channelMessages:
-		LOG(("API Error: received messages.channelMessages! (MainWidget::serviceHistoryDone)"));
-		handleResult(msgs.c_messages_channelMessages());
-		break;
-
-	case mtpc_messages_messagesNotModified:
-		LOG(("API Error: received messages.messagesNotModified! (MainWidget::serviceHistoryDone)"));
-		break;
-	}
-
-	App::wnd()->showDelayedServiceMsgs();
-}
-
-bool MainWidget::serviceHistoryFail(const RPCError &error) {
-	if (MTP::isDefaultHandledError(error)) return false;
-
-	App::wnd()->showDelayedServiceMsgs();
-	return false;
-}
-
-bool MainWidget::isIdle() const {
-	return _isIdle;
-}
-
 void MainWidget::clearCachedBackground() {
 	_cachedBackground = QPixmap();
-	_cacheBackgroundTimer.stop();
+	_cacheBackgroundTimer.cancel();
 	update();
 }
 
@@ -2063,19 +1201,63 @@ QPixmap MainWidget::cachedBackground(const QRect &forRect, int &x, int &y) {
 	}
 	if (_willCacheFor != forRect || !_cacheBackgroundTimer.isActive()) {
 		_willCacheFor = forRect;
-		_cacheBackgroundTimer.start(CacheBackgroundTimeout);
+		_cacheBackgroundTimer.callOnce(kCacheBackgroundTimeout);
 	}
 	return QPixmap();
 }
 
-void MainWidget::updateScrollColors() {
-	_history->updateScrollColors();
+void MainWidget::setChatBackground(
+		const Data::WallPaper &background,
+		QImage &&image) {
+	using namespace Window::Theme;
+
+	if (isReadyChatBackground(background, image)) {
+		setReadyChatBackground(background, std::move(image));
+		return;
+	}
+
+	_background = std::make_unique<SettingBackground>(background);
+	if (const auto document = _background->data.document()) {
+		_background->dataMedia = document->createMediaView();
+		_background->dataMedia->thumbnailWanted(
+			_background->data.fileOrigin());
+	}
+	_background->data.loadDocument();
+	checkChatBackground();
+
+	const auto tile = Data::IsLegacy1DefaultWallPaper(background);
+	Window::Theme::Background()->downloadingStarted(tile);
 }
 
-void MainWidget::setChatBackground(const App::WallPaper &wp) {
-	_background = std::make_unique<App::WallPaper>(wp);
-	_background->full->loadEvenCancelled();
-	checkChatBackground();
+bool MainWidget::isReadyChatBackground(
+		const Data::WallPaper &background,
+		const QImage &image) const {
+	return !image.isNull() || !background.document();
+}
+
+void MainWidget::setReadyChatBackground(
+		const Data::WallPaper &background,
+		QImage &&image) {
+	using namespace Window::Theme;
+
+	if (image.isNull()
+		&& !background.document()
+		&& background.localThumbnail()) {
+		image = background.localThumbnail()->original();
+	}
+
+	const auto resetToDefault = image.isNull()
+		&& !background.document()
+		&& !background.backgroundColor()
+		&& !Data::IsLegacy1DefaultWallPaper(background);
+	const auto ready = resetToDefault
+		? Data::DefaultWallPaper()
+		: background;
+
+	Background()->set(ready, std::move(image));
+	const auto tile = Data::IsLegacy1DefaultWallPaper(ready);
+	Background()->setTile(tile);
+	Ui::ForceFullRepaint(this);
 }
 
 bool MainWidget::chatBackgroundLoading() {
@@ -2084,55 +1266,59 @@ bool MainWidget::chatBackgroundLoading() {
 
 float64 MainWidget::chatBackgroundProgress() const {
 	if (_background) {
-		return _background->full->progress();
+		if (_background->generating) {
+			return 1.;
+		} else if (const auto document = _background->data.document()) {
+			return _background->dataMedia->progress();
+		}
 	}
 	return 1.;
 }
 
 void MainWidget::checkChatBackground() {
-	if (_background) {
-		if (_background->full->loaded()) {
-			if (_background->full->isNull()) {
-				Window::Theme::Background()->setImage(Window::Theme::kDefaultBackground);
-			} else if (false
-				|| _background->id == Window::Theme::kInitialBackground
-				|| _background->id == Window::Theme::kDefaultBackground) {
-				Window::Theme::Background()->setImage(_background->id);
-			} else {
-				Window::Theme::Background()->setImage(_background->id, _background->full->pix().toImage());
-			}
-			_background = nullptr;
-			QTimer::singleShot(0, this, SLOT(update()));
-		}
+	if (!_background || _background->generating) {
+		return;
 	}
+	const auto &media = _background->dataMedia;
+	Assert(media != nullptr);
+	if (!media->loaded()) {
+		return;
+	}
+
+	const auto document = _background->data.document();
+	Assert(document != nullptr);
+
+	const auto generateCallback = [=](QImage &&image) {
+		const auto background = base::take(_background);
+		const auto ready = image.isNull()
+			? Data::DefaultWallPaper()
+			: background->data;
+		setReadyChatBackground(ready, std::move(image));
+	};
+	_background->generating = Data::ReadImageAsync(
+		media.get(),
+		Window::Theme::ProcessBackgroundImage,
+		generateCallback);
 }
 
-ImagePtr MainWidget::newBackgroundThumb() {
-	return _background ? _background->thumb : ImagePtr();
-}
-
-void MainWidget::messageDataReceived(ChannelData *channel, MsgId msgId) {
-	_history->messageDataReceived(channel, msgId);
-}
-
-void MainWidget::updateBotKeyboard(History *h) {
-	_history->updateBotKeyboard(h);
-}
-
-void MainWidget::pushReplyReturn(HistoryItem *item) {
-	_history->pushReplyReturn(item);
+Image *MainWidget::newBackgroundThumb() {
+	return !_background
+		? nullptr
+		: _background->data.localThumbnail()
+		? _background->data.localThumbnail()
+		: _background->dataMedia
+		? _background->dataMedia->thumbnail()
+		: nullptr;
 }
 
 void MainWidget::setInnerFocus() {
 	if (_hider || !_history->peer()) {
-		if (_hider && _hider->wasOffered()) {
-			_hider->setFocus();
-		} else if (!_hider && _mainSection) {
+		if (!_hider && _mainSection) {
 			_mainSection->setInnerFocus();
 		} else if (!_hider && _thirdSection) {
 			_thirdSection->setInnerFocus();
 		} else {
-			dialogsActivate();
+			_dialogs->setInnerFocus();
 		}
 	} else if (_mainSection) {
 		_mainSection->setInnerFocus();
@@ -2145,49 +1331,74 @@ void MainWidget::setInnerFocus() {
 
 void MainWidget::scheduleViewIncrement(HistoryItem *item) {
 	PeerData *peer = item->history()->peer;
-	ViewsIncrement::iterator i = _viewsIncremented.find(peer);
+	auto i = _viewsIncremented.find(peer);
 	if (i != _viewsIncremented.cend()) {
-		if (i.value().contains(item->id)) return;
+		if (i->second.contains(item->id)) return;
 	} else {
-		i = _viewsIncremented.insert(peer, ViewsIncrementMap());
+		i = _viewsIncremented.emplace(peer).first;
 	}
-	i.value().insert(item->id, true);
-	ViewsIncrement::iterator j = _viewsToIncrement.find(peer);
+	i->second.emplace(item->id);
+	auto j = _viewsToIncrement.find(peer);
 	if (j == _viewsToIncrement.cend()) {
-		j = _viewsToIncrement.insert(peer, ViewsIncrementMap());
-		_viewsIncrementTimer.start(SendViewsTimeout);
+		j = _viewsToIncrement.emplace(peer).first;
+		_viewsIncrementTimer.callOnce(kSendViewsTimeout);
 	}
-	j.value().insert(item->id, true);
+	j->second.emplace(item->id);
 }
 
-void MainWidget::onViewsIncrement() {
-	for (ViewsIncrement::iterator i = _viewsToIncrement.begin(); i != _viewsToIncrement.cend();) {
-		if (_viewsIncrementRequests.contains(i.key())) {
+void MainWidget::viewsIncrement() {
+	for (auto i = _viewsToIncrement.begin(); i != _viewsToIncrement.cend();) {
+		if (_viewsIncrementRequests.contains(i->first)) {
 			++i;
 			continue;
 		}
 
 		QVector<MTPint> ids;
-		ids.reserve(i.value().size());
-		for (ViewsIncrementMap::const_iterator j = i.value().cbegin(), end = i.value().cend(); j != end; ++j) {
-			ids.push_back(MTP_int(j.key()));
+		ids.reserve(i->second.size());
+		for (const auto msgId : i->second) {
+			ids.push_back(MTP_int(msgId));
 		}
-		auto req = MTP::send(MTPmessages_GetMessagesViews(i.key()->input, MTP_vector<MTPint>(ids), MTP_bool(true)), rpcDone(&MainWidget::viewsIncrementDone, ids), rpcFail(&MainWidget::viewsIncrementFail), 0, 5);
-		_viewsIncrementRequests.insert(i.key(), req);
+		const auto requestId = _api.request(MTPmessages_GetMessagesViews(
+			i->first->input,
+			MTP_vector<MTPint>(ids),
+			MTP_bool(true)
+		)).done([=](const MTPmessages_MessageViews &result, mtpRequestId requestId) {
+			viewsIncrementDone(ids, result, requestId);
+		}).fail([=](const MTP::Error &error, mtpRequestId requestId) {
+			viewsIncrementFail(error, requestId);
+		}).afterDelay(5).send();
+
+		_viewsIncrementRequests.emplace(i->first, requestId);
 		i = _viewsToIncrement.erase(i);
 	}
 }
 
-void MainWidget::viewsIncrementDone(QVector<MTPint> ids, const MTPVector<MTPint> &result, mtpRequestId req) {
-	auto &v = result.v;
+void MainWidget::viewsIncrementDone(
+		QVector<MTPint> ids,
+		const MTPmessages_MessageViews &result,
+		mtpRequestId requestId) {
+	const auto &data = result.c_messages_messageViews();
+	session().data().processUsers(data.vusers());
+	session().data().processChats(data.vchats());
+	auto &v = data.vviews().v;
 	if (ids.size() == v.size()) {
-		for (ViewsIncrementRequests::iterator i = _viewsIncrementRequests.begin(); i != _viewsIncrementRequests.cend(); ++i) {
-			if (i.value() == req) {
-				PeerData *peer = i.key();
-				ChannelId channel = peerToChannel(peer->id);
+		for (auto i = _viewsIncrementRequests.begin(); i != _viewsIncrementRequests.cend(); ++i) {
+			if (i->second == requestId) {
+				const auto peer = i->first;
+				const auto channel = peerToChannel(peer->id);
 				for (int32 j = 0, l = ids.size(); j < l; ++j) {
-					if (HistoryItem *item = App::histItemById(channel, ids.at(j).v)) {
-						item->setViewsCount(v.at(j).v);
+					if (const auto item = session().data().message(channel, ids[j].v)) {
+						v[j].match([&](const MTPDmessageViews &data) {
+							if (const auto views = data.vviews()) {
+								item->setViewsCount(views->v);
+							}
+							if (const auto forwards = data.vforwards()) {
+								item->setForwardsCount(forwards->v);
+							}
+							if (const auto replies = data.vreplies()) {
+								item->setReplies(*replies);
+							}
+						});
 					}
 				}
 				_viewsIncrementRequests.erase(i);
@@ -2195,40 +1406,35 @@ void MainWidget::viewsIncrementDone(QVector<MTPint> ids, const MTPVector<MTPint>
 			}
 		}
 	}
-	if (!_viewsToIncrement.isEmpty() && !_viewsIncrementTimer.isActive()) {
-		_viewsIncrementTimer.start(SendViewsTimeout);
+	if (!_viewsToIncrement.empty() && !_viewsIncrementTimer.isActive()) {
+		_viewsIncrementTimer.callOnce(kSendViewsTimeout);
 	}
 }
 
-bool MainWidget::viewsIncrementFail(const RPCError &error, mtpRequestId req) {
-	if (MTP::isDefaultHandledError(error)) return false;
-
-	for (ViewsIncrementRequests::iterator i = _viewsIncrementRequests.begin(); i != _viewsIncrementRequests.cend(); ++i) {
-		if (i.value() == req) {
+void MainWidget::viewsIncrementFail(const MTP::Error &error, mtpRequestId requestId) {
+	for (auto i = _viewsIncrementRequests.begin(); i != _viewsIncrementRequests.cend(); ++i) {
+		if (i->second == requestId) {
 			_viewsIncrementRequests.erase(i);
 			break;
 		}
 	}
-	if (!_viewsToIncrement.isEmpty() && !_viewsIncrementTimer.isActive()) {
-		_viewsIncrementTimer.start(SendViewsTimeout);
+	if (!_viewsToIncrement.empty() && !_viewsIncrementTimer.isActive()) {
+		_viewsIncrementTimer.callOnce(kSendViewsTimeout);
 	}
-	return false;
-}
-
-void MainWidget::createDialog(History *history) {
-	_dialogs->createDialog(history);
 }
 
 void MainWidget::choosePeer(PeerId peerId, MsgId showAtMsgId) {
 	if (selectingPeer()) {
-		offerPeer(peerId);
+		_hider->offerPeer(peerId);
+	} else if (peerId) {
+		Ui::showPeerHistory(session().data().peer(peerId), showAtMsgId);
 	} else {
-		Ui::showPeerHistory(peerId, showAtMsgId);
+		Ui::showChatsList(&session());
 	}
 }
 
 void MainWidget::clearBotStartToken(PeerData *peer) {
-	if (peer && peer->isUser() && peer->asUser()->botInfo) {
+	if (peer && peer->isUser() && peer->asUser()->isBot()) {
 		peer->asUser()->botInfo->startToken = QString();
 	}
 }
@@ -2237,34 +1443,74 @@ void MainWidget::ctrlEnterSubmitUpdated() {
 	_history->updateFieldSubmitSettings();
 }
 
+void MainWidget::showChooseReportMessages(
+		not_null<PeerData*> peer,
+		Ui::ReportReason reason,
+		Fn<void(MessageIdsList)> done) {
+	_history->setChooseReportMessagesDetails(reason, std::move(done));
+	ui_showPeerHistory(
+		peer->id,
+		SectionShow::Way::Forward,
+		ShowForChooseMessagesMsgId);
+	Ui::ShowMultilineToast({
+		.text = { tr::lng_report_please_select_messages(tr::now) },
+	});
+}
+
+void MainWidget::clearChooseReportMessages() {
+	_history->setChooseReportMessagesDetails({}, nullptr);
+}
+
 void MainWidget::ui_showPeerHistory(
 		PeerId peerId,
 		const SectionShow &params,
 		MsgId showAtMsgId) {
-	if (auto peer = App::peerLoaded(peerId)) {
+
+	if (auto peer = session().data().peerLoaded(peerId)) {
 		if (peer->migrateTo()) {
 			peer = peer->migrateTo();
 			peerId = peer->id;
 			if (showAtMsgId > 0) showAtMsgId = -showAtMsgId;
 		}
-		auto restriction = peer->restrictionReason();
-		if (!restriction.isEmpty()) {
+		const auto unavailable = peer->computeUnavailableReason();
+		if (!unavailable.isEmpty()) {
 			if (params.activation != anim::activation::background) {
-				Ui::show(Box<InformBox>(restriction));
+				Ui::show(Box<InformBox>(unavailable));
 			}
 			return;
 		}
 	}
+	if (IsServerMsgId(showAtMsgId)
+		&& _mainSection
+		&& _mainSection->showMessage(peerId, params, showAtMsgId)) {
+		return;
+	}
+
+	if (!(_history->peer() && _history->peer()->id == peerId)
+		&& preventsCloseSection(
+			[=] { ui_showPeerHistory(peerId, params, showAtMsgId); },
+			params)) {
+		return;
+	}
+
+	using OriginMessage = SectionShow::OriginMessage;
+	if (const auto origin = std::get_if<OriginMessage>(&params.origin)) {
+		if (const auto returnTo = session().data().message(origin->id)) {
+			if (returnTo->history()->peer->id == peerId) {
+				_history->pushReplyReturn(returnTo);
+			}
+		}
+	}
 
 	_controller->dialogsListFocused().set(false, true);
-	_a_dialogsWidth.finish();
+	_a_dialogsWidth.stop();
 
 	using Way = SectionShow::Way;
 	auto way = params.way;
 	bool back = (way == Way::Backward || !peerId);
 	bool foundInStack = !peerId;
 	if (foundInStack || (way == Way::ClearStack)) {
-		for_const (auto &item, _stack) {
+		for (const auto &item : _stack) {
 			clearBotStartToken(item->peer());
 		}
 		_stack.clear();
@@ -2283,38 +1529,44 @@ void MainWidget::ui_showPeerHistory(
 				break;
 			}
 		}
-		if (auto historyPeer = _controller->historyPeer.current()) {
-			if (way == Way::Forward && historyPeer->id == peerId) {
-				way = Way::ClearStack;
+		if (const auto activeChat = _controller->activeChatCurrent()) {
+			if (const auto peer = activeChat.peer()) {
+				if (way == Way::Forward && peer->id == peerId) {
+					way = _mainSection ? Way::Backward : Way::ClearStack;
+				}
 			}
 		}
 	}
 
-	auto wasActivePeer = activePeer();
+	const auto wasActivePeer = _controller->activeChatCurrent().peer();
 	if (params.activation != anim::activation::background) {
 		Ui::hideSettingsAndLayer();
 	}
 	if (_hider) {
 		_hider->startHide();
-		_hider = nullptr;
+		_hider.release();
+		controller()->setSelectingPeer(false);
 	}
 
 	auto animatedShow = [&] {
 		if (_a_show.animating()
-			|| App::passcoded()
+			|| Core::App().passcodeLocked()
 			|| (params.animated == anim::type::instant)) {
 			return false;
 		}
 		if (!peerId) {
-			if (Adaptive::OneColumn()) {
-				return true;
+			if (isOneColumn()) {
+				return _dialogs->isHidden();
 			} else {
 				return false;
 			}
 		}
 		if (_history->isHidden()) {
+			if (!isOneColumn() && way == Way::ClearStack) {
+				return false;
+			}
 			return (_mainSection != nullptr)
-				|| (Adaptive::OneColumn() && !_dialogs->isHidden());
+				|| (isOneColumn() && !_dialogs->isHidden());
 		}
 		if (back || way == Way::Forward) {
 			return true;
@@ -2324,15 +1576,10 @@ void MainWidget::ui_showPeerHistory(
 
 	auto animationParams = animatedShow() ? prepareHistoryAnimation(peerId) : Window::SectionSlideParams();
 
-	dlgUpdated();
-	if (back || (way == Way::ClearStack)) {
-		_peerInStack = nullptr;
-		_msgIdInStack = 0;
-	} else {
+	if (!back && (way != Way::ClearStack)) {
 		// This may modify the current section, for example remove its contents.
 		saveSectionInStack();
 	}
-	dlgUpdated();
 
 	if (_history->peer() && _history->peer()->id != peerId && way != Way::Forward) {
 		clearBotStartToken(_history->peer());
@@ -2340,14 +1587,15 @@ void MainWidget::ui_showPeerHistory(
 	_history->showHistory(peerId, showAtMsgId);
 
 	auto noPeer = !_history->peer();
-	auto onlyDialogs = noPeer && Adaptive::OneColumn();
-	if (_mainSection) {
-		_mainSection->hide();
-		_mainSection->deleteLater();
-		_mainSection = nullptr;
-	}
+	auto onlyDialogs = noPeer && isOneColumn();
+	_mainSection.destroy();
 
 	updateControlsGeometry();
+
+	if (noPeer) {
+		_controller->setActiveChatEntry(Dialogs::Key());
+	}
+
 	if (onlyDialogs) {
 		_history->hide();
 		if (!_a_show.animating()) {
@@ -2359,14 +1607,13 @@ void MainWidget::ui_showPeerHistory(
 			}
 		}
 	} else {
-		if (!noPeer && wasActivePeer != activePeer()) {
-			if (activePeer()->isChannel()) {
-				activePeer()->asChannel()->ptsWaitingForShortPoll(
-					WaitForChannelGetDifference);
-			}
-			_viewsIncremented.remove(activePeer());
+		const auto nowActivePeer = _controller->activeChatCurrent().peer();
+		if (nowActivePeer && nowActivePeer != wasActivePeer) {
+			_viewsIncremented.remove(nowActivePeer);
 		}
-		if (Adaptive::OneColumn() && !_dialogs->isHidden()) _dialogs->hide();
+		if (isOneColumn() && !_dialogs->isHidden()) {
+			_dialogs->hide();
+		}
 		if (!_a_show.animating()) {
 			if (!animationParams.oldContentCache.isNull()) {
 				_history->showAnimated(
@@ -2376,62 +1623,33 @@ void MainWidget::ui_showPeerHistory(
 					animationParams);
 			} else {
 				_history->show();
-				if (App::wnd()) {
-					QTimer::singleShot(0, App::wnd(), SLOT(setInnerFocus()));
-				}
+				crl::on_main(this, [=] {
+					_controller->widget()->setInnerFocus();
+				});
 			}
 		}
 	}
-	//if (wasActivePeer && wasActivePeer->isChannel() && activePeer() != wasActivePeer) {
-	//	wasActivePeer->asChannel()->ptsWaitingForShortPoll(false);
-	//}
 
 	if (!_dialogs->isHidden()) {
 		if (!back) {
-			_dialogs->scrollToPeer(peerId, showAtMsgId);
+			if (const auto history = _history->history()) {
+				_dialogs->scrollToEntry(Dialogs::RowDescriptor(
+					history,
+					FullMsgId(history->channelId(), showAtMsgId)));
+			}
 		}
 		_dialogs->update();
 	}
 
-	if (!peerId) {
-		_controller->activePeer = nullptr;
-	}
-
-	checkFloatPlayerVisibility();
+	floatPlayerCheckVisibility();
 }
 
 PeerData *MainWidget::ui_getPeerForMouseAction() {
 	return _history->ui_getPeerForMouseAction();
 }
 
-void MainWidget::peerBefore(const PeerData *inPeer, MsgId inMsg, PeerData *&outPeer, MsgId &outMsg) {
-	if (selectingPeer()) {
-		outPeer = 0;
-		outMsg = 0;
-		return;
-	}
-	_dialogs->peerBefore(inPeer, inMsg, outPeer, outMsg);
-}
-
-void MainWidget::peerAfter(const PeerData *inPeer, MsgId inMsg, PeerData *&outPeer, MsgId &outMsg) {
-	if (selectingPeer()) {
-		outPeer = 0;
-		outMsg = 0;
-		return;
-	}
-	_dialogs->peerAfter(inPeer, inMsg, outPeer, outMsg);
-}
-
 PeerData *MainWidget::peer() {
 	return _history->peer();
-}
-
-PeerData *MainWidget::activePeer() {
-	return _history->peer() ? _history->peer() : _peerInStack;
-}
-
-MsgId MainWidget::activeMsgId() {
-	return _history->peer() ? _history->msgId() : _msgIdInStack;
 }
 
 void MainWidget::saveSectionInStack() {
@@ -2441,23 +1659,24 @@ void MainWidget::saveSectionInStack() {
 				std::move(memento)));
 			_stack.back()->setThirdSectionWeak(_thirdSection.data());
 		}
-	} else if (_history->peer()) {
-		_peerInStack = _history->peer();
-		_msgIdInStack = _history->msgId();
+	} else if (const auto history = _history->history()) {
 		_stack.push_back(std::make_unique<StackItemHistory>(
-			_peerInStack,
-			_msgIdInStack,
+			history,
+			_history->msgId(),
 			_history->replyReturns()));
 		_stack.back()->setThirdSectionWeak(_thirdSection.data());
 	}
 }
 
 void MainWidget::showSection(
-		Window::SectionMemento &&memento,
+		std::shared_ptr<Window::SectionMemento> memento,
 		const SectionShow &params) {
 	if (_mainSection && _mainSection->showInternal(
-			&memento,
+			memento.get(),
 			params)) {
+		if (const auto entry = _mainSection->activeChat(); entry.key) {
+			_controller->setActiveChatEntry(entry);
+		}
 		return;
 	//
 	// Now third section handles only its own showSection() requests.
@@ -2469,14 +1688,18 @@ void MainWidget::showSection(
 	//	return;
 	}
 
+	if (preventsCloseSection(
+		[=] { showSection(memento, params); },
+		params)) {
+		return;
+	}
+
 	// If the window was not resized, but we've enabled
 	// tabbedSelectorSectionEnabled or thirdSectionInfoEnabled
 	// we need to update adaptive layout to Adaptive::ThirdColumn().
 	updateColumnLayout();
 
-	showNewSection(
-		std::move(memento),
-		params);
+	showNewSection(std::move(memento), params);
 }
 
 void MainWidget::updateColumnLayout() {
@@ -2491,16 +1714,9 @@ Window::SectionSlideParams MainWidget::prepareThirdSectionAnimation(Window::Sect
 	if (!_thirdSection->hasTopBarShadow()) {
 		result.withTopBarShadow = false;
 	}
-	for (auto &instance : _playerFloats) {
-		instance->widget->hide();
-	}
-	auto sectionTop = getThirdSectionTop();
+	floatPlayerHideAll();
 	result.oldContentCache = _thirdSection->grabForShowAnimation(result);
-	for (auto &instance : _playerFloats) {
-		if (instance->visible) {
-			instance->widget->show();
-		}
-	}
+	floatPlayerShowVisible();
 	return result;
 }
 
@@ -2508,7 +1724,7 @@ Window::SectionSlideParams MainWidget::prepareShowAnimation(
 		bool willHaveTopBarShadow) {
 	Window::SectionSlideParams result;
 	result.withTopBarShadow = willHaveTopBarShadow;
-	if (selectingPeer() && Adaptive::OneColumn()) {
+	if (selectingPeer() && isOneColumn()) {
 		result.withTopBarShadow = false;
 	} else if (_mainSection) {
 		if (!_mainSection->hasTopBarShadow()) {
@@ -2518,9 +1734,7 @@ Window::SectionSlideParams MainWidget::prepareShowAnimation(
 		result.withTopBarShadow = false;
 	}
 
-	for (auto &instance : _playerFloats) {
-		instance->widget->hide();
-	}
+	floatPlayerHideAll();
 	if (_player) {
 		_player->hideShadow();
 	}
@@ -2528,17 +1742,13 @@ Window::SectionSlideParams MainWidget::prepareShowAnimation(
 	if (playerVolumeVisible) {
 		_playerVolume->hide();
 	}
-	auto playerPanelVisible = !_playerPanel->isHidden();
-	if (playerPanelVisible) {
-		_playerPanel->hide();
-	}
 	auto playerPlaylistVisible = !_playerPlaylist->isHidden();
 	if (playerPlaylistVisible) {
 		_playerPlaylist->hide();
 	}
 
 	auto sectionTop = getMainSectionTop();
-	if (selectingPeer() && Adaptive::OneColumn()) {
+	if (selectingPeer() && isOneColumn()) {
 		result.oldContentCache = Ui::GrabWidget(this, QRect(
 			0,
 			sectionTop,
@@ -2546,41 +1756,18 @@ Window::SectionSlideParams MainWidget::prepareShowAnimation(
 			height() - sectionTop));
 	} else if (_mainSection) {
 		result.oldContentCache = _mainSection->grabForShowAnimation(result);
+	} else if (!isOneColumn() || !_history->isHidden()) {
+		result.oldContentCache = _history->grabForShowAnimation(result);
 	} else {
-		if (result.withTopBarShadow) {
-			_history->grapWithoutTopBarShadow();
-		} else {
-			_history->grabStart();
-		}
-		if (Adaptive::OneColumn()) {
-			result.oldContentCache = Ui::GrabWidget(this, QRect(
-				0,
-				sectionTop,
-				_dialogsWidth,
-				height() - sectionTop));
-		} else {
-			_sideShadow->hide();
-			if (_thirdShadow) {
-				_thirdShadow->hide();
-			}
-			result.oldContentCache = Ui::GrabWidget(this, QRect(
-				_dialogsWidth,
-				sectionTop,
-				width() - _dialogsWidth,
-				height() - sectionTop));
-			_sideShadow->show();
-			if (_thirdShadow) {
-				_thirdShadow->show();
-			}
-		}
-		_history->grabFinish();
+		result.oldContentCache = Ui::GrabWidget(this, QRect(
+			0,
+			sectionTop,
+			_dialogsWidth,
+			height() - sectionTop));
 	}
 
 	if (playerVolumeVisible) {
 		_playerVolume->show();
-	}
-	if (playerPanelVisible) {
-		_playerPanel->show();
 	}
 	if (playerPlaylistVisible) {
 		_playerPlaylist->show();
@@ -2588,11 +1775,7 @@ Window::SectionSlideParams MainWidget::prepareShowAnimation(
 	if (_player) {
 		_player->showShadow();
 	}
-	for (auto &instance : _playerFloats) {
-		if (instance->visible) {
-			instance->widget->show();
-		}
-	}
+	floatPlayerShowVisible();
 
 	return result;
 }
@@ -2610,27 +1793,28 @@ Window::SectionSlideParams MainWidget::prepareDialogsAnimation() {
 }
 
 void MainWidget::showNewSection(
-		Window::SectionMemento &&memento,
+		std::shared_ptr<Window::SectionMemento> memento,
 		const SectionShow &params) {
 	using Column = Window::Column;
 
 	auto saveInStack = (params.way == SectionShow::Way::Forward);
-	auto thirdSectionTop = getThirdSectionTop();
-	auto newThirdGeometry = QRect(
+	const auto thirdSectionTop = getThirdSectionTop();
+	const auto newThirdGeometry = QRect(
 		width() - st::columnMinimalWidthThird,
 		thirdSectionTop,
 		st::columnMinimalWidthThird,
 		height() - thirdSectionTop);
-	auto newThirdSection = (Adaptive::ThreeColumn() && params.thirdColumn)
-		? memento.createWidget(
+	auto newThirdSection = (isThreeColumn() && params.thirdColumn)
+		? memento->createWidget(
 			this,
 			_controller,
 			Column::Third,
 			newThirdGeometry)
 		: nullptr;
+	const auto layerRect = parentWidget()->rect();
 	if (newThirdSection) {
 		saveInStack = false;
-	} else if (auto layer = memento.createLayer(_controller, rect())) {
+	} else if (auto layer = memento->createLayer(_controller, layerRect)) {
 		if (params.activation != anim::activation::background) {
 			Ui::hideLayer(anim::type::instant);
 		}
@@ -2642,10 +1826,8 @@ void MainWidget::showNewSection(
 		Ui::hideSettingsAndLayer();
 	}
 
-	QPixmap animCache;
-
 	_controller->dialogsListFocused().set(false, true);
-	_a_dialogsWidth.finish();
+	_a_dialogsWidth.stop();
 
 	auto mainSectionTop = getMainSectionTop();
 	auto newMainGeometry = QRect(
@@ -2655,21 +1837,23 @@ void MainWidget::showNewSection(
 		height() - mainSectionTop);
 	auto newMainSection = newThirdSection
 		? nullptr
-		: memento.createWidget(
+		: memento->createWidget(
 			this,
 			_controller,
-			Adaptive::OneColumn() ? Column::First : Column::Second,
+			isOneColumn() ? Column::First : Column::Second,
 			newMainGeometry);
 	Assert(newMainSection || newThirdSection);
 
 	auto animatedShow = [&] {
 		if (_a_show.animating()
-			|| App::passcoded()
+			|| Core::App().passcodeLocked()
 			|| (params.animated == anim::type::instant)
-			|| memento.instant()) {
+			|| memento->instant()) {
 			return false;
 		}
-		if (Adaptive::OneColumn()
+		if (!isOneColumn() && params.way == SectionShow::Way::ClearStack) {
+			return false;
+		} else if (isOneColumn()
 			|| (newThirdSection && _thirdSection)
 			|| (newMainSection && isMainSectionShown())) {
 			return true;
@@ -2700,17 +1884,12 @@ void MainWidget::showNewSection(
 		}
 		updateControlsGeometry();
 	} else {
-		if (_mainSection) {
-			_mainSection->hide();
-			_mainSection->deleteLater();
-			_mainSection = nullptr;
-		}
 		_mainSection = std::move(newMainSection);
 		updateControlsGeometry();
 		_history->finishAnimating();
 		_history->showHistory(0, 0);
 		_history->hide();
-		if (Adaptive::OneColumn()) _dialogs->hide();
+		if (isOneColumn()) _dialogs->hide();
 	}
 
 	if (animationParams) {
@@ -2718,16 +1897,21 @@ void MainWidget::showNewSection(
 		auto direction = (back || settingSection->forceAnimateBack())
 			? Window::SlideDirection::FromLeft
 			: Window::SlideDirection::FromRight;
+		if (isOneColumn()) {
+			_controller->removeLayerBlackout();
+		}
 		settingSection->showAnimated(direction, animationParams);
 	} else {
 		settingSection->showFast();
 	}
 
 	if (settingSection.data() == _mainSection.data()) {
-		_controller->activePeer = _mainSection->activePeer();
+		if (const auto entry = _mainSection->activeChat(); entry.key) {
+			_controller->setActiveChatEntry(entry);
+		}
 	}
 
-	checkFloatPlayerVisibility();
+	floatPlayerCheckVisibility();
 	orderWidgets();
 }
 
@@ -2767,12 +1951,37 @@ bool MainWidget::stackIsEmpty() const {
 	return _stack.empty();
 }
 
+bool MainWidget::preventsCloseSection(Fn<void()> callback) const {
+	if (Core::App().passcodeLocked()) {
+		return false;
+	}
+	auto copy = callback;
+	return (_mainSection && _mainSection->preventsClose(std::move(copy)))
+		|| (_history && _history->preventsClose(std::move(callback)));
+}
+
+bool MainWidget::preventsCloseSection(
+		Fn<void()> callback,
+		const SectionShow &params) const {
+	return params.thirdColumn
+		? false
+		: preventsCloseSection(std::move(callback));
+}
+
 void MainWidget::showBackFromStack(
 		const SectionShow &params) {
-	if (selectingPeer()) return;
-	if (_stack.empty()) {
+
+	if (preventsCloseSection([=] { showBackFromStack(params); }, params)) {
+		return;
+	}
+
+	if (selectingPeer()) {
+		return;
+	} else if (_stack.empty()) {
 		_controller->clearSectionStack(params);
-		if (App::wnd()) QTimer::singleShot(0, App::wnd(), SLOT(setInnerFocus()));
+		crl::on_main(this, [=] {
+			_controller->widget()->setInnerFocus();
+		});
 		return;
 	}
 	auto item = std::move(_stack.back());
@@ -2782,18 +1991,6 @@ void MainWidget::showBackFromStack(
 	}
 	_thirdSectionFromStack = item->takeThirdSectionMemento();
 	if (item->type() == HistoryStackItem) {
-		dlgUpdated();
-		_peerInStack = nullptr;
-		_msgIdInStack = 0;
-		for (auto i = _stack.size(); i > 0;) {
-			if (_stack[--i]->type() == HistoryStackItem) {
-				auto historyItem = static_cast<StackItemHistory*>(_stack[i].get());
-				_peerInStack = historyItem->peer();
-				_msgIdInStack = historyItem->msgId;
-				dlgUpdated();
-				break;
-			}
-		}
 		auto historyItem = static_cast<StackItemHistory*>(item.get());
 		_controller->showPeerHistory(
 			historyItem->peer()->id,
@@ -2803,12 +2000,12 @@ void MainWidget::showBackFromStack(
 	} else if (item->type() == SectionStackItem) {
 		auto sectionItem = static_cast<StackItemSection*>(item.get());
 		showNewSection(
-			std::move(*sectionItem->memento()),
+			sectionItem->takeMemento(),
 			params.withWay(SectionShow::Way::Backward));
 	}
 	if (_thirdSectionFromStack && _thirdSection) {
 		_controller->showSection(
-			std::move(*base::take(_thirdSectionFromStack)),
+			base::take(_thirdSectionFromStack),
 			SectionShow(
 				SectionShow::Way::ClearStack,
 				anim::type::instant,
@@ -2819,11 +2016,14 @@ void MainWidget::showBackFromStack(
 
 void MainWidget::orderWidgets() {
 	_dialogs->raise();
-	if (_callTopBar) {
-		_callTopBar->raise();
-	}
 	if (_player) {
 		_player->raise();
+	}
+	if (_exportTopBar) {
+		_exportTopBar->raise();
+	}
+	if (_callTopBar) {
+		_callTopBar->raise();
 	}
 	if (_playerVolume) {
 		_playerVolume->raise();
@@ -2838,11 +2038,9 @@ void MainWidget::orderWidgets() {
 	if (_thirdColumnResizeArea) {
 		_thirdColumnResizeArea->raise();
 	}
+	_connecting->raise();
 	_playerPlaylist->raise();
-	_playerPanel->raise();
-	for (auto &instance : _playerFloats) {
-		instance->widget->raise();
-	}
+	floatPlayerRaiseAll();
 	if (_hider) _hider->raise();
 }
 
@@ -2855,9 +2053,7 @@ QRect MainWidget::historyRect() const {
 
 QPixmap MainWidget::grabForShowAnimation(const Window::SectionSlideParams &params) {
 	QPixmap result;
-	for (auto &instance : _playerFloats) {
-		instance->widget->hide();
-	}
+	floatPlayerHideAll();
 	if (_player) {
 		_player->hideShadow();
 	}
@@ -2865,17 +2061,13 @@ QPixmap MainWidget::grabForShowAnimation(const Window::SectionSlideParams &param
 	if (playerVolumeVisible) {
 		_playerVolume->hide();
 	}
-	auto playerPanelVisible = !_playerPanel->isHidden();
-	if (playerPanelVisible) {
-		_playerPanel->hide();
-	}
 	auto playerPlaylistVisible = !_playerPlaylist->isHidden();
 	if (playerPlaylistVisible) {
 		_playerPlaylist->hide();
 	}
 
 	auto sectionTop = getMainSectionTop();
-	if (Adaptive::OneColumn()) {
+	if (isOneColumn()) {
 		result = Ui::GrabWidget(this, QRect(
 			0,
 			sectionTop,
@@ -2899,96 +2091,39 @@ QPixmap MainWidget::grabForShowAnimation(const Window::SectionSlideParams &param
 	if (playerVolumeVisible) {
 		_playerVolume->show();
 	}
-	if (playerPanelVisible) {
-		_playerPanel->show();
-	}
 	if (playerPlaylistVisible) {
 		_playerPlaylist->show();
 	}
 	if (_player) {
 		_player->showShadow();
 	}
-	for (auto &instance : _playerFloats) {
-		if (instance->visible) {
-			instance->widget->show();
-		}
-	}
+	floatPlayerShowVisible();
 	return result;
-}
-
-void MainWidget::dlgUpdated() {
-	if (_peerInStack) {
-		_dialogs->dlgUpdated(_peerInStack, _msgIdInStack);
-	}
-}
-
-void MainWidget::dlgUpdated(Dialogs::Mode list, Dialogs::Row *row) {
-	if (row) {
-		_dialogs->dlgUpdated(list, row);
-	}
-}
-
-void MainWidget::dlgUpdated(PeerData *peer, MsgId msgId) {
-	if (!peer) return;
-	if (msgId < 0 && -msgId < ServerMaxMsgId && peer->migrateFrom()) {
-		_dialogs->dlgUpdated(peer->migrateFrom(), -msgId);
-	} else {
-		_dialogs->dlgUpdated(peer, msgId);
-	}
 }
 
 void MainWidget::windowShown() {
 	_history->windowShown();
 }
 
-void MainWidget::sentUpdatesReceived(uint64 randomId, const MTPUpdates &result) {
-	feedUpdates(result, randomId);
-}
-
-bool MainWidget::deleteChannelFailed(const RPCError &error) {
-	if (MTP::isDefaultHandledError(error)) return false;
-
-	//if (error.type() == qstr("CHANNEL_TOO_LARGE")) {
-	//	Ui::show(Box<InformBox>(lang(lng_cant_delete_channel)));
-	//}
-
-	return true;
-}
-
-void MainWidget::inviteToChannelDone(
-		not_null<ChannelData*> channel,
-		const MTPUpdates &updates) {
-	sentUpdatesReceived(updates);
-	Auth().api().requestParticipantsCountDelayed(channel);
-}
-
-void MainWidget::historyToDown(History *history) {
-	_history->historyToDown(history);
-}
-
 void MainWidget::dialogsToUp() {
-	_dialogs->dialogsToUp();
+	_dialogs->jumpToTop();
 }
 
-void MainWidget::newUnreadMsg(History *history, HistoryItem *item) {
-	_history->newUnreadMsg(history, item);
-}
-
-void MainWidget::markActiveHistoryAsRead() {
-	if (const auto activeHistory = _history->history()) {
-		Auth().api().readServerHistory(activeHistory);
-	}
+void MainWidget::checkHistoryActivation() {
+	_history->checkHistoryActivation();
 }
 
 void MainWidget::showAnimated(const QPixmap &bgAnimCache, bool back) {
 	_showBack = back;
 	(_showBack ? _cacheOver : _cacheUnder) = bgAnimCache;
 
-	_a_show.finish();
+	_a_show.stop();
 
 	showAll();
+	floatPlayerHideAll();
 	(_showBack ? _cacheUnder : _cacheOver) = Ui::GrabWidget(this);
 	hideAll();
+	floatPlayerShowVisible();
 
 	_a_show.start(
 		[this] { animationCallback(); },
@@ -3011,10 +2146,12 @@ void MainWidget::animationCallback() {
 }
 
 void MainWidget::paintEvent(QPaintEvent *e) {
-	if (_background) checkChatBackground();
+	if (_background) {
+		checkChatBackground();
+	}
 
 	Painter p(this);
-	auto progress = _a_show.current(getms(), 1.);
+	auto progress = _a_show.value(1.);
 	if (_a_show.animating()) {
 		auto coordUnder = _showBack ? anim::interpolate(-st::slideShift, 0, progress) : anim::interpolate(0, -st::slideShift, progress);
 		auto coordOver = _showBack ? anim::interpolate(0, width(), progress) : anim::interpolate(width(), 0, progress);
@@ -3032,7 +2169,7 @@ void MainWidget::paintEvent(QPaintEvent *e) {
 }
 
 int MainWidget::getMainSectionTop() const {
-	return _callTopBarHeight + _playerHeight;
+	return _callTopBarHeight + _exportTopBarHeight + _playerHeight;
 }
 
 int MainWidget::getThirdSectionTop() const {
@@ -3056,29 +2193,21 @@ void MainWidget::hideAll() {
 		_player->setVisible(false);
 		_playerHeight = 0;
 	}
-	for (auto &instance : _playerFloats) {
-		instance->widget->hide();
+	if (_callTopBar) {
+		_callTopBar->setVisible(false);
+		_callTopBarHeight = 0;
 	}
 }
 
 void MainWidget::showAll() {
 	if (cPasswordRecovered()) {
 		cSetPasswordRecovered(false);
-		Ui::show(Box<InformBox>(lang(lng_signin_password_removed)));
+		Ui::show(Box<InformBox>(tr::lng_signin_password_removed(tr::now)));
 	}
-	if (Adaptive::OneColumn()) {
+	if (isOneColumn()) {
 		_sideShadow->hide();
 		if (_hider) {
 			_hider->hide();
-			if (!_forwardConfirm && _hider->wasOffered()) {
-				_forwardConfirm = Ui::show(Box<ConfirmBox>(_hider->offeredText(), lang(lng_forward_send), base::lambda_guarded(this, [this] {
-					_hider->forward();
-					if (_forwardConfirm) _forwardConfirm->closeBox();
-					if (_hider) _hider->offerPeer(0);
-				}), base::lambda_guarded(this, [this] {
-					if (_hider && _forwardConfirm) _hider->offerPeer(0);
-				})), LayerOption::CloseOther, anim::type::instant);
-			}
 		}
 		if (selectingPeer()) {
 			_dialogs->showFast();
@@ -3104,13 +2233,6 @@ void MainWidget::showAll() {
 		_sideShadow->show();
 		if (_hider) {
 			_hider->show();
-			if (_forwardConfirm) {
-				_forwardConfirm = nullptr;
-				Ui::hideLayer(anim::type::instant);
-				if (_hider->wasOffered()) {
-					_hider->setFocus();
-				}
-			}
 		}
 		_dialogs->showFast();
 		if (_mainSection) {
@@ -3130,15 +2252,19 @@ void MainWidget::showAll() {
 		_player->setVisible(true);
 		_playerHeight = _player->contentHeight();
 	}
-	updateControlsGeometry();
-	if (auto instance = currentFloatPlayer()) {
-		checkFloatPlayerVisibility();
-		if (instance->visible) {
-			instance->widget->show();
+	if (_callTopBar) {
+		_callTopBar->setVisible(true);
+
+		// show() could've send pending resize event that would update
+		// the height value and destroy the top bar if it was hiding.
+		if (_callTopBar) {
+			_callTopBarHeight = _callTopBar->height();
 		}
 	}
+	updateControlsGeometry();
+	floatPlayerCheckVisibility();
 
-	App::wnd()->checkHistoryActivation();
+	_controller->widget()->checkHistoryActivation();
 }
 
 void MainWidget::resizeEvent(QResizeEvent *e) {
@@ -3147,23 +2273,32 @@ void MainWidget::resizeEvent(QResizeEvent *e) {
 
 void MainWidget::updateControlsGeometry() {
 	updateWindowAdaptiveLayout();
-	if (Auth().data().dialogsWidthRatio() > 0) {
-		_a_dialogsWidth.finish();
+	if (Core::App().settings().dialogsWidthRatio() > 0) {
+		_a_dialogsWidth.stop();
 	}
 	if (!_a_dialogsWidth.animating()) {
 		_dialogs->stopWidthAnimation();
 	}
-	if (Adaptive::ThreeColumn()) {
+	if (isThreeColumn()) {
 		if (!_thirdSection
 			&& !_controller->takeThirdSectionFromLayer()) {
 			auto params = Window::SectionShow(
 				Window::SectionShow::Way::ClearStack,
 				anim::type::instant,
 				anim::activation::background);
-			if (Auth().data().tabbedSelectorSectionEnabled()) {
-				_history->pushTabbedSelectorToThirdSection(params);
-			} else if (Auth().data().thirdSectionInfoEnabled()) {
-				_history->pushInfoToThirdSection(params);
+			const auto active = _controller->activeChatCurrent();
+			if (const auto peer = active.peer()) {
+				if (Core::App().settings().tabbedSelectorSectionEnabled()) {
+					if (_mainSection) {
+						_mainSection->pushTabbedSelectorToThirdSection(peer, params);
+					} else {
+						_history->pushTabbedSelectorToThirdSection(peer, params);
+					}
+				} else if (Core::App().settings().thirdSectionInfoEnabled()) {
+					_controller->showSection(
+						Info::Memento::Default(peer),
+						params.withThirdColumn());
+				}
 			}
 		}
 	} else {
@@ -3171,23 +2306,27 @@ void MainWidget::updateControlsGeometry() {
 		_thirdShadow.destroy();
 	}
 	auto mainSectionTop = getMainSectionTop();
-	auto dialogsWidth = qRound(_a_dialogsWidth.current(_dialogsWidth));
-	if (Adaptive::OneColumn()) {
+	auto dialogsWidth = qRound(_a_dialogsWidth.value(_dialogsWidth));
+	if (isOneColumn()) {
 		if (_callTopBar) {
 			_callTopBar->resizeToWidth(dialogsWidth);
 			_callTopBar->moveToLeft(0, 0);
 		}
+		if (_exportTopBar) {
+			_exportTopBar->resizeToWidth(dialogsWidth);
+			_exportTopBar->moveToLeft(0, _callTopBarHeight);
+		}
 		if (_player) {
 			_player->resizeToWidth(dialogsWidth);
-			_player->moveToLeft(0, _callTopBarHeight);
+			_player->moveToLeft(0, _callTopBarHeight + _exportTopBarHeight);
 		}
 		auto mainSectionGeometry = QRect(
 			0,
 			mainSectionTop,
 			dialogsWidth,
 			height() - mainSectionTop);
-		_dialogs->setGeometry(mainSectionGeometry);
-		_history->setGeometry(mainSectionGeometry);
+		_dialogs->setGeometryWithTopMoved(mainSectionGeometry, _contentScrollAddToY);
+		_history->setGeometryWithTopMoved(mainSectionGeometry, _contentScrollAddToY);
 		if (_hider) _hider->setGeometry(0, 0, dialogsWidth, height());
 	} else {
 		auto thirdSectionWidth = _thirdSection ? _thirdColumnWidth : 0;
@@ -3203,23 +2342,35 @@ void MainWidget::updateControlsGeometry() {
 		auto mainSectionWidth = width() - dialogsWidth - thirdSectionWidth;
 
 		_dialogs->setGeometryToLeft(0, 0, dialogsWidth, height());
-		_sideShadow->setGeometryToLeft(dialogsWidth, 0, st::lineWidth, height());
+		const auto shadowTop = _controller->window().verticalShadowTop();
+		const auto shadowHeight = height() - shadowTop;
+		_sideShadow->setGeometryToLeft(
+			dialogsWidth,
+			shadowTop,
+			st::lineWidth,
+			shadowHeight);
 		if (_thirdShadow) {
 			_thirdShadow->setGeometryToLeft(
 				width() - thirdSectionWidth - st::lineWidth,
-				0,
+				shadowTop,
 				st::lineWidth,
-				height());
+				shadowHeight);
 		}
 		if (_callTopBar) {
 			_callTopBar->resizeToWidth(mainSectionWidth);
 			_callTopBar->moveToLeft(dialogsWidth, 0);
 		}
+		if (_exportTopBar) {
+			_exportTopBar->resizeToWidth(mainSectionWidth);
+			_exportTopBar->moveToLeft(dialogsWidth, _callTopBarHeight);
+		}
 		if (_player) {
 			_player->resizeToWidth(mainSectionWidth);
-			_player->moveToLeft(dialogsWidth, _callTopBarHeight);
+			_player->moveToLeft(
+				dialogsWidth,
+				_callTopBarHeight + _exportTopBarHeight);
 		}
-		_history->setGeometryToLeft(dialogsWidth, mainSectionTop, mainSectionWidth, height() - mainSectionTop);
+		_history->setGeometryWithTopMoved({ dialogsWidth, mainSectionTop, mainSectionWidth, height() - mainSectionTop }, _contentScrollAddToY);
 		if (_hider) {
 			_hider->setGeometryToLeft(dialogsWidth, 0, mainSectionWidth, height());
 		}
@@ -3232,13 +2383,12 @@ void MainWidget::updateControlsGeometry() {
 	updateMediaPlayerPosition();
 	updateMediaPlaylistPosition(_playerPlaylist->x());
 	_contentScrollAddToY = 0;
-	for (auto &instance : _playerFloats) {
-		updateFloatPlayerPosition(instance.get());
-	}
+
+	floatPlayerUpdatePositions();
 }
 
 void MainWidget::refreshResizeAreas() {
-	if (!Adaptive::OneColumn()) {
+	if (!isOneColumn()) {
 		ensureFirstColumnResizeAreaCreated();
 		_firstColumnResizeArea->setGeometryToLeft(
 			_history->x(),
@@ -3249,7 +2399,7 @@ void MainWidget::refreshResizeAreas() {
 		_firstColumnResizeArea.destroy();
 	}
 
-	if (Adaptive::ThreeColumn() && _thirdSection) {
+	if (isThreeColumn() && _thirdSection) {
 		ensureThirdColumnResizeAreaCreated();
 		_thirdColumnResizeArea->setGeometryToLeft(
 			_thirdSection->x(),
@@ -3284,17 +2434,17 @@ void MainWidget::ensureFirstColumnResizeAreaCreated() {
 		auto newRatio = (newWidth < st::columnMinimalWidthLeft / 2)
 			? 0.
 			: float64(newWidth) / width();
-		Auth().data().setDialogsWidthRatio(newRatio);
+		Core::App().settings().setDialogsWidthRatio(newRatio);
 	};
 	auto moveFinishedCallback = [=] {
-		if (Adaptive::OneColumn()) {
+		if (isOneColumn()) {
 			return;
 		}
-		if (Auth().data().dialogsWidthRatio() > 0) {
-			Auth().data().setDialogsWidthRatio(
+		if (Core::App().settings().dialogsWidthRatio() > 0) {
+			Core::App().settings().setDialogsWidthRatio(
 				float64(_dialogsWidth) / width());
 		}
-		Local::writeUserSettings();
+		Core::App().saveSettingsDelayed();
 	};
 	createResizeArea(
 		_firstColumnResizeArea,
@@ -3308,17 +2458,17 @@ void MainWidget::ensureThirdColumnResizeAreaCreated() {
 	}
 	auto moveLeftCallback = [=](int globalLeft) {
 		auto newWidth = mapToGlobal(QPoint(width(), 0)).x() - globalLeft;
-		Auth().data().setThirdColumnWidth(newWidth);
+		Core::App().settings().setThirdColumnWidth(newWidth);
 	};
 	auto moveFinishedCallback = [=] {
-		if (!Adaptive::ThreeColumn() || !_thirdSection) {
+		if (!isThreeColumn() || !_thirdSection) {
 			return;
 		}
-		Auth().data().setThirdColumnWidth(snap(
-			Auth().data().thirdColumnWidth(),
+		Core::App().settings().setThirdColumnWidth(std::clamp(
+			Core::App().settings().thirdColumnWidth(),
 			st::columnMinimalWidthThird,
 			st::columnMaximalWidthThird));
-		Local::writeUserSettings();
+		Core::App().saveSettingsDelayed();
 	};
 	createResizeArea(
 		_thirdColumnResizeArea,
@@ -3327,12 +2477,12 @@ void MainWidget::ensureThirdColumnResizeAreaCreated() {
 }
 
 void MainWidget::updateDialogsWidthAnimated() {
-	if (Auth().data().dialogsWidthRatio() > 0) {
+	if (Core::App().settings().dialogsWidthRatio() > 0) {
 		return;
 	}
 	auto dialogsWidth = _dialogsWidth;
 	updateWindowAdaptiveLayout();
-	if (!Auth().data().dialogsWidthRatio()
+	if (!Core::App().settings().dialogsWidthRatio()
 		&& (_dialogsWidth != dialogsWidth
 			|| _a_dialogsWidth.animating())) {
 		_dialogs->startWidthAnimation();
@@ -3353,18 +2503,20 @@ bool MainWidget::saveThirdSectionToStackBack() const {
 }
 
 auto MainWidget::thirdSectionForCurrentMainSection(
-	not_null<PeerData*> peer)
--> std::unique_ptr<Window::SectionMemento> {
+	Dialogs::Key key)
+-> std::shared_ptr<Window::SectionMemento> {
 	if (_thirdSectionFromStack) {
 		return std::move(_thirdSectionFromStack);
+	} else if (const auto peer = key.peer()) {
+		return std::make_shared<Info::Memento>(
+			peer,
+			Info::Memento::DefaultSection(peer));
 	}
-	return std::make_unique<Info::Memento>(
-		peer->id,
-		Info::Memento::DefaultSection(peer));
+	Unexpected("Key in MainWidget::thirdSectionForCurrentMainSection().");
 }
 
-void MainWidget::updateThirdColumnToCurrentPeer(
-		PeerData *peer,
+void MainWidget::updateThirdColumnToCurrentChat(
+		Dialogs::Key key,
 		bool canWrite) {
 	auto saveOldThirdSection = [&] {
 		if (saveThirdSectionToStackBack()) {
@@ -3373,6 +2525,7 @@ void MainWidget::updateThirdColumnToCurrentPeer(
 			_thirdSection.destroy();
 		}
 	};
+	auto &settings = Core::App().settings();
 	auto params = Window::SectionShow(
 		Window::SectionShow::Way::ClearStack,
 		anim::type::instant,
@@ -3383,48 +2536,50 @@ void MainWidget::updateThirdColumnToCurrentPeer(
 		//
 		// Like in _controller->showPeerInfo()
 		//
-		if (Adaptive::ThreeColumn()
-			&& !Auth().data().thirdSectionInfoEnabled()) {
-			Auth().data().setThirdSectionInfoEnabled(true);
-			Auth().saveDataDelayed();
+		if (isThreeColumn()
+			&& !settings.thirdSectionInfoEnabled()) {
+			settings.setThirdSectionInfoEnabled(true);
+			Core::App().saveSettingsDelayed();
 		}
 
 		_controller->showSection(
-			std::move(*thirdSectionForCurrentMainSection(peer)),
+			thirdSectionForCurrentMainSection(key),
 			params.withThirdColumn());
 	};
-	auto switchTabbedFast = [&] {
+	auto switchTabbedFast = [&](not_null<PeerData*> peer) {
 		saveOldThirdSection();
-		_history->pushTabbedSelectorToThirdSection(params);
+		return _mainSection
+			? _mainSection->pushTabbedSelectorToThirdSection(peer, params)
+			: _history->pushTabbedSelectorToThirdSection(peer, params);
 	};
-	if (Adaptive::ThreeColumn()
-		&& Auth().data().tabbedSelectorSectionEnabled()
-		&& peer) {
+	if (isThreeColumn()
+		&& settings.tabbedSelectorSectionEnabled()
+		&& key) {
 		if (!canWrite) {
 			switchInfoFast();
-			Auth().data().setTabbedSelectorSectionEnabled(true);
-			Auth().data().setTabbedReplacedWithInfo(true);
-		} else if (Auth().data().tabbedReplacedWithInfo()) {
-			Auth().data().setTabbedReplacedWithInfo(false);
-			switchTabbedFast();
+			settings.setTabbedSelectorSectionEnabled(true);
+			settings.setTabbedReplacedWithInfo(true);
+		} else if (settings.tabbedReplacedWithInfo()
+			&& key.history()
+			&& switchTabbedFast(key.history()->peer)) {
+			settings.setTabbedReplacedWithInfo(false);
 		}
 	} else {
-		Auth().data().setTabbedReplacedWithInfo(false);
-		if (!peer) {
+		settings.setTabbedReplacedWithInfo(false);
+		if (!key) {
 			if (_thirdSection) {
 				_thirdSection.destroy();
 				_thirdShadow.destroy();
 				updateControlsGeometry();
 			}
-		} else if (Adaptive::ThreeColumn()
-			&& Auth().data().thirdSectionInfoEnabled()) {
+		} else if (isThreeColumn()
+			&& settings.thirdSectionInfoEnabled()) {
 			switchInfoFast();
 		}
 	}
 }
 
 void MainWidget::updateMediaPlayerPosition() {
-	_playerPanel->moveToRight(0, 0);
 	if (_player && _playerVolume) {
 		auto relativePosition = _player->entity()->getPositionForVolumeWidget();
 		auto playerMargins = _playerVolume->getMargin();
@@ -3447,8 +2602,10 @@ void MainWidget::updateMediaPlaylistPosition(int x) {
 	}
 }
 
-int MainWidget::contentScrollAddToY() const {
-	return _contentScrollAddToY;
+void MainWidget::returnTabbedSelector() {
+	if (!_mainSection || !_mainSection->returnTabbedSelector()) {
+		_history->returnTabbedSelector();
+	}
 }
 
 void MainWidget::keyPressEvent(QKeyEvent *e) {
@@ -3456,7 +2613,7 @@ void MainWidget::keyPressEvent(QKeyEvent *e) {
 
 bool MainWidget::eventFilter(QObject *o, QEvent *e) {
 	if (e->type() == QEvent::FocusIn) {
-		if (auto widget = qobject_cast<QWidget*>(o)) {
+		if (const auto widget = qobject_cast<QWidget*>(o)) {
 			if (_history == widget || _history->isAncestorOf(widget)
 				|| (_mainSection && (_mainSection == widget || _mainSection->isAncestorOf(widget)))
 				|| (_thirdSection && (_thirdSection == widget || _thirdSection->isAncestorOf(widget)))) {
@@ -3467,38 +2624,51 @@ bool MainWidget::eventFilter(QObject *o, QEvent *e) {
 		}
 	} else if (e->type() == QEvent::MouseButtonPress) {
 		if (static_cast<QMouseEvent*>(e)->button() == Qt::BackButton) {
-			_controller->showBackFromStack();
+			if (!Core::App().hideMediaView()) {
+				handleHistoryBack();
+			}
 			return true;
 		}
-	} else if (e->type() == QEvent::Wheel && !_playerFloats.empty()) {
-		for (auto &instance : _playerFloats) {
-			if (instance->widget == o) {
-				auto section = getFloatPlayerSection(
-					instance->column);
-				return section->wheelEventFromFloatPlayer(e);
-			}
+	} else if (e->type() == QEvent::Wheel) {
+		if (const auto result = floatPlayerFilterWheelEvent(o, e)) {
+			return *result;
 		}
 	}
-	return TWidget::eventFilter(o, e);
+	return RpWidget::eventFilter(o, e);
 }
 
 void MainWidget::handleAdaptiveLayoutUpdate() {
 	showAll();
-	_sideShadow->setVisible(!Adaptive::OneColumn());
+	_sideShadow->setVisible(!isOneColumn());
 	if (_player) {
 		_player->updateAdaptiveLayout();
 	}
 }
 
+void MainWidget::handleHistoryBack() {
+	const auto historyFromFolder = _history->history()
+		? _history->history()->folder()
+		: nullptr;
+	const auto openedFolder = _controller->openedFolder().current();
+	if (!openedFolder
+		|| historyFromFolder == openedFolder
+		|| _dialogs->isHidden()) {
+		_controller->showBackFromStack();
+		_dialogs->setInnerFocus();
+	} else {
+		_controller->closeFolder();
+	}
+}
+
 void MainWidget::updateWindowAdaptiveLayout() {
 	auto layout = _controller->computeColumnLayout();
-	auto dialogsWidthRatio = Auth().data().dialogsWidthRatio();
+	auto dialogsWidthRatio = Core::App().settings().dialogsWidthRatio();
 
 	// Check if we are in a single-column layout in a wide enough window
 	// for the normal layout. If so, switch to the normal layout.
-	if (layout.windowLayout == Adaptive::WindowLayout::OneColumn) {
+	if (layout.windowLayout == Window::Adaptive::WindowLayout::OneColumn) {
 		auto chatWidth = layout.chatWidth;
-		//if (Auth().data().tabbedSelectorSectionEnabled()
+		//if (session().settings().tabbedSelectorSectionEnabled()
 		//	&& chatWidth >= _history->minimalWidthForTabbedSelectorSection()) {
 		//	chatWidth -= _history->tabbedSelectorSectionWidth();
 		//}
@@ -3506,7 +2676,7 @@ void MainWidget::updateWindowAdaptiveLayout() {
 			+ st::columnMinimalWidthMain;
 		if (chatWidth >= minimalNormalWidth) {
 			// Switch layout back to normal in a wide enough window.
-			layout.windowLayout = Adaptive::WindowLayout::Normal;
+			layout.windowLayout = Window::Adaptive::WindowLayout::Normal;
 			layout.dialogsWidth = st::columnMinimalWidthLeft;
 			layout.chatWidth = layout.bodyWidth - layout.dialogsWidth;
 			dialogsWidthRatio = float64(layout.dialogsWidth) / layout.bodyWidth;
@@ -3516,14 +2686,14 @@ void MainWidget::updateWindowAdaptiveLayout() {
 	// Check if we are going to create the third column and shrink the
 	// dialogs widget to provide a wide enough chat history column.
 	// Don't shrink the column on the first call, when window is inited.
-	if (layout.windowLayout == Adaptive::WindowLayout::ThreeColumn
-		&& _started && _controller->window()->positionInited()) {
+	if (layout.windowLayout == Window::Adaptive::WindowLayout::ThreeColumn
+		&& _controller->widget()->positionInited()) {
 		//auto chatWidth = layout.chatWidth;
 		//if (_history->willSwitchToTabbedSelectorWithWidth(chatWidth)) {
 		//	auto thirdColumnWidth = _history->tabbedSelectorSectionWidth();
 		//	auto twoColumnsWidth = (layout.bodyWidth - thirdColumnWidth);
 		//	auto sameRatioChatWidth = twoColumnsWidth - qRound(dialogsWidthRatio * twoColumnsWidth);
-		//	auto desiredChatWidth = qMax(sameRatioChatWidth, HistoryLayout::WideChatWidth());
+		//	auto desiredChatWidth = qMax(sameRatioChatWidth, HistoryView::WideChatWidth());
 		//	chatWidth -= thirdColumnWidth;
 		//	auto extendChatBy = desiredChatWidth - chatWidth;
 		//	accumulate_min(extendChatBy, layout.dialogsWidth - st::columnMinimalWidthLeft);
@@ -3535,1985 +2705,108 @@ void MainWidget::updateWindowAdaptiveLayout() {
 		//}
 	}
 
-	Auth().data().setDialogsWidthRatio(dialogsWidthRatio);
+	Core::App().settings().setDialogsWidthRatio(dialogsWidthRatio);
 
-	auto useSmallColumnWidth = !Adaptive::OneColumn()
+	auto useSmallColumnWidth = !isOneColumn()
 		&& !dialogsWidthRatio
 		&& !_controller->forceWideDialogs();
 	_dialogsWidth = useSmallColumnWidth
 		? _controller->dialogsSmallColumnWidth()
 		: layout.dialogsWidth;
 	_thirdColumnWidth = layout.thirdWidth;
-	if (layout.windowLayout != Global::AdaptiveWindowLayout()) {
-		Global::SetAdaptiveWindowLayout(layout.windowLayout);
-		Adaptive::Changed().notify(true);
-	}
+	_controller->adaptive().setWindowLayout(layout.windowLayout);
 }
 
 int MainWidget::backgroundFromY() const {
 	return -getMainSectionTop();
 }
 
-void MainWidget::onHistoryShown(History *history, MsgId atMsgId) {
-//	updateControlsGeometry();
-	dlgUpdated(history ? history->peer : nullptr, atMsgId);
-}
-
-void MainWidget::searchInPeer(PeerData *peer) {
-	_dialogs->searchInPeer(peer);
-	if (Adaptive::OneColumn()) {
-		dialogsToUp();
-		Ui::showChatsList();
+void MainWidget::searchInChat(Dialogs::Key chat) {
+	if (_controller->openedFolder().current()) {
+		_controller->closeFolder();
+	}
+	_dialogs->searchInChat(chat);
+	if (isOneColumn()) {
+		Ui::showChatsList(&session());
 	} else {
-		_dialogs->activate();
-	}
-}
-
-void MainWidget::onUpdateNotifySettings() {
-	if (this != App::main()) return;
-
-	while (!updateNotifySettingPeers.empty()) {
-		auto peer = *updateNotifySettingPeers.begin();
-		updateNotifySettingPeers.erase(updateNotifySettingPeers.begin());
-		MTP::send(
-			MTPaccount_UpdateNotifySettings(
-				MTP_inputNotifyPeer(peer->input),
-				peer->notifySerialize()),
-			RPCResponseHandler(),
-			0,
-			updateNotifySettingPeers.empty() ? 0 : 10);
-	}
-}
-
-void MainWidget::feedUpdateVector(const MTPVector<MTPUpdate> &updates, bool skipMessageIds) {
-	for_const (auto &update, updates.v) {
-		if (skipMessageIds && update.type() == mtpc_updateMessageID) continue;
-		feedUpdate(update);
-	}
-}
-
-void MainWidget::feedMessageIds(const MTPVector<MTPUpdate> &updates) {
-	for_const (auto &update, updates.v) {
-		if (update.type() == mtpc_updateMessageID) {
-			feedUpdate(update);
-		}
-	}
-}
-
-bool MainWidget::updateFail(const RPCError &e) {
-	App::logOutDelayed();
-	return true;
-}
-
-void MainWidget::updSetState(int32 pts, int32 date, int32 qts, int32 seq) {
-	if (pts) {
-		_ptsWaiter.init(pts);
-	}
-	if (updDate < date && !_byMinChannelTimer.isActive()) {
-		updDate = date;
-	}
-	if (qts && updQts < qts) {
-		updQts = qts;
-	}
-	if (seq && seq != updSeq) {
-		updSeq = seq;
-		if (_bySeqTimer.isActive()) _bySeqTimer.stop();
-		for (QMap<int32, MTPUpdates>::iterator i = _bySeqUpdates.begin(); i != _bySeqUpdates.end();) {
-			int32 s = i.key();
-			if (s <= seq + 1) {
-				MTPUpdates v = i.value();
-				i = _bySeqUpdates.erase(i);
-				if (s == seq + 1) {
-					return feedUpdates(v);
-				}
-			} else {
-				if (!_bySeqTimer.isActive()) _bySeqTimer.start(WaitForSkippedTimeout);
-				break;
-			}
-		}
-	}
-}
-
-void MainWidget::gotChannelDifference(ChannelData *channel, const MTPupdates_ChannelDifference &diff) {
-	_channelFailDifferenceTimeout.remove(channel);
-
-	int32 timeout = 0;
-	bool isFinal = true;
-	switch (diff.type()) {
-	case mtpc_updates_channelDifferenceEmpty: {
-		auto &d = diff.c_updates_channelDifferenceEmpty();
-		if (d.has_timeout()) timeout = d.vtimeout.v;
-		isFinal = d.is_final();
-		channel->ptsInit(d.vpts.v);
-	} break;
-
-	case mtpc_updates_channelDifferenceTooLong: {
-		auto &d = diff.c_updates_channelDifferenceTooLong();
-
-		App::feedUsers(d.vusers);
-		App::feedChats(d.vchats);
-		auto h = App::historyLoaded(channel->id);
-		if (h) {
-			h->setNotLoadedAtBottom();
-		}
-		App::feedMsgs(d.vmessages, NewMessageLast);
-		if (h) {
-			if (auto item = App::histItemById(peerToChannel(channel->id), d.vtop_message.v)) {
-				h->setLastMessage(item);
-			}
-			if (d.vunread_count.v >= h->unreadCount()) {
-				h->setUnreadCount(d.vunread_count.v);
-				h->inboxReadBefore = d.vread_inbox_max_id.v + 1;
-			}
-			h->setUnreadMentionsCount(d.vunread_mentions_count.v);
-			if (_history->peer() == channel) {
-				_history->updateHistoryDownVisibility();
-				_history->preloadHistoryIfNeeded();
-			}
-			h->asChannelHistory()->getRangeDifference();
-		}
-
-		if (d.has_timeout()) timeout = d.vtimeout.v;
-		isFinal = d.is_final();
-		channel->ptsInit(d.vpts.v);
-	} break;
-
-	case mtpc_updates_channelDifference: {
-		auto &d = diff.c_updates_channelDifference();
-
-		App::feedUsers(d.vusers);
-		App::feedChats(d.vchats);
-
-		_handlingChannelDifference = true;
-		feedMessageIds(d.vother_updates);
-
-		// feed messages and groups, copy from App::feedMsgs
-		auto h = App::history(channel->id);
-		auto &vmsgs = d.vnew_messages.v;
-		auto indices = base::flat_map<uint64, int>();
-		for (auto i = 0, l = vmsgs.size(); i != l; ++i) {
-			const auto &msg = vmsgs[i];
-			if (msg.type() == mtpc_message) {
-				const auto &data = msg.c_message();
-				if (App::checkEntitiesAndViewsUpdate(data)) { // new message, index my forwarded messages to links _overview, already in blocks
-					LOG(("Skipping message, because it is already in blocks!"));
-					continue;
-				}
-			}
-			const auto msgId = idFromMessage(msg);
-			indices.emplace((uint64(uint32(msgId)) << 32) | uint64(i), i);
-		}
-		for (const auto [position, index] : indices) {
-			const auto &msg = vmsgs[index];
-			if (channel->id != peerFromMessage(msg)) {
-				LOG(("API Error: message with invalid peer returned in channelDifference, channelId: %1, peer: %2").arg(peerToChannel(channel->id)).arg(peerFromMessage(msg)));
-				continue; // wtf
-			}
-			h->addNewMessage(msg, NewMessageUnread);
-		}
-
-		feedUpdateVector(d.vother_updates, true);
-		_handlingChannelDifference = false;
-
-		if (d.has_timeout()) timeout = d.vtimeout.v;
-		isFinal = d.is_final();
-		channel->ptsInit(d.vpts.v);
-	} break;
-	}
-
-	channel->ptsSetRequesting(false);
-
-	if (!isFinal) {
-		MTP_LOG(0, ("getChannelDifference { good - after not final channelDifference was received }%1").arg(cTestMode() ? " TESTMODE" : ""));
-		getChannelDifference(channel);
-	} else if (activePeer() == channel) {
-		channel->ptsWaitingForShortPoll(timeout ? (timeout * 1000) : WaitForChannelGetDifference);
-	}
-}
-
-void MainWidget::gotRangeDifference(ChannelData *channel, const MTPupdates_ChannelDifference &diff) {
-	int32 nextRequestPts = 0;
-	bool isFinal = true;
-	switch (diff.type()) {
-	case mtpc_updates_channelDifferenceEmpty: {
-		auto &d = diff.c_updates_channelDifferenceEmpty();
-		nextRequestPts = d.vpts.v;
-		isFinal = d.is_final();
-	} break;
-
-	case mtpc_updates_channelDifferenceTooLong: {
-		auto &d = diff.c_updates_channelDifferenceTooLong();
-
-		App::feedUsers(d.vusers);
-		App::feedChats(d.vchats);
-
-		nextRequestPts = d.vpts.v;
-		isFinal = d.is_final();
-	} break;
-
-	case mtpc_updates_channelDifference: {
-		auto &d = diff.c_updates_channelDifference();
-
-		App::feedUsers(d.vusers);
-		App::feedChats(d.vchats);
-
-		_handlingChannelDifference = true;
-		feedMessageIds(d.vother_updates);
-		App::feedMsgs(d.vnew_messages, NewMessageUnread);
-		feedUpdateVector(d.vother_updates, true);
-		_handlingChannelDifference = false;
-
-		nextRequestPts = d.vpts.v;
-		isFinal = d.is_final();
-	} break;
-	}
-
-	if (!isFinal) {
-		if (History *h = App::historyLoaded(channel->id)) {
-			MTP_LOG(0, ("getChannelDifference { good - after not final channelDifference was received, validating history part }%1").arg(cTestMode() ? " TESTMODE" : ""));
-			h->asChannelHistory()->getRangeDifferenceNext(nextRequestPts);
-		}
-	}
-}
-
-bool MainWidget::failChannelDifference(ChannelData *channel, const RPCError &error) {
-	if (MTP::isDefaultHandledError(error)) return false;
-
-	LOG(("RPC Error in getChannelDifference: %1 %2: %3").arg(error.code()).arg(error.type()).arg(error.description()));
-	failDifferenceStartTimerFor(channel);
-	return true;
-}
-
-void MainWidget::gotState(const MTPupdates_State &state) {
-	auto &d = state.c_updates_state();
-	updSetState(d.vpts.v, d.vdate.v, d.vqts.v, d.vseq.v);
-
-	_lastUpdateTime = getms(true);
-	noUpdatesTimer.start(NoUpdatesTimeout);
-	_ptsWaiter.setRequesting(false);
-
-	_dialogs->loadDialogs();
-	updateOnline();
-}
-
-void MainWidget::gotDifference(const MTPupdates_Difference &difference) {
-	_failDifferenceTimeout = 1;
-
-	switch (difference.type()) {
-	case mtpc_updates_differenceEmpty: {
-		auto &d = difference.c_updates_differenceEmpty();
-		updSetState(_ptsWaiter.current(), d.vdate.v, updQts, d.vseq.v);
-
-		_lastUpdateTime = getms(true);
-		noUpdatesTimer.start(NoUpdatesTimeout);
-
-		_ptsWaiter.setRequesting(false);
-	} break;
-	case mtpc_updates_differenceSlice: {
-		auto &d = difference.c_updates_differenceSlice();
-		feedDifference(d.vusers, d.vchats, d.vnew_messages, d.vother_updates);
-
-		auto &s = d.vintermediate_state.c_updates_state();
-		updSetState(s.vpts.v, s.vdate.v, s.vqts.v, s.vseq.v);
-
-		_ptsWaiter.setRequesting(false);
-
-		MTP_LOG(0, ("getDifference { good - after a slice of difference was received }%1").arg(cTestMode() ? " TESTMODE" : ""));
-		getDifference();
-	} break;
-	case mtpc_updates_difference: {
-		auto &d = difference.c_updates_difference();
-		feedDifference(d.vusers, d.vchats, d.vnew_messages, d.vother_updates);
-
-		gotState(d.vstate);
-	} break;
-	case mtpc_updates_differenceTooLong: {
-		auto &d = difference.c_updates_differenceTooLong();
-		LOG(("API Error: updates.differenceTooLong is not supported by Telegram Desktop!"));
-	} break;
-	};
-}
-
-bool MainWidget::getDifferenceTimeChanged(ChannelData *channel, int32 ms, ChannelGetDifferenceTime &channelCurTime, TimeMs &curTime) {
-	if (channel) {
-		if (ms <= 0) {
-			ChannelGetDifferenceTime::iterator i = channelCurTime.find(channel);
-			if (i != channelCurTime.cend()) {
-				channelCurTime.erase(i);
-			} else {
-				return false;
-			}
-		} else {
-			auto when = getms(true) + ms;
-			ChannelGetDifferenceTime::iterator i = channelCurTime.find(channel);
-			if (i != channelCurTime.cend()) {
-				if (i.value() > when) {
-					i.value() = when;
-				} else {
-					return false;
-				}
-			} else {
-				channelCurTime.insert(channel, when);
-			}
-		}
-	} else {
-		if (ms <= 0) {
-			if (curTime) {
-				curTime = 0;
-			} else {
-				return false;
-			}
-		} else {
-			auto when = getms(true) + ms;
-			if (!curTime || curTime > when) {
-				curTime = when;
-			} else {
-				return false;
-			}
-		}
-	}
-	return true;
-}
-
-void MainWidget::ptsWaiterStartTimerFor(ChannelData *channel, int32 ms) {
-	if (getDifferenceTimeChanged(channel, ms, _channelGetDifferenceTimeByPts, _getDifferenceTimeByPts)) {
-		onGetDifferenceTimeByPts();
-	}
-}
-
-void MainWidget::failDifferenceStartTimerFor(ChannelData *channel) {
-	int32 ms = 0;
-	ChannelFailDifferenceTimeout::iterator i;
-	if (channel) {
-		i = _channelFailDifferenceTimeout.find(channel);
-		if (i == _channelFailDifferenceTimeout.cend()) {
-			i = _channelFailDifferenceTimeout.insert(channel, 1);
-		}
-		ms = i.value() * 1000;
-	} else {
-		ms = _failDifferenceTimeout * 1000;
-	}
-	if (getDifferenceTimeChanged(channel, ms, _channelGetDifferenceTimeAfterFail, _getDifferenceTimeAfterFail)) {
-		onGetDifferenceTimeAfterFail();
-	}
-	if (channel) {
-		if (i.value() < 64) i.value() *= 2;
-	} else {
-		if (_failDifferenceTimeout < 64) _failDifferenceTimeout *= 2;
-	}
-}
-
-bool MainWidget::ptsUpdateAndApply(int32 pts, int32 ptsCount, const MTPUpdates &updates) {
-	return _ptsWaiter.updateAndApply(nullptr, pts, ptsCount, updates);
-}
-
-bool MainWidget::ptsUpdateAndApply(int32 pts, int32 ptsCount, const MTPUpdate &update) {
-	return _ptsWaiter.updateAndApply(nullptr, pts, ptsCount, update);
-}
-
-bool MainWidget::ptsUpdateAndApply(int32 pts, int32 ptsCount) {
-	return _ptsWaiter.updateAndApply(nullptr, pts, ptsCount);
-}
-
-void MainWidget::feedDifference(const MTPVector<MTPUser> &users, const MTPVector<MTPChat> &chats, const MTPVector<MTPMessage> &msgs, const MTPVector<MTPUpdate> &other) {
-	Auth().checkAutoLock();
-	App::feedUsers(users);
-	App::feedChats(chats);
-	feedMessageIds(other);
-	App::feedMsgs(msgs, NewMessageUnread);
-	feedUpdateVector(other, true);
-	_history->peerMessagesUpdated();
-}
-
-bool MainWidget::failDifference(const RPCError &error) {
-	if (MTP::isDefaultHandledError(error)) return false;
-
-	LOG(("RPC Error in getDifference: %1 %2: %3").arg(error.code()).arg(error.type()).arg(error.description()));
-	failDifferenceStartTimerFor(0);
-	return true;
-}
-
-void MainWidget::onGetDifferenceTimeByPts() {
-	auto now = getms(true), wait = 0LL;
-	if (_getDifferenceTimeByPts) {
-		if (_getDifferenceTimeByPts > now) {
-			wait = _getDifferenceTimeByPts - now;
-		} else {
-			getDifference();
-		}
-	}
-	for (ChannelGetDifferenceTime::iterator i = _channelGetDifferenceTimeByPts.begin(); i != _channelGetDifferenceTimeByPts.cend();) {
-		if (i.value() > now) {
-			wait = wait ? qMin(wait, i.value() - now) : (i.value() - now);
-			++i;
-		} else {
-			getChannelDifference(i.key(), ChannelDifferenceRequest::PtsGapOrShortPoll);
-			i = _channelGetDifferenceTimeByPts.erase(i);
-		}
-	}
-	if (wait) {
-		_byPtsTimer.start(wait);
-	} else {
-		_byPtsTimer.stop();
-	}
-}
-
-void MainWidget::onGetDifferenceTimeAfterFail() {
-	auto now = getms(true), wait = 0LL;
-	if (_getDifferenceTimeAfterFail) {
-		if (_getDifferenceTimeAfterFail > now) {
-			wait = _getDifferenceTimeAfterFail - now;
-		} else {
-			_ptsWaiter.setRequesting(false);
-			MTP_LOG(0, ("getDifference { force - after get difference failed }%1").arg(cTestMode() ? " TESTMODE" : ""));
-			getDifference();
-		}
-	}
-	for (auto i = _channelGetDifferenceTimeAfterFail.begin(); i != _channelGetDifferenceTimeAfterFail.cend();) {
-		if (i.value() > now) {
-			wait = wait ? qMin(wait, i.value() - now) : (i.value() - now);
-			++i;
-		} else {
-			getChannelDifference(i.key(), ChannelDifferenceRequest::AfterFail);
-			i = _channelGetDifferenceTimeAfterFail.erase(i);
-		}
-	}
-	if (wait) {
-		_failDifferenceTimer.start(wait);
-	} else {
-		_failDifferenceTimer.stop();
-	}
-}
-
-void MainWidget::getDifference() {
-	if (this != App::main()) return;
-
-	_getDifferenceTimeByPts = 0;
-
-	if (requestingDifference()) return;
-
-	_bySeqUpdates.clear();
-	_bySeqTimer.stop();
-
-	noUpdatesTimer.stop();
-	_getDifferenceTimeAfterFail = 0;
-
-	_ptsWaiter.setRequesting(true);
-
-	MTP::send(MTPupdates_GetDifference(MTP_flags(0), MTP_int(_ptsWaiter.current()), MTPint(), MTP_int(updDate), MTP_int(updQts)), rpcDone(&MainWidget::gotDifference), rpcFail(&MainWidget::failDifference));
-}
-
-void MainWidget::getChannelDifference(ChannelData *channel, ChannelDifferenceRequest from) {
-	if (this != App::main() || !channel) return;
-
-	if (from != ChannelDifferenceRequest::PtsGapOrShortPoll) {
-		_channelGetDifferenceTimeByPts.remove(channel);
-	}
-
-	if (!channel->ptsInited() || channel->ptsRequesting()) return;
-
-	if (from != ChannelDifferenceRequest::AfterFail) {
-		_channelGetDifferenceTimeAfterFail.remove(channel);
-	}
-
-	channel->ptsSetRequesting(true);
-
-	auto filter = MTP_channelMessagesFilterEmpty();
-	auto flags = MTPupdates_GetChannelDifference::Flag::f_force | 0;
-	if (from != ChannelDifferenceRequest::PtsGapOrShortPoll) {
-		if (!channel->ptsWaitingForSkipped()) {
-			flags = 0; // No force flag when requesting for short poll.
-		}
-	}
-	MTP::send(MTPupdates_GetChannelDifference(MTP_flags(flags), channel->inputChannel, filter, MTP_int(channel->pts()), MTP_int(MTPChannelGetDifferenceLimit)), rpcDone(&MainWidget::gotChannelDifference, channel), rpcFail(&MainWidget::failChannelDifference, channel));
-}
-
-void MainWidget::mtpPing() {
-	MTP::ping();
-}
-
-void MainWidget::start(const MTPUser *self) {
-	if (!self) {
-		MTP::send(MTPusers_GetFullUser(MTP_inputUserSelf()), rpcDone(&MainWidget::startWithSelf));
-		return;
-	}
-	if (!Auth().validateSelf(*self)) {
-		return;
-	}
-
-	Local::readSavedPeers();
-	cSetOtherOnline(0);
-	if (auto user = App::feedUsers(MTP_vector<MTPUser>(1, *self))) {
-		user->loadUserpic();
-	}
-
-	MTP::send(MTPupdates_GetState(), rpcDone(&MainWidget::gotState));
-	update();
-
-	_started = true;
-	App::wnd()->sendServiceHistoryRequest();
-	Local::readInstalledStickers();
-	Local::readFeaturedStickers();
-	Local::readRecentStickers();
-	Local::readFavedStickers();
-	Local::readSavedGifs();
-	_history->start();
-
-	Messenger::Instance().checkStartUrl();
-}
-
-bool MainWidget::started() {
-	return _started;
-}
-
-void MainWidget::openPeerByName(const QString &username, MsgId msgId, const QString &startToken) {
-	Messenger::Instance().hideMediaView();
-
-	PeerData *peer = App::peerByName(username);
-	if (peer) {
-		if (msgId == ShowAtGameShareMsgId) {
-			if (peer->isUser() && peer->asUser()->botInfo && !startToken.isEmpty()) {
-				peer->asUser()->botInfo->shareGameShortName = startToken;
-				AddBotToGroupBoxController::Start(peer->asUser());
-			} else {
-				InvokeQueued(this, [this, peer] {
-					_controller->showPeerHistory(
-						peer->id,
-						SectionShow::Way::Forward);
-				});
-			}
-		} else if (msgId == ShowAtProfileMsgId && !peer->isChannel()) {
-			if (peer->isUser() && peer->asUser()->botInfo && !peer->asUser()->botInfo->cantJoinGroups && !startToken.isEmpty()) {
-				peer->asUser()->botInfo->startGroupToken = startToken;
-				AddBotToGroupBoxController::Start(peer->asUser());
-			} else if (peer->isUser() && peer->asUser()->botInfo) {
-				// Always open bot chats, even from mention links.
-				InvokeQueued(this, [this, peer] {
-					_controller->showPeerHistory(
-						peer->id,
-						SectionShow::Way::Forward);
-				});
-			} else {
-				_controller->showPeerInfo(peer);
-			}
-		} else {
-			if (msgId == ShowAtProfileMsgId || !peer->isChannel()) { // show specific posts only in channels / supergroups
-				msgId = ShowAtUnreadMsgId;
-			}
-			if (peer->isUser() && peer->asUser()->botInfo) {
-				peer->asUser()->botInfo->startToken = startToken;
-				if (peer == _history->peer()) {
-					_history->updateControlsVisibility();
-					_history->updateControlsGeometry();
-				}
-			}
-			InvokeQueued(this, [this, peer, msgId] {
-				_controller->showPeerHistory(
-					peer->id,
-					SectionShow::Way::Forward,
-					msgId);
-			});
-		}
-	} else {
-		MTP::send(MTPcontacts_ResolveUsername(MTP_string(username)), rpcDone(&MainWidget::usernameResolveDone, qMakePair(msgId, startToken)), rpcFail(&MainWidget::usernameResolveFail, username));
-	}
-}
-
-void MainWidget::joinGroupByHash(const QString &hash) {
-	Messenger::Instance().hideMediaView();
-	MTP::send(MTPmessages_CheckChatInvite(MTP_string(hash)), rpcDone(&MainWidget::inviteCheckDone, hash), rpcFail(&MainWidget::inviteCheckFail));
-}
-
-void MainWidget::stickersBox(const MTPInputStickerSet &set) {
-	Messenger::Instance().hideMediaView();
-	Ui::show(Box<StickerSetBox>(set));
-}
-
-void MainWidget::onSelfParticipantUpdated(ChannelData *channel) {
-	auto history = App::historyLoaded(channel->id);
-	if (_updatedChannels.contains(channel)) {
-		_updatedChannels.remove(channel);
-		if (!history) {
-			history = App::history(channel);
-		}
-		if (history->isEmpty()) {
-			checkPeerHistory(channel);
-		} else {
-			history->asChannelHistory()->checkJoinedMessage(true);
-			_history->peerMessagesUpdated(channel->id);
-		}
-	} else if (history) {
-		history->asChannelHistory()->checkJoinedMessage();
-		_history->peerMessagesUpdated(channel->id);
+		_dialogs->setInnerFocus();
 	}
 }
 
 bool MainWidget::contentOverlapped(const QRect &globalRect) {
 	return (_history->contentOverlapped(globalRect)
-			|| _playerPanel->overlaps(globalRect)
 			|| _playerPlaylist->overlaps(globalRect)
 			|| (_playerVolume && _playerVolume->overlaps(globalRect)));
 }
 
-void MainWidget::usernameResolveDone(QPair<MsgId, QString> msgIdAndStartToken, const MTPcontacts_ResolvedPeer &result) {
-	Ui::hideLayer();
-	if (result.type() != mtpc_contacts_resolvedPeer) return;
-
-	const auto &d(result.c_contacts_resolvedPeer());
-	App::feedUsers(d.vusers);
-	App::feedChats(d.vchats);
-	PeerId peerId = peerFromMTP(d.vpeer);
-	if (!peerId) return;
-
-	PeerData *peer = App::peer(peerId);
-	MsgId msgId = msgIdAndStartToken.first;
-	QString startToken = msgIdAndStartToken.second;
-	if (msgId == ShowAtProfileMsgId && !peer->isChannel()) {
-		if (peer->isUser() && peer->asUser()->botInfo && !peer->asUser()->botInfo->cantJoinGroups && !startToken.isEmpty()) {
-			peer->asUser()->botInfo->startGroupToken = startToken;
-			AddBotToGroupBoxController::Start(peer->asUser());
-		} else if (peer->isUser() && peer->asUser()->botInfo) {
-			// Always open bot chats, even from mention links.
-			InvokeQueued(this, [this, peer] {
-				_controller->showPeerHistory(
-					peer->id,
-					SectionShow::Way::Forward);
-			});
-		} else {
-			_controller->showPeerInfo(peer);
-		}
-	} else {
-		if (msgId == ShowAtProfileMsgId || !peer->isChannel()) { // show specific posts only in channels / supergroups
-			msgId = ShowAtUnreadMsgId;
-		}
-		if (peer->isUser() && peer->asUser()->botInfo) {
-			peer->asUser()->botInfo->startToken = startToken;
-			if (peer == _history->peer()) {
-				_history->updateControlsVisibility();
-				_history->updateControlsGeometry();
-			}
-		}
-		InvokeQueued(this, [this, peer, msgId] {
-			_controller->showPeerHistory(
-				peer->id,
-				SectionShow::Way::Forward,
-				msgId);
-		});
-	}
-}
-
-bool MainWidget::usernameResolveFail(QString name, const RPCError &error) {
-	if (MTP::isDefaultHandledError(error)) return false;
-
-	if (error.code() == 400) {
-		Ui::show(Box<InformBox>(lng_username_not_found(lt_user, name)));
-	}
-	return true;
-}
-
-void MainWidget::inviteCheckDone(QString hash, const MTPChatInvite &invite) {
-	switch (invite.type()) {
-	case mtpc_chatInvite: {
-		auto &d = invite.c_chatInvite();
-
-		auto participants = QVector<UserData*>();
-		if (d.has_participants()) {
-			auto &v = d.vparticipants.v;
-			participants.reserve(v.size());
-			for_const (auto &user, v) {
-				if (auto feededUser = App::feedUser(user)) {
-					participants.push_back(feededUser);
-				}
-			}
-		}
-		_inviteHash = hash;
-		auto box = Box<ConfirmInviteBox>(
-			qs(d.vtitle),
-			d.is_channel() && !d.is_megagroup(),
-			d.vphoto,
-			d.vparticipants_count.v,
-			participants);
-		Ui::show(std::move(box));
-	} break;
-
-	case mtpc_chatInviteAlready: {
-		auto &d = invite.c_chatInviteAlready();
-		if (auto chat = App::feedChat(d.vchat)) {
-			_controller->showPeerHistory(
-				chat,
-				SectionShow::Way::Forward);
-		}
-	} break;
-	}
-}
-
-bool MainWidget::inviteCheckFail(const RPCError &error) {
-	if (MTP::isDefaultHandledError(error)) return false;
-
-	if (error.code() == 400) {
-		Ui::show(Box<InformBox>(lang(lng_group_invite_bad_link)));
-	}
-	return true;
-}
-
-void MainWidget::onInviteImport() {
-	if (_inviteHash.isEmpty()) return;
-	MTP::send(
-		MTPmessages_ImportChatInvite(MTP_string(_inviteHash)),
-		rpcDone(&MainWidget::inviteImportDone),
-		rpcFail(&MainWidget::inviteImportFail));
-}
-
-void MainWidget::inviteImportDone(const MTPUpdates &updates) {
-	App::main()->sentUpdatesReceived(updates);
-
-	Ui::hideLayer();
-	const QVector<MTPChat> *v = 0;
-	switch (updates.type()) {
-	case mtpc_updates: v = &updates.c_updates().vchats.v; break;
-	case mtpc_updatesCombined: v = &updates.c_updatesCombined().vchats.v; break;
-	default: LOG(("API Error: unexpected update cons %1 (MainWidget::inviteImportDone)").arg(updates.type())); break;
-	}
-	if (v && !v->isEmpty()) {
-		auto &mtpChat = v->front();
-		auto peerId = [&] {
-			if (mtpChat.type() == mtpc_chat) {
-				return peerFromChat(mtpChat.c_chat().vid.v);
-			} else if (mtpChat.type() == mtpc_channel) {
-				return peerFromChannel(mtpChat.c_channel().vid.v);
-			}
-			return PeerId(0);
-		}();
-		if (auto peer = App::peerLoaded(peerId)) {
-			_controller->showPeerHistory(
-				peer,
-				SectionShow::Way::Forward);
-		}
-	}
-}
-
-bool MainWidget::inviteImportFail(const RPCError &error) {
-	if (MTP::isDefaultHandledError(error)) return false;
-
-	if (error.type() == qstr("CHANNELS_TOO_MUCH")) {
-		Ui::show(Box<InformBox>(lang(lng_join_channel_error)));
-	} else if (error.code() == 400) {
-		Ui::show(Box<InformBox>(lang(error.type() == qstr("USERS_TOO_MUCH") ? lng_group_invite_no_room : lng_group_invite_bad_link)));
-	}
-
-	return true;
-}
-
-void MainWidget::startWithSelf(const MTPUserFull &result) {
-	Expects(result.type() == mtpc_userFull);
-	auto &d = result.c_userFull();
-	start(&d.vuser);
-	if (auto user = App::self()) {
-		Auth().api().processFullPeer(user, result);
-	}
-}
-
-void MainWidget::applyNotifySetting(
-		const MTPNotifyPeer &notifyPeer,
-		const MTPPeerNotifySettings &settings,
-		History *history) {
-	if (notifyPeer.type() != mtpc_notifyPeer) {
-		// Ignore those for now, they were not ever used.
-		return;
-	}
-
-	const auto &data = notifyPeer.c_notifyPeer();
-	const auto peer = App::peerLoaded(peerFromMTP(data.vpeer));
-	if (!peer || !peer->notifyChange(settings)) {
-		return;
-	}
-
-	updateNotifySettingsLocal(peer, history);
-}
-
-void MainWidget::updateNotifySettings(
-		not_null<PeerData*> peer,
-		Data::NotifySettings::MuteChange mute,
-		Data::NotifySettings::SilentPostsChange silent,
-		int muteForSeconds) {
-	if (peer->notifyChange(mute, silent, muteForSeconds)) {
-		updateNotifySettingsLocal(peer);
-		updateNotifySettingPeers.insert(peer);
-		updateNotifySettingTimer.start(NotifySettingSaveTimeout);
-	}
-}
-
-void MainWidget::updateNotifySettingsLocal(
-		not_null<PeerData*> peer,
-		History *history) {
-	if (!history) {
-		history = App::historyLoaded(peer->id);
-	}
-
-	const auto muteFinishesIn = peer->notifyMuteFinishesIn();
-	const auto muted = (muteFinishesIn > 0);
-	if (history && history->changeMute(muted)) {
-		// Notification already sent.
-	} else {
-		Notify::peerUpdatedDelayed(
-			peer,
-			Notify::PeerUpdate::Flag::NotificationsEnabled);
-	}
-	if (muted) {
-		App::regMuted(peer, muteFinishesIn);
-		if (history) {
-			Auth().notifications().clearFromHistory(history);
-		}
-	} else {
-		App::unregMuted(peer);
-	}
-}
-
-void MainWidget::incrementSticker(DocumentData *sticker) {
-	if (!sticker || !sticker->sticker()) return;
-	if (sticker->sticker()->set.type() == mtpc_inputStickerSetEmpty) return;
-
-	bool writeRecentStickers = false;
-	auto &sets = Auth().data().stickerSetsRef();
-	auto it = sets.find(Stickers::CloudRecentSetId);
-	if (it == sets.cend()) {
-		if (it == sets.cend()) {
-			it = sets.insert(Stickers::CloudRecentSetId, Stickers::Set(Stickers::CloudRecentSetId, 0, lang(lng_recent_stickers), QString(), 0, 0, MTPDstickerSet_ClientFlag::f_special | 0));
-		} else {
-			it->title = lang(lng_recent_stickers);
-		}
-	}
-	auto index = it->stickers.indexOf(sticker);
-	if (index > 0) {
-		it->stickers.removeAt(index);
-	}
-	if (index) {
-		it->stickers.push_front(sticker);
-		writeRecentStickers = true;
-	}
-
-	// Remove that sticker from old recent, now it is in cloud recent stickers.
-	bool writeOldRecent = false;
-	auto &recent = Stickers::GetRecentPack();
-	for (auto i = recent.begin(), e = recent.end(); i != e; ++i) {
-		if (i->first == sticker) {
-			writeOldRecent = true;
-			recent.erase(i);
-			break;
-		}
-	}
-	while (!recent.isEmpty() && it->stickers.size() + recent.size() > Global::StickersRecentLimit()) {
-		writeOldRecent = true;
-		recent.pop_back();
-	}
-
-	if (writeOldRecent) {
-		Local::writeUserSettings();
-	}
-
-	// Remove that sticker from custom stickers, now it is in cloud recent stickers.
-	bool writeInstalledStickers = false;
-	auto custom = sets.find(Stickers::CustomSetId);
-	if (custom != sets.cend()) {
-		int removeIndex = custom->stickers.indexOf(sticker);
-		if (removeIndex >= 0) {
-			custom->stickers.removeAt(removeIndex);
-			if (custom->stickers.isEmpty()) {
-				sets.erase(custom);
-			}
-			writeInstalledStickers = true;
-		}
-	}
-
-	if (writeInstalledStickers) {
-		Local::writeInstalledStickers();
-	}
-	if (writeRecentStickers) {
-		Local::writeRecentStickers();
-	}
-	_history->updateRecentStickers();
-}
-
 void MainWidget::activate() {
-	if (_a_show.animating()) return;
-	if (!_mainSection) {
+	if (_a_show.animating()) {
+		return;
+	} else if (!_mainSection) {
 		if (_hider) {
-			if (_hider->wasOffered()) {
-				_hider->setFocus();
-			} else {
-				_dialogs->activate();
-			}
-        } else if (App::wnd() && !Ui::isLayerShown()) {
+			_dialogs->setInnerFocus();
+		} else if (!Ui::isLayerShown()) {
 			if (!cSendPaths().isEmpty()) {
-				showSendPathsLayer();
+				const auto interpret = qstr("interpret://");
+				const auto path = cSendPaths()[0];
+				if (path.startsWith(interpret)) {
+					cSetSendPaths(QStringList());
+					const auto error = Support::InterpretSendPath(
+						_controller,
+						path.mid(interpret.size()));
+					if (!error.isEmpty()) {
+						Ui::show(Box<InformBox>(error));
+					}
+				} else {
+					showSendPathsLayer();
+				}
 			} else if (_history->peer()) {
 				_history->activate();
 			} else {
-				_dialogs->activate();
+				_dialogs->setInnerFocus();
 			}
 		}
 	}
-	App::wnd()->fixOrder();
-}
-
-void MainWidget::destroyData() {
-	_history->destroyData();
-	_dialogs->destroyData();
+	_controller->widget()->fixOrder();
 }
 
 bool MainWidget::isActive() const {
-	return !_isIdle && isVisible() && !_a_show.animating();
+	return isVisible()
+		&& !_a_show.animating()
+		&& !session().updates().isIdle();
 }
 
-bool MainWidget::doWeReadServerHistory() const {
-	return isActive() && !_mainSection && _history->doWeReadServerHistory();
-}
-
-bool MainWidget::doWeReadMentions() const {
-	return isActive() && !_mainSection && _history->doWeReadMentions();
-}
-
-bool MainWidget::lastWasOnline() const {
-	return _lastWasOnline;
-}
-
-TimeMs MainWidget::lastSetOnline() const {
-	return _lastSetOnline;
+bool MainWidget::doWeMarkAsRead() const {
+	return isActive() && !_mainSection;
 }
 
 int32 MainWidget::dlgsWidth() const {
 	return _dialogs->width();
 }
 
-MainWidget::~MainWidget() {
-	if (App::main() == this) _history->showHistory(0, 0);
-
-	if (HistoryHider *hider = _hider) {
-		_hider = nullptr;
-		delete hider;
-	}
-	Messenger::Instance().mtp()->clearGlobalHandlers();
-}
-
-void MainWidget::updateOnline(bool gotOtherOffline) {
-	if (this != App::main()) return;
-	InvokeQueued(this, [] { Auth().checkAutoLock(); });
-
-	bool isOnline = App::wnd()->isActive();
-	int updateIn = Global::OnlineUpdatePeriod();
-	if (isOnline) {
-		auto idle = psIdleTime();
-		if (idle >= Global::OfflineIdleTimeout()) {
-			isOnline = false;
-			if (!_isIdle) {
-				_isIdle = true;
-				_idleFinishTimer.start(900);
-			}
-		} else {
-			updateIn = qMin(updateIn, int(Global::OfflineIdleTimeout() - idle));
-		}
-	}
-	auto ms = getms(true);
-	if (isOnline != _lastWasOnline
-		|| (isOnline && _lastSetOnline + Global::OnlineUpdatePeriod() <= ms)
-		|| (isOnline && gotOtherOffline)) {
-		if (_onlineRequest) {
-			MTP::cancel(_onlineRequest);
-			_onlineRequest = 0;
-		}
-
-		_lastWasOnline = isOnline;
-		_lastSetOnline = ms;
-		_onlineRequest = MTP::send(MTPaccount_UpdateStatus(MTP_bool(!isOnline)));
-
-		if (App::self()) {
-			App::self()->onlineTill = unixtime() + (isOnline ? (Global::OnlineUpdatePeriod() / 1000) : -1);
-			Notify::peerUpdatedDelayed(App::self(), Notify::PeerUpdate::Flag::UserOnlineChanged);
-		}
-		if (!isOnline) { // Went offline, so we need to save message draft to the cloud.
-			saveDraftToCloud();
-		}
-
-		_lastSetOnline = ms;
-	} else if (isOnline) {
-		updateIn = qMin(updateIn, int(_lastSetOnline + Global::OnlineUpdatePeriod() - ms));
-	}
-	_onlineTimer.start(updateIn);
-}
-
-void MainWidget::saveDraftToCloud() {
+void MainWidget::saveFieldToHistoryLocalDraft() {
 	_history->saveFieldToHistoryLocalDraft();
-
-	auto peer = _history->peer();
-	if (auto history = App::historyLoaded(peer)) {
-		writeDrafts(history);
-
-		auto localDraft = history->localDraft();
-		auto cloudDraft = history->cloudDraft();
-		if (!Data::draftsAreEqual(localDraft, cloudDraft)) {
-			Auth().api().saveDraftToCloudDelayed(history);
-		}
-	}
 }
 
-void MainWidget::applyCloudDraft(History *history) {
-	_history->applyCloudDraft(history);
+bool MainWidget::isOneColumn() const {
+	return _controller->adaptive().isOneColumn();
 }
 
-void MainWidget::writeDrafts(History *history) {
-	Local::MessageDraft storedLocalDraft, storedEditDraft;
-	MessageCursor localCursor, editCursor;
-	if (auto localDraft = history->localDraft()) {
-		if (!Data::draftsAreEqual(localDraft, history->cloudDraft())) {
-			storedLocalDraft = Local::MessageDraft(localDraft->msgId, localDraft->textWithTags, localDraft->previewCancelled);
-			localCursor = localDraft->cursor;
-		}
-	}
-	if (auto editDraft = history->editDraft()) {
-		storedEditDraft = Local::MessageDraft(editDraft->msgId, editDraft->textWithTags, editDraft->previewCancelled);
-		editCursor = editDraft->cursor;
-	}
-	Local::writeDrafts(history->peer->id, storedLocalDraft, storedEditDraft);
-	Local::writeDraftCursors(history->peer->id, localCursor, editCursor);
+bool MainWidget::isNormalColumn() const {
+	return _controller->adaptive().isNormal();
 }
 
-void MainWidget::checkIdleFinish() {
-	if (this != App::main()) return;
-	if (psIdleTime() < Global::OfflineIdleTimeout()) {
-		_idleFinishTimer.stop();
-		_isIdle = false;
-		updateOnline();
-		if (App::wnd()) App::wnd()->checkHistoryActivation();
-	} else {
-		_idleFinishTimer.start(900);
-	}
+bool MainWidget::isThreeColumn() const {
+	return _controller->adaptive().isThreeColumn();
 }
 
-void MainWidget::updateReceived(const mtpPrime *from, const mtpPrime *end) {
-	if (end <= from) return;
+namespace App {
 
-	Auth().checkAutoLock();
-
-	if (mtpTypeId(*from) == mtpc_new_session_created) {
-		try {
-			MTPNewSession newSession;
-			newSession.read(from, end);
-		} catch (mtpErrorUnexpected &) {
-		}
-		updSeq = 0;
-		MTP_LOG(0, ("getDifference { after new_session_created }%1").arg(cTestMode() ? " TESTMODE" : ""));
-		return getDifference();
-	} else {
-		try {
-			MTPUpdates updates;
-			updates.read(from, end);
-
-			_lastUpdateTime = getms(true);
-			noUpdatesTimer.start(NoUpdatesTimeout);
-			if (!requestingDifference()) {
-				feedUpdates(updates);
-			}
-		} catch (mtpErrorUnexpected &) { // just some other type
-		}
+MainWidget *main() {
+	if (const auto window = wnd()) {
+		return window->sessionContent();
 	}
-	update();
+	return nullptr;
 }
 
-namespace {
-
-bool fwdInfoDataLoaded(const MTPMessageFwdHeader &header) {
-	if (header.type() != mtpc_messageFwdHeader) {
-		return true;
-	}
-	auto &info = header.c_messageFwdHeader();
-	if (info.has_channel_id()) {
-		if (!App::channelLoaded(peerFromChannel(info.vchannel_id))) {
-			return false;
-		}
-		if (info.has_from_id() && !App::user(peerFromUser(info.vfrom_id), PeerData::MinimalLoaded)) {
-			return false;
-		}
-	} else {
-		if (info.has_from_id() && !App::userLoaded(peerFromUser(info.vfrom_id))) {
-			return false;
-		}
-	}
-	return true;
-}
-
-bool mentionUsersLoaded(const MTPVector<MTPMessageEntity> &entities) {
-	for_const (auto &entity, entities.v) {
-		auto type = entity.type();
-		if (type == mtpc_messageEntityMentionName) {
-			if (!App::userLoaded(peerFromUser(entity.c_messageEntityMentionName().vuser_id))) {
-				return false;
-			}
-		} else if (type == mtpc_inputMessageEntityMentionName) {
-			auto &inputUser = entity.c_inputMessageEntityMentionName().vuser_id;
-			if (inputUser.type() == mtpc_inputUser) {
-				if (!App::userLoaded(peerFromUser(inputUser.c_inputUser().vuser_id))) {
-					return false;
-				}
-			}
-		}
-	}
-	return true;
-}
-
-enum class DataIsLoadedResult {
-	NotLoaded = 0,
-	FromNotLoaded = 1,
-	MentionNotLoaded = 2,
-	Ok = 3,
-};
-DataIsLoadedResult allDataLoadedForMessage(const MTPMessage &msg) {
-	switch (msg.type()) {
-	case mtpc_message: {
-		const MTPDmessage &d(msg.c_message());
-		if (!d.is_post() && d.has_from_id()) {
-			if (!App::userLoaded(peerFromUser(d.vfrom_id))) {
-				return DataIsLoadedResult::FromNotLoaded;
-			}
-		}
-		if (d.has_via_bot_id()) {
-			if (!App::userLoaded(peerFromUser(d.vvia_bot_id))) {
-				return DataIsLoadedResult::NotLoaded;
-			}
-		}
-		if (d.has_fwd_from() && !fwdInfoDataLoaded(d.vfwd_from)) {
-			return DataIsLoadedResult::NotLoaded;
-		}
-		if (d.has_entities() && !mentionUsersLoaded(d.ventities)) {
-			return DataIsLoadedResult::MentionNotLoaded;
-		}
-	} break;
-	case mtpc_messageService: {
-		const MTPDmessageService &d(msg.c_messageService());
-		if (!d.is_post() && d.has_from_id()) {
-			if (!App::userLoaded(peerFromUser(d.vfrom_id))) {
-				return DataIsLoadedResult::FromNotLoaded;
-			}
-		}
-		switch (d.vaction.type()) {
-		case mtpc_messageActionChatAddUser: {
-			for_const (const MTPint &userId, d.vaction.c_messageActionChatAddUser().vusers.v) {
-				if (!App::userLoaded(peerFromUser(userId))) {
-					return DataIsLoadedResult::NotLoaded;
-				}
-			}
-		} break;
-		case mtpc_messageActionChatJoinedByLink: {
-			if (!App::userLoaded(peerFromUser(d.vaction.c_messageActionChatJoinedByLink().vinviter_id))) {
-				return DataIsLoadedResult::NotLoaded;
-			}
-		} break;
-		case mtpc_messageActionChatDeleteUser: {
-			if (!App::userLoaded(peerFromUser(d.vaction.c_messageActionChatDeleteUser().vuser_id))) {
-				return DataIsLoadedResult::NotLoaded;
-			}
-		} break;
-		}
-	} break;
-	}
-	return DataIsLoadedResult::Ok;
-}
-
-} // namespace
-
-void MainWidget::feedUpdates(const MTPUpdates &updates, uint64 randomId) {
-	switch (updates.type()) {
-	case mtpc_updates: {
-		auto &d = updates.c_updates();
-		if (d.vseq.v) {
-			if (d.vseq.v <= updSeq) return;
-			if (d.vseq.v > updSeq + 1) {
-				_bySeqUpdates.insert(d.vseq.v, updates);
-				return _bySeqTimer.start(WaitForSkippedTimeout);
-			}
-		}
-
-		App::feedUsers(d.vusers);
-		App::feedChats(d.vchats);
-		feedUpdateVector(d.vupdates);
-
-		updSetState(0, d.vdate.v, updQts, d.vseq.v);
-	} break;
-
-	case mtpc_updatesCombined: {
-		auto &d = updates.c_updatesCombined();
-		if (d.vseq_start.v) {
-			if (d.vseq_start.v <= updSeq) return;
-			if (d.vseq_start.v > updSeq + 1) {
-				_bySeqUpdates.insert(d.vseq_start.v, updates);
-				return _bySeqTimer.start(WaitForSkippedTimeout);
-			}
-		}
-
-		App::feedUsers(d.vusers);
-		App::feedChats(d.vchats);
-		feedUpdateVector(d.vupdates);
-
-		updSetState(0, d.vdate.v, updQts, d.vseq.v);
-	} break;
-
-	case mtpc_updateShort: {
-		auto &d = updates.c_updateShort();
-		feedUpdate(d.vupdate);
-
-		updSetState(0, d.vdate.v, updQts, updSeq);
-	} break;
-
-	case mtpc_updateShortMessage: {
-		auto &d = updates.c_updateShortMessage();
-		if (!App::userLoaded(d.vuser_id.v)
-			|| (d.has_via_bot_id() && !App::userLoaded(d.vvia_bot_id.v))
-			|| (d.has_entities() && !mentionUsersLoaded(d.ventities))
-			|| (d.has_fwd_from() && !fwdInfoDataLoaded(d.vfwd_from))) {
-			MTP_LOG(0, ("getDifference { good - getting user for updateShortMessage }%1").arg(cTestMode() ? " TESTMODE" : ""));
-			return getDifference();
-		}
-		if (ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, updates)) {
-			// We could've added an item.
-			// Better would be for history to be subscribed to new messages.
-			_history->peerMessagesUpdated();
-
-			// Update date as well.
-			updSetState(0, d.vdate.v, updQts, updSeq);
-		}
-	} break;
-
-	case mtpc_updateShortChatMessage: {
-		auto &d = updates.c_updateShortChatMessage();
-		bool noFrom = !App::userLoaded(d.vfrom_id.v);
-		if (!App::chatLoaded(d.vchat_id.v)
-			|| noFrom
-			|| (d.has_via_bot_id() && !App::userLoaded(d.vvia_bot_id.v))
-			|| (d.has_entities() && !mentionUsersLoaded(d.ventities))
-			|| (d.has_fwd_from() && !fwdInfoDataLoaded(d.vfwd_from))) {
-			MTP_LOG(0, ("getDifference { good - getting user for updateShortChatMessage }%1").arg(cTestMode() ? " TESTMODE" : ""));
-			if (noFrom) {
-				Auth().api().requestFullPeer(App::chatLoaded(d.vchat_id.v));
-			}
-			return getDifference();
-		}
-		if (ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, updates)) {
-			// We could've added an item.
-			// Better would be for history to be subscribed to new messages.
-			_history->peerMessagesUpdated();
-
-			// Update date as well.
-			updSetState(0, d.vdate.v, updQts, updSeq);
-		}
-	} break;
-
-	case mtpc_updateShortSentMessage: {
-		auto &d = updates.c_updateShortSentMessage();
-		if (!IsServerMsgId(d.vid.v)) {
-			LOG(("API Error: Bad msgId got from server: %1").arg(d.vid.v));
-		} else if (randomId) {
-			PeerId peerId = 0;
-			QString text;
-			App::histSentDataByItem(randomId, peerId, text);
-
-			const auto wasAlready = (peerId != 0)
-				&& (App::histItemById(peerToChannel(peerId), d.vid.v) != nullptr);
-			feedUpdate(MTP_updateMessageID(d.vid, MTP_long(randomId))); // ignore real date
-			if (peerId) {
-				if (auto item = App::histItemById(peerToChannel(peerId), d.vid.v)) {
-					if (d.has_entities() && !mentionUsersLoaded(d.ventities)) {
-						Auth().api().requestMessageData(
-							item->history()->peer->asChannel(),
-							item->id,
-							ApiWrap::RequestMessageDataCallback());
-					}
-					const auto entities = d.has_entities()
-						? TextUtilities::EntitiesFromMTP(d.ventities.v)
-						: EntitiesInText();
-					item->setText({ text, entities });
-					item->updateMedia(d.has_media() ? (&d.vmedia) : nullptr);
-					if (!wasAlready) {
-						item->indexAsNewItem();
-					}
-				}
-			}
-		}
-
-		if (ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, updates)) {
-			// Update date as well.
-			updSetState(0, d.vdate.v, updQts, updSeq);
-		}
-	} break;
-
-	case mtpc_updatesTooLong: {
-		MTP_LOG(0, ("getDifference { good - updatesTooLong received }%1").arg(cTestMode() ? " TESTMODE" : ""));
-		return getDifference();
-	} break;
-	}
-}
-
-void MainWidget::feedUpdate(const MTPUpdate &update) {
-	switch (update.type()) {
-
-	// New messages.
-	case mtpc_updateNewMessage: {
-		auto &d = update.c_updateNewMessage();
-
-		DataIsLoadedResult isDataLoaded = allDataLoadedForMessage(d.vmessage);
-		if (!requestingDifference() && isDataLoaded != DataIsLoadedResult::Ok) {
-			MTP_LOG(0, ("getDifference { good - after not all data loaded in updateNewMessage }%1").arg(cTestMode() ? " TESTMODE" : ""));
-
-			// This can be if this update was created by grouping
-			// some short message update into an updates vector.
-			return getDifference();
-		}
-
-		if (ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, update)) {
-			// We could've added an item.
-			// Better would be for history to be subscribed to new messages.
-			_history->peerMessagesUpdated();
-		}
-	} break;
-
-	case mtpc_updateNewChannelMessage: {
-		auto &d = update.c_updateNewChannelMessage();
-		auto channel = App::channelLoaded(peerToChannel(peerFromMessage(d.vmessage)));
-		auto isDataLoaded = allDataLoadedForMessage(d.vmessage);
-		if (!requestingDifference() && (!channel || isDataLoaded != DataIsLoadedResult::Ok)) {
-			MTP_LOG(0, ("getDifference { good - after not all data loaded in updateNewChannelMessage }%1").arg(cTestMode() ? " TESTMODE" : ""));
-
-			// Request last active supergroup participants if the 'from' user was not loaded yet.
-			// This will optimize similar getDifference() calls for almost all next messages.
-			if (isDataLoaded == DataIsLoadedResult::FromNotLoaded && channel && channel->isMegagroup()) {
-				if (channel->mgInfo->lastParticipants.size() < Global::ChatSizeMax() && (channel->mgInfo->lastParticipants.empty() || channel->mgInfo->lastParticipants.size() < channel->membersCount())) {
-					Auth().api().requestLastParticipants(channel);
-				}
-			}
-
-			if (!_byMinChannelTimer.isActive()) { // getDifference after timeout
-				_byMinChannelTimer.start(WaitForSkippedTimeout);
-			}
-			return;
-		}
-		if (channel && !_handlingChannelDifference) {
-			if (channel->ptsRequesting()) { // skip global updates while getting channel difference
-				return;
-			} else if (channel->ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, update)) {
-				// We could've added an item.
-				// Better would be for history to be subscribed to new messages.
-				_history->peerMessagesUpdated();
-			}
-		} else {
-			Auth().api().applyUpdateNoPtsCheck(update);
-
-			// We could've added an item.
-			// Better would be for history to be subscribed to new messages.
-			_history->peerMessagesUpdated();
-		}
-	} break;
-
-	case mtpc_updateMessageID: {
-		const auto &d = update.c_updateMessageID();
-		if (const auto fullId = App::histItemByRandom(d.vrandom_id.v)) {
-			const auto channel = fullId.channel;
-			const auto newId = d.vid.v;
-			if (const auto local = App::histItemById(fullId)) {
-				const auto existing = App::histItemById(channel, newId);
-				if (existing && local->detached()) {
-					const auto history = local->history();
-					const auto wasLast = (history->lastMsg == local);
-					local->destroy();
-					if (wasLast && !history->lastMsg) {
-						checkPeerHistory(history->peer);
-					}
-					_history->peerMessagesUpdated();
-				} else {
-					if (existing) {
-						existing->destroy();
-					}
-					App::historyUnregItem(local);
-					Auth().messageIdChanging.notify({ local, newId }, true);
-					local->setId(d.vid.v);
-					App::historyRegItem(local);
-					Auth().data().requestItemRepaint(local);
-				}
-			}
-			App::historyUnregRandom(d.vrandom_id.v);
-		}
-		App::historyUnregSentData(d.vrandom_id.v);
-	} break;
-
-	// Message contents being read.
-	case mtpc_updateReadMessagesContents: {
-		auto &d = update.c_updateReadMessagesContents();
-		ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, update);
-	} break;
-
-	case mtpc_updateChannelReadMessagesContents: {
-		auto &d = update.c_updateChannelReadMessagesContents();
-		auto channel = App::channelLoaded(d.vchannel_id.v);
-		if (!channel) {
-			if (!_byMinChannelTimer.isActive()) { // getDifference after timeout
-				_byMinChannelTimer.start(WaitForSkippedTimeout);
-			}
-			return;
-		}
-		auto possiblyReadMentions = base::flat_set<MsgId>();
-		for_const (auto &msgId, d.vmessages.v) {
-			if (auto item = App::histItemById(channel, msgId.v)) {
-				if (item->isMediaUnread()) {
-					item->markMediaRead();
-					Auth().data().requestItemRepaint(item);
-				}
-			} else {
-				// Perhaps it was an unread mention!
-				possiblyReadMentions.insert(msgId.v);
-			}
-		}
-		Auth().api().checkForUnreadMentions(possiblyReadMentions, channel);
-	} break;
-
-	// Edited messages.
-	case mtpc_updateEditMessage: {
-		auto &d = update.c_updateEditMessage();
-		ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, update);
-	} break;
-
-	case mtpc_updateEditChannelMessage: {
-		auto &d = update.c_updateEditChannelMessage();
-		auto channel = App::channelLoaded(peerToChannel(peerFromMessage(d.vmessage)));
-
-		if (channel && !_handlingChannelDifference) {
-			if (channel->ptsRequesting()) { // skip global updates while getting channel difference
-				return;
-			} else {
-				channel->ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, update);
-			}
-		} else {
-			Auth().api().applyUpdateNoPtsCheck(update);
-		}
-	} break;
-
-	// Messages being read.
-	case mtpc_updateReadHistoryInbox: {
-		auto &d = update.c_updateReadHistoryInbox();
-		ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, update);
-	} break;
-
-	case mtpc_updateReadHistoryOutbox: {
-		auto &d = update.c_updateReadHistoryOutbox();
-		if (ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, update)) {
-			// We could've updated the double checks.
-			// Better would be for history to be subscribed to outbox read events.
-			_history->update();
-		}
-	} break;
-
-	case mtpc_updateReadChannelInbox: {
-		auto &d = update.c_updateReadChannelInbox();
-		App::feedInboxRead(peerFromChannel(d.vchannel_id.v), d.vmax_id.v);
-	} break;
-
-	case mtpc_updateReadChannelOutbox: {
-		auto &d = update.c_updateReadChannelOutbox();
-		auto peerId = peerFromChannel(d.vchannel_id.v);
-		auto when = requestingDifference() ? 0 : unixtime();
-		App::feedOutboxRead(peerId, d.vmax_id.v, when);
-		if (_history->peer() && _history->peer()->id == peerId) {
-			_history->update();
-		}
-	} break;
-
-	// Deleted messages.
-	case mtpc_updateDeleteMessages: {
-		auto &d = update.c_updateDeleteMessages();
-
-		if (ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, update)) {
-			// We could've removed some items.
-			// Better would be for history to be subscribed to removed messages.
-			_history->peerMessagesUpdated();
-		}
-	} break;
-
-	case mtpc_updateDeleteChannelMessages: {
-		auto &d = update.c_updateDeleteChannelMessages();
-		auto channel = App::channelLoaded(d.vchannel_id.v);
-
-		if (channel && !_handlingChannelDifference) {
-			if (channel->ptsRequesting()) { // skip global updates while getting channel difference
-				return;
-			} else if (channel->ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, update)) {
-				// We could've removed some items.
-				// Better would be for history to be subscribed to removed messages.
-				_history->peerMessagesUpdated();
-			}
-		} else {
-			// We could've removed some items.
-			// Better would be for history to be subscribed to removed messages.
-			_history->peerMessagesUpdated();
-
-			Auth().api().applyUpdateNoPtsCheck(update);
-		}
-	} break;
-
-	case mtpc_updateWebPage: {
-		auto &d = update.c_updateWebPage();
-
-		// Update web page anyway.
-		App::feedWebPage(d.vwebpage);
-		_history->updatePreview();
-		webPagesOrGamesUpdate();
-
-		ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, update);
-	} break;
-
-	case mtpc_updateChannelWebPage: {
-		auto &d = update.c_updateChannelWebPage();
-
-		// Update web page anyway.
-		App::feedWebPage(d.vwebpage);
-		_history->updatePreview();
-		webPagesOrGamesUpdate();
-
-		auto channel = App::channelLoaded(d.vchannel_id.v);
-		if (channel && !_handlingChannelDifference) {
-			if (channel->ptsRequesting()) { // skip global updates while getting channel difference
-				return;
-			} else {
-				channel->ptsUpdateAndApply(d.vpts.v, d.vpts_count.v, update);
-			}
-		} else {
-			Auth().api().applyUpdateNoPtsCheck(update);
-		}
-	} break;
-
-	case mtpc_updateUserTyping: {
-		auto &d = update.c_updateUserTyping();
-		const auto userId = peerFromUser(d.vuser_id);
-		const auto history = App::historyLoaded(userId);
-		const auto user = App::userLoaded(d.vuser_id.v);
-		if (history && user) {
-			const auto when = requestingDifference() ? 0 : unixtime();
-			App::histories().registerSendAction(history, user, d.vaction, when);
-		}
-	} break;
-
-	case mtpc_updateChatUserTyping: {
-		auto &d = update.c_updateChatUserTyping();
-		const auto history = [&]() -> History* {
-			if (auto chat = App::chatLoaded(d.vchat_id.v)) {
-				return App::historyLoaded(chat->id);
-			} else if (auto channel = App::channelLoaded(d.vchat_id.v)) {
-				return App::historyLoaded(channel->id);
-			}
-			return nullptr;
-		}();
-		const auto user = (d.vuser_id.v == Auth().userId())
-			? nullptr
-			: App::userLoaded(d.vuser_id.v);
-		if (history && user) {
-			const auto when = requestingDifference() ? 0 : unixtime();
-			App::histories().registerSendAction(history, user, d.vaction, when);
-		}
-	} break;
-
-	case mtpc_updateChatParticipants: {
-		App::feedParticipants(update.c_updateChatParticipants().vparticipants, true);
-	} break;
-
-	case mtpc_updateChatParticipantAdd: {
-		App::feedParticipantAdd(update.c_updateChatParticipantAdd());
-	} break;
-
-	case mtpc_updateChatParticipantDelete: {
-		App::feedParticipantDelete(update.c_updateChatParticipantDelete());
-	} break;
-
-	case mtpc_updateChatAdmins: {
-		App::feedChatAdmins(update.c_updateChatAdmins());
-	} break;
-
-	case mtpc_updateChatParticipantAdmin: {
-		App::feedParticipantAdmin(update.c_updateChatParticipantAdmin());
-	} break;
-
-	case mtpc_updateUserStatus: {
-		auto &d = update.c_updateUserStatus();
-		if (auto user = App::userLoaded(d.vuser_id.v)) {
-			switch (d.vstatus.type()) {
-			case mtpc_userStatusEmpty: user->onlineTill = 0; break;
-			case mtpc_userStatusRecently:
-				if (user->onlineTill > -10) { // don't modify pseudo-online
-					user->onlineTill = -2;
-				}
-			break;
-			case mtpc_userStatusLastWeek: user->onlineTill = -3; break;
-			case mtpc_userStatusLastMonth: user->onlineTill = -4; break;
-			case mtpc_userStatusOffline: user->onlineTill = d.vstatus.c_userStatusOffline().vwas_online.v; break;
-			case mtpc_userStatusOnline: user->onlineTill = d.vstatus.c_userStatusOnline().vexpires.v; break;
-			}
-			Notify::peerUpdatedDelayed(user, Notify::PeerUpdate::Flag::UserOnlineChanged);
-		}
-		if (d.vuser_id.v == Auth().userId()) {
-			if (d.vstatus.type() == mtpc_userStatusOffline || d.vstatus.type() == mtpc_userStatusEmpty) {
-				updateOnline(true);
-				if (d.vstatus.type() == mtpc_userStatusOffline) {
-					cSetOtherOnline(d.vstatus.c_userStatusOffline().vwas_online.v);
-				}
-			} else if (d.vstatus.type() == mtpc_userStatusOnline) {
-				cSetOtherOnline(d.vstatus.c_userStatusOnline().vexpires.v);
-			}
-		}
-	} break;
-
-	case mtpc_updateUserName: {
-		auto &d = update.c_updateUserName();
-		if (auto user = App::userLoaded(d.vuser_id.v)) {
-			if (user->contact <= 0) {
-				user->setName(TextUtilities::SingleLine(qs(d.vfirst_name)), TextUtilities::SingleLine(qs(d.vlast_name)), user->nameOrPhone, TextUtilities::SingleLine(qs(d.vusername)));
-			} else {
-				user->setName(TextUtilities::SingleLine(user->firstName), TextUtilities::SingleLine(user->lastName), user->nameOrPhone, TextUtilities::SingleLine(qs(d.vusername)));
-			}
-		}
-	} break;
-
-	case mtpc_updateUserPhoto: {
-		auto &d = update.c_updateUserPhoto();
-		if (auto user = App::userLoaded(d.vuser_id.v)) {
-			user->setPhoto(d.vphoto);
-			user->loadUserpic();
-			if (mtpIsTrue(d.vprevious) || !user->userpicPhotoId()) {
-				Auth().storage().remove(Storage::UserPhotosRemoveAfter(
-					user->bareId(),
-					user->userpicPhotoId()));
-			} else {
-				Auth().storage().add(Storage::UserPhotosAddNew(
-					user->bareId(),
-					user->userpicPhotoId()));
-			}
-		}
-	} break;
-
-	case mtpc_updateContactRegistered: {
-		auto &d = update.c_updateContactRegistered();
-		if (auto user = App::userLoaded(d.vuser_id.v)) {
-			if (App::history(user->id)->loadedAtBottom()) {
-				App::history(user->id)->addNewService(clientMsgId(), date(d.vdate), lng_action_user_registered(lt_from, user->name), 0);
-			}
-		}
-	} break;
-
-	case mtpc_updateContactLink: {
-		auto &d = update.c_updateContactLink();
-		App::feedUserLink(d.vuser_id, d.vmy_link, d.vforeign_link);
-	} break;
-
-	case mtpc_updateNotifySettings: {
-		auto &d = update.c_updateNotifySettings();
-		applyNotifySetting(d.vpeer, d.vnotify_settings);
-	} break;
-
-	case mtpc_updateDcOptions: {
-		auto &d = update.c_updateDcOptions();
-		Messenger::Instance().dcOptions()->addFromList(d.vdc_options);
-	} break;
-
-	case mtpc_updateConfig: {
-		Messenger::Instance().mtp()->requestConfig();
-	} break;
-
-	case mtpc_updateUserPhone: {
-		auto &d = update.c_updateUserPhone();
-		if (auto user = App::userLoaded(d.vuser_id.v)) {
-			auto newPhone = qs(d.vphone);
-			if (newPhone != user->phone()) {
-				user->setPhone(newPhone);
-				user->setName(user->firstName, user->lastName, (user->contact || isServiceUser(user->id) || user->isSelf() || user->phone().isEmpty()) ? QString() : App::formatPhone(user->phone()), user->username);
-
-				Notify::peerUpdatedDelayed(user, Notify::PeerUpdate::Flag::UserPhoneChanged);
-			}
-		}
-	} break;
-
-	case mtpc_updateNewEncryptedMessage: {
-		auto &d = update.c_updateNewEncryptedMessage();
-	} break;
-
-	case mtpc_updateEncryptedChatTyping: {
-		auto &d = update.c_updateEncryptedChatTyping();
-	} break;
-
-	case mtpc_updateEncryption: {
-		auto &d = update.c_updateEncryption();
-	} break;
-
-	case mtpc_updateEncryptedMessagesRead: {
-		auto &d = update.c_updateEncryptedMessagesRead();
-	} break;
-
-	case mtpc_updatePhoneCall: {
-		Calls::Current().handleUpdate(update.c_updatePhoneCall());
-	} break;
-
-	case mtpc_updateUserBlocked: {
-		auto &d = update.c_updateUserBlocked();
-		if (auto user = App::userLoaded(d.vuser_id.v)) {
-			user->setBlockStatus(mtpIsTrue(d.vblocked) ? UserData::BlockStatus::Blocked : UserData::BlockStatus::NotBlocked);
-		}
-	} break;
-
-	case mtpc_updateServiceNotification: {
-		auto &d = update.c_updateServiceNotification();
-		if (d.is_popup()) {
-			Ui::show(Box<InformBox>(qs(d.vmessage)));
-		} else {
-			App::wnd()->serviceNotification({ qs(d.vmessage), TextUtilities::EntitiesFromMTP(d.ventities.v) }, d.vmedia);
-			emit App::wnd()->checkNewAuthorization();
-		}
-	} break;
-
-	case mtpc_updatePrivacy: {
-		auto &d = update.c_updatePrivacy();
-		Auth().api().handlePrivacyChange(d.vkey.type(), d.vrules);
-	} break;
-
-	case mtpc_updatePinnedDialogs: {
-		auto &d = update.c_updatePinnedDialogs();
-		if (d.has_order()) {
-			auto allLoaded = true;
-			auto &order = d.vorder.v;
-			for_const (auto &peer, order) {
-				auto peerId = peerFromMTP(peer);
-				if (!App::historyLoaded(peerId)) {
-					allLoaded = false;
-					DEBUG_LOG(("API Error: pinned chat not loaded for peer %1").arg(peerId));
-					break;
-				}
-			}
-			if (allLoaded) {
-				App::histories().clearPinned();
-				for (auto i = order.size(); i != 0;) {
-					auto history = App::historyLoaded(peerFromMTP(order[--i]));
-					Assert(history != nullptr);
-					history->setPinnedDialog(true);
-				}
-			} else {
-				_dialogs->loadPinnedDialogs();
-			}
-		} else {
-			_dialogs->loadPinnedDialogs();
-		}
-	} break;
-
-	case mtpc_updateDialogPinned: {
-		auto &d = update.c_updateDialogPinned();
-		auto peerId = peerFromMTP(d.vpeer);
-		if (auto history = App::historyLoaded(peerId)) {
-			history->setPinnedDialog(d.is_pinned());
-		} else {
-			DEBUG_LOG(("API Error: pinned chat not loaded for peer %1").arg(peerId));
-			_dialogs->loadPinnedDialogs();
-		}
-	} break;
-
-	case mtpc_updateChannel: {
-		auto &d = update.c_updateChannel();
-		if (auto channel = App::channelLoaded(d.vchannel_id.v)) {
-			channel->inviter = 0;
-			if (!channel->amIn()) {
-				deleteConversation(channel, false);
-			} else if (!channel->amCreator() && App::history(channel->id)) { // create history
-				_updatedChannels.insert(channel, true);
-				Auth().api().requestSelfParticipant(channel);
-			}
-		}
-	} break;
-
-	case mtpc_updateChannelPinnedMessage: {
-		auto &d = update.c_updateChannelPinnedMessage();
-		if (auto channel = App::channelLoaded(d.vchannel_id.v)) {
-			channel->setPinnedMessageId(d.vid.v);
-		}
-	} break;
-
-	case mtpc_updateChannelTooLong: {
-		auto &d = update.c_updateChannelTooLong();
-		if (auto channel = App::channelLoaded(d.vchannel_id.v)) {
-			if (!d.has_pts() || channel->pts() < d.vpts.v) {
-				getChannelDifference(channel);
-			}
-		}
-	} break;
-
-	case mtpc_updateChannelMessageViews: {
-		auto &d = update.c_updateChannelMessageViews();
-		if (auto item = App::histItemById(d.vchannel_id.v, d.vid.v)) {
-			item->setViewsCount(d.vviews.v);
-		}
-	} break;
-
-	case mtpc_updateChannelAvailableMessages: {
-		auto &d = update.c_updateChannelAvailableMessages();
-		if (auto channel = App::channelLoaded(d.vchannel_id.v)) {
-			channel->setAvailableMinId(d.vavailable_min_id.v);
-		}
-	} break;
-
-	////// Cloud sticker sets
-	case mtpc_updateNewStickerSet: {
-		auto &d = update.c_updateNewStickerSet();
-		bool writeArchived = false;
-		if (d.vstickerset.type() == mtpc_messages_stickerSet) {
-			auto &set = d.vstickerset.c_messages_stickerSet();
-			if (set.vset.type() == mtpc_stickerSet) {
-				auto &s = set.vset.c_stickerSet();
-				if (!s.is_masks()) {
-					auto &sets = Auth().data().stickerSetsRef();
-					auto it = sets.find(s.vid.v);
-					if (it == sets.cend()) {
-						it = sets.insert(s.vid.v, Stickers::Set(s.vid.v, s.vaccess_hash.v, Stickers::GetSetTitle(s), qs(s.vshort_name), s.vcount.v, s.vhash.v, s.vflags.v | MTPDstickerSet::Flag::f_installed));
-					} else {
-						it->flags |= MTPDstickerSet::Flag::f_installed;
-						if (it->flags & MTPDstickerSet::Flag::f_archived) {
-							it->flags &= ~MTPDstickerSet::Flag::f_archived;
-							writeArchived = true;
-						}
-					}
-					auto inputSet = MTP_inputStickerSetID(MTP_long(it->id), MTP_long(it->access));
-					auto &v = set.vdocuments.v;
-					it->stickers.clear();
-					it->stickers.reserve(v.size());
-					for (int i = 0, l = v.size(); i < l; ++i) {
-						auto doc = App::feedDocument(v.at(i));
-						if (!doc || !doc->sticker()) continue;
-
-						it->stickers.push_back(doc);
-						if (doc->sticker()->set.type() != mtpc_inputStickerSetID) {
-							doc->sticker()->set = inputSet;
-						}
-					}
-					it->emoji.clear();
-					auto &packs = set.vpacks.v;
-					for (auto i = 0, l = packs.size(); i != l; ++i) {
-						if (packs[i].type() != mtpc_stickerPack) continue;
-						auto &pack = packs.at(i).c_stickerPack();
-						if (auto emoji = Ui::Emoji::Find(qs(pack.vemoticon))) {
-							emoji = emoji->original();
-							auto &stickers = pack.vdocuments.v;
-
-							Stickers::Pack p;
-							p.reserve(stickers.size());
-							for (auto j = 0, c = stickers.size(); j != c; ++j) {
-								auto doc = App::document(stickers[j].v);
-								if (!doc || !doc->sticker()) continue;
-
-								p.push_back(doc);
-							}
-							it->emoji.insert(emoji, p);
-						}
-					}
-
-					auto &order = Auth().data().stickerSetsOrderRef();
-					int32 insertAtIndex = 0, currentIndex = order.indexOf(s.vid.v);
-					if (currentIndex != insertAtIndex) {
-						if (currentIndex > 0) {
-							order.removeAt(currentIndex);
-						}
-						order.insert(insertAtIndex, s.vid.v);
-					}
-
-					auto custom = sets.find(Stickers::CustomSetId);
-					if (custom != sets.cend()) {
-						for (int32 i = 0, l = it->stickers.size(); i < l; ++i) {
-							int32 removeIndex = custom->stickers.indexOf(it->stickers.at(i));
-							if (removeIndex >= 0) custom->stickers.removeAt(removeIndex);
-						}
-						if (custom->stickers.isEmpty()) {
-							sets.erase(custom);
-						}
-					}
-					Local::writeInstalledStickers();
-					if (writeArchived) Local::writeArchivedStickers();
-					Auth().data().markStickersUpdated();
-				}
-			}
-		}
-	} break;
-
-	case mtpc_updateStickerSetsOrder: {
-		auto &d = update.c_updateStickerSetsOrder();
-		if (!d.is_masks()) {
-			auto &order = d.vorder.v;
-			auto &sets = Auth().data().stickerSets();
-			Stickers::Order result;
-			for (int i = 0, l = order.size(); i < l; ++i) {
-				if (sets.constFind(order.at(i).v) == sets.cend()) {
-					break;
-				}
-				result.push_back(order.at(i).v);
-			}
-			if (result.size() != Auth().data().stickerSetsOrder().size() || result.size() != order.size()) {
-				Auth().data().setLastStickersUpdate(0);
-				Auth().api().updateStickers();
-			} else {
-				Auth().data().stickerSetsOrderRef() = std::move(result);
-				Local::writeInstalledStickers();
-				Auth().data().markStickersUpdated();
-			}
-		}
-	} break;
-
-	case mtpc_updateStickerSets: {
-		Auth().data().setLastStickersUpdate(0);
-		Auth().api().updateStickers();
-	} break;
-
-	case mtpc_updateRecentStickers: {
-		Auth().data().setLastRecentStickersUpdate(0);
-		Auth().api().updateStickers();
-	} break;
-
-	case mtpc_updateFavedStickers: {
-		Auth().data().setLastFavedStickersUpdate(0);
-		Auth().api().updateStickers();
-	} break;
-
-	case mtpc_updateReadFeaturedStickers: {
-		// We read some of the featured stickers, perhaps not all of them.
-		// Here we don't know what featured sticker sets were read, so we
-		// request all of them once again.
-		Auth().data().setLastFeaturedStickersUpdate(0);
-		Auth().api().updateStickers();
-	} break;
-
-	////// Cloud saved GIFs
-	case mtpc_updateSavedGifs: {
-		Auth().data().setLastSavedGifsUpdate(0);
-		Auth().api().updateStickers();
-	} break;
-
-	////// Cloud drafts
-	case mtpc_updateDraftMessage: {
-		auto &peerDraft = update.c_updateDraftMessage();
-		auto peerId = peerFromMTP(peerDraft.vpeer);
-
-		auto &draftMessage = peerDraft.vdraft;
-		if (draftMessage.type() == mtpc_draftMessage) {
-			auto &draft = draftMessage.c_draftMessage();
-			Data::applyPeerCloudDraft(peerId, draft);
-		} else {
-			Data::clearPeerCloudDraft(peerId);
-		}
-	} break;
-
-	////// Cloud langpacks
-	case mtpc_updateLangPack: {
-		auto &langpack = update.c_updateLangPack();
-		Lang::CurrentCloudManager().applyLangPackDifference(langpack.vdifference);
-	} break;
-
-	case mtpc_updateLangPackTooLong: {
-		Lang::CurrentCloudManager().requestLangPackDifference();
-	} break;
-
-	}
-}
+} // namespace App

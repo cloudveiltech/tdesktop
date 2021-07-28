@@ -12,33 +12,28 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Platform {
 namespace Notifications {
 
-inline bool SkipAudio() {
-	return false;
-}
-
-inline bool SkipToast() {
-	return false;
-}
-
-inline void FlashBounce() {
-}
-
-void Finish();
-
 class Manager : public Window::Notifications::NativeManager {
 public:
-	Manager(Window::Notifications::System *system);
-
-	void clearNotification(PeerId peerId, MsgId msgId);
-	bool hasPoorSupport() const;
-	bool hasActionsSupport() const;
-
+	Manager(not_null<Window::Notifications::System*> system);
+	void clearNotification(NotificationId id);
 	~Manager();
 
 protected:
-	void doShowNativeNotification(PeerData *peer, MsgId msgId, const QString &title, const QString &subtitle, const QString &msg, bool hideNameAndPhoto, bool hideReplyButton) override;
+	void doShowNativeNotification(
+		not_null<PeerData*> peer,
+		std::shared_ptr<Data::CloudImageView> &userpicView,
+		MsgId msgId,
+		const QString &title,
+		const QString &subtitle,
+		const QString &msg,
+		bool hideNameAndPhoto,
+		bool hideReplyButton) override;
 	void doClearAllFast() override;
-	void doClearFromHistory(History *history) override;
+	void doClearFromHistory(not_null<History*> history) override;
+	void doClearFromSession(not_null<Main::Session*> session) override;
+	bool doSkipAudio() const override;
+	bool doSkipToast() const override;
+	bool doSkipFlashBounce() const override;
 
 private:
 	class Private;

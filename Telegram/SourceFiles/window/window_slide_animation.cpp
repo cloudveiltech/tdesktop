@@ -15,8 +15,7 @@ namespace Window {
 void SlideAnimation::paintContents(Painter &p, const QRect &update) const {
 	int retina = cIntRetinaFactor();
 
-	// Animation callback can destroy "this", so we don't pass "ms".
-	auto progress = _animation.current((_direction == SlideDirection::FromLeft) ? 0. : 1.);
+	auto progress = _animation.value((_direction == SlideDirection::FromLeft) ? 0. : 1.);
 	if (_withFade) {
 		p.fillRect(update, st::boxBg);
 
@@ -86,7 +85,6 @@ void SlideAnimation::setFinishedCallback(FinishedCallback &&callback) {
 }
 
 void SlideAnimation::start() {
-	auto delta = st::slideShift;
 	auto fromLeft = (_direction == SlideDirection::FromLeft);
 	if (fromLeft) std::swap(_cacheUnder, _cacheOver);
 	_animation.start(

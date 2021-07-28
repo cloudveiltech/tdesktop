@@ -8,11 +8,21 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "ui/rp_widget.h"
+#include "dialogs/dialogs_key.h"
+#include "media/player/media_player_float.h" // FloatSectionDelegate
+#include "base/object_ptr.h"
+
+namespace Main {
+class Session;
+} // namespace Main
+
+namespace Ui {
+class LayerWidget;
+} // namespace Ui
 
 namespace Window {
 
-class Controller;
-class LayerWidget;
+class SessionController;
 class SlideAnimation;
 struct SectionShow;
 enum class SlideDirection;
@@ -25,30 +35,33 @@ enum class Column {
 
 class AbstractSectionWidget
 	: public Ui::RpWidget
+	, public Media::Player::FloatSectionDelegate
 	, protected base::Subscriber {
 public:
 	AbstractSectionWidget(
 		QWidget *parent,
-		not_null<Window::Controller*> controller)
-		: RpWidget(parent)
-		, _controller(controller) {
+		not_null<SessionController*> controller)
+	: RpWidget(parent)
+	, _controller(controller) {
 	}
 
-	// Float player interface.
-	virtual bool wheelEventFromFloatPlayer(QEvent *e) {
-		return false;
-	}
-	virtual QRect rectForFloatPlayer() const {
-		return mapToGlobal(rect());
-	}
-
-protected:
-	not_null<Window::Controller*> controller() const {
+	[[nodiscard]] Main::Session &session() const;
+	[[nodiscard]] not_null<SessionController*> controller() const {
 		return _controller;
 	}
 
+	// Tabbed selector management.
+	virtual bool pushTabbedSelectorToThirdSection(
+			not_null<PeerData*> peer,
+			const SectionShow &params) {
+		return false;
+	}
+	virtual bool returnTabbedSelector() {
+		return false;
+	}
+
 private:
-	not_null<Window::Controller*> _controller;
+	const not_null<SessionController*> _controller;
 
 };
 
@@ -67,10 +80,12 @@ struct SectionSlideParams {
 
 class SectionWidget : public AbstractSectionWidget {
 public:
-	SectionWidget(QWidget *parent, not_null<Window::Controller*> controller);
+	SectionWidget(
+		QWidget *parent,
+		not_null<SessionController*> controller);
 
-	virtual PeerData *activePeer() const {
-		return nullptr;
+	virtual Dialogs::RowDescriptor activeChat() const {
+		return {};
 	}
 
 	// When resizing the widget with top edge moved up or down and we
@@ -91,9 +106,7 @@ public:
 
 	// This can be used to grab with or without top bar shadow.
 	// This will be protected when animation preparation will be done inside.
-	virtual QPixmap grabForShowAnimation(const SectionSlideParams &params) {
-		return Ui::GrabWidget(this);
-	}
+	virtual QPixmap grabForShowAnimation(const SectionSlideParams &params);
 
 	// Attempt to show the required section inside the existing one.
 	// For example if this section already shows exactly the required
@@ -105,9 +118,24 @@ public:
 		not_null<SectionMemento*> memento,
 		const SectionShow &params) = 0;
 
+	virtual bool showMessage(
+			PeerId peerId,
+			const SectionShow &params,
+			MsgId messageId) {
+		return false;
+	}
+
+	virtual bool replyToMessage(not_null<HistoryItem*> item) {
+		return false;
+	}
+
+	virtual bool preventsClose(Fn<void()> &&continueCallback) const {
+		return false;
+	}
+
 	// Create a memento of that section to store it in the history stack.
 	// This method may modify the section ("take" heavy items).
-	virtual std::unique_ptr<SectionMemento> createMemento();
+	virtual std::shared_ptr<SectionMemento> createMemento();
 
 	void setInnerFocus() {
 		doSetInnerFocus();
@@ -116,15 +144,15 @@ public:
 	virtual rpl::producer<int> desiredHeight() const;
 
 	// Some sections convert to layers on some geometry sizes.
-	virtual object_ptr<LayerWidget> moveContentToLayer(
+	virtual object_ptr<Ui::LayerWidget> moveContentToLayer(
 			QRect bodyGeometry) {
 		return nullptr;
 	}
 
-	// Global shortcut handler. For now that ugly :(
-	virtual bool cmd_search() {
-		return false;
-	}
+	static void PaintBackground(
+		not_null<SessionController*> controller,
+		not_null<QWidget*> widget,
+		QRect clip);
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -137,7 +165,7 @@ protected:
 
 	// Called after the hideChildren() call in showAnimated().
 	virtual void showAnimatedHook(
-		const Window::SectionSlideParams &params) {
+		const SectionSlideParams &params) {
 	}
 
 	// Called after the showChildren() call in showFinished().

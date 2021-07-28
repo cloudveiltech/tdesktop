@@ -7,8 +7,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "ui/images.h"
-#include "mtproto/auth_key.h"
+#include "mtproto/mtproto_auth_key.h"
+#include "base/bytes.h"
+
+#include <QtCore/QDataStream>
 
 namespace Serialize {
 
@@ -20,15 +22,22 @@ inline int bytearraySize(const QByteArray &arr) {
 	return sizeof(quint32) + arr.size();
 }
 
-inline int bytesSize(base::const_byte_span bytes) {
+inline int bytesSize(bytes::const_span bytes) {
 	return sizeof(quint32) + bytes.size();
 }
 
+inline int colorSize() {
+	return sizeof(quint32);
+}
+
+void writeColor(QDataStream &stream, const QColor &color);
+QColor readColor(QDataStream &stream);
+
 struct ReadBytesVectorWrap {
-	base::byte_vector &bytes;
+	bytes::vector &bytes;
 };
 
-inline ReadBytesVectorWrap bytes(base::byte_vector &bytes) {
+inline ReadBytesVectorWrap bytes(bytes::vector &bytes) {
 	return ReadBytesVectorWrap { bytes };
 }
 
@@ -58,10 +67,10 @@ inline QDataStream &operator>>(QDataStream &stream, ReadBytesVectorWrap data) {
 }
 
 struct WriteBytesWrap {
-	base::const_byte_span bytes;
+	bytes::const_span bytes;
 };
 
-inline WriteBytesWrap bytes(base::const_byte_span bytes) {
+inline WriteBytesWrap bytes(bytes::const_span bytes) {
 	return WriteBytesWrap { bytes };
 }
 
@@ -84,10 +93,6 @@ inline QDataStream &operator<<(QDataStream &stream, ReadBytesVectorWrap data) {
 inline int dateTimeSize() {
 	return (sizeof(qint64) + sizeof(quint32) + sizeof(qint8));
 }
-
-void writeStorageImageLocation(QDataStream &stream, const StorageImageLocation &loc);
-StorageImageLocation readStorageImageLocation(QDataStream &stream);
-int storageImageLocationSize();
 
 template <typename T>
 inline T read(QDataStream &stream) {

@@ -8,327 +8,43 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/mac/specific_mac.h"
 
 #include "lang/lang_keys.h"
-#include "application.h"
 #include "mainwidget.h"
 #include "history/history_widget.h"
 #include "core/crash_reports.h"
+#include "core/sandbox.h"
+#include "core/application.h"
+#include "core/core_settings.h"
 #include "storage/localstorage.h"
-#include "passcodewidget.h"
+#include "window/window_controller.h"
 #include "mainwindow.h"
 #include "history/history_location_manager.h"
-#include "platform/mac/mac_utilities.h"
+#include "base/platform/mac/base_utilities_mac.h"
+#include "base/platform/base_platform_info.h"
+
+#include <QtGui/QDesktopServices>
+#include <QtWidgets/QApplication>
+#include <QtWidgets/QDesktopWidget>
 
 #include <cstdlib>
 #include <execinfo.h>
+#include <sys/xattr.h>
 
 #include <Cocoa/Cocoa.h>
 #include <CoreFoundation/CFURL.h>
 #include <IOKit/IOKitLib.h>
 #include <IOKit/hidsystem/ev_keymap.h>
-#include <SPMediaKeyTap.h>
 #include <mach-o/dyld.h>
-
-namespace {
-
-QStringList _initLogs;
-
-class _PsEventFilter : public QAbstractNativeEventFilter {
-public:
-	_PsEventFilter() {
-	}
-
-	bool nativeEventFilter(const QByteArray &eventType, void *message, long *result) {
-		auto wnd = App::wnd();
-		if (!wnd) return false;
-
-		return wnd->psFilterNativeEvent(message);
-	}
-};
-
-_PsEventFilter *_psEventFilter = nullptr;
-
-};
-
-namespace {
-
-QRect _monitorRect;
-TimeMs _monitorLastGot = 0;
-
-} // namespace
-
-QRect psDesktopRect() {
-	auto tnow = getms(true);
-	if (tnow > _monitorLastGot + 1000 || tnow < _monitorLastGot) {
-		_monitorLastGot = tnow;
-		_monitorRect = QApplication::desktop()->availableGeometry(App::wnd());
-	}
-	return _monitorRect;
-}
-
-void psShowOverAll(QWidget *w, bool canFocus) {
-	objc_showOverAll(w->winId(), canFocus);
-}
-
-void psBringToBack(QWidget *w) {
-	objc_bringToBack(w->winId());
-}
-
-QAbstractNativeEventFilter *psNativeEventFilter() {
-	delete _psEventFilter;
-	_psEventFilter = new _PsEventFilter();
-	return _psEventFilter;
-}
-
-void psWriteDump() {
-#ifndef TDESKTOP_DISABLE_CRASH_REPORTS
-	double v = objc_appkitVersion();
-	CrashReports::dump() << "OS-Version: " << v;
-#endif // TDESKTOP_DISABLE_CRASH_REPORTS
-}
-
-QString demanglestr(const QString &mangled) {
-	QByteArray cmd = ("c++filt -n " + mangled).toUtf8();
-	FILE *f = popen(cmd.constData(), "r");
-	if (!f) return "BAD_SYMBOL_" + mangled;
-
-	QString result;
-	char buffer[4096] = {0};
-	while (!feof(f)) {
-		if (fgets(buffer, 4096, f) != NULL) {
-			result += buffer;
-		}
-	}
-	pclose(f);
-	return result.trimmed();
-}
-
-QString escapeShell(const QString &str) {
-	QString result;
-	const QChar *b = str.constData(), *e = str.constEnd();
-	for (const QChar *ch = b; ch != e; ++ch) {
-		if (*ch == ' ' || *ch == '"' || *ch == '\'' || *ch == '\\') {
-			if (result.isEmpty()) {
-				result.reserve(str.size() * 2);
-			}
-			if (ch > b) {
-				result.append(b, ch - b);
-			}
-			result.append('\\');
-			b = ch;
-		}
-	}
-	if (result.isEmpty()) return str;
-
-	if (e > b) {
-		result.append(b, e - b);
-	}
-	return result;
-}
-
-QStringList atosstr(uint64 *addresses, int count, uint64 base) {
-	QStringList result;
-	if (!count || cExeName().isEmpty()) return result;
-
-	result.reserve(count);
-	QString cmdstr = "atos -o " + escapeShell(cExeDir() + cExeName()) + qsl("/Contents/MacOS/Telegram -l 0x%1").arg(base, 0, 16);
-	for (int i = 0; i < count; ++i) {
-		if (addresses[i]) {
-			cmdstr += qsl(" 0x%1").arg(addresses[i], 0, 16);
-		}
-	}
-	QByteArray cmd = cmdstr.toUtf8();
-	FILE *f = popen(cmd.constData(), "r");
-
-	QStringList atosResult;
-	if (f) {
-		char buffer[4096] = {0};
-		while (!feof(f)) {
-			if (fgets(buffer, 4096, f) != NULL) {
-				atosResult.push_back(QString::fromUtf8(buffer));
-			}
-		}
-		pclose(f);
-	}
-	for (int i = 0, j = 0; i < count; ++i) {
-		if (addresses[i]) {
-			if (j < atosResult.size() && !atosResult.at(j).isEmpty() && !atosResult.at(j).startsWith(qstr("0x"))) {
-				result.push_back(atosResult.at(j).trimmed());
-			} else {
-				result.push_back(QString());
-			}
-			++j;
-		} else {
-			result.push_back(QString());
-		}
-	}
-	return result;
-
-}
-
-QString psPrepareCrashDump(const QByteArray &crashdump, QString dumpfile) {
-	QString initial = QString::fromUtf8(crashdump), result;
-	QStringList lines = initial.split('\n');
-	result.reserve(initial.size());
-	int32 i = 0, l = lines.size();
-
-	while (i < l) {
-		uint64 addresses[1024] = { 0 };
-		for (; i < l; ++i) {
-			result.append(lines.at(i)).append('\n');
-			QString line = lines.at(i).trimmed();
-			if (line == qstr("Base image addresses:")) {
-				++i;
-				break;
-			}
-		}
-
-		uint64 base = 0;
-		for (int32 start = i; i < l; ++i) {
-			QString line = lines.at(i).trimmed();
-			if (line.isEmpty()) break;
-
-			if (!base) {
-				QRegularExpressionMatch m = QRegularExpression(qsl("^\\d+ (\\d+) \\((.+)\\)")).match(line);
-				if (m.hasMatch()) {
-					if (uint64 address = m.captured(1).toULongLong()) {
-						if (m.captured(2).endsWith(qstr("Contents/MacOS/Telegram"))) {
-							base = address;
-						}
-					}
-				}
-			}
-		}
-		if (base) {
-			result.append(qsl("(base address read: 0x%1)\n").arg(base, 0, 16));
-		} else {
-			result.append(qsl("ERROR: base address not read!\n"));
-		}
-
-		for (; i < l; ++i) {
-			result.append(lines.at(i)).append('\n');
-			QString line = lines.at(i).trimmed();
-			if (line == qstr("Backtrace:")) {
-				++i;
-				break;
-			}
-		}
-
-		int32 start = i;
-		for (; i < l; ++i) {
-			QString line = lines.at(i).trimmed();
-			if (line.isEmpty()) break;
-
-			if (QRegularExpression(qsl("^\\d+")).match(line).hasMatch()) {
-				QStringList lst = line.split(' ', QString::SkipEmptyParts);
-				if (lst.size() > 2) {
-					uint64 addr = lst.at(2).startsWith(qstr("0x")) ? lst.at(2).mid(2).toULongLong(0, 16) : lst.at(2).toULongLong();
-					addresses[i - start] = addr;
-				}
-			}
-		}
-
-		QStringList atos = atosstr(addresses, i - start, base);
-		for (i = start; i < l; ++i) {
-			QString line = lines.at(i).trimmed();
-			if (line.isEmpty()) break;
-
-			if (!QRegularExpression(qsl("^\\d+")).match(line).hasMatch()) {
-				if (!lines.at(i).startsWith(qstr("ERROR: "))) {
-					result.append(qstr("BAD LINE: "));
-				}
-				result.append(line).append('\n');
-				continue;
-			}
-			QStringList lst = line.split(' ', QString::SkipEmptyParts);
-			result.append('\n').append(lst.at(0)).append(qsl(". "));
-			if (lst.size() < 3) {
-				result.append(qstr("BAD LINE: ")).append(line).append('\n');
-				continue;
-			}
-			if (lst.size() > 5 && lst.at(3) == qsl("0x0") && lst.at(4) == qsl("+") && lst.at(5) == qsl("1")) {
-				result.append(qsl("(0x1 separator)\n"));
-				continue;
-			}
-			if (i - start < atos.size()) {
-				if (!atos.at(i - start).isEmpty()) {
-					result.append(atos.at(i - start)).append('\n');
-					continue;
-				}
-			}
-
-			for (int j = 1, s = lst.size();;) {
-				if (lst.at(j).startsWith('_')) {
-					result.append(demanglestr(lst.at(j)));
-					if (++j < s) {
-						result.append(' ');
-						for (;;) {
-							result.append(lst.at(j));
-							if (++j < s) {
-								result.append(' ');
-							} else {
-								break;
-							}
-						}
-					}
-					break;
-				} else if (j > 2) {
-					result.append(lst.at(j));
-				}
-				if (++j < s) {
-					result.append(' ');
-				} else {
-					break;
-				}
-			}
-			result.append(qsl(" [demangled]")).append('\n');
-		}
-	}
-	return result;
-}
-
-void psDeleteDir(const QString &dir) {
-	objc_deleteDir(dir);
-}
-
-namespace {
-
-auto _lastUserAction = 0LL;
-
-} // namespace
-
-void psUserActionDone() {
-	_lastUserAction = getms(true);
-}
-
-bool psIdleSupported() {
-	return objc_idleSupported();
-}
-
-TimeMs psIdleTime() {
-	auto idleTime = 0LL;
-	return objc_idleTime(idleTime) ? idleTime : (getms(true) - _lastUserAction);
-}
-
-QStringList psInitLogs() {
-	return _initLogs;
-}
-
-void psClearInitLogs() {
-	_initLogs = QStringList();
-}
+#include <AVFoundation/AVFoundation.h>
 
 void psActivateProcess(uint64 pid) {
 	if (!pid) {
-		objc_activateProgram(App::wnd() ? App::wnd()->winId() : 0);
+		const auto window = Core::App().activeWindow();
+		objc_activateProgram(window ? window->widget()->winId() : 0);
 	}
 }
 
 QString psAppDataPath() {
 	return objc_appDataPath();
-}
-
-QString psDownloadPath() {
-	return objc_downloadPath();
 }
 
 void psDoCleanup() {
@@ -359,49 +75,128 @@ void start() {
 }
 
 void finish() {
-	delete _psEventFilter;
-	_psEventFilter = nullptr;
-
 	objc_finish();
 }
 
-void StartTranslucentPaint(QPainter &p, QPaintEvent *e) {
-#ifdef OS_MAC_OLD
-	p.setCompositionMode(QPainter::CompositionMode_Source);
-	p.fillRect(e->rect(), Qt::transparent);
-	p.setCompositionMode(QPainter::CompositionMode_SourceOver);
+QString SingleInstanceLocalServerName(const QString &hash) {
+#ifndef OS_MAC_STORE
+	return qsl("/tmp/") + hash + '-' + cGUIDStr();
+#else // OS_MAC_STORE
+	return objc_documentsPath() + hash.left(4);
+#endif // OS_MAC_STORE
+}
+
+bool IsDarkMenuBar() {
+	bool result = false;
+	@autoreleasepool {
+
+	NSDictionary *dict = [[NSUserDefaults standardUserDefaults] persistentDomainForName:NSGlobalDomain];
+	id style = [dict objectForKey:Q2NSString(strStyleOfInterface())];
+	BOOL darkModeOn = (style && [style isKindOfClass:[NSString class]] && NSOrderedSame == [style caseInsensitiveCompare:@"dark"]);
+	result = darkModeOn ? true : false;
+
+	}
+	return result;
+}
+
+std::optional<bool> IsDarkMode() {
+	return IsMac10_14OrGreater()
+		? std::make_optional(IsDarkMenuBar())
+		: std::nullopt;
+}
+
+void WriteCrashDumpDetails() {
+#ifndef DESKTOP_APP_DISABLE_CRASH_REPORTS
+	double v = objc_appkitVersion();
+	CrashReports::dump() << "OS-Version: " << v;
+#endif // DESKTOP_APP_DISABLE_CRASH_REPORTS
+}
+
+void RegisterCustomScheme(bool force) {
+	OSStatus result = LSSetDefaultHandlerForURLScheme(CFSTR("tg"), (CFStringRef)[[NSBundle mainBundle] bundleIdentifier]);
+	DEBUG_LOG(("App Info: set default handler for 'tg' scheme result: %1").arg(result));
+}
+
+// I do check for availability, just not in the exact way clang is content with
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunguarded-availability"
+PermissionStatus GetPermissionStatus(PermissionType type) {
+#ifndef OS_MAC_OLD
+	switch (type) {
+	case PermissionType::Microphone:
+	case PermissionType::Camera:
+		const auto nativeType = (type == PermissionType::Microphone)
+			? AVMediaTypeAudio
+			: AVMediaTypeVideo;
+		if ([AVCaptureDevice respondsToSelector: @selector(authorizationStatusForMediaType:)]) { // Available starting with 10.14
+			switch ([AVCaptureDevice authorizationStatusForMediaType:nativeType]) {
+				case AVAuthorizationStatusNotDetermined:
+					return PermissionStatus::CanRequest;
+				case AVAuthorizationStatusAuthorized:
+					return PermissionStatus::Granted;
+				case AVAuthorizationStatusDenied:
+				case AVAuthorizationStatusRestricted:
+					return PermissionStatus::Denied;
+			}
+		}
+		break;
+	}
+#endif // OS_MAC_OLD
+	return PermissionStatus::Granted;
+}
+
+void RequestPermission(PermissionType type, Fn<void(PermissionStatus)> resultCallback) {
+#ifndef OS_MAC_OLD
+	switch (type) {
+	case PermissionType::Microphone:
+	case PermissionType::Camera:
+		const auto nativeType = (type == PermissionType::Microphone)
+			? AVMediaTypeAudio
+			: AVMediaTypeVideo;
+		if ([AVCaptureDevice respondsToSelector: @selector(requestAccessForMediaType:completionHandler:)]) { // Available starting with 10.14
+			[AVCaptureDevice requestAccessForMediaType:nativeType completionHandler:^(BOOL granted) {
+				crl::on_main([=] {
+					resultCallback(granted ? PermissionStatus::Granted : PermissionStatus::Denied);
+				});
+			}];
+		}
+		break;
+	}
+#endif // OS_MAC_OLD
+	resultCallback(PermissionStatus::Granted);
+}
+#pragma clang diagnostic pop // -Wunguarded-availability
+
+void OpenSystemSettingsForPermission(PermissionType type) {
+#ifndef OS_MAC_OLD
+	switch (type) {
+	case PermissionType::Microphone:
+		[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"]];
+		break;
+	case PermissionType::Camera:
+		[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"]];
+		break;
+	}
 #endif // OS_MAC_OLD
 }
 
-QString SystemCountry() {
-	NSLocale *currentLocale = [NSLocale currentLocale];  // get the current locale.
-	NSString *countryCode = [currentLocale objectForKey:NSLocaleCountryCode];
-	return countryCode ? NS2QString(countryCode) : QString();
-}
-
-QString SystemLanguage() {
-	if (auto currentLocale = [NSLocale currentLocale]) { // get the current locale.
-		if (NSString *collator = [currentLocale objectForKey:NSLocaleCollatorIdentifier]) {
-			return NS2QString(collator);
-		}
-		if (NSString *identifier = [currentLocale objectForKey:NSLocaleIdentifier]) {
-			return NS2QString(identifier);
-		}
-		if (NSString *language = [currentLocale objectForKey:NSLocaleLanguageCode]) {
-			return NS2QString(language);
-		}
+bool OpenSystemSettings(SystemSettingsType type) {
+	switch (type) {
+	case SystemSettingsType::Audio:
+		[[NSWorkspace sharedWorkspace] openFile:@"/System/Library/PreferencePanes/Sound.prefPane"];
+		break;
 	}
-	return QString();
+	return true;
 }
 
-QString CurrentExecutablePath(int argc, char *argv[]) {
-	return NS2QString([[NSBundle mainBundle] bundlePath]);
+void IgnoreApplicationActivationRightNow() {
+	objc_ignoreApplicationActivationRightNow();
 }
 
 } // namespace Platform
 
 void psNewVersion() {
-	objc_registerCustomScheme();
+	Platform::RegisterCustomScheme();
 }
 
 void psAutoStart(bool start, bool silent) {
@@ -410,23 +205,16 @@ void psAutoStart(bool start, bool silent) {
 void psSendToMenu(bool send, bool silent) {
 }
 
-void psUpdateOverlayed(QWidget *widget) {
-}
-
 void psDownloadPathEnableAccess() {
-	objc_downloadPathEnableAccess(Global::DownloadPathBookmark());
+	objc_downloadPathEnableAccess(Core::App().settings().downloadPathBookmark());
 }
 
 QByteArray psDownloadPathBookmark(const QString &path) {
 	return objc_downloadPathBookmark(path);
 }
 
-QByteArray psPathBookmark(const QString &path) {
-	return objc_pathBookmark(path);
-}
-
-bool psLaunchMaps(const LocationCoords &coords) {
-	return QDesktopServices::openUrl(qsl("https://maps.apple.com/?q=Point&z=16&ll=%1,%2").arg(coords.latAsString()).arg(coords.lonAsString()));
+bool psLaunchMaps(const Data::LocationPoint &point) {
+	return QDesktopServices::openUrl(qsl("https://maps.apple.com/?q=Point&z=16&ll=%1,%2").arg(point.latAsString()).arg(point.lonAsString()));
 }
 
 QString strNotificationAboutThemeChange() {

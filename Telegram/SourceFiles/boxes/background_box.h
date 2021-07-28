@@ -9,21 +9,28 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "boxes/abstract_box.h"
 
-namespace Ui {
-class RoundCheckbox;
-} // namespace Ui
+namespace Window {
+class SessionController;
+} // namespace Window
 
-class BackgroundBox : public BoxContent {
+namespace Data {
+class WallPaper;
+} // namespace Data
+
+class BackgroundBox : public Ui::BoxContent {
 public:
-	BackgroundBox(QWidget*);
+	BackgroundBox(QWidget*, not_null<Window::SessionController*> controller);
 
 protected:
 	void prepare() override;
 
 private:
-	void backgroundChosen(int index);
-
 	class Inner;
+
+	void removePaper(const Data::WallPaper &paper);
+
+	const not_null<Window::SessionController*> _controller;
+
 	QPointer<Inner> _inner;
 
 };

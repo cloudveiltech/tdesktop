@@ -7,40 +7,114 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "api/api_common.h"
+#include "chat_helpers/send_context_menu.h"
+#include "data/data_poll.h"
+
+class History;
+
 namespace Ui {
 class RpWidget;
+class GenericBox;
 } // namespace Ui
+
+namespace Data {
+class Folder;
+class Session;
+} // namespace Data
+
+namespace Dialogs {
+class MainList;
+struct EntryState;
+} // namespace Dialogs
 
 namespace Window {
 
 class Controller;
+class SessionController;
+class SessionNavigation;
 
-enum class PeerMenuSource {
-	ChatsList,
-	History,
-	Profile,
-};
-
-using PeerMenuCallback = base::lambda<QAction*(
+using PeerMenuCallback = Fn<QAction*(
 	const QString &text,
-	base::lambda<void()> handler)>;
+	Fn<void()> handler)>;
 
-void FillPeerMenu(
-	not_null<Controller*> controller,
+void FillDialogsEntryMenu(
+	not_null<SessionController*> controller,
+	Dialogs::EntryState request,
+	const PeerMenuCallback &addAction);
+
+void PeerMenuAddMuteAction(
 	not_null<PeerData*> peer,
-	const PeerMenuCallback &addAction,
-	PeerMenuSource source);
+	const PeerMenuCallback &addAction);
 
+void MenuAddMarkAsReadAllChatsAction(
+	not_null<Data::Session*> data,
+	const PeerMenuCallback &addAction);
+
+void MenuAddMarkAsReadChatListAction(
+	Fn<not_null<Dialogs::MainList*>()> &&list,
+	const PeerMenuCallback &addAction);
+
+void PeerMenuExportChat(not_null<PeerData*> peer);
 void PeerMenuDeleteContact(not_null<UserData*> user);
-void PeerMenuShareContactBox(not_null<UserData*> user);
-void PeerMenuAddContact(not_null<UserData*> user);
-void PeerMenuAddChannelMembers(not_null<ChannelData*> channel);
+void PeerMenuShareContactBox(
+	not_null<Window::SessionNavigation*> navigation,
+	not_null<UserData*> user);
+void PeerMenuAddChannelMembers(
+	not_null<Window::SessionNavigation*> navigation,
+	not_null<ChannelData*> channel);
+void PeerMenuCreatePoll(
+	not_null<Window::SessionController*> controller,
+	not_null<PeerData*> peer,
+	MsgId replyToId = 0,
+	PollData::Flags chosen = PollData::Flags(),
+	PollData::Flags disabled = PollData::Flags(),
+	Api::SendType sendType = Api::SendType::Normal,
+	SendMenu::Type sendMenuType = SendMenu::Type::Scheduled);
 
-base::lambda<void()> ClearHistoryHandler(not_null<PeerData*> peer);
-base::lambda<void()> DeleteAndLeaveHandler(not_null<PeerData*> peer);
+struct ClearChat {
+};
+struct ClearReply {
+	FullMsgId replyId;
+};
+void PeerMenuBlockUserBox(
+	not_null<Ui::GenericBox*> box,
+	not_null<Window::Controller*> window,
+	not_null<PeerData*> peer,
+	std::variant<v::null_t, bool> suggestReport,
+	std::variant<v::null_t, ClearChat, ClearReply> suggestClear);
+void PeerMenuUnblockUserWithBotRestart(not_null<UserData*> user);
+
+void BlockSenderFromRepliesBox(
+	not_null<Ui::GenericBox*> box,
+	not_null<Window::SessionController*> controller,
+	FullMsgId id);
+
+void ToggleHistoryArchived(not_null<History*> history, bool archived);
+Fn<void()> ClearHistoryHandler(not_null<PeerData*> peer);
+Fn<void()> DeleteAndLeaveHandler(not_null<PeerData*> peer);
 
 QPointer<Ui::RpWidget> ShowForwardMessagesBox(
+	not_null<Window::SessionNavigation*> navigation,
 	MessageIdsList &&items,
-	base::lambda_once<void()> &&successCallback = nullptr);
+	FnMut<void()> &&successCallback = nullptr);
+
+QPointer<Ui::RpWidget> ShowSendNowMessagesBox(
+	not_null<Window::SessionNavigation*> navigation,
+	not_null<History*> history,
+	MessageIdsList &&items,
+	FnMut<void()> &&successCallback = nullptr);
+
+void ToggleMessagePinned(
+	not_null<Window::SessionNavigation*> navigation,
+	FullMsgId itemId,
+	bool pin);
+void HidePinnedBar(
+	not_null<Window::SessionNavigation*> navigation,
+	not_null<PeerData*> peer,
+	Fn<void()> onHidden);
+void UnpinAllMessages(
+	not_null<Window::SessionNavigation*> navigation,
+	not_null<History*> history);
 
 } // namespace Window

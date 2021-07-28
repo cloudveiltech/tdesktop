@@ -7,98 +7,96 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "mtproto/auth_key.h"
 #include "mtproto/connection_abstract.h"
+#include "mtproto/mtproto_auth_key.h"
 
 namespace MTP {
-namespace internal {
+namespace details {
 
-class AbstractTCPConnection : public AbstractConnection {
-	Q_OBJECT
+class AbstractSocket;
 
+class TcpConnection : public AbstractConnection {
 public:
+	TcpConnection(
+		not_null<Instance*> instance,
+		QThread *thread,
+		const ProxyData &proxy);
 
-	AbstractTCPConnection(QThread *thread);
-	virtual ~AbstractTCPConnection() = 0;
+	ConnectionPointer clone(const ProxyData &proxy) override;
 
-public slots:
-
-	void socketRead();
-
-protected:
-
-	QTcpSocket sock;
-	uint32 packetNum; // sent packet number
-
-	uint32 packetRead, packetLeft; // reading from socket
-	bool readingToShort;
-	char *currentPos;
-	mtpBuffer longBuffer;
-	mtpPrime shortBuffer[MTPShortBufferSize];
-	virtual void socketPacket(const char *packet, uint32 length) = 0;
-
-	static mtpBuffer handleResponse(const char *packet, uint32 length);
-	static void handleError(QAbstractSocket::SocketError e, QTcpSocket &sock);
-	static uint32 fourCharsToUInt(char ch1, char ch2, char ch3, char ch4) {
-		char ch[4] = { ch1, ch2, ch3, ch4 };
-		return *reinterpret_cast<uint32*>(ch);
-	}
-
-	void tcpSend(mtpBuffer &buffer);
-	uchar _sendKey[CTRState::KeySize];
-	CTRState _sendState;
-	uchar _receiveKey[CTRState::KeySize];
-	CTRState _receiveState;
-
-};
-
-class TCPConnection : public AbstractTCPConnection {
-	Q_OBJECT
-
-public:
-
-	TCPConnection(QThread *thread);
-
-	void sendData(mtpBuffer &buffer) override;
+	crl::time pingTime() const override;
+	crl::time fullConnectTimeout() const override;
+	void sendData(mtpBuffer &&buffer) override;
 	void disconnectFromServer() override;
-	void connectTcp(const DcOptions::Endpoint &endpoint) override;
-	void connectHttp(const DcOptions::Endpoint &endpoint) override { // not supported
-	}
+	void connectToServer(
+		const QString &address,
+		int port,
+		const bytes::vector &protocolSecret,
+		int16 protocolDcId,
+		bool protocolForFiles) override;
+	void timedOut() override;
 	bool isConnected() const override;
 
 	int32 debugState() const override;
 
 	QString transport() const override;
+	QString tag() const override;
 
-public slots:
-
-	void socketError(QAbstractSocket::SocketError e);
-
-	void onSocketConnected();
-	void onSocketDisconnected();
-
-	void onTcpTimeoutTimer();
-
-protected:
-
-	void socketPacket(const char *packet, uint32 length) override;
+	~TcpConnection();
 
 private:
-
-	enum Status {
-		WaitingTcp = 0,
-		UsingTcp,
-		FinishedWork
+	enum class Status {
+		Waiting = 0,
+		Ready,
+		Finished,
 	};
-	Status status;
-	MTPint128 tcpNonce;
 
-	QString _addr;
-	int32 _port, _tcpTimeout;
-	MTPDdcOption::Flags _flags;
-	QTimer tcpTimeoutTimer;
+	void socketRead();
+	bytes::const_span prepareConnectionStartPrefix(bytes::span buffer);
+
+	void socketPacket(bytes::const_span bytes);
+
+	void socketConnected();
+	void socketDisconnected();
+	void socketError();
+
+	mtpBuffer parsePacket(bytes::const_span bytes);
+	void ensureAvailableInBuffer(int amount);
+	static uint32 fourCharsToUInt(char ch1, char ch2, char ch3, char ch4) {
+		char ch[4] = { ch1, ch2, ch3, ch4 };
+		return *reinterpret_cast<uint32*>(ch);
+	}
+
+	const not_null<Instance*> _instance;
+	std::unique_ptr<AbstractSocket> _socket;
+	bool _connectionStarted = false;
+
+	int _offsetBytes = 0;
+	int _readBytes = 0;
+	int _leftBytes = 0;
+	bytes::vector _smallBuffer;
+	bytes::vector _largeBuffer;
+	bool _usingLargeBuffer = false;
+
+	uchar _sendKey[CTRState::KeySize];
+	CTRState _sendState;
+	uchar _receiveKey[CTRState::KeySize];
+	CTRState _receiveState;
+	class Protocol;
+	std::unique_ptr<Protocol> _protocol;
+	int16 _protocolDcId = 0;
+
+	Status _status = Status::Waiting;
+	MTPint128 _checkNonce;
+
+	QString _address;
+	int32 _port = 0;
+	crl::time _pingTime = 0;
+
+	rpl::lifetime _connectedLifetime;
+	rpl::lifetime _lifetime;
 
 };
 
-} // namespace internal
+} // namespace details
 } // namespace MTP

@@ -8,89 +8,29 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/empty_userpic.h"
 
 #include "data/data_peer.h"
-#include "styles/style_history.h"
+#include "ui/emoji_config.h"
+#include "ui/effects/animation_value.h"
+#include "ui/ui_utility.h"
+#include "styles/style_chat.h"
+#include "styles/style_dialogs.h"
+#include "styles/style_widgets.h" // style::IconButton
+#include "styles/style_info.h" // st::topBarCall
 
 namespace Ui {
+namespace {
 
-EmptyUserpic::EmptyUserpic(const style::color &color, const QString &name)
-: _color(color) {
-	fillString(name);
+[[nodiscard]] bool IsExternal(const QString &name) {
+	return !name.isEmpty()
+		&& (name.front() == QChar(0))
+		&& QStringView(name).mid(1) == qstr("external");
 }
 
-template <typename Callback>
-void EmptyUserpic::paint(
+void PaintSavedMessagesInner(
 		Painter &p,
 		int x,
 		int y,
-		int outerWidth,
 		int size,
-		Callback paintBackground) const {
-	x = rtl() ? (outerWidth - x - size) : x;
-
-	const auto fontsize = (size * 13) / 33;
-	auto font = st::historyPeerUserpicFont->f;
-	font.setPixelSize(fontsize);
-
-	PainterHighQualityEnabler hq(p);
-	p.setBrush(_color);
-	p.setPen(Qt::NoPen);
-	paintBackground();
-
-	p.setFont(font);
-	p.setBrush(Qt::NoBrush);
-	p.setPen(st::historyPeerUserpicFg);
-	p.drawText(QRect(x, y, size, size), _string, QTextOption(style::al_center));
-}
-
-void EmptyUserpic::paint(
-		Painter &p,
-		int x,
-		int y,
-		int outerWidth,
-		int size) const {
-	paint(p, x, y, outerWidth, size, [&p, x, y, size] {
-		p.drawEllipse(x, y, size, size);
-	});
-}
-
-void EmptyUserpic::paintRounded(Painter &p, int x, int y, int outerWidth, int size) const {
-	paint(p, x, y, outerWidth, size, [&p, x, y, size] {
-		p.drawRoundedRect(x, y, size, size, st::buttonRadius, st::buttonRadius);
-	});
-}
-
-void EmptyUserpic::paintSquare(Painter &p, int x, int y, int outerWidth, int size) const {
-	paint(p, x, y, outerWidth, size, [&p, x, y, size] {
-		p.fillRect(x, y, size, size, p.brush());
-	});
-}
-
-void EmptyUserpic::PaintSavedMessages(
-		Painter &p,
-		int x,
-		int y,
-		int outerWidth,
-		int size) {
-	const auto &bg = st::historyPeerSavedMessagesBg;
-	const auto &fg = st::historyPeerUserpicFg;
-	PaintSavedMessages(p, x, y, outerWidth, size, bg, fg);
-}
-
-void EmptyUserpic::PaintSavedMessages(
-		Painter &p,
-		int x,
-		int y,
-		int outerWidth,
-		int size,
-		const style::color &bg,
 		const style::color &fg) {
-	x = rtl() ? (outerWidth - x - size) : x;
-
-	PainterHighQualityEnabler hq(p);
-	p.setBrush(bg);
-	p.setPen(Qt::NoPen);
-	p.drawEllipse(x, y, size, size);
-
 	// |<----width----->|
 	//
 	// XXXXXXXXXXXXXXXXXX  ---
@@ -159,11 +99,293 @@ void EmptyUserpic::PaintSavedMessages(
 	}
 }
 
-StorageKey EmptyUserpic::uniqueKey() const {
-	auto first = 0xFFFFFFFF00000000ULL | anim::getPremultiplied(_color->c);
+void PaintIconInner(
+		Painter &p,
+		int x,
+		int y,
+		int size,
+		int defaultSize,
+		const style::icon &icon,
+		const style::color &fg) {
+	if (size == defaultSize) {
+		const auto rect = QRect{ x, y, size, size };
+		icon.paintInCenter(
+			p,
+			rect,
+			fg->c);
+	} else {
+		p.save();
+		const auto ratio = size / float64(defaultSize);
+		p.translate(x + size / 2., y + size / 2.);
+		p.scale(ratio, ratio);
+		const auto skip = defaultSize;
+		const auto rect = QRect{ -skip, -skip, 2 * skip, 2 * skip };
+		icon.paintInCenter(
+			p,
+			rect,
+			fg->c);
+		p.restore();
+	}
+}
+
+void PaintRepliesMessagesInner(
+		Painter &p,
+		int x,
+		int y,
+		int size,
+		const style::color &fg) {
+	PaintIconInner(
+		p,
+		x,
+		y,
+		size,
+		st::dialogsPhotoSize,
+		st::dialogsRepliesUserpic,
+		fg);
+}
+
+void PaintExternalMessagesInner(
+		Painter &p,
+		int x,
+		int y,
+		int size,
+		const style::color &fg) {
+	PaintIconInner(
+		p,
+		x,
+		y,
+		size,
+		st::msgPhotoSize,
+		st::topBarCall.icon,
+		fg);
+}
+
+template <typename Callback>
+[[nodiscard]] QPixmap Generate(int size, Callback callback) {
+	auto result = QImage(
+		QSize(size, size) * cIntRetinaFactor(),
+		QImage::Format_ARGB32_Premultiplied);
+	result.setDevicePixelRatio(cRetinaFactor());
+	result.fill(Qt::transparent);
+	{
+		Painter p(&result);
+		callback(p);
+	}
+	return Ui::PixmapFromImage(std::move(result));
+}
+
+} // namespace
+
+EmptyUserpic::EmptyUserpic(const style::color &color, const QString &name)
+: _color(color) {
+	fillString(name);
+}
+
+QString EmptyUserpic::ExternalName() {
+	return QChar(0) + u"external"_q;
+}
+
+template <typename Callback>
+void EmptyUserpic::paint(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		int size,
+		Callback paintBackground) const {
+	x = rtl() ? (outerWidth - x - size) : x;
+
+	const auto fontsize = (size * 13) / 33;
+	auto font = st::historyPeerUserpicFont->f;
+	font.setPixelSize(fontsize);
+
+	PainterHighQualityEnabler hq(p);
+	p.setBrush(_color);
+	p.setPen(Qt::NoPen);
+	paintBackground();
+
+	if (IsExternal(_string)) {
+		PaintExternalMessagesInner(p, x, y, size, st::historyPeerUserpicFg);
+	} else {
+		p.setFont(font);
+		p.setBrush(Qt::NoBrush);
+		p.setPen(st::historyPeerUserpicFg);
+		p.drawText(
+			QRect(x, y, size, size),
+			_string,
+			QTextOption(style::al_center));
+	}
+}
+
+void EmptyUserpic::paint(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		int size) const {
+	paint(p, x, y, outerWidth, size, [&p, x, y, size] {
+		p.drawEllipse(x, y, size, size);
+	});
+}
+
+void EmptyUserpic::paintRounded(Painter &p, int x, int y, int outerWidth, int size) const {
+	paint(p, x, y, outerWidth, size, [&p, x, y, size] {
+		p.drawRoundedRect(x, y, size, size, st::roundRadiusSmall, st::roundRadiusSmall);
+	});
+}
+
+void EmptyUserpic::paintSquare(Painter &p, int x, int y, int outerWidth, int size) const {
+	paint(p, x, y, outerWidth, size, [&p, x, y, size] {
+		p.fillRect(x, y, size, size, p.brush());
+	});
+}
+
+void EmptyUserpic::PaintSavedMessages(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		int size) {
+	const auto &bg = st::historyPeerSavedMessagesBg;
+	const auto &fg = st::historyPeerUserpicFg;
+	PaintSavedMessages(p, x, y, outerWidth, size, bg, fg);
+}
+
+void EmptyUserpic::PaintSavedMessagesRounded(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		int size) {
+	const auto &bg = st::historyPeerSavedMessagesBg;
+	const auto &fg = st::historyPeerUserpicFg;
+	PaintSavedMessagesRounded(p, x, y, outerWidth, size, bg, fg);
+}
+
+void EmptyUserpic::PaintSavedMessages(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		int size,
+		const style::color &bg,
+		const style::color &fg) {
+	x = rtl() ? (outerWidth - x - size) : x;
+
+	PainterHighQualityEnabler hq(p);
+	p.setBrush(bg);
+	p.setPen(Qt::NoPen);
+	p.drawEllipse(x, y, size, size);
+
+	PaintSavedMessagesInner(p, x, y, size, fg);
+}
+
+void EmptyUserpic::PaintSavedMessagesRounded(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		int size,
+		const style::color &bg,
+		const style::color &fg) {
+	x = rtl() ? (outerWidth - x - size) : x;
+
+	PainterHighQualityEnabler hq(p);
+	p.setBrush(bg);
+	p.setPen(Qt::NoPen);
+	p.drawRoundedRect(x, y, size, size, st::roundRadiusSmall, st::roundRadiusSmall);
+
+	PaintSavedMessagesInner(p, x, y, size, fg);
+}
+
+QPixmap EmptyUserpic::GenerateSavedMessages(int size) {
+	return Generate(size, [&](Painter &p) {
+		PaintSavedMessages(p, 0, 0, size, size);
+	});
+}
+
+QPixmap EmptyUserpic::GenerateSavedMessagesRounded(int size) {
+	return Generate(size, [&](Painter &p) {
+		PaintSavedMessagesRounded(p, 0, 0, size, size);
+	});
+}
+
+void EmptyUserpic::PaintRepliesMessages(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		int size) {
+	const auto &bg = st::historyPeerSavedMessagesBg;
+	const auto &fg = st::historyPeerUserpicFg;
+	PaintRepliesMessages(p, x, y, outerWidth, size, bg, fg);
+}
+
+void EmptyUserpic::PaintRepliesMessagesRounded(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		int size) {
+	const auto &bg = st::historyPeerSavedMessagesBg;
+	const auto &fg = st::historyPeerUserpicFg;
+	PaintRepliesMessagesRounded(p, x, y, outerWidth, size, bg, fg);
+}
+
+void EmptyUserpic::PaintRepliesMessages(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		int size,
+		const style::color &bg,
+		const style::color &fg) {
+	x = rtl() ? (outerWidth - x - size) : x;
+
+	PainterHighQualityEnabler hq(p);
+	p.setBrush(bg);
+	p.setPen(Qt::NoPen);
+	p.drawEllipse(x, y, size, size);
+
+	PaintRepliesMessagesInner(p, x, y, size, fg);
+}
+
+void EmptyUserpic::PaintRepliesMessagesRounded(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		int size,
+		const style::color &bg,
+		const style::color &fg) {
+	x = rtl() ? (outerWidth - x - size) : x;
+
+	PainterHighQualityEnabler hq(p);
+	p.setBrush(bg);
+	p.setPen(Qt::NoPen);
+	p.drawRoundedRect(x, y, size, size, st::roundRadiusSmall, st::roundRadiusSmall);
+
+	PaintRepliesMessagesInner(p, x, y, size, fg);
+}
+
+QPixmap EmptyUserpic::GenerateRepliesMessages(int size) {
+	return Generate(size, [&](Painter &p) {
+		PaintRepliesMessages(p, 0, 0, size, size);
+	});
+}
+
+QPixmap EmptyUserpic::GenerateRepliesMessagesRounded(int size) {
+	return Generate(size, [&](Painter &p) {
+		PaintRepliesMessagesRounded(p, 0, 0, size, size);
+	});
+}
+
+InMemoryKey EmptyUserpic::uniqueKey() const {
+	const auto first = (uint64(0xFFFFFFFFU) << 32)
+		| anim::getPremultiplied(_color->c);
 	auto second = uint64(0);
 	memcpy(&second, _string.constData(), qMin(sizeof(second), _string.size() * sizeof(QChar)));
-	return StorageKey(first, second);
+	return InMemoryKey(first, second);
 }
 
 QPixmap EmptyUserpic::generate(int size) {
@@ -174,10 +396,14 @@ QPixmap EmptyUserpic::generate(int size) {
 		Painter p(&result);
 		paint(p, 0, 0, size, size);
 	}
-	return App::pixmapFromImageInPlace(std::move(result));
+	return Ui::PixmapFromImage(std::move(result));
 }
 
 void EmptyUserpic::fillString(const QString &name) {
+	if (IsExternal(name)) {
+		_string = name;
+		return;
+	}
 	QList<QString> letters;
 	QList<int> levels;
 
@@ -195,7 +421,7 @@ void EmptyUserpic::fillString(const QString &name) {
 			}
 		} else if (!letterFound && ch->isLetterOrNumber()) {
 			letterFound = true;
-			if (ch + 1 != end && chIsDiac(*(ch + 1))) {
+			if (ch + 1 != end && Ui::Text::IsDiac(*(ch + 1))) {
 				letters.push_back(QString(ch, 2));
 				levels.push_back(level);
 				++ch;

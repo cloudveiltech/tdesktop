@@ -12,11 +12,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/media/info_media_list_widget.h"
 #include "info/media/info_media_buttons.h"
 #include "info/media/info_media_empty_widget.h"
-#include "info/profile/info_profile_button.h"
 #include "info/profile/info_profile_icon.h"
 #include "info/info_controller.h"
 #include "ui/widgets/discrete_sliders.h"
 #include "ui/widgets/shadow.h"
+#include "ui/widgets/buttons.h"
+#include "ui/widgets/box_content_divider.h"
 #include "ui/wrap/vertical_layout.h"
 #include "ui/search_field_controller.h"
 #include "styles/style_info.h"
@@ -42,7 +43,7 @@ InnerWidget::InnerWidget(
 // Was done for top level tabs support.
 // Now used for shared media in Saved Messages.
 void InnerWidget::setupOtherTypes() {
-	if (_controller->peer()->isSelf() && _isStackBottom) {
+	if (_controller->key().peer()->isSelf() && _isStackBottom) {
 		createOtherTypes();
 	} else {
 		_otherTypes.destroy();
@@ -66,7 +67,7 @@ void InnerWidget::createOtherTypes() {
 	_otherTypes->show();
 
 	createTypeButtons();
-	_otherTypes->add(object_ptr<BoxContentDivider>(_otherTypes));
+	_otherTypes->add(object_ptr<Ui::BoxContentDivider>(_otherTypes));
 	//createTabs();
 
 	_otherTypes->resizeToWidth(width());
@@ -95,7 +96,7 @@ void InnerWidget::createTypeButtons() {
 		auto result = AddButton(
 			content,
 			_controller,
-			_controller->peer(),
+			_controller->key().peer(),
 			_controller->migrated(),
 			buttonType,
 			tracker);
@@ -123,11 +124,10 @@ void InnerWidget::createTypeButtons() {
 	addMediaButton(Type::File, st::infoIconMediaFile);
 	addMediaButton(Type::MusicFile, st::infoIconMediaAudio);
 	addMediaButton(Type::Link, st::infoIconMediaLink);
-	if (auto user = _controller->peer()->asUser()) {
+	addMediaButton(Type::RoundVoiceFile, st::infoIconMediaVoice);
+	if (auto user = _controller->key().peer()->asUser()) {
 //		addCommonGroupsButton(user, st::infoIconMediaGroup);
 	}
-	addMediaButton(Type::VoiceFile, st::infoIconMediaVoice);
-//	addMediaButton(Type::RoundFile, st::infoIconMediaRound);
 
 	content->add(object_ptr<Ui::FixedHeightWidget>(
 		content,
@@ -141,9 +141,9 @@ void InnerWidget::createTypeButtons() {
 //		this,
 //		st::infoTabs));
 //	auto sections = QStringList();
-//	sections.push_back(lang(lng_media_type_photos).toUpper());
-//	sections.push_back(lang(lng_media_type_videos).toUpper());
-//	sections.push_back(lang(lng_media_type_files).toUpper());
+//	sections.push_back(tr::lng_media_type_photos(tr::now).toUpper());
+//	sections.push_back(tr::lng_media_type_videos(tr::now).toUpper());
+//	sections.push_back(tr::lng_media_type_files(tr::now).toUpper());
 //	_otherTabs->setSections(sections);
 //	_otherTabs->setActiveSection(*TypeToTabIndex(type()));
 //	_otherTabs->finishAnimating();

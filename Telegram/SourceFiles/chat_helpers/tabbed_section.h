@@ -16,23 +16,15 @@ class TabbedSelector;
 
 class TabbedMemento : public Window::SectionMemento {
 public:
-	TabbedMemento(
-		object_ptr<TabbedSelector> selector,
-		base::lambda<void(object_ptr<TabbedSelector>)> returnMethod);
+	TabbedMemento() = default;
 	TabbedMemento(TabbedMemento &&other) = default;
 	TabbedMemento &operator=(TabbedMemento &&other) = default;
 
 	object_ptr<Window::SectionWidget> createWidget(
 		QWidget *parent,
-		not_null<Window::Controller*> controller,
+		not_null<Window::SessionController*> controller,
 		Window::Column column,
 		const QRect &geometry) override;
-
-	~TabbedMemento();
-
-private:
-	object_ptr<TabbedSelector> _selector;
-	base::lambda<void(object_ptr<TabbedSelector>)> _returnMethod;
 
 };
 
@@ -40,21 +32,10 @@ class TabbedSection : public Window::SectionWidget {
 public:
 	TabbedSection(
 		QWidget *parent,
-		not_null<Window::Controller*> controller);
-	TabbedSection(
-		QWidget *parent,
-		not_null<Window::Controller*> controller,
-		object_ptr<TabbedSelector> selector,
-		base::lambda<void(object_ptr<TabbedSelector>)> returnMethod);
+		not_null<Window::SessionController*> controller);
 
 	void beforeHiding();
 	void afterShown();
-	void setCancelledCallback(base::lambda<void()> callback) {
-		_cancelledCallback = std::move(callback);
-	}
-
-	object_ptr<TabbedSelector> takeSelector();
-	QPointer<TabbedSelector> getSelector() const;
 
 	bool showInternal(
 		not_null<Window::SectionMemento*> memento,
@@ -63,22 +44,18 @@ public:
 		return true;
 	}
 	// Float player interface.
-	bool wheelEventFromFloatPlayer(QEvent *e) override;
-	QRect rectForFloatPlayer() const override;
+	bool floatPlayerHandleWheelEvent(QEvent *e) override;
+	QRect floatPlayerAvailableRect() override;
 
 	~TabbedSection();
 
 protected:
 	void resizeEvent(QResizeEvent *e) override;
 
-	void showFinishedHook() override {
-		afterShown();
-	}
+	void showFinishedHook() override;
 
 private:
-	object_ptr<TabbedSelector> _selector;
-	base::lambda<void()> _cancelledCallback;
-	base::lambda<void(object_ptr<TabbedSelector>)> _returnMethod;
+	const not_null<TabbedSelector*> _selector;
 
 };
 

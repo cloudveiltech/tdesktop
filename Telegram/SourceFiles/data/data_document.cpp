@@ -7,18 +7,55 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_document.h"
 
+#include "data/data_document_resolver.h"
+#include "data/data_session.h"
+#include "data/data_streaming.h"
+#include "data/data_document_media.h"
+#include "data/data_reply_preview.h"
 #include "lang/lang_keys.h"
 #include "inline_bots/inline_bot_layout_item.h"
+#include "main/main_session.h"
 #include "mainwidget.h"
 #include "core/file_utilities.h"
-#include "media/media_audio.h"
+#include "core/mime_type.h"
+#include "data/stickers/data_stickers.h"
+#include "data/stickers/data_stickers_set.h"
+#include "media/audio/media_audio.h"
+#include "media/player/media_player_instance.h"
+#include "media/streaming/media_streaming_loader_mtproto.h"
+#include "media/streaming/media_streaming_loader_local.h"
 #include "storage/localstorage.h"
+#include "storage/storage_account.h"
+#include "storage/streamed_file_downloader.h"
+#include "storage/file_download_mtproto.h"
+#include "storage/file_download_web.h"
 #include "platform/platform_specific.h"
-#include "history/history_media_types.h"
-#include "auth_session.h"
-#include "messenger.h"
+#include "platform/platform_file_utilities.h"
+#include "base/platform/base_platform_info.h"
+#include "history/history.h"
+#include "history/history_item.h"
+#include "history/view/media/history_view_gif.h"
+#include "window/window_session_controller.h"
+#include "storage/cache/storage_cache_database.h"
+#include "storage/storage_cloud_song_cover.h"
+#include "boxes/confirm_box.h"
+#include "ui/image/image.h"
+#include "ui/text/text_utilities.h"
+#include "base/base_file_utilities.h"
+#include "mainwindow.h"
+#include "core/application.h"
+#include "lottie/lottie_animation.h"
+#include "app.h"
+
+#include <QtCore/QBuffer>
+#include <QtCore/QMimeType>
+#include <QtCore/QMimeDatabase>
 
 namespace {
+
+const auto kAnimatedStickerDimensions = QSize(
+	kStickerSideSize,
+	kStickerSideSize);
 
 QString JoinStringList(const QStringList &list, const QString &separator) {
 	const auto count = list.size();
@@ -41,41 +78,23 @@ QString JoinStringList(const QStringList &list, const QString &separator) {
 
 } // namespace
 
-bool fileIsImage(const QString &name, const QString &mime) {
-	QString lowermime = mime.toLower(), namelower = name.toLower();
-	if (lowermime.startsWith(qstr("image/"))) {
-		return true;
-	} else if (namelower.endsWith(qstr(".bmp"))
-		|| namelower.endsWith(qstr(".jpg"))
-		|| namelower.endsWith(qstr(".jpeg"))
-		|| namelower.endsWith(qstr(".gif"))
-		|| namelower.endsWith(qstr(".webp"))
-		|| namelower.endsWith(qstr(".tga"))
-		|| namelower.endsWith(qstr(".tiff"))
-		|| namelower.endsWith(qstr(".tif"))
-		|| namelower.endsWith(qstr(".psd"))
-		|| namelower.endsWith(qstr(".png"))) {
-		return true;
-	}
-	return false;
-}
-
-QString saveFileName(const QString &title, const QString &filter, const QString &prefix, QString name, bool savingAs, const QDir &dir) {
-#ifdef Q_OS_WIN
-	name = name.replace(QRegularExpression(qsl("[\\\\\\/\\:\\*\\?\\\"\\<\\>\\|]")), qsl("_"));
-#elif defined Q_OS_MAC
-	name = name.replace(QRegularExpression(qsl("[\\:]")), qsl("_"));
-#elif defined Q_OS_LINUX
-	name = name.replace(QRegularExpression(qsl("[\\/]")), qsl("_"));
-#endif
-	if (Global::AskDownloadPath() || savingAs) {
+QString FileNameUnsafe(
+		not_null<Main::Session*> session,
+		const QString &title,
+		const QString &filter,
+		const QString &prefix,
+		QString name,
+		bool savingAs,
+		const QDir &dir) {
+	name = base::FileNameFromUserString(name);
+	if (Core::App().settings().askDownloadPath() || savingAs) {
 		if (!name.isEmpty() && name.at(0) == QChar::fromLatin1('.')) {
 			name = filedialogDefaultName(prefix, name);
 		} else if (dir.path() != qsl(".")) {
 			QString path = dir.absolutePath();
 			if (path != cDialogLastPath()) {
 				cSetDialogLastPath(path);
-				Local::writeUserSettings();
+				Local::writeSettings();
 			}
 		}
 
@@ -87,7 +106,7 @@ QString saveFileName(const QString &title, const QString &filter, const QString 
 			if (QRegularExpression(qsl("^[a-zA-Z_0-9]+$")).match(ext).hasMatch()) {
 				QStringList filters = filter.split(sep);
 				if (filters.size() > 1) {
-					QString first = filters.at(0);
+					const auto &first = filters.at(0);
 					int32 start = first.indexOf(qsl("(*."));
 					if (start >= 0) {
 						if (!QRegularExpression(qsl("\\(\\*\\.") + ext + qsl("[\\)\\s]"), QRegularExpression::CaseInsensitiveOption).match(first).hasMatch()) {
@@ -112,14 +131,16 @@ QString saveFileName(const QString &title, const QString &filter, const QString 
 		return filedialogGetSaveFile(name, title, fil, name) ? name : QString();
 	}
 
-	QString path;
-	if (Global::DownloadPath().isEmpty()) {
-		path = psDownloadPath();
-	} else if (Global::DownloadPath() == qsl("tmp")) {
-		path = cTempDir();
-	} else {
-		path = Global::DownloadPath();
-	}
+	auto path = [&] {
+		const auto path = Core::App().settings().downloadPath();
+		if (path.isEmpty()) {
+			return File::DefaultDownloadPath(session);
+		} else if (path == qsl("tmp")) {
+			return session->local().tempDirectory();
+		} else {
+			return path;
+		}
+	}();
 	if (name.isEmpty()) name = qsl(".unknown");
 	if (name.at(0) == QChar::fromLatin1('.')) {
 		if (!QDir().exists(path)) QDir().mkpath(path);
@@ -139,7 +160,7 @@ QString saveFileName(const QString &title, const QString &filter, const QString 
 	}
 	QString nameBase = path + nameStart;
 	name = nameBase + extension;
-	for (int i = 0; QFileInfo(name).exists(); ++i) {
+	for (int i = 0; QFileInfo::exists(name); ++i) {
 		name = nameBase + QString(" (%1)").arg(i + 2) + extension;
 	}
 
@@ -147,32 +168,47 @@ QString saveFileName(const QString &title, const QString &filter, const QString 
 	return name;
 }
 
-bool StickerData::setInstalled() const {
-	switch (set.type()) {
-	case mtpc_inputStickerSetID: {
-		auto it = Auth().data().stickerSets().constFind(set.c_inputStickerSetID().vid.v);
-		return (it != Auth().data().stickerSets().cend()) && !(it->flags & MTPDstickerSet::Flag::f_archived) && (it->flags & MTPDstickerSet::Flag::f_installed);
-	} break;
-	case mtpc_inputStickerSetShortName: {
-		auto name = qs(set.c_inputStickerSetShortName().vshort_name).toLower();
-		for (auto it = Auth().data().stickerSets().cbegin(), e = Auth().data().stickerSets().cend(); it != e; ++it) {
-			if (it->shortName.toLower() == name) {
-				return !(it->flags & MTPDstickerSet::Flag::f_archived) && (it->flags & MTPDstickerSet::Flag::f_installed);
-			}
+QString FileNameForSave(
+		not_null<Main::Session*> session,
+		const QString &title,
+		const QString &filter,
+		const QString &prefix,
+		QString name,
+		bool savingAs,
+		const QDir &dir) {
+	const auto result = FileNameUnsafe(
+		session,
+		title,
+		filter,
+		prefix,
+		name,
+		savingAs,
+		dir);
+#ifdef Q_OS_WIN
+	const auto lower = result.trimmed().toLower();
+	const auto kBadExtensions = { qstr(".lnk"), qstr(".scf") };
+	const auto kMaskExtension = qsl(".download");
+	for (const auto extension : kBadExtensions) {
+		if (lower.endsWith(extension)) {
+			return result + kMaskExtension;
 		}
-	} break;
 	}
-	return false;
+#endif // Q_OS_WIN
+	return result;
 }
 
-QString documentSaveFilename(const DocumentData *data, bool forceSavingAs = false, const QString already = QString(), const QDir &dir = QDir()) {
+QString DocumentFileNameForSave(
+		not_null<const DocumentData*> data,
+		bool forceSavingAs,
+		const QString &already,
+		const QDir &dir) {
 	auto alreadySavingFilename = data->loadingFilePath();
 	if (!alreadySavingFilename.isEmpty()) {
 		return alreadySavingFilename;
 	}
 
 	QString name, filter, caption, prefix;
-	MimeType mimeType = mimeTypeForName(data->mimeString());
+	const auto mimeType = Core::MimeTypeForName(data->mimeString());
 	QStringList p = mimeType.globPatterns();
 	QString pattern = p.isEmpty() ? QString() : p.front();
 	if (data->isVoiceMessage()) {
@@ -180,7 +216,7 @@ QString documentSaveFilename(const DocumentData *data, bool forceSavingAs = fals
 		name = already.isEmpty() ? (mp3 ? qsl(".mp3") : qsl(".ogg")) : already;
 		filter = mp3 ? qsl("MP3 Audio (*.mp3);;") : qsl("OGG Opus Audio (*.ogg);;");
 		filter += FileDialog::AllFilesFilter();
-		caption = lang(lng_save_audio);
+		caption = tr::lng_save_audio(tr::now);
 		prefix = qsl("audio");
 	} else if (data->isVideoFile()) {
 		name = already.isEmpty() ? data->filename() : already;
@@ -192,7 +228,7 @@ QString documentSaveFilename(const DocumentData *data, bool forceSavingAs = fals
 		} else {
 			filter = mimeType.filterString() + qsl(";;") + FileDialog::AllFilesFilter();
 		}
-		caption = lang(lng_save_video);
+		caption = tr::lng_save_video(tr::now);
 		prefix = qsl("video");
 	} else {
 		name = already.isEmpty() ? data->filename() : already;
@@ -204,239 +240,113 @@ QString documentSaveFilename(const DocumentData *data, bool forceSavingAs = fals
 		} else {
 			filter = mimeType.filterString() + qsl(";;") + FileDialog::AllFilesFilter();
 		}
-		caption = lang(data->isAudioFile() ? lng_save_audio_file : lng_save_file);
+		caption = data->isAudioFile()
+			? tr::lng_save_audio_file(tr::now)
+			: tr::lng_save_file(tr::now);
 		prefix = qsl("doc");
 	}
 
-	return saveFileName(caption, filter, prefix, name, forceSavingAs, dir);
+	return FileNameForSave(
+		&data->session(),
+		caption,
+		filter,
+		prefix,
+		name,
+		forceSavingAs,
+		dir);
 }
 
-void DocumentOpenClickHandler::doOpen(
-		not_null<DocumentData*> data,
-		HistoryItem *context,
-		ActionOnLoad action) {
-	if (!data->date) return;
-
-	auto msgId = context ? context->fullId() : FullMsgId();
-	bool playVoice = data->isVoiceMessage();
-	bool playMusic = data->isAudioFile();
-	bool playVideo = data->isVideoFile();
-	bool playAnimation = data->isAnimation();
-	auto &location = data->location(true);
-	if (data->isTheme()) {
-		if (!location.isEmpty() && location.accessEnable()) {
-			Messenger::Instance().showDocument(data, context);
-			location.accessDisable();
-			return;
-		}
-	}
-	if (!location.isEmpty() || (!data->data().isEmpty() && (playVoice || playMusic || playVideo || playAnimation))) {
-		using State = Media::Player::State;
-		if (playVoice) {
-			auto state = Media::Player::mixer()->currentState(AudioMsgId::Type::Voice);
-			if (state.id == AudioMsgId(data, msgId) && !Media::Player::IsStoppedOrStopping(state.state)) {
-				if (Media::Player::IsPaused(state.state) || state.state == State::Pausing) {
-					Media::Player::mixer()->resume(state.id);
-				} else {
-					Media::Player::mixer()->pause(state.id);
-				}
-			} else {
-				auto audio = AudioMsgId(data, msgId);
-				Media::Player::mixer()->play(audio);
-				Media::Player::Updated().notify(audio);
-				if (App::main()) {
-					App::main()->mediaMarkRead(data);
-				}
-			}
-		} else if (playMusic) {
-			auto state = Media::Player::mixer()->currentState(AudioMsgId::Type::Song);
-			if (state.id == AudioMsgId(data, msgId) && !Media::Player::IsStoppedOrStopping(state.state)) {
-				if (Media::Player::IsPaused(state.state) || state.state == State::Pausing) {
-					Media::Player::mixer()->resume(state.id);
-				} else {
-					Media::Player::mixer()->pause(state.id);
-				}
-			} else {
-				auto song = AudioMsgId(data, msgId);
-				Media::Player::mixer()->play(song);
-				Media::Player::Updated().notify(song);
-			}
-		} else if (playVideo) {
-			if (!data->data().isEmpty()) {
-				Messenger::Instance().showDocument(data, context);
-			} else if (location.accessEnable()) {
-				Messenger::Instance().showDocument(data, context);
-				location.accessDisable();
-			} else {
-				auto filepath = location.name();
-				if (documentIsValidMediaFile(filepath)) {
-					File::Launch(filepath);
-				}
-			}
-			if (App::main()) App::main()->mediaMarkRead(data);
-		} else if (data->isVoiceMessage() || data->isAudioFile() || data->isVideoFile()) {
-			auto filepath = location.name();
-			if (documentIsValidMediaFile(filepath)) {
-				File::Launch(filepath);
-			}
-			if (App::main()) App::main()->mediaMarkRead(data);
-		} else if (data->size < App::kImageSizeLimit) {
-			if (!data->data().isEmpty() && playAnimation) {
-				if (action == ActionOnLoadPlayInline && context && context->getMedia()) {
-					context->getMedia()->playInline();
-				} else {
-					Messenger::Instance().showDocument(data, context);
-				}
-			} else if (location.accessEnable()) {
-				if (data->isAnimation() || QImageReader(location.name()).canRead()) {
-					if (action == ActionOnLoadPlayInline && context && context->getMedia()) {
-						context->getMedia()->playInline();
-					} else {
-						Messenger::Instance().showDocument(data, context);
-					}
-				} else {
-					File::Launch(location.name());
-				}
-				location.accessDisable();
-			} else {
-				File::Launch(location.name());
-			}
-		} else {
-			File::Launch(location.name());
-		}
-		return;
-	}
-
-	if (data->status != FileReady) return;
-
-	QString filename;
-	if (!data->saveToCache()) {
-		filename = documentSaveFilename(data);
-		if (filename.isEmpty()) return;
-	}
-
-	data->save(filename, action, msgId);
-}
-
-void DocumentOpenClickHandler::onClickImpl() const {
-	const auto data = document();
-	const auto action = data->isVoiceMessage()
-		? ActionOnLoadNone
-		: ActionOnLoadOpen;
-	doOpen(data, getActionItem(), action);
-}
-
-void GifOpenClickHandler::onClickImpl() const {
-	doOpen(document(), getActionItem(), ActionOnLoadPlayInline);
-}
-
-void DocumentSaveClickHandler::doSave(
-		not_null<DocumentData*> data,
-		bool forceSavingAs) {
-	if (!data->date) return;
-
-	auto filepath = data->filepath(DocumentData::FilePathResolveSaveFromDataSilent, forceSavingAs);
-	if (!filepath.isEmpty() && !forceSavingAs) {
-		File::OpenWith(filepath, QCursor::pos());
-	} else {
-		auto fileinfo = QFileInfo(filepath);
-		auto filedir = filepath.isEmpty() ? QDir() : fileinfo.dir();
-		auto filename = filepath.isEmpty() ? QString() : fileinfo.fileName();
-		auto newfname = documentSaveFilename(data, forceSavingAs, filename, filedir);
-		if (!newfname.isEmpty()) {
-			auto action = (filename.isEmpty() || forceSavingAs) ? ActionOnLoadNone : ActionOnLoadOpenWith;
-			auto actionMsgId = App::hoveredLinkItem() ? App::hoveredLinkItem()->fullId() : (App::contextItem() ? App::contextItem()->fullId() : FullMsgId());
-			data->save(newfname, action, actionMsgId);
-		}
-	}
-}
-
-void DocumentSaveClickHandler::onClickImpl() const {
-	doSave(document());
-}
-
-void DocumentCancelClickHandler::onClickImpl() const {
-	const auto data = document();
-	if (!data->date) return;
-
-	if (data->uploading()) {
-		if (const auto item = App::histItemById(context())) {
-			App::contextItem(item);
-			App::main()->cancelUploadLayer();
-		}
-	} else {
-		data->cancel();
-	}
+Data::FileOrigin StickerData::setOrigin() const {
+	return set.id
+		? Data::FileOrigin(
+			Data::FileOriginStickerSet(set.id, set.accessHash))
+		: Data::FileOrigin();
 }
 
 VoiceData::~VoiceData() {
-	if (!waveform.isEmpty() && waveform.at(0) == -1 && waveform.size() > int32(sizeof(TaskId))) {
-		TaskId taskId = 0;
+	if (!waveform.isEmpty()
+		&& waveform[0] == -1
+		&& waveform.size() > int32(sizeof(TaskId))) {
+		auto taskId = TaskId();
 		memcpy(&taskId, waveform.constData() + 1, sizeof(taskId));
 		Local::cancelTask(taskId);
 	}
 }
 
-DocumentData::DocumentData(DocumentId id, int32 dc, uint64 accessHash, int32 version, const QString &url, const QVector<MTPDocumentAttribute> &attributes)
+DocumentData::DocumentData(not_null<Data::Session*> owner, DocumentId id)
 : id(id)
-, _dc(dc)
-, _access(accessHash)
-, _version(version)
-, _url(url) {
-	setattributes(attributes);
-	if (_dc && _access) {
-		_location = Local::readFileLocation(mediaKey());
-	}
+, _owner(owner) {
 }
 
-DocumentData *DocumentData::create(DocumentId id) {
-	return new DocumentData(id, 0, 0, 0, QString(), QVector<MTPDocumentAttribute>());
+DocumentData::~DocumentData() {
+	base::take(_thumbnail.loader).reset();
+	base::take(_videoThumbnail.loader).reset();
+	destroyLoader();
 }
 
-DocumentData *DocumentData::create(DocumentId id, int32 dc, uint64 accessHash, int32 version, const QVector<MTPDocumentAttribute> &attributes) {
-	return new DocumentData(id, dc, accessHash, version, QString(), attributes);
+Data::Session &DocumentData::owner() const {
+	return *_owner;
 }
 
-DocumentData *DocumentData::create(DocumentId id, const QString &url, const QVector<MTPDocumentAttribute> &attributes) {
-	return new DocumentData(id, 0, 0, 0, url, attributes);
+Main::Session &DocumentData::session() const {
+	return _owner->session();
 }
 
-void DocumentData::setattributes(const QVector<MTPDocumentAttribute> &attributes) {
-	for (int32 i = 0, l = attributes.size(); i < l; ++i) {
-		switch (attributes[i].type()) {
-		case mtpc_documentAttributeImageSize: {
-			auto &d = attributes[i].c_documentAttributeImageSize();
-			dimensions = QSize(d.vw.v, d.vh.v);
-		} break;
-		case mtpc_documentAttributeAnimated: if (type == FileDocument || type == StickerDocument || type == VideoDocument) {
-			type = AnimatedDocument;
-			_additional = nullptr;
-		} break;
-		case mtpc_documentAttributeSticker: {
-			auto &d = attributes[i].c_documentAttributeSticker();
+void DocumentData::setattributes(
+		const QVector<MTPDocumentAttribute> &attributes) {
+	_flags &= ~(Flag::ImageType
+		| Flag::HasAttachedStickers
+		| kStreamingSupportedMask);
+	_flags |= kStreamingSupportedUnknown;
+
+	validateLottieSticker();
+
+	for (const auto &attribute : attributes) {
+		attribute.match([&](const MTPDdocumentAttributeImageSize &data) {
+			dimensions = QSize(data.vw().v, data.vh().v);
+		}, [&](const MTPDdocumentAttributeAnimated &data) {
+			if (type == FileDocument
+				|| type == StickerDocument
+				|| type == VideoDocument) {
+				type = AnimatedDocument;
+				_additional = nullptr;
+			}
+		}, [&](const MTPDdocumentAttributeSticker &data) {
 			if (type == FileDocument) {
 				type = StickerDocument;
 				_additional = std::make_unique<StickerData>();
 			}
 			if (sticker()) {
-				sticker()->alt = qs(d.valt);
-				if (sticker()->set.type() != mtpc_inputStickerSetID || d.vstickerset.type() == mtpc_inputStickerSetID) {
-					sticker()->set = d.vstickerset;
+				sticker()->alt = qs(data.valt());
+				if (!sticker()->set.id
+					|| data.vstickerset().type() == mtpc_inputStickerSetID) {
+					sticker()->set = data.vstickerset().match([&](
+							const MTPDinputStickerSetID &data) {
+						return StickerSetIdentifier{
+							.id = data.vid().v,
+							.accessHash = data.vaccess_hash().v,
+						};
+					}, [&](const MTPDinputStickerSetShortName &data) {
+						return StickerSetIdentifier{
+							.shortName = qs(data.vshort_name()),
+						};
+					}, [](const auto &) {
+						return StickerSetIdentifier();
+					});
 				}
 			}
-		} break;
-		case mtpc_documentAttributeVideo: {
-			auto &d = attributes[i].c_documentAttributeVideo();
+		}, [&](const MTPDdocumentAttributeVideo &data) {
 			if (type == FileDocument) {
-				type = d.is_round_message() ? RoundVideoDocument : VideoDocument;
+				type = data.is_round_message()
+					? RoundVideoDocument
+					: VideoDocument;
 			}
-			_duration = d.vduration.v;
-			dimensions = QSize(d.vw.v, d.vh.v);
-		} break;
-		case mtpc_documentAttributeAudio: {
-			auto &d = attributes[i].c_documentAttributeAudio();
+			_duration = data.vduration().v;
+			setMaybeSupportsStreaming(data.is_supports_streaming());
+			dimensions = QSize(data.vw().v, data.vh().v);
+		}, [&](const MTPDdocumentAttributeAudio &data) {
 			if (type == FileDocument) {
-				if (d.is_voice()) {
+				if (data.is_voice()) {
 					type = VoiceDocument;
 					_additional = std::make_unique<VoiceData>();
 				} else {
@@ -445,209 +355,356 @@ void DocumentData::setattributes(const QVector<MTPDocumentAttribute> &attributes
 				}
 			}
 			if (const auto voiceData = voice()) {
-				voiceData->duration = d.vduration.v;
-				VoiceWaveform waveform = documentWaveformDecode(qba(d.vwaveform));
-				uchar wavemax = 0;
-				for (int32 i = 0, l = waveform.size(); i < l; ++i) {
-					uchar waveat = waveform.at(i);
-					if (wavemax < waveat) wavemax = waveat;
-				}
-				voiceData->waveform = waveform;
-				voiceData->wavemax = wavemax;
+				voiceData->duration = data.vduration().v;
+				voiceData->waveform = documentWaveformDecode(
+					data.vwaveform().value_or_empty());
+				voiceData->wavemax = voiceData->waveform.empty()
+					? uchar(0)
+					: *ranges::max_element(voiceData->waveform);
 			} else if (const auto songData = song()) {
-				songData->duration = d.vduration.v;
-				songData->title = qs(d.vtitle);
-				songData->performer = qs(d.vperformer);
-			}
-		} break;
-		case mtpc_documentAttributeFilename: {
-			auto &attribute = attributes[i];
-			auto remoteFileName = qs(
-				attribute.c_documentAttributeFilename().vfile_name);
+				songData->duration = data.vduration().v;
+				songData->title = qs(data.vtitle().value_or_empty());
+				songData->performer = qs(data.vperformer().value_or_empty());
 
-			// We don't want RTL Override characters in filenames,
-			// because they introduce a security issue, when a filename
-			// "Fil[RTLO]gepj.exe" looks like "Filexe.jpeg" being ".exe"
-			auto rtlOverride = QChar(0x202E);
-			_filename = std::move(remoteFileName).replace(rtlOverride, "");
-		} break;
+				if (!hasThumbnail()
+					&& !songData->title.isEmpty()
+					&& !songData->performer.isEmpty()) {
+
+					Storage::CloudSongCover::LoadThumbnailFromExternal(this);
+				}
+			}
+		}, [&](const MTPDdocumentAttributeFilename &data) {
+			_filename = qs(data.vfile_name());
+
+			// We don't want LTR/RTL mark/embedding/override/isolate chars
+			// in filenames, because they introduce a security issue, when
+			// an executable "Fil[x]gepj.exe" may look like "Filexe.jpeg".
+			QChar controls[] = {
+				0x200E, // LTR Mark
+				0x200F, // RTL Mark
+				0x202A, // LTR Embedding
+				0x202B, // RTL Embedding
+				0x202D, // LTR Override
+				0x202E, // RTL Override
+				0x2066, // LTR Isolate
+				0x2067, // RTL Isolate
+			};
+			for (const auto ch : controls) {
+				_filename = std::move(_filename).replace(ch, "_");
+			}
+		}, [&](const MTPDdocumentAttributeHasStickers &data) {
+			_flags |= Flag::HasAttachedStickers;
+		});
+	}
+	if (type == StickerDocument
+		&& ((size > Storage::kMaxStickerBytesSize)
+			|| (!sticker()->animated
+				&& !GoodStickerDimensions(
+					dimensions.width(),
+					dimensions.height())))) {
+		type = FileDocument;
+		_additional = nullptr;
+	}
+	if (isAudioFile() || isAnimation() || isVoiceMessage()) {
+		setMaybeSupportsStreaming(true);
+	}
+}
+
+void DocumentData::validateLottieSticker() {
+	if (type == FileDocument
+		&& _mimeString == qstr("application/x-tgsticker")) {
+		type = StickerDocument;
+		_additional = std::make_unique<StickerData>();
+		sticker()->animated = true;
+		dimensions = kAnimatedStickerDimensions;
+	}
+}
+
+void DocumentData::setDataAndCache(const QByteArray &data) {
+	if (const auto media = activeMediaView()) {
+		media->setBytes(data);
+	}
+	if (saveToCache() && data.size() <= Storage::kMaxFileInMemory) {
+		owner().cache().put(
+			cacheKey(),
+			Storage::Cache::Database::TaggedValue(
+				base::duplicate(data),
+				cacheTag()));
+	}
+}
+
+bool DocumentData::checkWallPaperProperties() {
+	if (type == WallPaperDocument) {
+		return true;
+	}
+	if (type != FileDocument
+		|| !hasThumbnail()
+		|| !dimensions.width()
+		|| !dimensions.height()
+		|| dimensions.width() > Storage::kMaxWallPaperDimension
+		|| dimensions.height() > Storage::kMaxWallPaperDimension
+		|| size > Storage::kMaxWallPaperInMemory
+		|| mimeString() == qstr("application/x-tgwallpattern")) {
+		return false; // #TODO themes support svg patterns
+	}
+	type = WallPaperDocument;
+	return true;
+}
+
+void DocumentData::updateThumbnails(
+		const InlineImageLocation &inlineThumbnail,
+		const ImageWithLocation &thumbnail,
+		const ImageWithLocation &videoThumbnail) {
+	if (!inlineThumbnail.bytes.isEmpty()
+		&& _inlineThumbnailBytes.isEmpty()) {
+		_inlineThumbnailBytes = inlineThumbnail.bytes;
+		if (inlineThumbnail.isPath) {
+			_flags |= Flag::InlineThumbnailIsPath;
+		} else {
+			_flags &= ~Flag::InlineThumbnailIsPath;
 		}
 	}
-	if (type == StickerDocument) {
-		if (dimensions.width() <= 0
-			|| dimensions.height() <= 0
-			|| dimensions.width() > StickerMaxSize
-			|| dimensions.height() > StickerMaxSize
-			|| !saveToCache()) {
-			type = FileDocument;
-			_additional = nullptr;
+	Data::UpdateCloudFile(
+		_thumbnail,
+		thumbnail,
+		owner().cache(),
+		Data::kImageCacheTag,
+		[&](Data::FileOrigin origin) { loadThumbnail(origin); },
+		[&](QImage preloaded) {
+			if (const auto media = activeMediaView()) {
+				media->setThumbnail(std::move(preloaded));
+			}
+		});
+	Data::UpdateCloudFile(
+		_videoThumbnail,
+		videoThumbnail,
+		owner().cache(),
+		Data::kAnimationCacheTag,
+		[&](Data::FileOrigin origin) { loadVideoThumbnail(origin); });
+}
+
+bool DocumentData::isWallPaper() const {
+	return (type == WallPaperDocument);
+}
+
+bool DocumentData::isPatternWallPaper() const {
+	return isWallPaper() && hasMimeType(qstr("image/png"));
+}
+
+bool DocumentData::hasThumbnail() const {
+	return _thumbnail.location.valid();
+}
+
+bool DocumentData::thumbnailLoading() const {
+	return _thumbnail.loader != nullptr;
+}
+
+bool DocumentData::thumbnailFailed() const {
+	return (_thumbnail.flags & Data::CloudFile::Flag::Failed);
+}
+
+void DocumentData::loadThumbnail(Data::FileOrigin origin) {
+	const auto autoLoading = false;
+	const auto finalCheck = [=] {
+		if (const auto active = activeMediaView()) {
+			return !active->thumbnail();
 		}
+		return true;
+	};
+	const auto done = [=](QImage result) {
+		if (const auto active = activeMediaView()) {
+			active->setThumbnail(std::move(result));
+		}
+	};
+	Data::LoadCloudFile(
+		&session(),
+		_thumbnail,
+		origin,
+		LoadFromCloudOrLocal,
+		autoLoading,
+		Data::kImageCacheTag,
+		finalCheck,
+		done);
+}
+
+const ImageLocation &DocumentData::thumbnailLocation() const {
+	return _thumbnail.location;
+}
+
+int DocumentData::thumbnailByteSize() const {
+	return _thumbnail.byteSize;
+}
+
+bool DocumentData::hasVideoThumbnail() const {
+	return _videoThumbnail.location.valid();
+}
+
+bool DocumentData::videoThumbnailLoading() const {
+	return _videoThumbnail.loader != nullptr;
+}
+
+bool DocumentData::videoThumbnailFailed() const {
+	return (_videoThumbnail.flags & Data::CloudFile::Flag::Failed);
+}
+
+void DocumentData::loadVideoThumbnail(Data::FileOrigin origin) {
+	const auto autoLoading = false;
+	const auto finalCheck = [=] {
+		if (const auto active = activeMediaView()) {
+			return active->videoThumbnailContent().isEmpty();
+		}
+		return true;
+	};
+	const auto done = [=](QByteArray result) {
+		if (const auto active = activeMediaView()) {
+			active->setVideoThumbnail(std::move(result));
+		}
+	};
+	Data::LoadCloudFile(
+		&session(),
+		_videoThumbnail,
+		origin,
+		LoadFromCloudOrLocal,
+		autoLoading,
+		Data::kAnimationCacheTag,
+		finalCheck,
+		done);
+}
+
+const ImageLocation &DocumentData::videoThumbnailLocation() const {
+	return _videoThumbnail.location;
+}
+
+int DocumentData::videoThumbnailByteSize() const {
+	return _videoThumbnail.byteSize;
+}
+
+Storage::Cache::Key DocumentData::goodThumbnailCacheKey() const {
+	return Data::DocumentThumbCacheKey(_dc, id);
+}
+
+bool DocumentData::goodThumbnailChecked() const {
+	return (_goodThumbnailState & GoodThumbnailFlag::Mask)
+		== GoodThumbnailFlag::Checked;
+}
+
+bool DocumentData::goodThumbnailGenerating() const {
+	return (_goodThumbnailState & GoodThumbnailFlag::Mask)
+		== GoodThumbnailFlag::Generating;
+}
+
+bool DocumentData::goodThumbnailNoData() const {
+	return (_goodThumbnailState & GoodThumbnailFlag::Mask)
+		== GoodThumbnailFlag::NoData;
+}
+
+void DocumentData::setGoodThumbnailGenerating() {
+	_goodThumbnailState = (_goodThumbnailState & ~GoodThumbnailFlag::Mask)
+		| GoodThumbnailFlag::Generating;
+}
+
+void DocumentData::setGoodThumbnailDataReady() {
+	_goodThumbnailState = GoodThumbnailFlag::DataReady
+		| (goodThumbnailNoData()
+			? GoodThumbnailFlag(0)
+			: (_goodThumbnailState & GoodThumbnailFlag::Mask));
+}
+
+void DocumentData::setGoodThumbnailChecked(bool hasData) {
+	if (!hasData && (_goodThumbnailState & GoodThumbnailFlag::DataReady)) {
+		_goodThumbnailState &= ~GoodThumbnailFlag::DataReady;
+		_goodThumbnailState &= ~GoodThumbnailFlag::Mask;
+		Data::DocumentMedia::CheckGoodThumbnail(this);
+		return;
 	}
+	_goodThumbnailState = (_goodThumbnailState & ~GoodThumbnailFlag::Mask)
+		| (hasData
+			? GoodThumbnailFlag::Checked
+			: GoodThumbnailFlag::NoData);
+}
+
+std::shared_ptr<Data::DocumentMedia> DocumentData::createMediaView() {
+	if (auto result = activeMediaView()) {
+		return result;
+	}
+	auto result = std::make_shared<Data::DocumentMedia>(this);
+	_media = result;
+	return result;
+}
+
+std::shared_ptr<Data::DocumentMedia> DocumentData::activeMediaView() const {
+	return _media.lock();
+}
+
+void DocumentData::setGoodThumbnailPhoto(not_null<PhotoData*> photo) {
+	_goodThumbnailPhoto = photo;
+}
+
+PhotoData *DocumentData::goodThumbnailPhoto() const {
+	return _goodThumbnailPhoto;
+}
+
+Storage::Cache::Key DocumentData::bigFileBaseCacheKey() const {
+	return hasRemoteLocation()
+		? StorageFileLocation(
+			_dc,
+			session().userId(),
+			MTP_inputDocumentFileLocation(
+				MTP_long(id),
+				MTP_long(_access),
+				MTP_bytes(_fileReference),
+				MTP_string())).bigFileBaseCacheKey()
+		: Storage::Cache::Key();
 }
 
 bool DocumentData::saveToCache() const {
-	return (type == StickerDocument && size < Storage::kMaxStickerInMemory)
-		|| (isAnimation() && size < Storage::kMaxAnimationInMemory)
-		|| (isVoiceMessage() && size < Storage::kMaxVoiceInMemory);
-}
-
-void DocumentData::forget() {
-	thumb->forget();
-	if (sticker()) sticker()->img->forget();
-	replyPreview->forget();
-	_data.clear();
-}
-
-void DocumentData::automaticLoad(const HistoryItem *item) {
-	if (loaded() || status != FileReady) return;
-
-	if (saveToCache() && _loader != CancelledMtpFileLoader) {
-		if (type == StickerDocument) {
-			save(QString(), _actionOnLoad, _actionOnLoadMsgId);
-		} else if (isAnimation()) {
-			bool loadFromCloud = false;
-			if (item) {
-				if (item->history()->peer->isUser()) {
-					loadFromCloud = !(cAutoDownloadGif() & dbiadNoPrivate);
-				} else {
-					loadFromCloud = !(cAutoDownloadGif() & dbiadNoGroups);
-				}
-			} else { // if load at least anywhere
-				loadFromCloud = !(cAutoDownloadGif() & dbiadNoPrivate) || !(cAutoDownloadGif() & dbiadNoGroups);
-			}
-			save(QString(), _actionOnLoad, _actionOnLoadMsgId, loadFromCloud ? LoadFromCloudOrLocal : LoadFromLocalOnly, true);
-		} else if (isVoiceMessage()) {
-			if (item) {
-				bool loadFromCloud = false;
-				if (item->history()->peer->isUser()) {
-					loadFromCloud = !(cAutoDownloadAudio() & dbiadNoPrivate);
-				} else {
-					loadFromCloud = !(cAutoDownloadAudio() & dbiadNoGroups);
-				}
-				save(QString(), _actionOnLoad, _actionOnLoadMsgId, loadFromCloud ? LoadFromCloudOrLocal : LoadFromLocalOnly, true);
-			}
-		}
-	}
+	return (size < Storage::kMaxFileInMemory)
+		&& ((type == StickerDocument)
+			|| isAnimation()
+			|| isVoiceMessage()
+			|| (type == WallPaperDocument)
+			|| isTheme()
+			|| (mimeString() == qstr("image/png")
+				&& _filename.startsWith("image_")));
 }
 
 void DocumentData::automaticLoadSettingsChanged() {
-	if (loaded() || status != FileReady || (!isAnimation() && !isVoiceMessage()) || !saveToCache() || _loader != CancelledMtpFileLoader) {
+	if (!cancelled() || status != FileReady) {
 		return;
 	}
 	_loader = nullptr;
+	_flags &= ~Flag::DownloadCancelled;
 }
 
-void DocumentData::performActionOnLoad() {
-	if (_actionOnLoad == ActionOnLoadNone) return;
-
-	auto loc = location(true);
-	auto already = loc.name();
-	auto item = _actionOnLoadMsgId.msg ? App::histItemById(_actionOnLoadMsgId) : nullptr;
-	auto showImage = !isVideoFile() && (size < App::kImageSizeLimit);
-	auto playVoice = isVoiceMessage() && (_actionOnLoad == ActionOnLoadPlayInline || _actionOnLoad == ActionOnLoadOpen);
-	auto playMusic = isAudioFile() && (_actionOnLoad == ActionOnLoadPlayInline || _actionOnLoad == ActionOnLoadOpen);
-	auto playAnimation = isAnimation() && (_actionOnLoad == ActionOnLoadPlayInline || _actionOnLoad == ActionOnLoadOpen) && showImage && item && item->getMedia();
-	if (auto applyTheme = isTheme()) {
-		if (!loc.isEmpty() && loc.accessEnable()) {
-			Messenger::Instance().showDocument(this, item);
-			loc.accessDisable();
-			return;
-		}
+void DocumentData::finishLoad() {
+	// NB! _loader may be in ~FileLoader() already.
+	const auto guard = gsl::finally([&] {
+		destroyLoader();
+	});
+	if (!_loader || _loader->cancelled()) {
+		_flags |= Flag::DownloadCancelled;
+		return;
 	}
-	using State = Media::Player::State;
-	if (playVoice) {
-		if (loaded()) {
-			auto state = Media::Player::mixer()->currentState(AudioMsgId::Type::Voice);
-			if (state.id == AudioMsgId(this, _actionOnLoadMsgId) && !Media::Player::IsStoppedOrStopping(state.state)) {
-				if (Media::Player::IsPaused(state.state) || state.state == State::Pausing) {
-					Media::Player::mixer()->resume(state.id);
-				} else {
-					Media::Player::mixer()->pause(state.id);
-				}
-			} else if (Media::Player::IsStopped(state.state)) {
-				Media::Player::mixer()->play(AudioMsgId(this, _actionOnLoadMsgId));
-				if (App::main()) App::main()->mediaMarkRead(this);
-			}
-		}
-	} else if (playMusic) {
-		if (loaded()) {
-			auto state = Media::Player::mixer()->currentState(AudioMsgId::Type::Song);
-			if (state.id == AudioMsgId(this, _actionOnLoadMsgId) && !Media::Player::IsStoppedOrStopping(state.state)) {
-				if (Media::Player::IsPaused(state.state) || state.state == State::Pausing) {
-					Media::Player::mixer()->resume(state.id);
-				} else {
-					Media::Player::mixer()->pause(state.id);
-				}
-			} else if (Media::Player::IsStopped(state.state)) {
-				auto song = AudioMsgId(this, _actionOnLoadMsgId);
-				Media::Player::mixer()->play(song);
-				Media::Player::Updated().notify(song);
-			}
-		}
-	} else if (playAnimation) {
-		if (loaded()) {
-			if (_actionOnLoad == ActionOnLoadPlayInline && item->getMedia()) {
-				item->getMedia()->playInline();
-			} else {
-				Messenger::Instance().showDocument(this, item);
-			}
-		}
-	} else {
-		if (already.isEmpty()) return;
-
-		if (_actionOnLoad == ActionOnLoadOpenWith) {
-			File::OpenWith(already, QCursor::pos());
-		} else if (_actionOnLoad == ActionOnLoadOpen || _actionOnLoad == ActionOnLoadPlayInline) {
-			if (isVoiceMessage() || isAudioFile() || isVideoFile()) {
-				if (documentIsValidMediaFile(already)) {
-					File::Launch(already);
-				}
-				if (App::main()) App::main()->mediaMarkRead(this);
-			} else if (loc.accessEnable()) {
-				if (showImage && QImageReader(loc.name()).canRead()) {
-					if (_actionOnLoad == ActionOnLoadPlayInline && item && item->getMedia()) {
-						item->getMedia()->playInline();
-					} else {
-						Messenger::Instance().showDocument(this, item);
-					}
-				} else {
-					File::Launch(already);
-				}
-				loc.accessDisable();
-			} else {
-				File::Launch(already);
-			}
-		}
+	setLocation(Core::FileLocation(_loader->fileName()));
+	setGoodThumbnailDataReady();
+	if (const auto media = activeMediaView()) {
+		media->setBytes(_loader->bytes());
+		media->checkStickerLarge(_loader.get());
 	}
-	_actionOnLoad = ActionOnLoadNone;
 }
 
-bool DocumentData::loaded(FilePathResolveType type) const {
-	if (loading() && _loader->finished()) {
-		if (_loader->cancelled()) {
-			destroyLoaderDelayed(CancelledMtpFileLoader);
-		} else {
-			auto that = const_cast<DocumentData*>(this);
-			that->_location = FileLocation(_loader->fileName());
-			that->_data = _loader->bytes();
-			if (that->sticker() && !_loader->imagePixmap().isNull()) {
-				that->sticker()->img = ImagePtr(_data, _loader->imageFormat(), _loader->imagePixmap());
-			}
-			destroyLoaderDelayed();
-		}
-		notifyLayoutChanged();
+void DocumentData::destroyLoader() {
+	if (!_loader) {
+		return;
 	}
-	return !data().isEmpty() || !filepath(type).isEmpty();
-}
-
-void DocumentData::destroyLoaderDelayed(mtpFileLoader *newValue) const {
-	_loader->stop();
-	auto loader = std::unique_ptr<FileLoader>(std::exchange(_loader, newValue));
-	Auth().downloader().delayedDestroyLoader(std::move(loader));
+	const auto loader = base::take(_loader);
+	if (cancelled()) {
+		loader->cancel();
+	}
 }
 
 bool DocumentData::loading() const {
-	return _loader && _loader != CancelledMtpFileLoader;
+	return (_loader != nullptr);
 }
 
 QString DocumentData::loadingFilePath() const {
@@ -665,19 +722,48 @@ float64 DocumentData::progress() const {
 		if (uploadingData->size > 0) {
 			const auto result = float64(uploadingData->offset)
 				/ uploadingData->size;
-			return snap(result, 0., 1.);
+			return std::clamp(result, 0., 1.);
 		}
 		return 0.;
 	}
-	return loading() ? _loader->currentProgress() : (loaded() ? 1. : 0.);
+	return loading() ? _loader->currentProgress() : 0.;
 }
 
-int32 DocumentData::loadOffset() const {
+int DocumentData::loadOffset() const {
 	return loading() ? _loader->currentOffset() : 0;
 }
 
 bool DocumentData::uploading() const {
 	return (uploadingData != nullptr);
+}
+
+bool DocumentData::loadedInMediaCache() const {
+	return (_flags & Flag::LoadedInMediaCache);
+}
+
+void DocumentData::setLoadedInMediaCache(bool loaded) {
+	const auto flags = loaded
+		? (_flags | Flag::LoadedInMediaCache)
+		: (_flags & ~Flag::LoadedInMediaCache);
+	if (_flags == flags) {
+		return;
+	}
+	_flags = flags;
+	if (filepath().isEmpty()) {
+		if (loadedInMediaCache()) {
+			session().local().writeFileLocation(
+				mediaKey(),
+				Core::FileLocation::InMediaCacheLocation());
+		} else {
+			session().local().removeFileLocation(mediaKey());
+		}
+		owner().requestDocumentViewRepaint(this);
+	}
+}
+
+void DocumentData::setLoadedInMediaCacheLocation() {
+	_location = Core::FileLocation();
+	_flags |= Flag::LoadedInMediaCache;
 }
 
 void DocumentData::setWaitingForAlbum() {
@@ -690,20 +776,26 @@ bool DocumentData::waitingForAlbum() const {
 	return uploading() && uploadingData->waitingForAlbum;
 }
 
-void DocumentData::save(const QString &toFile, ActionOnLoad action, const FullMsgId &actionMsgId, LoadFromCloudSetting fromCloud, bool autoLoading) {
-	if (loaded(FilePathResolveChecked)) {
+void DocumentData::save(
+		Data::FileOrigin origin,
+		const QString &toFile,
+		LoadFromCloudSetting fromCloud,
+		bool autoLoading) {
+	if (const auto media = activeMediaView(); media && media->loaded(true)) {
 		auto &l = location(true);
 		if (!toFile.isEmpty()) {
-			if (!_data.isEmpty()) {
+			if (!media->bytes().isEmpty()) {
 				QFile f(toFile);
 				f.open(QIODevice::WriteOnly);
-				f.write(_data);
+				f.write(media->bytes());
 				f.close();
 
-				setLocation(FileLocation(toFile));
-				Local::writeFileLocation(mediaKey(), FileLocation(toFile));
+				setLocation(Core::FileLocation(toFile));
+				session().local().writeFileLocation(
+					mediaKey(),
+					Core::FileLocation(toFile));
 			} else if (l.accessEnable()) {
-				auto alreadyName = l.name();
+				const auto &alreadyName = l.name();
 				if (alreadyName != toFile) {
 					QFile(toFile).remove();
 					QFile(alreadyName).copy(toFile);
@@ -711,65 +803,136 @@ void DocumentData::save(const QString &toFile, ActionOnLoad action, const FullMs
 				l.accessDisable();
 			}
 		}
-		_actionOnLoad = action;
-		_actionOnLoadMsgId = actionMsgId;
-		performActionOnLoad();
 		return;
 	}
 
-	if (_loader == CancelledMtpFileLoader) _loader = nullptr;
 	if (_loader) {
 		if (!_loader->setFileName(toFile)) {
-			cancel(); // changes _actionOnLoad
-			_loader = nullptr;
+			cancel();
 		}
 	}
+	_flags &= ~Flag::DownloadCancelled;
 
-	_actionOnLoad = action;
-	_actionOnLoadMsgId = actionMsgId;
 	if (_loader) {
-		if (fromCloud == LoadFromCloudOrLocal) _loader->permitLoadFromCloud();
+		if (fromCloud == LoadFromCloudOrLocal) {
+			_loader->permitLoadFromCloud();
+		}
 	} else {
 		status = FileReady;
-		if (!_access && !_url.isEmpty()) {
-			_loader = new webFileLoader(_url, toFile, fromCloud, autoLoading);
+		auto reader = owner().streaming().sharedReader(this, origin, true);
+		if (reader) {
+			_loader = std::make_unique<Storage::StreamedFileDownloader>(
+				&session(),
+				id,
+				_dc,
+				origin,
+				Data::DocumentCacheKey(_dc, id),
+				mediaKey(),
+				std::move(reader),
+				toFile,
+				size,
+				locationType(),
+				(saveToCache() ? LoadToCacheAsWell : LoadToFileOnly),
+				fromCloud,
+				autoLoading,
+				cacheTag());
+		} else if (hasWebLocation()) {
+			_loader = std::make_unique<mtpFileLoader>(
+				&session(),
+				_urlLocation,
+				size,
+				size,
+				fromCloud,
+				autoLoading,
+				cacheTag());
+		} else if (!_access && !_url.isEmpty()) {
+			_loader = std::make_unique<webFileLoader>(
+				&session(),
+				_url,
+				toFile,
+				fromCloud,
+				autoLoading,
+				cacheTag());
 		} else {
-			_loader = new mtpFileLoader(_dc, id, _access, _version, locationType(), toFile, size, (saveToCache() ? LoadToCacheAsWell : LoadToFileOnly), fromCloud, autoLoading);
+			_loader = std::make_unique<mtpFileLoader>(
+				&session(),
+				StorageFileLocation(
+					_dc,
+					session().userId(),
+					MTP_inputDocumentFileLocation(
+						MTP_long(id),
+						MTP_long(_access),
+						MTP_bytes(_fileReference),
+						MTP_string())),
+				origin,
+				locationType(),
+				toFile,
+				size,
+				size,
+				(saveToCache() ? LoadToCacheAsWell : LoadToFileOnly),
+				fromCloud,
+				autoLoading,
+				cacheTag());
 		}
-		_loader->connect(_loader, SIGNAL(progress(FileLoader*)), App::main(), SLOT(documentLoadProgress(FileLoader*)));
-		_loader->connect(_loader, SIGNAL(failed(FileLoader*,bool)), App::main(), SLOT(documentLoadFailed(FileLoader*,bool)));
+		handleLoaderUpdates();
+	}
+	if (loading()) {
 		_loader->start();
 	}
-	notifyLayoutChanged();
+	_owner->notifyDocumentLayoutChanged(this);
+}
+
+void DocumentData::handleLoaderUpdates() {
+	_loader->updates(
+	) | rpl::start_with_next_error_done([=] {
+		_owner->documentLoadProgress(this);
+	}, [=](bool started) {
+		if (started && _loader) {
+			const auto origin = _loader->fileOrigin();
+			const auto failedFileName = _loader->fileName();
+			const auto retry = [=] {
+				Ui::hideLayer();
+				save(origin, failedFileName);
+			};
+			Ui::show(Box<ConfirmBox>(
+				tr::lng_download_finish_failed(tr::now),
+				crl::guard(&session(), retry)));
+		} else {
+			// Sometimes we have LOCATION_INVALID error in documents / stickers.
+			// Sometimes FILE_REFERENCE_EXPIRED could not be handled.
+			//
+			//const auto openSettings = [=] {
+			//	Core::App().settings().etDownloadPathBookmark(QByteArray());
+			//	Core::App().settings().setDownloadPath(QString());
+			//	Ui::show(Box<DownloadPathBox>());
+			//};
+			//Ui::show(Box<ConfirmBox>(
+			//	tr::lng_download_path_failed(tr::now),
+			//	tr::lng_download_path_settings(tr::now),
+			//	crl::guard(&session(), openSettings)));
+		}
+		finishLoad();
+		status = FileDownloadFailed;
+		_owner->documentLoadFail(this, started);
+	}, [=] {
+		finishLoad();
+		_owner->documentLoadDone(this);
+	}, _loader->lifetime());
+
 }
 
 void DocumentData::cancel() {
-	if (!loading()) return;
-
-	auto loader = std::unique_ptr<FileLoader>(std::exchange(_loader, CancelledMtpFileLoader));
-	loader->cancel();
-	loader->stop();
-	Auth().downloader().delayedDestroyLoader(std::move(loader));
-
-	notifyLayoutChanged();
-	if (auto main = App::main()) {
-		main->documentLoadProgress(this);
+	if (!loading()) {
+		return;
 	}
 
-	_actionOnLoad = ActionOnLoadNone;
+	_flags |= Flag::DownloadCancelled;
+	destroyLoader();
+	_owner->documentLoadDone(this);
 }
 
-void DocumentData::notifyLayoutChanged() const {
-	auto &items = App::documentItems();
-	for (auto item : items.value(const_cast<DocumentData*>(this))) {
-		Auth().data().markItemLayoutChanged(item);
-	}
-
-	if (auto items = InlineBots::Layout::documentItems()) {
-		for (auto item : items->value(const_cast<DocumentData*>(this))) {
-			item->layoutChanged();
-		}
-	}
+bool DocumentData::cancelled() const {
+	return (_flags & Flag::DownloadCancelled);
 }
 
 VoiceWaveform documentWaveformDecode(const QByteArray &encoded5bit) {
@@ -824,68 +987,295 @@ QByteArray documentWaveformEncode5bit(const VoiceWaveform &waveform) {
 	return result;
 }
 
-QByteArray DocumentData::data() const {
-	return _data;
-}
-
-const FileLocation &DocumentData::location(bool check) const {
+const Core::FileLocation &DocumentData::location(bool check) const {
 	if (check && !_location.check()) {
-		const_cast<DocumentData*>(this)->_location = Local::readFileLocation(mediaKey());
+		const auto location = session().local().readFileLocation(mediaKey());
+		const auto that = const_cast<DocumentData*>(this);
+		if (location.inMediaCache()) {
+			that->setLoadedInMediaCacheLocation();
+		} else {
+			that->_location = location;
+		}
 	}
 	return _location;
 }
 
-void DocumentData::setLocation(const FileLocation &loc) {
-	if (loc.check()) {
+void DocumentData::setLocation(const Core::FileLocation &loc) {
+	if (loc.inMediaCache()) {
+		setLoadedInMediaCacheLocation();
+	} else if (loc.check()) {
 		_location = loc;
 	}
 }
 
-QString DocumentData::filepath(FilePathResolveType type, bool forceSavingAs) const {
-	bool check = (type != FilePathResolveCached);
-	QString result = (check && _location.name().isEmpty()) ? QString() : location(check).name();
-	bool saveFromData = result.isEmpty() && !data().isEmpty();
-	if (saveFromData) {
-		if (type != FilePathResolveSaveFromData && type != FilePathResolveSaveFromDataSilent) {
-			saveFromData = false;
-		} else if (type == FilePathResolveSaveFromDataSilent && (Global::AskDownloadPath() || forceSavingAs)) {
-			saveFromData = false;
-		}
-	}
-	if (saveFromData) {
-		QString filename = documentSaveFilename(this, forceSavingAs);
-		if (!filename.isEmpty()) {
-			QFile f(filename);
-			if (f.open(QIODevice::WriteOnly)) {
-				if (f.write(data()) == data().size()) {
-					f.close();
-					const_cast<DocumentData*>(this)->_location = FileLocation(filename);
-					Local::writeFileLocation(mediaKey(), _location);
-					result = filename;
-				}
-			}
-		}
-	}
-	return result;
+QString DocumentData::filepath(bool check) const {
+	return (check && _location.name().isEmpty())
+		? QString()
+		: location(check).name();
 }
 
-ImagePtr DocumentData::makeReplyPreview() {
-	if (replyPreview->isNull() && !thumb->isNull()) {
-		if (thumb->loaded()) {
-			int w = thumb->width(), h = thumb->height();
-			if (w <= 0) w = 1;
-			if (h <= 0) h = 1;
-			auto thumbSize = (w > h) ? QSize(w * st::msgReplyBarSize.height() / h, st::msgReplyBarSize.height()) : QSize(st::msgReplyBarSize.height(), h * st::msgReplyBarSize.height() / w);
-			thumbSize *= cIntRetinaFactor();
-			auto options = Images::Option::Smooth | (isVideoMessage() ? Images::Option::Circled : Images::Option::None) | Images::Option::TransparentBackground;
-			auto outerSize = st::msgReplyBarSize.height();
-			auto image = thumb->pixNoCache(thumbSize.width(), thumbSize.height(), options, outerSize, outerSize);
-			replyPreview = ImagePtr(image, "PNG");
-		} else {
-			thumb->load();
+bool DocumentData::saveFromData() {
+	return !filepath(true).isEmpty() || saveFromDataChecked();
+}
+
+bool DocumentData::saveFromDataSilent() {
+	return !filepath(true).isEmpty()
+		|| (!Core::App().settings().askDownloadPath()
+			&& saveFromDataChecked());
+}
+
+bool DocumentData::saveFromDataChecked() {
+	const auto media = activeMediaView();
+	if (!media) {
+		return false;
+	}
+	const auto bytes = media->bytes();
+	if (bytes.isEmpty()) {
+		return false;
+	}
+	const auto path = DocumentFileNameForSave(this);
+	if (path.isEmpty()) {
+		return false;
+	}
+	auto file = QFile(path);
+	if (!file.open(QIODevice::WriteOnly)
+		|| file.write(bytes) != bytes.size()) {
+		return false;
+	}
+	file.close();
+	_location = Core::FileLocation(path);
+	session().local().writeFileLocation(mediaKey(), _location);
+	return true;
+}
+
+bool DocumentData::isStickerSetInstalled() const {
+	Expects(sticker() != nullptr);
+
+	using SetFlag = Data::StickersSetFlag;
+
+	const auto &sets = _owner->stickers().sets();
+	if (const auto id = sticker()->set.id) {
+		const auto i = sets.find(id);
+		return (i != sets.cend())
+			&& !(i->second->flags & SetFlag::Archived)
+			&& (i->second->flags & SetFlag::Installed);
+	} else if (!sticker()->set.shortName.isEmpty()) {
+		const auto name = sticker()->set.shortName.toLower();
+		for (const auto &[id, set] : sets) {
+			if (set->shortName.toLower() == name) {
+				return !(set->flags & SetFlag::Archived)
+					&& (set->flags & SetFlag::Installed);
+			}
+		}
+		return false;
+	} else {
+		return false;
+	}
+}
+
+Image *DocumentData::getReplyPreview(Data::FileOrigin origin) {
+	if (!hasThumbnail()) {
+		return nullptr;
+	} else if (!_replyPreview) {
+		_replyPreview = std::make_unique<Data::ReplyPreview>(this);
+	}
+	return _replyPreview->image(origin);
+}
+
+bool DocumentData::replyPreviewLoaded() const {
+	if (!hasThumbnail()) {
+		return true;
+	} else if (!_replyPreview) {
+		return false;
+	}
+	return _replyPreview->loaded();
+}
+
+StickerData *DocumentData::sticker() const {
+	return (type == StickerDocument)
+		? static_cast<StickerData*>(_additional.get())
+		: nullptr;
+}
+
+Data::FileOrigin DocumentData::stickerSetOrigin() const {
+	if (const auto data = sticker()) {
+		if (const auto result = data->setOrigin()) {
+			return result;
+		} else if (owner().stickers().isFaved(this)) {
+			return Data::FileOriginStickerSet(Data::Stickers::FavedSetId, 0);
 		}
 	}
-	return replyPreview;
+	return Data::FileOrigin();
+}
+
+Data::FileOrigin DocumentData::stickerOrGifOrigin() const {
+	return (sticker()
+		? stickerSetOrigin()
+		: isGifv()
+		? Data::FileOriginSavedGifs()
+		: Data::FileOrigin());
+}
+
+SongData *DocumentData::song() {
+	return isSong()
+		? static_cast<SongData*>(_additional.get())
+		: nullptr;
+}
+
+const SongData *DocumentData::song() const {
+	return const_cast<DocumentData*>(this)->song();
+}
+
+VoiceData *DocumentData::voice() {
+	return isVoiceMessage()
+		? static_cast<VoiceData*>(_additional.get())
+		: nullptr;
+}
+
+const VoiceData *DocumentData::voice() const {
+	return const_cast<DocumentData*>(this)->voice();
+}
+
+bool DocumentData::hasRemoteLocation() const {
+	return (_dc != 0 && _access != 0);
+}
+
+bool DocumentData::useStreamingLoader() const {
+	return isAnimation()
+		|| isVideoFile()
+		|| isAudioFile()
+		|| isVoiceMessage();
+}
+
+bool DocumentData::canBeStreamed() const {
+	// Streaming couldn't be used with external player
+	// Maybe someone brave will implement this once upon a time...
+	return hasRemoteLocation()
+		&& supportsStreaming()
+		&& (!cUseExternalVideoPlayer() || !isVideoFile());
+}
+
+void DocumentData::setInappPlaybackFailed() {
+	_flags |= Flag::StreamingPlaybackFailed;
+}
+
+bool DocumentData::inappPlaybackFailed() const {
+	return (_flags & Flag::StreamingPlaybackFailed);
+}
+
+auto DocumentData::createStreamingLoader(
+	Data::FileOrigin origin,
+	bool forceRemoteLoader) const
+-> std::unique_ptr<Media::Streaming::Loader> {
+	if (!useStreamingLoader()) {
+		return nullptr;
+	}
+	if (!forceRemoteLoader) {
+		const auto media = activeMediaView();
+		const auto &location = this->location(true);
+		if (media && !media->bytes().isEmpty()) {
+			return Media::Streaming::MakeBytesLoader(media->bytes());
+		} else if (!location.isEmpty() && location.accessEnable()) {
+			auto result = Media::Streaming::MakeFileLoader(location.name());
+			location.accessDisable();
+			return result;
+		}
+	}
+	return hasRemoteLocation()
+		? std::make_unique<Media::Streaming::LoaderMtproto>(
+			&session().downloader(),
+			StorageFileLocation(
+				_dc,
+				session().userId(),
+				MTP_inputDocumentFileLocation(
+					MTP_long(id),
+					MTP_long(_access),
+					MTP_bytes(_fileReference),
+					MTP_string())),
+			size,
+			origin)
+		: nullptr;
+}
+
+bool DocumentData::hasWebLocation() const {
+	return !_urlLocation.url().isEmpty();
+}
+
+bool DocumentData::isNull() const {
+	return !hasRemoteLocation() && !hasWebLocation() && _url.isEmpty();
+}
+
+MTPInputDocument DocumentData::mtpInput() const {
+	if (_access) {
+		return MTP_inputDocument(
+			MTP_long(id),
+			MTP_long(_access),
+			MTP_bytes(_fileReference));
+	}
+	return MTP_inputDocumentEmpty();
+}
+
+QByteArray DocumentData::fileReference() const {
+	return _fileReference;
+}
+
+void DocumentData::refreshFileReference(const QByteArray &value) {
+	_fileReference = value;
+	_thumbnail.location.refreshFileReference(value);
+	_videoThumbnail.location.refreshFileReference(value);
+}
+
+QString DocumentData::filename() const {
+	return _filename;
+}
+
+QString DocumentData::mimeString() const {
+	return _mimeString;
+}
+
+bool DocumentData::hasMimeType(QLatin1String mime) const {
+	return !_mimeString.compare(mime, Qt::CaseInsensitive);
+}
+
+void DocumentData::setMimeString(const QString &mime) {
+	_mimeString = mime;
+}
+
+MediaKey DocumentData::mediaKey() const {
+	return ::mediaKey(locationType(), _dc, id);
+}
+
+Storage::Cache::Key DocumentData::cacheKey() const {
+	if (hasWebLocation()) {
+		return Data::WebDocumentCacheKey(_urlLocation);
+	} else if (!_access && !_url.isEmpty()) {
+		return Data::UrlCacheKey(_url);
+	} else {
+		return Data::DocumentCacheKey(_dc, id);
+	}
+}
+
+uint8 DocumentData::cacheTag() const {
+	if (type == StickerDocument) {
+		return Data::kStickerCacheTag;
+	} else if (isVoiceMessage()) {
+		return Data::kVoiceMessageCacheTag;
+	} else if (isVideoMessage()) {
+		return Data::kVideoMessageCacheTag;
+	} else if (isAnimation()) {
+		return Data::kAnimationCacheTag;
+	} else if (type == WallPaperDocument) {
+		return Data::kImageCacheTag;
+	}
+	return 0;
+}
+
+LocationType DocumentData::locationType() const {
+	return isVoiceMessage()
+		? AudioFileLocation
+		: isVideoFile()
+		? VideoFileLocation
+		: DocumentFileLocation;
 }
 
 bool DocumentData::isVoiceMessage() const {
@@ -899,7 +1289,8 @@ bool DocumentData::isVideoMessage() const {
 bool DocumentData::isAnimation() const {
 	return (type == AnimatedDocument)
 		|| isVideoMessage()
-		|| hasMimeType(qstr("image/gif"));
+		|| (hasMimeType(qstr("image/gif"))
+			&& !(_flags & Flag::StreamingPlaybackFailed));
 }
 
 bool DocumentData::isGifv() const {
@@ -909,7 +1300,8 @@ bool DocumentData::isGifv() const {
 
 bool DocumentData::isTheme() const {
 	return
-		_filename.endsWith(
+		_mimeString == qstr("application/x-tgtheme-tdesktop")
+		|| _filename.endsWith(
 			qstr(".tdesktop-theme"),
 			Qt::CaseInsensitive)
 		|| _filename.endsWith(
@@ -921,63 +1313,106 @@ bool DocumentData::isSong() const {
 	return (type == SongDocument);
 }
 
+bool DocumentData::isSongWithCover() const {
+	return isSong() && hasThumbnail();
+}
+
 bool DocumentData::isAudioFile() const {
 	if (isVoiceMessage()) {
 		return false;
 	} else if (isSong()) {
 		return true;
 	}
-	return _mimeString.startsWith(qstr("audio/"), Qt::CaseInsensitive);
+	const auto prefix = qstr("audio/");
+	if (!_mimeString.startsWith(prefix, Qt::CaseInsensitive)) {
+		if (_filename.endsWith(qstr(".opus"), Qt::CaseInsensitive)) {
+			return true;
+		}
+		return false;
+	}
+	const auto left = _mimeString.midRef(prefix.size()).toString();
+	const auto types = { qstr("x-wav"), qstr("wav"), qstr("mp4") };
+	return ranges::contains(types, left);
 }
 
 bool DocumentData::isSharedMediaMusic() const {
-	if (const auto songData = song()) {
-		return (songData->duration > 0);
-	}
-	return false;
+	return isSong();
 }
 
 bool DocumentData::isVideoFile() const {
 	return (type == VideoDocument);
 }
 
-int32 DocumentData::duration() const {
-	return (isAnimation() || isVideoFile()) ? _duration : -1;
+TimeId DocumentData::getDuration() const {
+	if (const auto song = this->song()) {
+		return std::max(song->duration, 0);
+	} else if (const auto voice = this->voice()) {
+		return std::max(voice->duration, 0);
+	} else if (isAnimation() || isVideoFile()) {
+		return std::max(_duration, 0);
+	}
+	return -1;
 }
 
 bool DocumentData::isImage() const {
-	return !isAnimation() && !isVideoFile() && (_duration > 0);
+	return (_flags & Flag::ImageType);
+}
+
+bool DocumentData::hasAttachedStickers() const {
+	return (_flags & Flag::HasAttachedStickers);
+}
+
+bool DocumentData::supportsStreaming() const {
+	return (_flags & kStreamingSupportedMask) == kStreamingSupportedMaybeYes;
+}
+
+void DocumentData::setNotSupportsStreaming() {
+	_flags &= ~kStreamingSupportedMask;
+	_flags |= kStreamingSupportedNo;
+}
+
+void DocumentData::setMaybeSupportsStreaming(bool supports) {
+	if ((_flags & kStreamingSupportedMask) == kStreamingSupportedNo) {
+		return;
+	}
+	_flags &= ~kStreamingSupportedMask;
+	_flags |= supports
+		? kStreamingSupportedMaybeYes
+		: kStreamingSupportedMaybeNo;
 }
 
 void DocumentData::recountIsImage() {
-	if (isAnimation() || isVideoFile()) {
-		return;
+	const auto isImage = !isAnimation()
+		&& !isVideoFile()
+		&& Core::FileIsImage(filename(), mimeString());
+	if (isImage) {
+		_flags |= Flag::ImageType;
+	} else {
+		_flags &= ~Flag::ImageType;
 	}
-	_duration = fileIsImage(filename(), mimeString()) ? 1 : -1; // hack
 }
 
-bool DocumentData::setRemoteVersion(int32 version) {
-	if (_version == version) {
-		return false;
-	}
-	_version = version;
-	_location = FileLocation();
-	_data = QByteArray();
-	status = FileReady;
-	if (loading()) {
-		destroyLoaderDelayed();
-	}
-	return true;
-}
-
-void DocumentData::setRemoteLocation(int32 dc, uint64 access) {
-	_dc = dc;
-	_access = access;
-	if (isValid()) {
-		if (_location.check()) {
-			Local::writeFileLocation(mediaKey(), _location);
-		} else {
-			_location = Local::readFileLocation(mediaKey());
+void DocumentData::setRemoteLocation(
+		int32 dc,
+		uint64 access,
+		const QByteArray &fileReference) {
+	_fileReference = fileReference;
+	if (_dc != dc || _access != access) {
+		_dc = dc;
+		_access = access;
+		if (!isNull()) {
+			if (_location.check()) {
+				session().local().writeFileLocation(mediaKey(), _location);
+			} else {
+				_location = session().local().readFileLocation(mediaKey());
+				if (_location.inMediaCache()) {
+					setLoadedInMediaCacheLocation();
+				} else if (_location.isEmpty() && loadedInMediaCache()) {
+					session().local().writeFileLocation(
+						mediaKey(),
+						Core::FileLocation::InMediaCacheLocation());
+				}
+			}
 		}
 	}
 }
@@ -986,45 +1421,23 @@ void DocumentData::setContentUrl(const QString &url) {
 	_url = url;
 }
 
-void DocumentData::collectLocalData(DocumentData *local) {
-	if (local == this) return;
+void DocumentData::setWebLocation(const WebFileLocation &location) {
+	_urlLocation = location;
+}
 
-	if (!local->_data.isEmpty()) {
-		_data = local->_data;
-		if (isVoiceMessage()) {
-			if (!Local::copyAudio(local->mediaKey(), mediaKey())) {
-				Local::writeAudio(mediaKey(), _data);
-			}
-		} else {
-			if (!Local::copyStickerImage(local->mediaKey(), mediaKey())) {
-				Local::writeStickerImage(mediaKey(), _data);
-			}
-		}
+void DocumentData::collectLocalData(not_null<DocumentData*> local) {
+	if (local == this) {
+		return;
 	}
-	if (!local->_location.isEmpty()) {
+
+	_owner->cache().copyIfEmpty(local->cacheKey(), cacheKey());
+	if (const auto localMedia = local->activeMediaView()) {
+		auto media = createMediaView();
+		media->collectLocalData(localMedia.get());
+		_owner->keepAlive(std::move(media));
+	}
+	if (!local->_location.inMediaCache() && !local->_location.isEmpty()) {
 		_location = local->_location;
-		Local::writeFileLocation(mediaKey(), _location);
+		session().local().writeFileLocation(mediaKey(), _location);
 	}
-}
-
-DocumentData::~DocumentData() {
-	if (loading()) {
-		destroyLoaderDelayed();
-	}
-}
-
-QString DocumentData::ComposeNameString(
-		const QString &filename,
-		const QString &songTitle,
-		const QString &songPerformer) {
-	if (songTitle.isEmpty() && songPerformer.isEmpty()) {
-		return filename.isEmpty() ? qsl("Unknown File") : filename;
-	}
-
-	if (songPerformer.isEmpty()) {
-		return songTitle;
-	}
-
-	auto trackTitle = (songTitle.isEmpty() ? qsl("Unknown Track") : songTitle);
-	return songPerformer + QString::fromUtf8(" \xe2\x80\x93 ") + trackTitle;
 }

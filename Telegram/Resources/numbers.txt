@@ -98,6 +98,7 @@
 387;BA;Bosnia & Herzegovina
 386;SI;Slovenia
 385;HR;Croatia
+383;XK;Kosovo;383 XXXX XXXX;11;
 382;ME;Montenegro
 381;RS;Serbia;381 XX XXX XXXX;12;
 380;UA;Ukraine;380 XX XXX XX XX;12;
@@ -205,8 +206,8 @@
 53;CU;Cuba;53 XXXX XXXX;10;
 52;MX;Mexico;
 51;PE;Peru;51 XXX XXX XXX;11;
-49;DE;Germany;49 XXX XXXXXXXX;13;
-48;PL;Poland;48 XX XXX XXXX;11;
+49;DE;Germany;
+48;PL;Poland;48 XXX XXX XXX;11;
 47;NO;Norway;47 XXXX XXXX;10;
 46;SE;Sweden;46 XX XXX XXXX;11;
 45;DK;Denmark;45 XXXX XXXX;10;

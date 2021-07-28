@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "profile/profile_cover_drop_area.h"
 
+#include "ui/ui_utility.h"
 #include "styles/style_profile.h"
 
 namespace Profile {
@@ -33,8 +34,8 @@ void CoverDropArea::hideAnimated(HideFinishCallback &&callback) {
 void CoverDropArea::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
-	if (_a_appearance.animating(getms())) {
-		p.setOpacity(_a_appearance.current());
+	if (_a_appearance.animating()) {
+		p.setOpacity(_a_appearance.value(_hiding ? 0. : 1.));
 		p.drawPixmap(0, 0, _cache);
 		return;
 	}
@@ -82,7 +83,7 @@ void CoverDropArea::setupAnimation() {
 	}
 	auto from = _hiding ? 1. : 0., to = _hiding ? 0. : 1.;
 	_a_appearance.start(
-		[this] { update(); },
+		[=] { update(); },
 		from,
 		to,
 		st::profileDropAreaDuration);

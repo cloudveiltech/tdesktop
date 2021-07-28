@@ -10,22 +10,25 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <rpl/never.h>
 #include <rpl/combine.h>
 #include <rpl/range.h>
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/input_fields.h"
 #include "ui/wrap/padding_wrap.h"
 #include "ui/search_field_controller.h"
 #include "lang/lang_keys.h"
 #include "info/profile/info_profile_widget.h"
-#include "info/profile/info_profile_members.h"
 #include "info/media/info_media_widget.h"
 #include "info/common_groups/info_common_groups_widget.h"
 #include "info/info_layer_widget.h"
 #include "info/info_section_widget.h"
 #include "info/info_controller.h"
 #include "boxes/peer_list_box.h"
+#include "data/data_session.h"
+#include "main/main_session.h"
 #include "styles/style_info.h"
 #include "styles/style_profile.h"
+
+#include <QtCore/QCoreApplication>
 
 namespace Info {
 
@@ -34,7 +37,7 @@ ContentWidget::ContentWidget(
 	not_null<Controller*> controller)
 : RpWidget(parent)
 , _controller(controller)
-, _scroll(this, st::infoScroll) {
+, _scroll(this) {
 	using namespace rpl::mappers;
 
 	setAttribute(Qt::WA_OpaquePaintEvent);
@@ -91,7 +94,7 @@ void ContentWidget::updateControlsGeometry() {
 	}
 }
 
-std::unique_ptr<ContentMemento> ContentWidget::createMemento() {
+std::shared_ptr<ContentMemento> ContentWidget::createMemento() {
 	auto result = doCreateMemento();
 	_controller->saveSearchState(result.get());
 	return result;
@@ -112,7 +115,7 @@ void ContentWidget::setGeometryWithTopMoved(
 	}
 	if (!willBeResized) {
 		QResizeEvent fake(size(), size());
-		QApplication::sendEvent(this, &fake);
+		QCoreApplication::sendEvent(this, &fake);
 	}
 	_topDelta = 0;
 }
@@ -128,15 +131,16 @@ Ui::RpWidget *ContentWidget::doSetInnerWidget(
 			_innerWrap ? _innerWrap->padding() : style::margins()));
 	_innerWrap->move(0, 0);
 
+	// MSVC BUG + REGRESSION rpl::mappers::tuple :(
 	rpl::combine(
 		_scroll->scrollTopValue(),
 		_scroll->heightValue(),
-		_innerWrap->entity()->desiredHeightValue(),
-		tuple(_1, _1 + _2, _3)
+		_innerWrap->entity()->desiredHeightValue()
 	) | rpl::start_with_next([this](
 			int top,
-			int bottom,
+			int height,
 			int desired) {
+		const auto bottom = top + height;
 		_innerDesiredHeight = desired;
 		_innerWrap->setVisibleTopBottom(top, bottom);
 		_scrollTillBottomChanges.fire_copy(std::max(desired - bottom, 0));
@@ -158,10 +162,6 @@ rpl::producer<int> ContentWidget::scrollTillBottomChanges() const {
 
 void ContentWidget::setScrollTopSkip(int scrollTopSkip) {
 	_scrollTopSkip = scrollTopSkip;
-}
-
-rpl::producer<Section> ContentWidget::sectionRequest() const {
-	return rpl::never<Section>();
 }
 
 rpl::producer<int> ContentWidget::scrollHeightValue() const {
@@ -214,16 +214,24 @@ void ContentWidget::scrollTo(const Ui::ScrollToRequest &request) {
 	_scroll->scrollTo(request);
 }
 
-bool ContentWidget::wheelEventFromFloatPlayer(QEvent *e) {
+bool ContentWidget::floatPlayerHandleWheelEvent(QEvent *e) {
 	return _scroll->viewportEvent(e);
 }
 
-QRect ContentWidget::rectForFloatPlayer() const {
+QRect ContentWidget::floatPlayerAvailableRect() const {
 	return mapToGlobal(_scroll->geometry());
 }
 
 rpl::producer<SelectedItems> ContentWidget::selectedListValue() const {
 	return rpl::single(SelectedItems(Storage::SharedMediaType::Photo));
+}
+
+rpl::producer<bool> ContentWidget::canSaveChanges() const {
+	return rpl::single(false);
+}
+
+void ContentWidget::saveChanges(FnMut<void()> done) {
+	done();
 }
 
 void ContentWidget::refreshSearchField(bool shown) {
@@ -251,6 +259,20 @@ void ContentWidget::refreshSearchField(bool shown) {
 		_searchWrap = nullptr;
 		setScrollTopSkip(0);
 	}
+}
+
+Key ContentMemento::key() const {
+	if (const auto peer = this->peer()) {
+		return Key(peer);
+	} else if (const auto poll = this->poll()) {
+		return Key(poll, pollContextId());
+	} else {
+		return Settings::Tag{ settingsSelf() };
+	}
+}
+
+ContentMemento::ContentMemento(Settings::Tag settings)
+: _settingsSelf(settings.self.get()) {
 }
 
 } // namespace Info

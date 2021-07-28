@@ -7,85 +7,72 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "platform/win/windows_dlls.h"
 
+#include "base/platform/win/base_windows_safe_library.h"
+
+#include <VersionHelpers.h>
+#include <QtCore/QSysInfo>
+
+#define LOAD_SYMBOL(lib, name) ::base::Platform::LoadMethod(lib, #name, name)
+
 namespace Platform {
 namespace Dlls {
+namespace {
 
-f_SetDllDirectory SetDllDirectory;
+struct SafeIniter {
+	SafeIniter();
+};
 
-HINSTANCE LibKernel32;
+SafeIniter::SafeIniter() {
+	base::Platform::InitDynamicLibraries();
 
-void init() {
-	static bool inited = false;
-	if (inited) return;
-	inited = true;
+	const auto LibShell32 = LoadLibrary(L"shell32.dll");
+	LOAD_SYMBOL(LibShell32, SHAssocEnumHandlers);
+	LOAD_SYMBOL(LibShell32, SHCreateItemFromParsingName);
+	LOAD_SYMBOL(LibShell32, SHOpenWithDialog);
+	LOAD_SYMBOL(LibShell32, OpenAs_RunDLL);
+	LOAD_SYMBOL(LibShell32, SHQueryUserNotificationState);
+	LOAD_SYMBOL(LibShell32, SHChangeNotify);
+	LOAD_SYMBOL(LibShell32, SetCurrentProcessExplicitAppUserModelID);
 
-	LibKernel32 = LoadLibrary(L"KERNEL32.DLL");
-	load(LibKernel32, "SetDllDirectoryW", SetDllDirectory);
-	if (SetDllDirectory) {
-		// Remove the current directory from the DLL search order.
-		SetDllDirectory(L"");
-	}
+	const auto LibUxTheme = LoadLibrary(L"uxtheme.dll");
+	LOAD_SYMBOL(LibUxTheme, SetWindowTheme);
+	//if (IsWindows10OrGreater()) {
+	//	static const auto kSystemVersion = QOperatingSystemVersion::current();
+	//	static const auto kMinor = kSystemVersion.minorVersion();
+	//	static const auto kBuild = kSystemVersion.microVersion();
+	//	if (kMinor > 0 || (kMinor == 0 && kBuild >= 17763)) {
+	//		if (kBuild < 18362) {
+	//			LOAD_SYMBOL(LibUxTheme, AllowDarkModeForApp, 135);
+	//		} else {
+	//			LOAD_SYMBOL(LibUxTheme, SetPreferredAppMode, 135);
+	//		}
+	//		LOAD_SYMBOL(LibUxTheme, AllowDarkModeForWindow, 133);
+	//		LOAD_SYMBOL(LibUxTheme, RefreshImmersiveColorPolicyState, 104);
+	//		LOAD_SYMBOL(LibUxTheme, FlushMenuThemes, 136);
+	//	}
+	//}
+
+	const auto LibWtsApi32 = LoadLibrary(L"wtsapi32.dll");
+	LOAD_SYMBOL(LibWtsApi32, WTSRegisterSessionNotification);
+	LOAD_SYMBOL(LibWtsApi32, WTSUnRegisterSessionNotification);
+
+	const auto LibPropSys = LoadLibrary(L"propsys.dll");
+	LOAD_SYMBOL(LibPropSys, PropVariantToString);
+	LOAD_SYMBOL(LibPropSys, PSStringFromPropertyKey);
+
+	const auto LibDwmApi = LoadLibrary(L"dwmapi.dll");
+	LOAD_SYMBOL(LibDwmApi, DwmIsCompositionEnabled);
+	LOAD_SYMBOL(LibDwmApi, DwmSetWindowAttribute);
+
+	const auto LibPsApi = LoadLibrary(L"psapi.dll");
+	LOAD_SYMBOL(LibPsApi, GetProcessMemoryInfo);
+
+	const auto LibUser32 = LoadLibrary(L"user32.dll");
+	LOAD_SYMBOL(LibUser32, SetWindowCompositionAttribute);
 }
 
-f_SetWindowTheme SetWindowTheme;
-f_OpenAs_RunDLL OpenAs_RunDLL;
-f_SHOpenWithDialog SHOpenWithDialog;
-f_SHAssocEnumHandlers SHAssocEnumHandlers;
-f_SHCreateItemFromParsingName SHCreateItemFromParsingName;
-f_WTSRegisterSessionNotification WTSRegisterSessionNotification;
-f_WTSUnRegisterSessionNotification WTSUnRegisterSessionNotification;
-f_SHQueryUserNotificationState SHQueryUserNotificationState;
-f_SHChangeNotify SHChangeNotify;
-f_SetCurrentProcessExplicitAppUserModelID SetCurrentProcessExplicitAppUserModelID;
-f_RoGetActivationFactory RoGetActivationFactory;
-f_WindowsCreateStringReference WindowsCreateStringReference;
-f_WindowsDeleteString WindowsDeleteString;
-f_PropVariantToString PropVariantToString;
-f_PSStringFromPropertyKey PSStringFromPropertyKey;
+SafeIniter kSafeIniter;
 
-HINSTANCE LibUxTheme;
-HINSTANCE LibShell32;
-HINSTANCE LibWtsApi32;
-HINSTANCE LibPropSys;
-HINSTANCE LibComBase;
-
-void start() {
-	init();
-
-	LibShell32 = LoadLibrary(L"SHELL32.DLL");
-	load(LibShell32, "SHAssocEnumHandlers", SHAssocEnumHandlers);
-	load(LibShell32, "SHCreateItemFromParsingName", SHCreateItemFromParsingName);
-	load(LibShell32, "SHOpenWithDialog", SHOpenWithDialog);
-	load(LibShell32, "OpenAs_RunDLLW", OpenAs_RunDLL);
-	load(LibShell32, "SHQueryUserNotificationState", SHQueryUserNotificationState);
-	load(LibShell32, "SHChangeNotify", SHChangeNotify);
-	load(LibShell32, "SetCurrentProcessExplicitAppUserModelID", SetCurrentProcessExplicitAppUserModelID);
-
-	if (cBetaVersion() == 10020001 && SHChangeNotify) { // Temp - app icon was changed
-		SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
-	}
-
-	LibUxTheme = LoadLibrary(L"UXTHEME.DLL");
-	load(LibUxTheme, "SetWindowTheme", SetWindowTheme);
-
-	auto version = QSysInfo::windowsVersion();
-	if (version >= QSysInfo::WV_VISTA) {
-		LibWtsApi32 = LoadLibrary(L"WTSAPI32.DLL");
-		load(LibWtsApi32, "WTSRegisterSessionNotification", WTSRegisterSessionNotification);
-		load(LibWtsApi32, "WTSUnRegisterSessionNotification", WTSUnRegisterSessionNotification);
-
-		LibPropSys = LoadLibrary(L"PROPSYS.DLL");
-		load(LibPropSys, "PropVariantToString", PropVariantToString);
-		load(LibPropSys, "PSStringFromPropertyKey", PSStringFromPropertyKey);
-
-		if (version >= QSysInfo::WV_WINDOWS8) {
-			LibComBase = LoadLibrary(L"COMBASE.DLL");
-			load(LibComBase, "RoGetActivationFactory", RoGetActivationFactory);
-			load(LibComBase, "WindowsCreateStringReference", WindowsCreateStringReference);
-			load(LibComBase, "WindowsDeleteString", WindowsDeleteString);
-		}
-	}
-}
-
+} // namespace
 } // namespace Dlls
 } // namespace Platform

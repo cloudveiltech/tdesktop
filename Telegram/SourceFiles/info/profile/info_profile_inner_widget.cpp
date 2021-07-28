@@ -12,7 +12,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <rpl/flatten_latest.h>
 #include "info/info_memento.h"
 #include "info/info_controller.h"
-#include "info/profile/info_profile_button.h"
 #include "info/profile/info_profile_widget.h"
 #include "info/profile/info_profile_text.h"
 #include "info/profile/info_profile_values.h"
@@ -24,12 +23,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/abstract_box.h"
 #include "boxes/add_contact_box.h"
 #include "boxes/confirm_box.h"
-#include "boxes/report_box.h"
 #include "mainwidget.h"
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "apiwrap.h"
 #include "window/main_window.h"
-#include "window/window_controller.h"
+#include "window/window_session_controller.h"
 #include "storage/storage_shared_media.h"
 #include "lang/lang_keys.h"
 #include "styles/style_info.h"
@@ -38,6 +36,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/shadow.h"
+#include "ui/widgets/box_content_divider.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/wrap/vertical_layout.h"
 #include "data/data_shared_media.h"
@@ -50,7 +49,7 @@ InnerWidget::InnerWidget(
 	not_null<Controller*> controller)
 : RpWidget(parent)
 , _controller(controller)
-, _peer(_controller->peer())
+, _peer(_controller->key().peer())
 , _migrated(_controller->migrated())
 , _content(setupContent(this)) {
 	_content->heightValue(
@@ -77,8 +76,13 @@ object_ptr<Ui::RpWidget> InnerWidget::setupContent(
 	auto result = object_ptr<Ui::VerticalLayout>(parent);
 	_cover = result->add(object_ptr<Cover>(
 		result,
-		_controller,
-		_peer));
+		_peer,
+		_controller->parentController()));
+	_cover->showSection(
+	) | rpl::start_with_next([=](Section section) {
+		_controller->showSection(
+			std::make_shared<Info::Memento>(_peer, section));
+	}, _cover->lifetime());
 	_cover->setOnlineCount(rpl::single(0));
 	auto details = SetupDetails(_controller, parent, _peer);
 	if (canHideDetailsEver()) {
@@ -98,7 +102,7 @@ object_ptr<Ui::RpWidget> InnerWidget::setupContent(
 	if (auto members = SetupChannelMembers(_controller, result.data(), _peer)) {
 		result->add(std::move(members));
 	}
-	result->add(object_ptr<BoxContentDivider>(result));
+	result->add(object_ptr<Ui::BoxContentDivider>(result));
 	if (auto actions = SetupActions(_controller, result.data(), _peer)) {
 		result->add(std::move(actions));
 	}
@@ -106,9 +110,7 @@ object_ptr<Ui::RpWidget> InnerWidget::setupContent(
 	if (_peer->isChat() || _peer->isMegagroup()) {
 		_members = result->add(object_ptr<Members>(
 			result,
-			_controller,
-			_peer)
-		);
+			_controller));
 		_members->scrollToRequests(
 		) | rpl::start_with_next([this](Ui::ScrollToRequest request) {
 			auto min = (request.ymin < 0)
@@ -123,7 +125,7 @@ object_ptr<Ui::RpWidget> InnerWidget::setupContent(
 		}, _members->lifetime());
 		_cover->setOnlineCount(_members->onlineCountValue());
 	}
-	return std::move(result);
+	return result;
 }
 
 object_ptr<Ui::RpWidget> InnerWidget::setupSharedMedia(
@@ -167,11 +169,10 @@ object_ptr<Ui::RpWidget> InnerWidget::setupSharedMedia(
 	addMediaButton(MediaType::File, st::infoIconMediaFile);
 	addMediaButton(MediaType::MusicFile, st::infoIconMediaAudio);
 	addMediaButton(MediaType::Link, st::infoIconMediaLink);
+	addMediaButton(MediaType::RoundVoiceFile, st::infoIconMediaVoice);
 	if (auto user = _peer->asUser()) {
 		addCommonGroupsButton(user, st::infoIconMediaGroup);
 	}
-	addMediaButton(MediaType::VoiceFile, st::infoIconMediaVoice);
-//	addMediaButton(MediaType::RoundFile, st::infoIconMediaRound);
 
 	auto result = object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
 		parent,
@@ -214,7 +215,7 @@ object_ptr<Ui::RpWidget> InnerWidget::setupSharedMedia(
 
 	auto layout = result->entity();
 
-	layout->add(object_ptr<BoxContentDivider>(layout));
+	layout->add(object_ptr<Ui::BoxContentDivider>(layout));
 	layout->add(object_ptr<Ui::FixedHeightWidget>(
 		layout,
 		st::infoSharedMediaBottomSkip)
@@ -226,7 +227,7 @@ object_ptr<Ui::RpWidget> InnerWidget::setupSharedMedia(
 	)->setAttribute(Qt::WA_TransparentForMouseEvents);
 
 	_sharedMediaWrap = result;
-	return std::move(result);
+	return result;
 }
 
 int InnerWidget::countDesiredHeight() const {

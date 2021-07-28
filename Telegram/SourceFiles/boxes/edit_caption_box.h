@@ -8,14 +8,36 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "boxes/abstract_box.h"
+#include "ui/chat/attach/attach_prepare.h"
+
+namespace ChatHelpers {
+class TabbedPanel;
+} // namespace ChatHelpers
+
+namespace Window {
+class SessionController;
+} // namespace Window
+
+namespace Data {
+class PhotoMedia;
+} // namespace Data
 
 namespace Ui {
-class InputArea;
+class AbstractSinglePreview;
+class InputField;
+class EmojiButton;
+class VerticalLayout;
+class FadeShadow;
+enum class AlbumType;
 } // namespace Ui
 
-class EditCaptionBox : public BoxContent, public RPCSender {
+class EditCaptionBox final : public Ui::BoxContent {
 public:
-	EditCaptionBox(QWidget*, not_null<HistoryMedia*> media, FullMsgId msgId);
+	EditCaptionBox(
+		QWidget*,
+		not_null<Window::SessionController*> controller,
+		not_null<HistoryItem*> item);
+	~EditCaptionBox();
 
 protected:
 	void prepare() override;
@@ -23,42 +45,63 @@ protected:
 
 	void paintEvent(QPaintEvent *e) override;
 	void resizeEvent(QResizeEvent *e) override;
+	void keyPressEvent(QKeyEvent *e) override;
 
 private:
-	void updateBoxSize();
-	void prepareGifPreview(DocumentData *document);
-	void clipCallback(Media::Clip::Notification notification);
+	void rebuildPreview();
+	void setupEditEventHandler();
+	void setupPhotoEditorEventHandler();
+	void setupShadows();
+	void setupField();
+	void setupControls();
 
-	void save();
+	void updateBoxSize();
 	void captionResized();
 
-	void saveDone(const MTPUpdates &updates);
-	bool saveFail(const RPCError &error);
+	void setupEmojiPanel();
+	void updateEmojiPanelGeometry();
+	void emojiFilterForGeometry(not_null<QEvent*> event);
+
+	void setupDragArea();
+
+	void save();
+
+	bool fileFromClipboard(not_null<const QMimeData*> data);
 
 	int errorTopSkip() const;
 
-	FullMsgId _msgId;
-	bool _animated = false;
-	bool _photo = false;
-	bool _doc = false;
+	bool setPreparedList(Ui::PreparedList &&list);
 
-	QPixmap _thumb;
-	Media::Clip::ReaderPointer _gifPreview;
+	const not_null<Window::SessionController*> _controller;
+	const not_null<HistoryItem*> _historyItem;
+	const bool _isAllowedEditMedia = false;
+	const Ui::AlbumType _albumType;
 
-	object_ptr<Ui::InputArea> _field = { nullptr };
+	const base::unique_qptr<Ui::VerticalLayout> _controls;
+	const base::unique_qptr<Ui::ScrollArea> _scroll;
+	const base::unique_qptr<Ui::InputField> _field;
+	const base::unique_qptr<Ui::EmojiButton> _emojiToggle;
+	const base::unique_qptr<Ui::FadeShadow> _topShadow,_bottomShadow;
 
-	int _thumbx = 0;
-	int _thumbw = 0;
-	int _thumbh = 0;
-	Text _name;
-	QString _status;
-	int _statusw = 0;
-	bool _isAudio = false;
-	bool _isImage = false;
+	base::unique_qptr<Ui::AbstractSinglePreview> _content;
+	base::unique_qptr<ChatHelpers::TabbedPanel> _emojiPanel;
+	base::unique_qptr<QObject> _emojiFilter;
 
-	bool _previewCancelled = false;
+	std::shared_ptr<Data::PhotoMedia> _photoMedia;
+
+	Ui::PreparedList _preparedList;
+
 	mtpRequestId _saveRequestId = 0;
 
+	bool _asFile = false;
+
 	QString _error;
+
+	rpl::variable<bool> _isPhoto = false;
+	rpl::variable<int> _footerHeight = 0;
+
+	rpl::event_stream<> _editMediaClicks;
+	rpl::event_stream<> _photoEditorOpens;
+	rpl::event_stream<int> _contentHeight;
 
 };

@@ -9,14 +9,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "lang/lang_keys.h"
 
+#include <set>
+#include <QtCore/QMap>
+
 namespace Lang {
 
 class FileParser {
 public:
-	using Result = QMap<LangKey, QString>;
+	using Result = QMap<ushort, QString>;
 
-	FileParser(const QString &file, const std::set<LangKey> &request);
-	FileParser(const QByteArray &content, base::lambda<void(QLatin1String key, const QByteArray &value)> callback);
+	FileParser(const QString &file, const std::set<ushort> &request);
+	FileParser(const QByteArray &content, Fn<void(QLatin1String key, const QByteArray &value)> callback);
 
 	static QByteArray ReadFile(const QString &absolutePath, const QString &relativePath);
 
@@ -43,8 +46,8 @@ private:
 	mutable QString _errors, _warnings;
 
 	const QByteArray _content;
-	const std::set<LangKey> _request;
-	const base::lambda<void(QLatin1String key, const QByteArray &value)> _callback;
+	const std::set<ushort> _request;
+	const Fn<void(QLatin1String key, const QByteArray &value)> _callback;
 
 	Result _result;
 

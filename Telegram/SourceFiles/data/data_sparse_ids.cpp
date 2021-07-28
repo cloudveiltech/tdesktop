@@ -10,53 +10,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <rpl/combine.h>
 #include "storage/storage_sparse_ids_list.h"
 
-SparseIdsSlice::SparseIdsSlice(
-	const base::flat_set<MsgId> &ids,
-	MsgRange range,
-	base::optional<int> fullCount,
-	base::optional<int> skippedBefore,
-	base::optional<int> skippedAfter)
-: _ids(ids)
-, _range(range)
-, _fullCount(fullCount)
-, _skippedBefore(skippedBefore)
-, _skippedAfter(skippedAfter) {
-}
-
-base::optional<int> SparseIdsSlice::indexOf(MsgId msgId) const {
-	auto it = _ids.find(msgId);
-	if (it != _ids.end()) {
-		return (it - _ids.begin());
-	}
-	return base::none;
-}
-
-MsgId SparseIdsSlice::operator[](int index) const {
-	Expects(index >= 0 && index < size());
-
-	return *(_ids.begin() + index);
-}
-
-base::optional<int> SparseIdsSlice::distance(
-		MsgId a,
-		MsgId b) const {
-	if (auto i = indexOf(a)) {
-		if (auto j = indexOf(b)) {
-			return *j - *i;
-		}
-	}
-	return base::none;
-}
-
-base::optional<MsgId> SparseIdsSlice::nearest(MsgId msgId) const {
-	if (auto it = ranges::lower_bound(_ids, msgId); it != _ids.end()) {
-		return *it;
-	} else if (_ids.empty()) {
-		return base::none;
-	}
-	return _ids.back();
-}
-
 SparseIdsMergedSlice::SparseIdsMergedSlice(Key key)
 : SparseIdsMergedSlice(
 	key,
@@ -67,56 +20,77 @@ SparseIdsMergedSlice::SparseIdsMergedSlice(Key key)
 SparseIdsMergedSlice::SparseIdsMergedSlice(
 	Key key,
 	SparseIdsSlice part,
-	base::optional<SparseIdsSlice> migrated)
+	std::optional<SparseIdsSlice> migrated)
 : _key(key)
 , _part(std::move(part))
 , _migrated(std::move(migrated)) {
 }
 
-base::optional<int> SparseIdsMergedSlice::fullCount() const {
-	return Add(
-		_part.fullCount(),
-		_migrated ? _migrated->fullCount() : 0);
+SparseIdsMergedSlice::SparseIdsMergedSlice(
+	Key key,
+	SparseUnsortedIdsSlice scheduled)
+: _key(key)
+, _scheduled(std::move(scheduled)) {
 }
 
-base::optional<int> SparseIdsMergedSlice::skippedBefore() const {
-	return Add(
-		isolatedInMigrated() ? 0 : _part.skippedBefore(),
-		_migrated
-			? (isolatedInPart()
-				? _migrated->fullCount()
-				: _migrated->skippedBefore())
-			: 0
-	);
+std::optional<int> SparseIdsMergedSlice::fullCount() const {
+	return _scheduled
+		? _scheduled->fullCount()
+		: Add(
+			_part.fullCount(),
+			_migrated ? _migrated->fullCount() : 0);
 }
 
-base::optional<int> SparseIdsMergedSlice::skippedAfter() const {
-	return Add(
-		isolatedInMigrated() ? _part.fullCount() : _part.skippedAfter(),
-		isolatedInPart() ? 0 : _migrated->skippedAfter()
-	);
+std::optional<int> SparseIdsMergedSlice::skippedBefore() const {
+	return _scheduled
+		? _scheduled->skippedBefore()
+		: Add(
+			isolatedInMigrated() ? 0 : _part.skippedBefore(),
+			_migrated
+				? (isolatedInPart()
+					? _migrated->fullCount()
+					: _migrated->skippedBefore())
+				: 0
+		);
 }
 
-base::optional<int> SparseIdsMergedSlice::indexOf(
+std::optional<int> SparseIdsMergedSlice::skippedAfter() const {
+	return _scheduled
+		? _scheduled->skippedAfter()
+		: Add(
+			isolatedInMigrated() ? _part.fullCount() : _part.skippedAfter(),
+			isolatedInPart() ? 0 : _migrated->skippedAfter()
+		);
+}
+
+std::optional<int> SparseIdsMergedSlice::indexOf(
 		FullMsgId fullId) const {
-	return isFromPart(fullId)
+	return _scheduled
+		? _scheduled->indexOf(fullId.msg)
+		: isFromPart(fullId)
 		? (_part.indexOf(fullId.msg) | func::add(migratedSize()))
 		: isolatedInPart()
-			? base::none
+			? std::nullopt
 			: isFromMigrated(fullId)
 				? _migrated->indexOf(fullId.msg)
-				: base::none;
+				: std::nullopt;
 }
 
 int SparseIdsMergedSlice::size() const {
-	return (isolatedInPart() ? 0 : migratedSize())
-		+ (isolatedInMigrated() ? 0 : _part.size());
+	return _scheduled
+		? _scheduled->size()
+		: (isolatedInPart() ? 0 : migratedSize())
+			+ (isolatedInMigrated() ? 0 : _part.size());
 }
 
 FullMsgId SparseIdsMergedSlice::operator[](int index) const {
 	Expects(index >= 0 && index < size());
 
-	if (auto size = migratedSize()) {
+	if (_scheduled) {
+		return ComputeId(_key.peerId, (*_scheduled)[index]);
+	}
+
+	if (const auto size = migratedSize()) {
 		if (index < size) {
 			return ComputeId(_key.migratedPeerId, (*_migrated)[index]);
 		}
@@ -125,23 +99,28 @@ FullMsgId SparseIdsMergedSlice::operator[](int index) const {
 	return ComputeId(_key.peerId, _part[index]);
 }
 
-base::optional<int> SparseIdsMergedSlice::distance(
+std::optional<int> SparseIdsMergedSlice::distance(
 		const Key &a,
 		const Key &b) const {
-	if (auto i = indexOf(ComputeId(a))) {
-		if (auto j = indexOf(ComputeId(b))) {
+	if (const auto i = indexOf(ComputeId(a))) {
+		if (const auto j = indexOf(ComputeId(b))) {
 			return *j - *i;
 		}
 	}
-	return base::none;
+	return std::nullopt;
 }
 
 auto SparseIdsMergedSlice::nearest(
-		UniversalMsgId id) const -> base::optional<FullMsgId> {
-	auto convertFromPartNearest = [&](MsgId result) {
+		UniversalMsgId id) const -> std::optional<FullMsgId> {
+	if (_scheduled) {
+		if (const auto nearestId = _scheduled->nearest(id)) {
+			return ComputeId(_key.peerId, *nearestId);
+		}
+	}
+	const auto convertFromPartNearest = [&](MsgId result) {
 		return ComputeId(_key.peerId, result);
 	};
-	auto convertFromMigratedNearest = [&](MsgId result) {
+	const auto convertFromMigratedNearest = [&](MsgId result) {
 		return ComputeId(_key.migratedPeerId, result);
 	};
 	if (IsServerMsgId(id)) {
@@ -149,18 +128,18 @@ auto SparseIdsMergedSlice::nearest(
 			return partNearestId
 				| convertFromPartNearest;
 		} else if (isolatedInPart()) {
-			return base::none;
+			return std::nullopt;
 		}
 		return _migrated->nearest(ServerMaxMsgId - 1)
 			| convertFromMigratedNearest;
 	}
 	if (auto migratedNearestId = _migrated
 		? _migrated->nearest(id + ServerMaxMsgId)
-		: base::none) {
+		: std::nullopt) {
 		return migratedNearestId
 			| convertFromMigratedNearest;
 	} else if (isolatedInMigrated()) {
-		return base::none;
+		return std::nullopt;
 	}
 	return _part.nearest(0)
 		| convertFromPartNearest;
@@ -201,10 +180,10 @@ bool SparseIdsSliceBuilder::applyUpdate(
 	}
 	auto skippedBefore = (update.range.from == 0)
 		? 0
-		: base::optional<int> {};
+		: std::optional<int> {};
 	auto skippedAfter = (update.range.till == ServerMaxMsgId)
 		? 0
-		: base::optional<int> {};
+		: std::optional<int> {};
 	mergeSliceData(
 		update.count,
 		needMergeMessages
@@ -237,15 +216,23 @@ bool SparseIdsSliceBuilder::removeOne(MsgId messageId) {
 			changed = true;
 		}
 	}
+	if (changed) {
+		checkInsufficient();
+	}
 	return changed;
 }
 
 bool SparseIdsSliceBuilder::removeAll() {
 	_ids = {};
-	_range = { 0, ServerMaxMsgId };
 	_fullCount = 0;
 	_skippedBefore = 0;
 	_skippedAfter = 0;
+	return true;
+}
+
+bool SparseIdsSliceBuilder::invalidateBottom() {
+	_fullCount = _skippedAfter = std::nullopt;
+	checkInsufficient();
 	return true;
 }
 
@@ -254,10 +241,10 @@ void SparseIdsSliceBuilder::checkInsufficient() {
 }
 
 void SparseIdsSliceBuilder::mergeSliceData(
-		base::optional<int> count,
+		std::optional<int> count,
 		const base::flat_set<MsgId> &messageIds,
-		base::optional<int> skippedBefore,
-		base::optional<int> skippedAfter) {
+		std::optional<int> skippedBefore,
+		std::optional<int> skippedAfter) {
 	if (messageIds.empty()) {
 		if (count && _fullCount != count) {
 			_fullCount = count;
@@ -287,7 +274,7 @@ void SparseIdsSliceBuilder::mergeSliceData(
 	} else if (wasMinId >= 0 && _skippedBefore) {
 		adjustSkippedBefore(wasMinId, *_skippedBefore);
 	} else {
-		_skippedBefore = base::none;
+		_skippedBefore = std::nullopt;
 	}
 
 	auto adjustSkippedAfter = [&](MsgId oldId, int oldSkippedAfter) {
@@ -301,7 +288,7 @@ void SparseIdsSliceBuilder::mergeSliceData(
 	} else if (wasMaxId >= 0 && _skippedAfter) {
 		adjustSkippedAfter(wasMaxId, *_skippedAfter);
 	} else {
-		_skippedAfter = base::none;
+		_skippedAfter = std::nullopt;
 	}
 	fillSkippedAndSliceToLimits();
 }
@@ -361,23 +348,22 @@ void SparseIdsSliceBuilder::requestMessages(
 		RequestDirection direction) {
 	auto requestAroundData = [&]() -> AroundData {
 		if (_ids.empty()) {
-			return { _key, SparseIdsLoadDirection::Around };
+			return { _key, Data::LoadDirection::Around };
 		} else if (direction == RequestDirection::Before) {
-			return { _ids.front(), SparseIdsLoadDirection::Before };
+			return { _ids.front(), Data::LoadDirection::Before };
 		}
-		return { _ids.back(), SparseIdsLoadDirection::After };
+		return { _ids.back(), Data::LoadDirection::After };
 	};
 	_insufficientAround.fire(requestAroundData());
 }
 
 void SparseIdsSliceBuilder::requestMessagesCount() {
-	_insufficientAround.fire({ 0, SparseIdsLoadDirection::Around });
+	_insufficientAround.fire({ 0, Data::LoadDirection::Around });
 }
 
 SparseIdsSlice SparseIdsSliceBuilder::snapshot() const {
 	return SparseIdsSlice(
 		_ids,
-		_range,
 		_fullCount,
 		_skippedBefore,
 		_skippedAfter);
@@ -387,7 +373,7 @@ rpl::producer<SparseIdsMergedSlice> SparseIdsMergedSlice::CreateViewer(
 		SparseIdsMergedSlice::Key key,
 		int limitBefore,
 		int limitAfter,
-		base::lambda<SimpleViewerFunction> simpleViewer) {
+		Fn<SimpleViewerFunction> simpleViewer) {
 	Expects(IsServerMsgId(key.universalId)
 		|| (key.universalId == 0)
 		|| (IsServerMsgId(ServerMaxMsgId + key.universalId) && key.migratedPeerId != 0));
@@ -408,7 +394,7 @@ rpl::producer<SparseIdsMergedSlice> SparseIdsMergedSlice::CreateViewer(
 				consumer.put_next(SparseIdsMergedSlice(
 					key,
 					std::move(part),
-					base::none));
+					std::nullopt));
 			});
 		}
 		auto migratedViewer = simpleViewer(

@@ -10,39 +10,67 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
-#include "autoupdater.h"
 #include "boxes/confirm_box.h"
-#include "application.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
-#include "styles/style_boxes.h"
-#include "platform/platform_file_utilities.h"
+#include "ui/text/text_utilities.h"
+#include "base/platform/base_platform_info.h"
 #include "core/click_handler_types.h"
+#include "core/update_checker.h"
+#include "core/application.h"
+#include "styles/style_layers.h"
+#include "styles/style_boxes.h"
+
+#include <QtGui/QGuiApplication>
+#include <QtGui/QClipboard>
+
+namespace {
+
+rpl::producer<TextWithEntities> Text1() {
+	return tr::lng_about_text1(
+		lt_api_link,
+		tr::lng_about_text1_api(
+		) | Ui::Text::ToLink("https://core.telegram.org/api"),
+		Ui::Text::WithEntities);
+}
+
+rpl::producer<TextWithEntities> Text2() {
+	return tr::lng_about_text2(
+		lt_gpl_link,
+		rpl::single(Ui::Text::Link(
+			"GNU GPL",
+			"https://github.com/telegramdesktop/tdesktop/blob/master/LICENSE")),
+		lt_github_link,
+		rpl::single(Ui::Text::Link(
+			"GitHub",
+			"https://github.com/telegramdesktop/tdesktop")),
+		Ui::Text::WithEntities);
+}
+
+rpl::producer<TextWithEntities> Text3() {
+	return tr::lng_about_text3(
+		lt_faq_link,
+		tr::lng_about_text3_faq() | Ui::Text::ToLink(telegramFaqLink()),
+		Ui::Text::WithEntities);
+}
+
+} // namespace
 
 AboutBox::AboutBox(QWidget *parent)
-: _version(this, lng_about_version(lt_version, QString::fromLatin1(AppVersionStr.c_str()) + (cAlphaVersion() ? " alpha" : "") + (cBetaVersion() ? qsl(" beta %1").arg(cBetaVersion()) : QString())), st::aboutVersionLink)
-, _text1(this, lang(lng_about_text_1), Ui::FlatLabel::InitType::Rich, st::aboutLabel)
-, _text2(this, lang(lng_about_text_2), Ui::FlatLabel::InitType::Rich, st::aboutLabel)
-, _text3(this, st::aboutLabel) {
+: _version(this, tr::lng_about_version(tr::now, lt_version, currentVersionText()), st::aboutVersionLink)
+, _text1(this, Text1(), st::aboutLabel)
+, _text2(this, Text2(), st::aboutLabel)
+, _text3(this, Text3(), st::aboutLabel) {
 }
 
 void AboutBox::prepare() {
-	setTitle([] { return qsl("Telegram Desktop"); });
+	setTitle(rpl::single(qsl("CloudVeil Messenger Desktop")));
 
-	addButton(langFactory(lng_close), [this] { closeBox(); });
+	addButton(tr::lng_close(), [this] { closeBox(); });
 
-	const auto linkHook = [](const ClickHandlerPtr &link, auto button) {
-		if (const auto url = dynamic_cast<UrlClickHandler*>(link.get())) {
-			url->UrlClickHandler::onClick(button);
-			return false;
-		}
-		return true;
-	};
-
-	_text3->setRichText(lng_about_text_3(lt_faq_open, qsl("[a href=\"%1\"]").arg(telegramFaqLink()), lt_faq_close, qsl("[/a]")));
-	_text1->setClickHandlerHook(linkHook);
-	_text2->setClickHandlerHook(linkHook);
-	_text3->setClickHandlerHook(linkHook);
+	_text1->setLinksTrusted();
+	_text2->setLinksTrusted();
+	_text3->setLinksTrusted();
 
 	_version->setClickedCallback([this] { showVersionHistory(); });
 
@@ -59,22 +87,30 @@ void AboutBox::resizeEvent(QResizeEvent *e) {
 }
 
 void AboutBox::showVersionHistory() {
-	if (cRealBetaVersion()) {
+	if (cRealAlphaVersion()) {
 		auto url = qsl("https://tdesktop.com/");
-		switch (cPlatform()) {
-		case dbipWindows: url += qsl("win/%1.zip"); break;
-		case dbipMac: url += qsl("mac/%1.zip"); break;
-		case dbipMacOld: url += qsl("mac32/%1.zip"); break;
-		case dbipLinux32: url += qsl("linux32/%1.tar.xz"); break;
-		case dbipLinux64: url += qsl("linux/%1.tar.xz"); break;
+		if (Platform::IsWindows32Bit()) {
+			url += qsl("win/%1.zip");
+		} else if (Platform::IsWindows64Bit()) {
+			url += qsl("win64/%1.zip");
+		} else if (Platform::IsOSXBuild()) {
+			url += qsl("osx/%1.zip");
+		} else if (Platform::IsMac()) {
+			url += qsl("mac/%1.zip");
+		} else if (Platform::IsLinux32Bit()) {
+			url += qsl("linux32/%1.tar.xz");
+		} else if (Platform::IsLinux64Bit()) {
+			url += qsl("linux/%1.tar.xz");
+		} else {
+			Unexpected("Platform value.");
 		}
-		url = url.arg(qsl("tbeta%1_%2").arg(cRealBetaVersion()).arg(countBetaVersionSignature(cRealBetaVersion())));
+		url = url.arg(qsl("talpha%1_%2").arg(cRealAlphaVersion()).arg(Core::countAlphaVersionSignature(cRealAlphaVersion())));
 
-		Application::clipboard()->setText(url);
+		QGuiApplication::clipboard()->setText(url);
 
-		Ui::show(Box<InformBox>("The link to the current private beta version of Telegram Desktop was copied to the clipboard."));
+		Ui::show(Box<InformBox>("The link to the current private alpha version of Telegram Desktop was copied to the clipboard."));
 	} else {
-		QDesktopServices::openUrl(qsl("https://desktop.telegram.org/changelog"));
+		UrlClickHandler::Open(Core::App().changelogLink());
 	}
 }
 
@@ -87,23 +123,31 @@ void AboutBox::keyPressEvent(QKeyEvent *e) {
 }
 
 QString telegramFaqLink() {
-	auto result = qsl("https://telegram.org/faq");
-	auto language = Lang::Current().id();
-	for (auto faqLanguage : { "de", "es", "it", "ko", "br" }) {
-		if (language.startsWith(QLatin1String(faqLanguage))) {
-			result.append('/').append(faqLanguage);
+	const auto result = qsl("https://telegram.org/faq");
+	const auto langpacked = [&](const char *language) {
+		return result + '/' + language;
+	};
+	const auto current = Lang::Id();
+	for (const auto language : { "de", "es", "it", "ko" }) {
+		if (current.startsWith(QLatin1String(language))) {
+			return langpacked(language);
 		}
+	}
+	if (current.startsWith(qstr("pt-br"))) {
+		return langpacked("br");
 	}
 	return result;
 }
 
 QString currentVersionText() {
-	auto result = QString::fromLatin1(AppVersionStr.c_str());
+	auto result = QString::fromLatin1(AppVersionStr);
 	if (cAlphaVersion()) {
-		result += " alpha";
+		result += qsl(" alpha %1").arg(cAlphaVersion() % 1000);
+	} else if (AppBetaVersion) {
+		result += " beta";
 	}
-	if (cBetaVersion()) {
-		result += qsl(" beta %1").arg(cBetaVersion() % 1000);
+	if (Platform::IsWindows64Bit()) {
+		result += " x64";
 	}
 	return result;
 }

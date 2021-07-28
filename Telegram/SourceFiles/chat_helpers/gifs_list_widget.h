@@ -8,7 +8,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "chat_helpers/tabbed_selector.h"
+#include "base/timer.h"
 #include "inline_bots/inline_bot_layout_item.h"
+#include "app.h"
+
+#include <QtCore/QTimer>
+
+namespace Api {
+struct SendOptions;
+} // namespace Api
 
 namespace InlineBots {
 namespace Layout {
@@ -18,24 +26,35 @@ class Result;
 } // namespace InlineBots
 
 namespace Ui {
+class PopupMenu;
 class RoundButton;
 } // namespace Ui
 
 namespace Window {
-class Controller;
+class SessionController;
 } // namespace Window
+
+namespace SendMenu {
+enum class Type;
+} // namespace SendMenu
 
 namespace ChatHelpers {
 
+void AddGifAction(
+	Fn<void(QString, Fn<void()> &&)> callback,
+	not_null<DocumentData*> document);
+
 class GifsListWidget
 	: public TabbedSelector::Inner
-	, public InlineBots::Layout::Context
-	, private base::Subscriber
-	, private MTP::Sender {
-	Q_OBJECT
-
+	, public InlineBots::Layout::Context {
 public:
-	GifsListWidget(QWidget *parent, not_null<Window::Controller*> controller);
+	using InlineChosen = TabbedSelector::InlineChosen;
+
+	GifsListWidget(QWidget *parent, not_null<Window::SessionController*> controller);
+
+	rpl::producer<TabbedSelector::FileChosen> fileChosen() const;
+	rpl::producer<TabbedSelector::PhotoChosen> photoChosen() const;
+	rpl::producer<InlineChosen> inlineResultChosen() const;
 
 	void refreshRecent() override;
 	void preloadImages() override;
@@ -45,6 +64,7 @@ public:
 	void inlineItemLayoutChanged(const InlineBots::Layout::ItemBase *layout) override;
 	void inlineItemRepaint(const InlineBots::Layout::ItemBase *layout) override;
 	bool inlineItemVisible(const InlineBots::Layout::ItemBase *layout) override;
+	Data::FileOrigin inlineItemFileOrigin() override;
 
 	void afterShown() override;
 	void beforeHiding() override;
@@ -54,6 +74,13 @@ public:
 	}
 	void searchForGifs(const QString &query);
 	void sendInlineRequest();
+
+	void cancelled();
+	rpl::producer<> cancelRequests() const;
+
+	void fillContextMenu(
+		not_null<Ui::PopupMenu*> menu,
+		SendMenu::Type type) override;
 
 	~GifsListWidget();
 
@@ -75,19 +102,6 @@ protected:
 	void processPanelHideFinished() override;
 	int countDesiredHeight(int newWidth) override;
 
-private slots:
-	void onPreview();
-	void onUpdateInlineItems();
-
-signals:
-	void selected(DocumentData *sticker);
-	void selected(PhotoData *photo);
-	void selected(InlineBots::Result *result, UserData *bot);
-	void cancelled();
-
-	void emptyInlineRows();
-	void scrollUpdated();
-
 private:
 	enum class Section {
 		Inlines,
@@ -104,6 +118,7 @@ private:
 		InlineResults results;
 	};
 
+	void clearHeavyData();
 	void cancelGifsSearch();
 	void switchToSavedGifs();
 	void refreshSavedGifs();
@@ -117,9 +132,14 @@ private:
 	void updateSelected();
 	void paintInlineItems(Painter &p, QRect clip);
 
+	void updateInlineItems();
+	void showPreview();
+
+	MTP::Sender _api;
+
 	Section _section = Section::Gifs;
-	TimeMs _lastScrolled = 0;
-	QTimer _updateInlineItems;
+	crl::time _lastScrolled = 0;
+	base::Timer _updateInlineItems;
 	bool _inlineWithThumb = false;
 
 	struct Row {
@@ -130,11 +150,19 @@ private:
 	QVector<Row> _rows;
 	void clearInlineRows(bool resultsDeleted);
 
-	std::map<DocumentData*, std::unique_ptr<LayoutItem>> _gifLayouts;
-	LayoutItem *layoutPrepareSavedGif(DocumentData *doc, int32 position);
+	std::map<
+		not_null<DocumentData*>,
+		std::unique_ptr<LayoutItem>> _gifLayouts;
+	LayoutItem *layoutPrepareSavedGif(
+		not_null<DocumentData*> document,
+		int32 position);
 
-	std::map<InlineResult*, std::unique_ptr<LayoutItem>> _inlineLayouts;
-	LayoutItem *layoutPrepareInlineResult(InlineResult *result, int32 position);
+	std::map<
+		not_null<InlineResult*>,
+		std::unique_ptr<LayoutItem>> _inlineLayouts;
+	LayoutItem *layoutPrepareInlineResult(
+		not_null<InlineResult*> result,
+		int32 position);
 
 	bool inlineRowsAddItem(DocumentData *savedGif, InlineResult *result, Row &row, int32 &sumWidth);
 	bool inlineRowFinalize(Row &row, int32 &sumWidth, bool force = false);
@@ -146,6 +174,11 @@ private:
 
 	int validateExistingInlineRows(const InlineResults &results);
 	void selectInlineResult(int row, int column);
+	void selectInlineResult(
+		int row,
+		int column,
+		Api::SendOptions options,
+		bool forceSend = false);
 
 	Footer *_footer = nullptr;
 
@@ -153,7 +186,7 @@ private:
 	int _pressed = -1;
 	QPoint _lastMousePos;
 
-	QTimer _previewTimer;
+	base::Timer _previewTimer;
 	bool _previewShown = false;
 
 	std::map<QString, std::unique_ptr<InlineCacheEntry>> _inlineCache;
@@ -164,6 +197,11 @@ private:
 	PeerData *_inlineQueryPeer = nullptr;
 	QString _inlineQuery, _inlineNextQuery, _inlineNextOffset;
 	mtpRequestId _inlineRequestId = 0;
+
+	rpl::event_stream<TabbedSelector::FileChosen> _fileChosen;
+	rpl::event_stream<TabbedSelector::PhotoChosen> _photoChosen;
+	rpl::event_stream<InlineChosen> _inlineResultChosen;
+	rpl::event_stream<> _cancelled;
 
 };
 

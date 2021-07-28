@@ -7,6 +7,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/utils.h"
 
+#include "base/qthelp_url.h"
+#include "platform/platform_specific.h"
+
+extern "C" {
 #include <openssl/crypto.h>
 #include <openssl/sha.h>
 #include <openssl/err.h>
@@ -14,16 +18,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <openssl/engine.h>
 #include <openssl/conf.h>
 #include <openssl/ssl.h>
-
-extern "C" {
+#include <openssl/rand.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
-}
-
-#include "application.h"
-#include "platform/platform_specific.h"
-
-uint64 _SharedMemoryLocation[4] = { 0x00, 0x01, 0x02, 0x03 };
+} // extern "C"
 
 #ifdef Q_OS_WIN
 #elif defined Q_OS_MAC
@@ -32,7 +30,9 @@ uint64 _SharedMemoryLocation[4] = { 0x00, 0x01, 0x02, 0x03 };
 #include <time.h>
 #endif
 
-#include <openssl/rand.h>
+#include <QtNetwork/QSslSocket>
+
+uint64 _SharedMemoryLocation[4] = { 0x00, 0x01, 0x02, 0x03 };
 
 // Base types compile-time check
 static_assert(sizeof(char) == 1, "Basic types size check failed");
@@ -52,83 +52,7 @@ static_assert(sizeof(MTPint128) == 16, "Basic types size check failed");
 static_assert(sizeof(MTPint256) == 32, "Basic types size check failed");
 static_assert(sizeof(MTPdouble) == 8, "Basic types size check failed");
 
-// Unixtime functions
-
-namespace {
-	QReadWriteLock unixtimeLock;
-	volatile int32 unixtimeDelta = 0;
-	volatile bool unixtimeWasSet = false;
-    volatile uint64 _msgIdStart, _msgIdLocal = 0, _msgIdMsStart;
-	int32 _reqId = 0;
-
-	void _initMsgIdConstants() {
-#ifdef Q_OS_WIN
-		LARGE_INTEGER li;
-		QueryPerformanceCounter(&li);
-		_msgIdMsStart = li.QuadPart;
-#elif defined Q_OS_MAC
-		_msgIdMsStart = mach_absolute_time();
-#else
-		timespec ts;
-		clock_gettime(CLOCK_REALTIME, &ts);
-		_msgIdMsStart = 1000000000 * uint64(ts.tv_sec) + uint64(ts.tv_nsec);
-#endif
-
-		uint32 msgIdRand;
-		memset_rand(&msgIdRand, sizeof(uint32));
-		_msgIdStart = (((uint64)((uint32)unixtime()) << 32) | (uint64)msgIdRand);
-	}
-}
-
-TimeId myunixtime() {
-	return (TimeId)time(NULL);
-}
-
-void unixtimeInit() {
-	{
-		QWriteLocker locker(&unixtimeLock);
-		unixtimeWasSet = false;
-		unixtimeDelta = 0;
-	}
-	_initMsgIdConstants();
-}
-
-void unixtimeSet(int32 serverTime, bool force) {
-	{
-		QWriteLocker locker(&unixtimeLock);
-		if (force) {
-			DEBUG_LOG(("MTP Info: forced setting client unixtime to %1").arg(serverTime));
-		} else {
-			if (unixtimeWasSet) return;
-			DEBUG_LOG(("MTP Info: setting client unixtime to %1").arg(serverTime));
-		}
-		unixtimeWasSet = true;
-		unixtimeDelta = serverTime + 1 - myunixtime();
-		DEBUG_LOG(("MTP Info: now unixtimeDelta is %1").arg(unixtimeDelta));
-	}
-	_initMsgIdConstants();
-}
-
-TimeId unixtime() {
-	auto result = myunixtime();
-
-	QReadLocker locker(&unixtimeLock);
-	return result + unixtimeDelta;
-}
-
-TimeId fromServerTime(const MTPint &serverTime) {
-	QReadLocker locker(&unixtimeLock);
-	return serverTime.v - unixtimeDelta;
-}
-
-MTPint toServerTime(const TimeId &clientTime) {
-	QReadLocker locker(&unixtimeLock);
-	return MTP_int(clientTime + unixtimeDelta);
-}
-
-QDateTime dateFromServerTime(TimeId time) {
-	return dateFromServerTime(MTP_int(time));
-}
+static_assert(sizeof(int) >= 4, "Basic types size check failed");
 
 // Precise timing functions / rand init
 
@@ -139,107 +63,6 @@ struct CRYPTO_dynlock_value {
 namespace {
 	bool _sslInited = false;
 	QMutex *_sslLocks = nullptr;
-	void _sslLockingCallback(int mode, int type, const char *file, int line) {
-		if (!_sslLocks) return; // not inited
-
-		if (mode & CRYPTO_LOCK) {
-			_sslLocks[type].lock();
-		} else {
-			_sslLocks[type].unlock();
-		}
-	}
-	void _sslThreadId(CRYPTO_THREADID *id) {
-		CRYPTO_THREADID_set_pointer(id, QThread::currentThreadId());
-	}
-	CRYPTO_dynlock_value *_sslCreateFunction(const char *file, int line) {
-		return new CRYPTO_dynlock_value();
-	}
-	void _sslLockFunction(int mode, CRYPTO_dynlock_value *l, const char *file, int line) {
-		if (mode & CRYPTO_LOCK) {
-			l->mutex.lock();
-		} else {
-			l->mutex.unlock();
-		}
-	}
-	void _sslDestroyFunction(CRYPTO_dynlock_value *l, const char *file, int line) {
-		delete l;
-	}
-
-	int _ffmpegLockManager(void **mutex, AVLockOp op) {
-		switch (op) {
-		case AV_LOCK_CREATE: {
-			Assert(*mutex == 0);
-			*mutex = reinterpret_cast<void*>(new QMutex());
-		} break;
-
-		case AV_LOCK_OBTAIN: {
-			Assert(*mutex != 0);
-			reinterpret_cast<QMutex*>(*mutex)->lock();
-		} break;
-
-		case AV_LOCK_RELEASE: {
-			Assert(*mutex != 0);
-			reinterpret_cast<QMutex*>(*mutex)->unlock();
-		}; break;
-
-		case AV_LOCK_DESTROY: {
-			Assert(*mutex != 0);
-			delete reinterpret_cast<QMutex*>(*mutex);
-			*mutex = 0;
-		} break;
-		}
-		return 0;
-	}
-
-	float64 _msFreq;
-	float64 _msgIdCoef;
-	TimeMs _msStart = 0, _msAddToMsStart = 0, _msAddToUnixtime = 0;
-	int32 _timeStart = 0;
-
-	class _MsInitializer {
-	public:
-		_MsInitializer() {
-#ifdef Q_OS_WIN
-			LARGE_INTEGER li;
-			QueryPerformanceFrequency(&li);
-            _msFreq = 1000. / float64(li.QuadPart);
-
-			// 0xFFFF0000L istead of 0x100000000L to make msgId grow slightly slower, than unixtime and we had time to reconfigure
-			_msgIdCoef = float64(0xFFFF0000L) / float64(li.QuadPart);
-
-			QueryPerformanceCounter(&li);
-			_msStart = li.QuadPart;
-#elif defined Q_OS_MAC
-            mach_timebase_info_data_t tb = { 0, 0 };
-            mach_timebase_info(&tb);
-            _msFreq = (float64(tb.numer) / tb.denom) / 1000000.;
-
-            _msgIdCoef = _msFreq * (float64(0xFFFF0000L) / 1000.);
-
-            _msStart = mach_absolute_time();
-#else
-            timespec ts;
-            clock_gettime(CLOCK_MONOTONIC, &ts);
-            //_msFreq = 1 / 1000000.;
-            _msgIdCoef = float64(0xFFFF0000L) / 1000000000.;
-            _msStart = 1000LL * static_cast<TimeMs>(ts.tv_sec) + (static_cast<TimeMs>(ts.tv_nsec) / 1000000LL);
-#endif
-			_timeStart = myunixtime();
-			srand((uint32)(_msStart & 0xFFFFFFFFL));
-		}
-	};
-
-	void _msInitialize() {
-		static _MsInitializer _msInitializer;
-	}
-
-	class _MsStarter {
-	public:
-		_MsStarter() {
-			getms();
-		}
-	};
-	_MsStarter _msStarter;
 }
 
 namespace ThirdParty {
@@ -248,11 +71,25 @@ namespace ThirdParty {
 		Platform::ThirdParty::start();
 
 		if (!RAND_status()) { // should be always inited in all modern OS
-			char buf[16];
-			memcpy(buf, &_msStart, 8);
-			memcpy(buf + 8, &_msFreq, 8);
-			uchar sha256Buffer[32];
-			RAND_seed(hashSha256(buf, 16, sha256Buffer), 32);
+			const auto FeedSeed = [](auto value) {
+				RAND_seed(&value, sizeof(value));
+			};
+#ifdef Q_OS_WIN
+			LARGE_INTEGER li;
+			QueryPerformanceFrequency(&li);
+			FeedSeed(li.QuadPart);
+			QueryPerformanceCounter(&li);
+			FeedSeed(li.QuadPart);
+#elif defined Q_OS_MAC
+			mach_timebase_info_data_t tb = { 0 };
+			mach_timebase_info(&tb);
+			FeedSeed(tb);
+			FeedSeed(mach_absolute_time());
+#else
+			timespec ts = { 0 };
+			clock_gettime(CLOCK_MONOTONIC, &ts);
+			FeedSeed(ts);
+#endif
 			if (!RAND_status()) {
 				LOG(("MTP Error: Could not init OpenSSL rand, RAND_status() is 0..."));
 			}
@@ -273,7 +110,6 @@ namespace ThirdParty {
 			} else {
 				LOG(("MTP Error: Could not init OpenSSL threads, CRYPTO_num_locks() returned zero!"));
 			}
-			CRYPTO_THREADID_set_callback(_sslThreadId);
 		}
 		if (!CRYPTO_get_dynlock_create_callback()) {
 			CRYPTO_set_dynlock_create_callback(_sslCreateFunction);
@@ -283,136 +119,23 @@ namespace ThirdParty {
 			LOG(("MTP Error: dynlock_create callback is set without dynlock_lock callback!"));
 		}
 
-		av_register_all();
-		avcodec_register_all();
-
-		av_lockmgr_register(_ffmpegLockManager);
-
 		_sslInited = true;
 	}
 
 	void finish() {
-		av_lockmgr_register(nullptr);
-
 		CRYPTO_cleanup_all_ex_data();
+#ifndef LIBRESSL_VERSION_NUMBER
 		FIPS_mode_set(0);
+#endif
 		ENGINE_cleanup();
 		CONF_modules_unload(1);
-		ERR_remove_state(0);
 		ERR_free_strings();
-		ERR_remove_thread_state(nullptr);
 		EVP_cleanup();
 
 		delete[] base::take(_sslLocks);
 
 		Platform::ThirdParty::finish();
 	}
-}
-
-bool checkms() {
-	auto unixms = (myunixtime() - _timeStart) * 1000LL + _msAddToUnixtime;
-	auto ms = getms(true);
-	if (ms > unixms + 1000LL) {
-		_msAddToUnixtime = ((ms - unixms) / 1000LL) * 1000LL;
-	} else if (unixms > ms + 1000LL) {
-		_msAddToMsStart += ((unixms - ms) / 1000LL) * 1000LL;
-		Sandbox::adjustSingleTimers();
-		return true;
-	}
-	return false;
-}
-
-TimeMs getms(bool checked) {
-    _msInitialize();
-#ifdef Q_OS_WIN
-    LARGE_INTEGER li;
-    QueryPerformanceCounter(&li);
-	return ((li.QuadPart - _msStart) * _msFreq) + (checked ? _msAddToMsStart : 0LL);
-#elif defined Q_OS_MAC
-	auto msCount = static_cast<TimeMs>(mach_absolute_time());
-	return ((msCount - _msStart) * _msFreq) + (checked ? _msAddToMsStart : 0LL);
-#else
-    timespec ts;
-    auto res = clock_gettime(CLOCK_MONOTONIC, &ts);
-    if (res != 0) {
-        LOG(("Bad clock_gettime result: %1").arg(res));
-        return 0;
-    }
-    auto msCount = 1000LL * static_cast<TimeMs>(ts.tv_sec) + (static_cast<TimeMs>(ts.tv_nsec) / 1000000LL);
-    return (msCount - _msStart) + (checked ? _msAddToMsStart : 0LL);
-#endif
-}
-
-uint64 msgid() {
-#ifdef Q_OS_WIN
-    LARGE_INTEGER li;
-    QueryPerformanceCounter(&li);
-    uint64 result = _msgIdStart + (uint64)floor((li.QuadPart - _msgIdMsStart) * _msgIdCoef);
-#elif defined Q_OS_MAC
-    uint64 msCount = mach_absolute_time();
-    uint64 result = _msgIdStart + (uint64)floor((msCount - _msgIdMsStart) * _msgIdCoef);
-#else
-    timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    uint64 msCount = 1000000000 * uint64(ts.tv_sec) + uint64(ts.tv_nsec);
-    uint64 result = _msgIdStart + (uint64)floor((msCount - _msgIdMsStart) * _msgIdCoef);
-#endif
-
-	result &= ~0x03L;
-
-	return result + (_msgIdLocal += 4);
-}
-
-int32 reqid() {
-	QWriteLocker locker(&unixtimeLock);
-	if (_reqId == INT_MAX) {
-		_reqId = 0;
-	}
-	return ++_reqId;
-}
-
-// crc32 hash, taken somewhere from the internet
-
-namespace {
-	uint32 _crc32Table[256];
-	class _Crc32Initializer {
-	public:
-		_Crc32Initializer() {
-			uint32 poly = 0x04c11db7;
-			for (uint32 i = 0; i < 256; ++i) {
-				_crc32Table[i] = reflect(i, 8) << 24;
-				for (uint32 j = 0; j < 8; ++j) {
-					_crc32Table[i] = (_crc32Table[i] << 1) ^ (_crc32Table[i] & (1 << 31) ? poly : 0);
-				}
-				_crc32Table[i] = reflect(_crc32Table[i], 32);
-			}
-		}
-
-	private:
-		uint32 reflect(uint32 val, char ch) {
-			uint32 result = 0;
-			for (int i = 1; i < (ch + 1); ++i) {
-				if (val & 1) {
-					result |= 1 << (ch - i);
-				}
-				val >>= 1;
-			}
-			return result;
-		}
-	};
-}
-
-int32 hashCrc32(const void *data, uint32 len) {
-	static _Crc32Initializer _crc32Initializer;
-
-	const uchar *buf = (const uchar *)data;
-
-	uint32 crc(0xffffffff);
-    for (uint32 i = 0; i < len; ++i) {
-		crc = (crc >> 8) ^ _crc32Table[(crc & 0xFF) ^ buf[i]];
-	}
-
-    return crc ^ 0xffffffff;
 }
 
 int32 *hashSha1(const void *data, uint32 len, void *dest) {
@@ -743,7 +466,7 @@ QString translitLetterRusEng(QChar letter, QChar next, int32 &toSkip) {
 		fastLetterRusEng.insert(QString::fromUtf8("ч").at(0), qsl("ch"));
 		fastLetterRusEng.insert(QString::fromUtf8("ш").at(0), qsl("sh"));
 		fastLetterRusEng.insert(QString::fromUtf8("щ").at(0), qsl("sch"));
-		fastLetterRusEng.insert(QString::fromUtf8("ъ").at(0), qsl(""));
+		fastLetterRusEng.insert(QString::fromUtf8("ъ").at(0), QString());
 		fastLetterRusEng.insert(QString::fromUtf8("э").at(0), qsl("e"));
 		fastLetterRusEng.insert(QString::fromUtf8("ю").at(0), qsl("yu"));
 		fastLetterRusEng.insert(QString::fromUtf8("я").at(0), qsl("ya"));
@@ -752,7 +475,7 @@ QString translitLetterRusEng(QChar letter, QChar next, int32 &toSkip) {
 		fastLetterRusEng.insert(QString::fromUtf8("и").at(0), qsl("i"));
 		fastLetterRusEng.insert(QString::fromUtf8("к").at(0), qsl("k"));
 		fastLetterRusEng.insert(QString::fromUtf8("ы").at(0), qsl("y"));
-		fastLetterRusEng.insert(QString::fromUtf8("ь").at(0), qsl(""));
+		fastLetterRusEng.insert(QString::fromUtf8("ь").at(0), QString());
 	}
 	QHash<QChar, QString>::const_iterator j = fastLetterRusEng.constFind(letter);
 	if (j != fastLetterRusEng.cend()) {
@@ -919,6 +642,10 @@ QString rusKeyboardLayoutSwitch(const QString &from) {
 		fastRusKeyboardSwitch.insert(QString::fromUtf8("ь").at(0), 'm');
 		fastRusKeyboardSwitch.insert(QString::fromUtf8("б").at(0), ',');
 		fastRusKeyboardSwitch.insert(QString::fromUtf8("ю").at(0), '.');
+		fastRusKeyboardSwitch.insert(QString::fromUtf8("І").at(0), 'S');
+		fastRusKeyboardSwitch.insert(QString::fromUtf8("і").at(0), 's');
+		fastRusKeyboardSwitch.insert(QString::fromUtf8("Ї").at(0), ']');
+		fastRusKeyboardSwitch.insert(QString::fromUtf8("ї").at(0), ']');
 	}
 
 	QString result;
@@ -932,77 +659,4 @@ QString rusKeyboardLayoutSwitch(const QString &from) {
 		}
 	}
 	return result;
-}
-
-QStringList MimeType::globPatterns() const {
-	switch (_type) {
-	case Known::WebP: return QStringList(qsl("*.webp"));
-	case Known::TDesktopTheme: return QStringList(qsl("*.tdesktop-theme"));
-	case Known::TDesktopPalette: return QStringList(qsl("*.tdesktop-palette"));
-	default: break;
-	}
-	return _typeStruct.globPatterns();
-}
-QString MimeType::filterString() const {
-	switch (_type) {
-	case Known::WebP: return qsl("WebP image (*.webp)");
-	case Known::TDesktopTheme: return qsl("Theme files (*.tdesktop-theme)");
-	case Known::TDesktopPalette: return qsl("Palette files (*.tdesktop-palette)");
-	default: break;
-	}
-	return _typeStruct.filterString();
-}
-QString MimeType::name() const {
-	switch (_type) {
-	case Known::WebP: return qsl("image/webp");
-	case Known::TDesktopTheme: return qsl("application/x-tdesktop-theme");
-	case Known::TDesktopPalette: return qsl("application/x-tdesktop-palette");
-	default: break;
-	}
-	return _typeStruct.name();
-}
-
-MimeType mimeTypeForName(const QString &mime) {
-	if (mime == qsl("image/webp")) {
-		return MimeType(MimeType::Known::WebP);
-	} else if (mime == qsl("application/x-tdesktop-theme")) {
-		return MimeType(MimeType::Known::TDesktopTheme);
-	} else if (mime == qsl("application/x-tdesktop-palette")) {
-		return MimeType(MimeType::Known::TDesktopPalette);
-	}
-	return MimeType(QMimeDatabase().mimeTypeForName(mime));
-}
-
-MimeType mimeTypeForFile(const QFileInfo &file) {
-	QString path = file.absoluteFilePath();
-	if (path.endsWith(qstr(".webp"), Qt::CaseInsensitive)) {
-		return MimeType(MimeType::Known::WebP);
-	} else if (path.endsWith(qstr(".tdesktop-theme"), Qt::CaseInsensitive)) {
-		return MimeType(MimeType::Known::TDesktopTheme);
-	} else if (path.endsWith(qstr(".tdesktop-palette"), Qt::CaseInsensitive)) {
-		return MimeType(MimeType::Known::TDesktopPalette);
-	}
-
-	{
-		QFile f(path);
-		if (f.open(QIODevice::ReadOnly)) {
-			QByteArray magic = f.read(12);
-			if (magic.size() >= 12) {
-				if (!memcmp(magic.constData(), "RIFF", 4) && !memcmp(magic.constData() + 8, "WEBP", 4)) {
-					return MimeType(MimeType::Known::WebP);
-				}
-			}
-			f.close();
-		}
-	}
-	return MimeType(QMimeDatabase().mimeTypeForFile(file));
-}
-
-MimeType mimeTypeForData(const QByteArray &data) {
-	if (data.size() >= 12) {
-		if (!memcmp(data.constData(), "RIFF", 4) && !memcmp(data.constData() + 8, "WEBP", 4)) {
-			return MimeType(MimeType::Known::WebP);
-		}
-	}
-	return MimeType(QMimeDatabase().mimeTypeForData(data));
 }

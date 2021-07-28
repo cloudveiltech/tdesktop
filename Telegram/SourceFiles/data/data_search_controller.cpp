@@ -7,22 +7,29 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_search_controller.h"
 
-#include "auth_session.h"
+#include "main/main_session.h"
+#include "data/data_session.h"
+#include "data/data_messages.h"
+#include "data/data_channel.h"
+#include "data/data_histories.h"
+#include "history/history.h"
+#include "history/history_item.h"
+#include "apiwrap.h"
 
 namespace Api {
 namespace {
 
 constexpr auto kSharedMediaLimit = 100;
-constexpr auto kDefaultSearchTimeoutMs = TimeMs(200);
+constexpr auto kDefaultSearchTimeoutMs = crl::time(200);
 
 } // namespace
 
-MTPmessages_Search PrepareSearchRequest(
+std::optional<MTPmessages_Search> PrepareSearchRequest(
 		not_null<PeerData*> peer,
 		Storage::SharedMediaType type,
 		const QString &query,
 		MsgId messageId,
-		SparseIdsLoadDirection direction) {
+		Data::LoadDirection direction) {
 	const auto filter = [&] {
 		using Type = Storage::SharedMediaType;
 		switch (type) {
@@ -48,35 +55,42 @@ MTPmessages_Search PrepareSearchRequest(
 			return MTP_inputMessagesFilterUrl();
 		case Type::ChatPhoto:
 			return MTP_inputMessagesFilterChatPhotos();
+		case Type::Pinned:
+			return MTP_inputMessagesFilterPinned();
 		}
 		return MTP_inputMessagesFilterEmpty();
 	}();
+	if (query.isEmpty() && filter.type() == mtpc_inputMessagesFilterEmpty) {
+		return std::nullopt;
+	}
 
 	const auto minId = 0;
 	const auto maxId = 0;
 	const auto limit = messageId ? kSharedMediaLimit : 0;
 	const auto offsetId = [&] {
 		switch (direction) {
-		case SparseIdsLoadDirection::Before:
-		case SparseIdsLoadDirection::Around: return messageId;
-		case SparseIdsLoadDirection::After: return messageId + 1;
+		case Data::LoadDirection::Before:
+		case Data::LoadDirection::Around: return messageId;
+		case Data::LoadDirection::After: return messageId + 1;
 		}
 		Unexpected("Direction in PrepareSearchRequest");
 	}();
 	const auto addOffset = [&] {
 		switch (direction) {
-		case SparseIdsLoadDirection::Before: return 0;
-		case SparseIdsLoadDirection::Around: return -limit / 2;
-		case SparseIdsLoadDirection::After: return -limit;
+		case Data::LoadDirection::Before: return 0;
+		case Data::LoadDirection::Around: return -limit / 2;
+		case Data::LoadDirection::After: return -limit;
 		}
 		Unexpected("Direction in PrepareSearchRequest");
 	}();
+	const auto hash = int32(0);
 
 	return MTPmessages_Search(
 		MTP_flags(0),
 		peer->input,
 		MTP_string(query),
-		MTP_inputUserEmpty(),
+		MTP_inputPeerEmpty(),
+		MTPint(), // top_msg_id
 		filter,
 		MTP_int(0),
 		MTP_int(0),
@@ -84,14 +98,15 @@ MTPmessages_Search PrepareSearchRequest(
 		MTP_int(addOffset),
 		MTP_int(limit),
 		MTP_int(maxId),
-		MTP_int(minId));
+		MTP_int(minId),
+		MTP_int(hash));
 }
 
 SearchResult ParseSearchResult(
 		not_null<PeerData*> peer,
 		Storage::SharedMediaType type,
 		MsgId messageId,
-		SparseIdsLoadDirection direction,
+		Data::LoadDirection direction,
 		const MTPmessages_Messages &data) {
 	auto result = SearchResult();
 	result.noSkipRange = MsgRange{ messageId, messageId };
@@ -100,32 +115,32 @@ SearchResult ParseSearchResult(
 		switch (data.type()) {
 		case mtpc_messages_messages: {
 			auto &d = data.c_messages_messages();
-			App::feedUsers(d.vusers);
-			App::feedChats(d.vchats);
-			result.fullCount = d.vmessages.v.size();
-			return &d.vmessages.v;
+			peer->owner().processUsers(d.vusers());
+			peer->owner().processChats(d.vchats());
+			result.fullCount = d.vmessages().v.size();
+			return &d.vmessages().v;
 		} break;
 
 		case mtpc_messages_messagesSlice: {
 			auto &d = data.c_messages_messagesSlice();
-			App::feedUsers(d.vusers);
-			App::feedChats(d.vchats);
-			result.fullCount = d.vcount.v;
-			return &d.vmessages.v;
+			peer->owner().processUsers(d.vusers());
+			peer->owner().processChats(d.vchats());
+			result.fullCount = d.vcount().v;
+			return &d.vmessages().v;
 		} break;
 
 		case mtpc_messages_channelMessages: {
 			auto &d = data.c_messages_channelMessages();
 			if (auto channel = peer->asChannel()) {
-				channel->ptsReceived(d.vpts.v);
+				channel->ptsReceived(d.vpts().v);
 			} else {
 				LOG(("API Error: received messages.channelMessages when "
 					"no channel was passed! (ParseSearchResult)"));
 			}
-			App::feedUsers(d.vusers);
-			App::feedChats(d.vchats);
-			result.fullCount = d.vcount.v;
-			return &d.vmessages.v;
+			peer->owner().processUsers(d.vusers());
+			peer->owner().processChats(d.vchats());
+			result.fullCount = d.vcount().v;
+			return &d.vmessages().v;
 		} break;
 
 		case mtpc_messages_messagesNotModified: {
@@ -141,11 +156,15 @@ SearchResult ParseSearchResult(
 		return result;
 	}
 
-	auto addType = NewMessageExisting;
+	const auto addType = NewMessageType::Existing;
 	result.messageIds.reserve(messages->size());
-	for (auto &message : *messages) {
-		if (auto item = App::histories().addNewMessage(message, addType)) {
-			auto itemId = item->id;
+	for (const auto &message : *messages) {
+		const auto item = peer->owner().addNewMessage(
+			message,
+			MTPDmessage_ClientFlags(),
+			addType);
+		if (item) {
+			const auto itemId = item->id;
 			if ((type == Storage::SharedMediaType::kCount)
 				|| item->sharedMediaTypes().test(type)) {
 				result.messageIds.push_back(itemId);
@@ -157,11 +176,11 @@ SearchResult ParseSearchResult(
 	if (messageId && result.messageIds.empty()) {
 		result.noSkipRange = [&]() -> MsgRange {
 			switch (direction) {
-			case SparseIdsLoadDirection::Before: // All old loaded.
+			case Data::LoadDirection::Before: // All old loaded.
 				return { 0, result.noSkipRange.till };
-			case SparseIdsLoadDirection::Around: // All loaded.
+			case Data::LoadDirection::Around: // All loaded.
 				return { 0, ServerMaxMsgId };
-			case SparseIdsLoadDirection::After: // All new loaded.
+			case Data::LoadDirection::After: // All new loaded.
 				return { result.noSkipRange.from, ServerMaxMsgId };
 			}
 			Unexpected("Direction in ParseSearchResult");
@@ -170,11 +189,17 @@ SearchResult ParseSearchResult(
 	return result;
 }
 
-SearchController::CacheEntry::CacheEntry(const Query &query)
-: peerData(App::peer(query.peerId))
+SearchController::CacheEntry::CacheEntry(
+	not_null<Main::Session*> session,
+	const Query &query)
+: peerData(session->data().peer(query.peerId))
 , migratedData(query.migratedPeerId
-	? base::make_optional(Data(App::peer(query.migratedPeerId)))
-	: base::none) {
+	? base::make_optional(Data(session->data().peer(query.migratedPeerId)))
+	: std::nullopt) {
+}
+
+SearchController::SearchController(not_null<Main::Session*> session)
+: _session(session) {
 }
 
 bool SearchController::hasInCache(const Query &query) const {
@@ -191,7 +216,7 @@ void SearchController::setQuery(const Query &query) {
 	if (_current == _cache.end()) {
 		_current = _cache.emplace(
 			query,
-			std::make_unique<CacheEntry>(query)).first;
+			std::make_unique<CacheEntry>(_session, query)).first;
 	}
 }
 
@@ -266,14 +291,14 @@ rpl::producer<SparseIdsSlice> SearchController::simpleIdsSlice(
 			return builder->applyUpdate(update);
 		}) | rpl::start_with_next(pushNextSnapshot, lifetime);
 
-		Auth().data().itemRemoved(
+		_session->data().itemRemoved(
 		) | rpl::filter([=](not_null<const HistoryItem*> item) {
 			return (item->history()->peer->id == peerId);
 		}) | rpl::filter([=](not_null<const HistoryItem*> item) {
 			return builder->removeOne(item->id);
 		}) | rpl::start_with_next(pushNextSnapshot, lifetime);
 
-		Auth().data().historyCleared(
+		_session->data().historyCleared(
 		) | rpl::filter([=](not_null<const History*> history) {
 			return (history->peer->id == peerId);
 		}) | rpl::filter([=] {
@@ -317,7 +342,7 @@ void SearchController::restoreState(SavedState &&state) {
 	if (it == _cache.end()) {
 		it = _cache.emplace(
 			state.query,
-			std::make_unique<CacheEntry>(state.query)).first;
+			std::make_unique<CacheEntry>(_session, state.query)).first;
 	}
 	auto replace = Data(it->second->peerData.peer);
 	replace.list = std::move(state.peerList);
@@ -338,31 +363,46 @@ void SearchController::requestMore(
 	if (listData->requests.contains(key)) {
 		return;
 	}
-	auto requestId = request(PrepareSearchRequest(
+	auto prepared = PrepareSearchRequest(
 		listData->peer,
 		query.type,
 		query.query,
 		key.aroundId,
-		key.direction)
-	).done([=](const MTPmessages_Messages &result) {
-		listData->requests.remove(key);
-		auto parsed = ParseSearchResult(
-			listData->peer,
-			query.type,
-			key.aroundId,
-			key.direction,
-			result);
-		listData->list.addSlice(
-			std::move(parsed.messageIds),
-			parsed.noSkipRange,
-			parsed.fullCount);
-	}).send();
+		key.direction);
+	if (!prepared) {
+		return;
+	}
+	auto &histories = _session->data().histories();
+	const auto type = ::Data::Histories::RequestType::History;
+	const auto history = _session->data().history(listData->peer);
+	auto requestId = histories.sendRequest(history, type, [=](Fn<void()> finish) {
+		return _session->api().request(
+			std::move(*prepared)
+		).done([=](const MTPmessages_Messages &result) {
+			listData->requests.remove(key);
+			auto parsed = ParseSearchResult(
+				listData->peer,
+				query.type,
+				key.aroundId,
+				key.direction,
+				result);
+			listData->list.addSlice(
+				std::move(parsed.messageIds),
+				parsed.noSkipRange,
+				parsed.fullCount);
+			finish();
+		}).fail([=](const MTP::Error &error) {
+			finish();
+		}).send();
+	});
 	listData->requests.emplace(key, [=] {
-		request(requestId).cancel();
+		_session->data().histories().cancelRequest(requestId);
 	});
 }
 
-DelayedSearchController::DelayedSearchController() {
+DelayedSearchController::DelayedSearchController(
+	not_null<Main::Session*> session)
+: _controller(session) {
 	_timer.setCallback([this] { setQueryFast(_nextQuery); });
 }
 
@@ -372,7 +412,7 @@ void DelayedSearchController::setQuery(const Query &query) {
 
 void DelayedSearchController::setQuery(
 		const Query &query,
-		TimeMs delay) {
+		crl::time delay) {
 	if (currentQuery() == query) {
 		_timer.cancel();
 		return;

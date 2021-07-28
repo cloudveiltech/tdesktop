@@ -7,6 +7,23 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include <QtWidgets/QLabel>
+#include <QtWidgets/QLineEdit>
+#include <QtWidgets/QTextEdit>
+#include <QtWidgets/QPushButton>
+#include <QtWidgets/QCheckBox>
+#include <QtNetwork/QNetworkReply>
+#include <QtNetwork/QHttpMultiPart>
+#include <QtNetwork/QNetworkAccessManager>
+
+namespace MTP {
+struct ProxyData;
+} // namespace MTP
+
+namespace Core {
+class Launcher;
+} // namespace Core
+
 class PreLaunchWindow : public QWidget {
 public:
 	PreLaunchWindow(QString title = QString());
@@ -62,8 +79,8 @@ public:
 	NotStartedWindow();
 
 protected:
-	void closeEvent(QCloseEvent *e);
-	void resizeEvent(QResizeEvent *e);
+	void closeEvent(QCloseEvent *e) override;
+	void resizeEvent(QResizeEvent *e) override;
 
 private:
 	void updateControls();
@@ -75,47 +92,48 @@ private:
 };
 
 class LastCrashedWindow : public PreLaunchWindow {
-	 Q_OBJECT
 
 public:
-	LastCrashedWindow();
+	LastCrashedWindow(
+		not_null<Core::Launcher*> launcher,
+		const QByteArray &crashdump,
+		Fn<void()> launch);
 
-public slots:
-	void onViewReport();
-	void onSaveReport();
-	void onSendReport();
-	void onGetApp();
+	rpl::producer<MTP::ProxyData> proxyChanges() const;
 
-	void onNetworkSettings();
-	void onNetworkSettingsSaved(QString host, quint32 port, QString username, QString password);
-	void onContinue();
+	rpl::lifetime &lifetime() {
+		return _lifetime;
+	}
 
-	void onCheckingFinished();
-	void onSendingError(QNetworkReply::NetworkError e);
-	void onSendingFinished();
-	void onSendingProgress(qint64 uploaded, qint64 total);
+	void saveReport();
+	void sendReport();
 
-#ifndef TDESKTOP_DISABLE_AUTOUPDATE
-	void onUpdateRetry();
-	void onUpdateSkip();
+	void networkSettings();
+	void processContinue();
 
-	void onUpdateChecking();
-	void onUpdateLatest();
-	void onUpdateDownloading(qint64 ready, qint64 total);
-	void onUpdateReady();
-	void onUpdateFailed();
-#endif // !TDESKTOP_DISABLE_AUTOUPDATE
+	void checkingFinished();
+	void sendingError(QNetworkReply::NetworkError e);
+	void sendingFinished();
+	void sendingProgress(qint64 uploaded, qint64 total);
+
+	void updateRetry();
+	void updateSkip();
 
 protected:
-	void closeEvent(QCloseEvent *e);
-	void resizeEvent(QResizeEvent *e);
+	void closeEvent(QCloseEvent *e) override;
+	void resizeEvent(QResizeEvent *e) override;
 
 private:
+	void proxyUpdated();
 	QString minidumpFileName();
 	void updateControls();
 
-	QString _host, _username, _password;
-	quint32 _port;
+	void excludeReportUsername();
+
+	QString getReportField(const QLatin1String &name, const QLatin1String &prefix);
+	void addReportFieldPart(const QLatin1String &name, const QLatin1String &prefix, QHttpMultiPart *multipart);
+
+	QByteArray _dumpraw;
 
 	PreLaunchLabel _label, _pleaseSendReport, _yourReportName, _minidump;
 	PreLaunchLog _report;
@@ -127,8 +145,6 @@ private:
 	QByteArray getCrashReportRaw() const;
 
 	bool _reportShown, _reportSaved;
-
-	void excludeReportUsername();
 
 	enum SendingState {
 		SendingNoReport,
@@ -145,13 +161,11 @@ private:
 	SendingState _sendingState;
 
 	PreLaunchLabel _updating;
-	qint64 _sendingProgress, _sendingTotal;
 
 	QNetworkAccessManager _sendManager;
-	QNetworkReply *_checkReply, *_sendReply;
+	QNetworkReply *_checkReply = nullptr;
+	QNetworkReply *_sendReply = nullptr;
 
-#ifndef TDESKTOP_DISABLE_AUTOUPDATE
-	PreLaunchButton _updatingCheck, _updatingSkip;
 	enum UpdatingState {
 		UpdatingNone,
 		UpdatingCheck,
@@ -160,29 +174,31 @@ private:
 		UpdatingFail,
 		UpdatingReady
 	};
-	UpdatingState _updatingState;
-	QString _newVersionDownload;
+	struct UpdaterData {
+		UpdaterData(QWidget *buttonParent);
+
+		PreLaunchButton check, skip;
+		UpdatingState state;
+		QString newVersionDownload;
+	};
+	const std::unique_ptr<UpdaterData> _updaterData;
 
 	void setUpdatingState(UpdatingState state, bool force = false);
 	void setDownloadProgress(qint64 ready, qint64 total);
-#endif // !TDESKTOP_DISABLE_AUTOUPDATE
 
-	QString getReportField(const QLatin1String &name, const QLatin1String &prefix);
-	void addReportFieldPart(const QLatin1String &name, const QLatin1String &prefix, QHttpMultiPart *multipart);
+	Fn<void()> _launch;
+	rpl::event_stream<MTP::ProxyData> _proxyChanges;
+	rpl::lifetime _lifetime;
 
 };
 
 class NetworkSettingsWindow : public PreLaunchWindow {
-	Q_OBJECT
 
 public:
 	NetworkSettingsWindow(QWidget *parent, QString host, quint32 port, QString username, QString password);
 
-signals:
-	void saved(QString host, quint32 port, QString username, QString password);
-
-public slots:
-	void onSave();
+	[[nodiscard]] rpl::producer<MTP::ProxyData> saveRequests() const;
+	void save();
 
 protected:
 	void closeEvent(QCloseEvent *e);
@@ -197,17 +213,6 @@ private:
 
 	QWidget *_parent;
 
-};
-
-class ShowCrashReportWindow : public PreLaunchWindow {
-public:
-	ShowCrashReportWindow(const QString &text);
-
-protected:
-	void resizeEvent(QResizeEvent *e);
-    void closeEvent(QCloseEvent *e);
-
-private:
-	PreLaunchLog _log;
+	rpl::event_stream<MTP::ProxyData> _saveRequests;
 
 };

@@ -7,68 +7,34 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "chat_helpers/tabbed_section.h"
 
-#include "styles/style_chat_helpers.h"
 #include "chat_helpers/tabbed_selector.h"
+#include "window/window_session_controller.h"
+#include "styles/style_chat_helpers.h"
 
 namespace ChatHelpers {
 
-TabbedMemento::TabbedMemento(
-	object_ptr<TabbedSelector> selector,
-	base::lambda<void(object_ptr<TabbedSelector>)> returnMethod)
-: _selector(std::move(selector))
-, _returnMethod(std::move(returnMethod)) {
-}
-
 object_ptr<Window::SectionWidget> TabbedMemento::createWidget(
 		QWidget *parent,
-		not_null<Window::Controller*> controller,
+		not_null<Window::SessionController*> controller,
 		Window::Column column,
 		const QRect &geometry) {
-	auto result = object_ptr<TabbedSection>(
-		parent,
-		controller,
-		std::move(_selector),
-		std::move(_returnMethod));
+	auto result = object_ptr<TabbedSection>(parent, controller);
 	result->setGeometry(geometry);
-	return std::move(result);
-}
-
-TabbedMemento::~TabbedMemento() {
-	if (_returnMethod && _selector) {
-		_returnMethod(std::move(_selector));
-	}
+	return result;
 }
 
 TabbedSection::TabbedSection(
 	QWidget *parent,
-	not_null<Window::Controller*> controller)
-: TabbedSection(
-	parent,
-	controller,
-	object_ptr<TabbedSelector>(this, controller),
-	base::lambda<void(object_ptr<TabbedSelector>)>()) {
-}
-
-TabbedSection::TabbedSection(
-	QWidget *parent,
-	not_null<Window::Controller*> controller,
-	object_ptr<TabbedSelector> selector,
-	base::lambda<void(object_ptr<TabbedSelector>)> returnMethod)
+	not_null<Window::SessionController*> controller)
 : Window::SectionWidget(parent, controller)
-, _selector(std::move(selector))
-, _returnMethod(std::move(returnMethod)) {
+, _selector(controller->tabbedSelector()) {
 	_selector->setParent(this);
 	_selector->setRoundRadius(0);
 	_selector->setGeometry(rect());
 	_selector->showStarted();
 	_selector->show();
-	connect(_selector, &TabbedSelector::cancelled, this, [this] {
-		if (_cancelledCallback) {
-			_cancelledCallback();
-		}
-	});
-	_selector->setAfterShownCallback(base::lambda<void(SelectorTab)>());
-	_selector->setBeforeHidingCallback(base::lambda<void(SelectorTab)>());
+	_selector->setAfterShownCallback(nullptr);
+	_selector->setBeforeHidingCallback(nullptr);
 
 	setAttribute(Qt::WA_OpaquePaintEvent, true);
 }
@@ -85,33 +51,27 @@ void TabbedSection::resizeEvent(QResizeEvent *e) {
 	_selector->setGeometry(rect());
 }
 
-object_ptr<TabbedSelector> TabbedSection::takeSelector() {
-	_selector->beforeHiding();
-	return std::move(_selector);
+void TabbedSection::showFinishedHook() {
+	afterShown();
 }
 
-QPointer<TabbedSelector> TabbedSection::getSelector() const {
-	return _selector.data();
-}
 bool TabbedSection::showInternal(
 		not_null<Window::SectionMemento*> memento,
 		const Window::SectionShow &params) {
 	return false;
 }
 
-bool TabbedSection::wheelEventFromFloatPlayer(QEvent *e) {
-	return _selector->wheelEventFromFloatPlayer(e);
+bool TabbedSection::floatPlayerHandleWheelEvent(QEvent *e) {
+	return _selector->floatPlayerHandleWheelEvent(e);
 }
 
-QRect TabbedSection::rectForFloatPlayer() const {
-	return _selector->rectForFloatPlayer();
+QRect TabbedSection::floatPlayerAvailableRect() {
+	return _selector->floatPlayerAvailableRect();
 }
 
 TabbedSection::~TabbedSection() {
 	beforeHiding();
-	if (_returnMethod) {
-		_returnMethod(takeSelector());
-	}
+	controller()->takeTabbedSelectorOwnershipFrom(this);
 }
 
 } // namespace ChatHelpers

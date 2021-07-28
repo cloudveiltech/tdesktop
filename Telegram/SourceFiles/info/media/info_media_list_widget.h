@@ -10,6 +10,20 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/rp_widget.h"
 #include "info/media/info_media_widget.h"
 #include "data/data_shared_media.h"
+#include "overview/overview_layout_delegate.h"
+
+class DeleteMessagesBox;
+
+namespace Main {
+class Session;
+} // namespace Main
+
+namespace HistoryView {
+struct TextState;
+struct StateRequest;
+enum class CursorState : char;
+enum class PointState : char;
+} // namespace HistoryView
 
 namespace Ui {
 class PopupMenu;
@@ -22,7 +36,7 @@ class ItemBase;
 } // namespace Overview
 
 namespace Window {
-class Controller;
+class SessionController;
 } // namespace Window
 
 namespace Info {
@@ -34,11 +48,16 @@ namespace Media {
 using BaseLayout = Overview::Layout::ItemBase;
 using UniversalMsgId = int32;
 
-class ListWidget : public Ui::RpWidget {
+class ListWidget final
+	: public Ui::RpWidget
+	, public Overview::Layout::Delegate {
 public:
 	ListWidget(
 		QWidget *parent,
 		not_null<AbstractController*> controller);
+	~ListWidget();
+
+	Main::Session &session() const;
 
 	void restart();
 
@@ -52,31 +71,25 @@ public:
 	rpl::producer<> checkForHide() const {
 		return _checkForHide.events();
 	}
-	bool preventAutoHide() const {
-		return (_contextMenu != nullptr) || (_actionBoxWeak != nullptr);
-	}
+	bool preventAutoHide() const;
 
 	void saveState(not_null<Memento*> memento);
 	void restoreState(not_null<Memento*> memento);
 
-	~ListWidget();
+	void registerHeavyItem(not_null<const BaseLayout*> item) override;
+	void unregisterHeavyItem(not_null<const BaseLayout*> item) override;
 
-protected:
-	int resizeGetHeight(int newWidth) override;
-	void visibleTopBottomUpdated(
-		int visibleTop,
-		int visibleBottom) override;
-
-	void paintEvent(QPaintEvent *e) override;
-	void mouseMoveEvent(QMouseEvent *e) override;
-	void mousePressEvent(QMouseEvent *e) override;
-	void mouseReleaseEvent(QMouseEvent *e) override;
-	void mouseDoubleClickEvent(QMouseEvent *e) override;
-	void contextMenuEvent(QContextMenuEvent *e) override;
-	void enterEventHook(QEvent *e) override;
-	void leaveEventHook(QEvent *e) override;
+	void openPhoto(not_null<PhotoData*> photo, FullMsgId id) override;
+	void openDocument(
+		not_null<DocumentData*> document,
+		FullMsgId id) override;
 
 private:
+	struct Context;
+	class Section;
+	using CursorState = HistoryView::CursorState;
+	using TextState = HistoryView::TextState;
+	using StateRequest = HistoryView::StateRequest;
 	enum class MouseAction {
 		None,
 		PrepareDrag,
@@ -86,13 +99,13 @@ private:
 	};
 	struct CachedItem {
 		CachedItem(std::unique_ptr<BaseLayout> item);
+		CachedItem(CachedItem &&other);
+		CachedItem &operator=(CachedItem &&other);
 		~CachedItem();
 
 		std::unique_ptr<BaseLayout> item;
 		bool stale = false;
 	};
-	struct Context;
-	class Section;
 	struct FoundItem {
 		not_null<BaseLayout*> layout;
 		QRect geometry;
@@ -115,17 +128,17 @@ private:
 		Selecting,
 		Deselecting,
 	};
-	struct CursorState {
+	struct MouseState {
 		UniversalMsgId itemId = 0;
 		QSize size;
 		QPoint cursor;
 		bool inside = false;
 
-		inline bool operator==(const CursorState &other) const {
+		inline bool operator==(const MouseState &other) const {
 			return (itemId == other.itemId)
 				&& (cursor == other.cursor);
 		}
-		inline bool operator!=(const CursorState &other) const {
+		inline bool operator!=(const MouseState &other) const {
 			return !(*this == other);
 		}
 
@@ -139,6 +152,20 @@ private:
 		UniversalMsgId item = 0;
 		int shift = 0;
 	};
+
+	int resizeGetHeight(int newWidth) override;
+	void visibleTopBottomUpdated(
+		int visibleTop,
+		int visibleBottom) override;
+
+	void paintEvent(QPaintEvent *e) override;
+	void mouseMoveEvent(QMouseEvent *e) override;
+	void mousePressEvent(QMouseEvent *e) override;
+	void mouseReleaseEvent(QMouseEvent *e) override;
+	void mouseDoubleClickEvent(QMouseEvent *e) override;
+	void contextMenuEvent(QContextMenuEvent *e) override;
+	void enterEventHook(QEvent *e) override;
+	void leaveEventHook(QEvent *e) override;
 
 	void start();
 	int recountHeight();
@@ -185,7 +212,7 @@ private:
 	void forwardItems(MessageIdsList &&items);
 	void deleteSelected();
 	void deleteItem(UniversalMsgId universalId);
-	void deleteItems(MessageIdsList &&items);
+	DeleteMessagesBox *deleteItems(MessageIdsList &&items);
 	void applyItemSelection(
 		UniversalMsgId universalId,
 		TextSelection selection);
@@ -195,7 +222,7 @@ private:
 	SelectedMap::const_iterator itemUnderPressSelection() const;
 	bool isItemUnderPressSelected() const;
 	bool requiredToStartDragging(not_null<BaseLayout*> layout) const;
-	bool isPressInSelectedText(HistoryTextState state) const;
+	bool isPressInSelectedText(TextState state) const;
 	void applyDragSelection();
 	void applyDragSelection(SelectedMap &applyTo) const;
 	bool changeItemSelection(
@@ -204,10 +231,10 @@ private:
 		TextSelection selection) const;
 
 	static bool IsAfter(
-		const CursorState &a,
-		const CursorState &b);
-	static bool SkipSelectFromItem(const CursorState &state);
-	static bool SkipSelectTillItem(const CursorState &state);
+		const MouseState &a,
+		const MouseState &b);
+	static bool SkipSelectFromItem(const MouseState &state);
+	static bool SkipSelectTillItem(const MouseState &state);
 
 	void markLayoutsStale();
 	void clearStaleLayouts();
@@ -220,8 +247,8 @@ private:
 		std::vector<Section>::const_iterator from,
 		int bottom) const;
 	FoundItem findItemByPoint(QPoint point) const;
-	base::optional<FoundItem> findItemById(UniversalMsgId universalId);
-	base::optional<FoundItem> findItemDetails(BaseLayout *item);
+	std::optional<FoundItem> findItemById(UniversalMsgId universalId);
+	FoundItem findItemDetails(not_null<BaseLayout*> item);
 	FoundItem foundItemInSection(
 		const FoundItem &item,
 		const Section &section) const;
@@ -232,12 +259,12 @@ private:
 
 	QPoint clampMousePosition(QPoint position) const;
 	void mouseActionStart(
-		const QPoint &screenPos,
+		const QPoint &globalPosition,
 		Qt::MouseButton button);
-	void mouseActionUpdate(const QPoint &screenPos);
+	void mouseActionUpdate(const QPoint &globalPosition);
 	void mouseActionUpdate();
 	void mouseActionFinish(
-		const QPoint &screenPos,
+		const QPoint &globalPosition,
 		Qt::MouseButton button);
 	void mouseActionCancel();
 	void performDrag();
@@ -249,17 +276,23 @@ private:
 	void updateDragSelection();
 	void clearDragSelection();
 
+	void updateDateBadgeFor(int top);
+	void scrollDateCheck();
+	void scrollDateHide();
+	void toggleScrollDateShown();
+
 	void trySwitchToWordSelection();
 	void switchToWordSelection();
 	void validateTrippleClickStartTime();
 	void checkMoveToOtherViewer();
+	void clearHeavyItems();
 
 	void setActionBoxWeak(QPointer<Ui::RpWidget> box);
 
 	const not_null<AbstractController*> _controller;
 	const not_null<PeerData*> _peer;
 	PeerData * const _migrated = nullptr;
-	Type _type = Type::Photo;
+	const Type _type = Type::Photo;
 
 	static constexpr auto kMinimalIdsLimit = 16;
 	static constexpr auto kDefaultAroundId = (ServerMaxMsgId - 1);
@@ -267,7 +300,9 @@ private:
 	int _idsLimit = kMinimalIdsLimit;
 	SparseIdsMergedSlice _slice;
 
-	std::map<UniversalMsgId, CachedItem> _layouts;
+	std::unordered_map<UniversalMsgId, CachedItem> _layouts;
+	base::flat_set<not_null<const BaseLayout*>> _heavyLayouts;
+	bool _heavyLayoutsInvalidated = false;
 	std::vector<Section> _sections;
 
 	int _visibleTop = 0;
@@ -278,11 +313,11 @@ private:
 	MouseAction _mouseAction = MouseAction::None;
 	TextSelectType _mouseSelectType = TextSelectType::Letters;
 	QPoint _mousePosition;
-	CursorState _overState;
-	CursorState _pressState;
+	MouseState _overState;
+	MouseState _pressState;
 	BaseLayout *_overLayout = nullptr;
 	UniversalMsgId _contextUniversalId = 0;
-	HistoryCursorState _mouseCursorState = HistoryDefaultCursorState;
+	CursorState _mouseCursorState = CursorState();
 	uint16 _mouseTextSymbol = 0;
 	bool _pressWasInactive = false;
 	SelectedMap _selected;
@@ -292,13 +327,23 @@ private:
 	DragSelectAction _dragSelectAction = DragSelectAction::None;
 	bool _wasSelectedText = false; // was some text selected in current drag action
 
-	Ui::PopupMenu *_contextMenu = nullptr;
+	struct DateBadge {
+		SingleQueuedInvokation check;
+		base::Timer hideTimer;
+		Ui::Animations::Simple opacity;
+		bool goodType = false;
+		bool shown = false;
+		QString text;
+		QRect rect;
+	} _dateBadge;
+
+	base::unique_qptr<Ui::PopupMenu> _contextMenu;
 	rpl::event_stream<> _checkForHide;
 	QPointer<Ui::RpWidget> _actionBoxWeak;
 	rpl::lifetime _actionBoxWeakLifetime;
 
 	QPoint _trippleClickPoint;
-	TimeMs _trippleClickStartTime = 0;
+	crl::time _trippleClickStartTime = 0;
 
 	rpl::lifetime _viewerLifetime;
 

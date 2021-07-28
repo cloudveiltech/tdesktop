@@ -9,8 +9,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <rpl/never.h>
 #include <rpl/merge.h>
-#include "styles/style_info.h"
 #include "lang/lang_keys.h"
+#include "lang/lang_numbers_animation.h"
 #include "info/info_wrap_widget.h"
 #include "info/info_controller.h"
 #include "info/profile/info_profile_values.h"
@@ -18,6 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/confirm_box.h"
 #include "boxes/peer_list_controllers.h"
 #include "mainwidget.h"
+#include "main/main_session.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/input_fields.h"
@@ -26,14 +27,20 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/wrap/padding_wrap.h"
 #include "ui/search_field_controller.h"
 #include "window/window_peer_menu.h"
+#include "data/data_session.h"
+#include "data/data_channel.h"
+#include "data/data_user.h"
+#include "styles/style_info.h"
 
 namespace Info {
 
 TopBar::TopBar(
 	QWidget *parent,
+	not_null<Window::SessionNavigation*> navigation,
 	const style::InfoTopBar &st,
 	SelectedItems &&selectedItems)
 : RpWidget(parent)
+, _navigation(navigation)
 , _st(st)
 , _selectedItems(Section::MediaType::kCount) {
 	setAttribute(Qt::WA_OpaquePaintEvent);
@@ -46,7 +53,7 @@ void TopBar::registerUpdateControlCallback(
 		QObject *guard,
 		Callback &&callback) {
 	_updateControlCallbacks[guard] =[
-		weak = make_weak(guard),
+		weak = Ui::MakeWeak(guard),
 		callback = std::forward<Callback>(callback)
 	](anim::type animated) {
 		if (!weak) {
@@ -99,8 +106,9 @@ void TopBar::enableBackButton() {
 		st::infoTopBarScale);
 	_back->setDuration(st::infoTopBarDuration);
 	_back->toggle(!selectionMode(), anim::type::instant);
-	_back->entity()->clicks()
-		| rpl::start_to_stream(_backClicks, _back->lifetime());
+	_back->entity()->clicks(
+	) | rpl::to_empty
+	| rpl::start_to_stream(_backClicks, _back->lifetime());
 	registerToggleControlCallback(_back.data(), [=] {
 		return !selectionMode();
 	});
@@ -150,6 +158,13 @@ Ui::FadeWrap<Ui::RpWidget> *TopBar::pushButton(
 		updateControlsGeometry(width());
 	}, lifetime());
 	return weak;
+}
+
+void TopBar::forceButtonVisibility(
+		Ui::FadeWrap<Ui::RpWidget> *button,
+		rpl::producer<bool> shown) {
+	_updateControlCallbacks.erase(button);
+	button->toggleOn(std::move(shown));
 }
 
 void TopBar::setSearchField(
@@ -202,10 +217,7 @@ void TopBar::createSearchView(
 
 	auto button = base::make_unique_q<Ui::IconButton>(this, _st.search);
 	auto search = button.get();
-	search->addClickHandler([=] {
-		_searchModeEnabled = true;
-		updateControlsVisibility(anim::type::normal);
-	});
+	search->addClickHandler([=] { showSearch(); });
 	auto searchWrap = pushButton(std::move(button));
 	registerToggleControlCallback(searchWrap, [=] {
 		return !selectionMode()
@@ -273,6 +285,11 @@ void TopBar::createSearchView(
 		_searchModeAvailable = visible || alreadyInSearch;
 		updateControlsVisibility(anim::type::instant);
 	}, wrap->lifetime());
+}
+
+void TopBar::showSearch() {
+	_searchModeEnabled = true;
+	updateControlsVisibility(anim::type::normal);
 }
 
 void TopBar::removeButton(not_null<Ui::RpWidget*> button) {
@@ -343,8 +360,7 @@ void TopBar::updateSelectionControlsGeometry(int newWidth) {
 void TopBar::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
-	auto ms = getms();
-	auto highlight = _a_highlight.current(ms, _highlight ? 1. : 0.);
+	auto highlight = _a_highlight.value(_highlight ? 1. : 0.);
 	if (_highlight && !_a_highlight.animating()) {
 		_highlight = false;
 		startHighlightAnimation();
@@ -427,7 +443,8 @@ void TopBar::createSelectionControls() {
 		st::infoTopBarScale));
 	_cancelSelection->setDuration(st::infoTopBarDuration);
 	_cancelSelection->entity()->clicks(
-	) | rpl::start_to_stream(
+	) | rpl::to_empty
+	| rpl::start_to_stream(
 		_cancelSelectionClicks,
 		_cancelSelection->lifetime());
 	_selectionText = wrap(Ui::CreateChild<Ui::FadeWrap<Ui::LabelWithNumbers>>(
@@ -461,28 +478,27 @@ void TopBar::createSelectionControls() {
 }
 
 bool TopBar::computeCanDelete() const {
-	return ranges::find_if(
-		_selectedItems.list,
-		[](const SelectedItem &item) { return !item.canDelete; }
-	) == _selectedItems.list.end();
+	return ranges::all_of(_selectedItems.list, &SelectedItem::canDelete);
 }
 
 Ui::StringWithNumbers TopBar::generateSelectedText() const {
-	using Data = Ui::StringWithNumbers;
 	using Type = Storage::SharedMediaType;
-	auto phrase = [&] {
+	const auto phrase = [&] {
 		switch (_selectedItems.type) {
-		case Type::Photo: return lng_media_selected_photo__generic<Data>;
-		case Type::Video: return lng_media_selected_video__generic<Data>;
-		case Type::File: return lng_media_selected_file__generic<Data>;
-		case Type::MusicFile: return lng_media_selected_song__generic<Data>;
-		case Type::Link: return lng_media_selected_link__generic<Data>;
-		case Type::VoiceFile: return lng_media_selected_audio__generic<Data>;
-//		case Type::RoundFile: return lng_media_selected_round__generic<Data>;
+		case Type::Photo: return tr::lng_media_selected_photo;
+		case Type::Video: return tr::lng_media_selected_video;
+		case Type::File: return tr::lng_media_selected_file;
+		case Type::MusicFile: return tr::lng_media_selected_song;
+		case Type::Link: return tr::lng_media_selected_link;
+		case Type::RoundVoiceFile: return tr::lng_media_selected_audio;
 		}
 		Unexpected("Type in TopBar::generateSelectedText()");
 	}();
-	return phrase(lt_count, _selectedItems.list.size());
+	return phrase(
+		tr::now,
+		lt_count,
+		_selectedItems.list.size(),
+		Ui::StringWithNumbers::FromString);
 }
 
 bool TopBar::selectionMode() const {
@@ -494,12 +510,12 @@ bool TopBar::searchMode() const {
 }
 
 MessageIdsList TopBar::collectItems() const {
-	return ranges::view::all(
+	return ranges::views::all(
 		_selectedItems.list
-	) | ranges::view::transform([](auto &&item) {
+	) | ranges::views::transform([](auto &&item) {
 		return item.msgId;
-	}) | ranges::view::filter([](const FullMsgId &msgId) {
-		return App::histItemById(msgId) != nullptr;
+	}) | ranges::views::filter([&](FullMsgId msgId) {
+		return _navigation->session().data().message(msgId) != nullptr;
 	}) | ranges::to_vector;
 }
 
@@ -509,11 +525,14 @@ void TopBar::performForward() {
 		_cancelSelectionClicks.fire({});
 		return;
 	}
-	Window::ShowForwardMessagesBox(std::move(items), [weak = make_weak(this)]{
-		if (weak) {
-			weak->_cancelSelectionClicks.fire({});
-		}
-	});
+	Window::ShowForwardMessagesBox(
+		_navigation,
+		std::move(items),
+		[weak = Ui::MakeWeak(this)] {
+			if (weak) {
+				weak->_cancelSelectionClicks.fire({});
+			}
+		});
 }
 
 void TopBar::performDelete() {
@@ -521,61 +540,99 @@ void TopBar::performDelete() {
 	if (items.empty()) {
 		_cancelSelectionClicks.fire({});
 	} else {
-		Ui::show(Box<DeleteMessagesBox>(std::move(items)));
+		auto box = Box<DeleteMessagesBox>(
+			&_navigation->session(),
+			std::move(items));
+		box->setDeleteConfirmedCallback([weak = Ui::MakeWeak(this)] {
+			if (weak) {
+				weak->_cancelSelectionClicks.fire({});
+			}
+		});
+		_navigation->parentController()->show(std::move(box));
 	}
 }
 
 rpl::producer<QString> TitleValue(
 		const Section &section,
-		not_null<PeerData*> peer,
+		Key key,
 		bool isStackBottom) {
-	return Lang::Viewer([&] {
-		switch (section.type()) {
-		case Section::Type::Profile:
-			if (auto user = peer->asUser()) {
-				return user->botInfo
-					? lng_info_bot_title
-					: lng_info_user_title;
-			} else if (auto channel = peer->asChannel()) {
-				return channel->isMegagroup()
-					? lng_info_group_title
-					: lng_info_channel_title;
-			} else if (peer->isChat()) {
-				return lng_info_group_title;
-			}
-			Unexpected("Bad peer type in Info::TitleValue()");
+	const auto peer = key.peer();
 
-		case Section::Type::Media:
-			if (peer->isSelf() && isStackBottom) {
-				return lng_profile_shared_media;
-			}
-			switch (section.mediaType()) {
-			case Section::MediaType::Photo:
-				return lng_media_type_photos;
-			case Section::MediaType::Video:
-				return lng_media_type_videos;
-			case Section::MediaType::MusicFile:
-				return lng_media_type_songs;
-			case Section::MediaType::File:
-				return lng_media_type_files;
-			case Section::MediaType::VoiceFile:
-				return lng_media_type_audios;
-			case Section::MediaType::Link:
-				return lng_media_type_links;
-			case Section::MediaType::RoundFile:
-				return lng_media_type_rounds;
-			}
-			Unexpected("Bad media type in Info::TitleValue()");
-
-		case Section::Type::CommonGroups:
-			return lng_profile_common_groups_section;
-
-		case Section::Type::Members:
-			return lng_profile_participants_section;
-
+	switch (section.type()) {
+	case Section::Type::Profile:
+		if (const auto user = peer->asUser()) {
+			return (user->isBot() && !user->isSupport())
+				? tr::lng_info_bot_title()
+				: tr::lng_info_user_title();
+		} else if (const auto channel = peer->asChannel()) {
+			return channel->isMegagroup()
+				? tr::lng_info_group_title()
+				: tr::lng_info_channel_title();
+		} else if (peer->isChat()) {
+			return tr::lng_info_group_title();
 		}
-		Unexpected("Bad section type in Info::TitleValue()");
-	}());
+		Unexpected("Bad peer type in Info::TitleValue()");
+
+	case Section::Type::Media:
+		if (peer->sharedMediaInfo() && isStackBottom) {
+			return tr::lng_profile_shared_media();
+		}
+		switch (section.mediaType()) {
+		case Section::MediaType::Photo:
+			return tr::lng_media_type_photos();
+		case Section::MediaType::Video:
+			return tr::lng_media_type_videos();
+		case Section::MediaType::MusicFile:
+			return tr::lng_media_type_songs();
+		case Section::MediaType::File:
+			return tr::lng_media_type_files();
+		case Section::MediaType::RoundVoiceFile:
+			return tr::lng_media_type_audios();
+		case Section::MediaType::Link:
+			return tr::lng_media_type_links();
+		case Section::MediaType::RoundFile:
+			return tr::lng_media_type_rounds();
+		}
+		Unexpected("Bad media type in Info::TitleValue()");
+
+	case Section::Type::CommonGroups:
+		return tr::lng_profile_common_groups_section();
+
+	case Section::Type::Members:
+		if (const auto channel = peer->asChannel()) {
+			return channel->isMegagroup()
+				? tr::lng_profile_participants_section()
+				: tr::lng_profile_subscribers_section();
+		}
+		return tr::lng_profile_participants_section();
+
+	case Section::Type::Settings:
+		switch (section.settingsType()) {
+		case Section::SettingsType::Main:
+			return tr::lng_menu_settings();
+		case Section::SettingsType::Information:
+			return tr::lng_settings_section_info();
+		case Section::SettingsType::Notifications:
+			return tr::lng_settings_section_notify();
+		case Section::SettingsType::PrivacySecurity:
+			return tr::lng_settings_section_privacy();
+		case Section::SettingsType::Advanced:
+			return tr::lng_settings_advanced();
+		case Section::SettingsType::Chat:
+			return tr::lng_settings_section_chat_settings();
+		case Section::SettingsType::Folders:
+			return tr::lng_filters_title();
+		case Section::SettingsType::Calls:
+			return tr::lng_settings_section_call_settings();
+		}
+		Unexpected("Bad settings type in Info::TitleValue()");
+
+	case Section::Type::PollResults:
+		return key.poll()->quiz()
+			? tr::lng_polls_quiz_results_title()
+			: tr::lng_polls_poll_results_title();
+	}
+	Unexpected("Bad section type in Info::TitleValue()");
 }
 
 } // namespace Info

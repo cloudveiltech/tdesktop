@@ -1,9 +1,14 @@
-#define MyAppShortName "Telegram"
-#define MyAppName "Telegram Desktop"
-#define MyAppPublisher "Telegram Messenger LLP"
-#define MyAppURL "https://tdesktop.com"
+#define MyAppShortName "CloudVeil Messenger"
+#define MyAppName "CloudVeil Messenger Desktop"
+#define MyAppPublisher "CloudVeil"
+#define MyAppURL "https://github.com/cloudveiltech"
 #define MyAppExeName "Telegram.exe"
-#define MyAppId "53F49750-6209-4FBF-9CA8-7A333C87D1ED"
+#define MyAppExeName "CloudVeilMessenger.exe"
+#define MyAppId "7BF3C861-C022-41EC-8C16-87EBECBDCE4B"     
+#define MyAppVersion "2.8.11"
+#define MyAppVersionFull "2.8.11"
+#define ReleasePath "..\..\out\Release"
+#define MyBuildTarget "win64"
 
 [Setup]
 ; NOTE: The value of AppId uniquely identifies this application.
@@ -20,9 +25,8 @@ DefaultDirName={userappdata}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir={#ReleasePath}
-OutputBaseFilename=tsetup.{#MyAppVersionFull}
 SetupIconFile={#SourcePath}..\Resources\art\icon256.ico
-UninstallDisplayIcon={app}\Telegram.exe
+UninstallDisplayIcon={app}\CloudVeilMessenger.exe
 Compression=lzma
 SolidCompression=yes
 DisableStartupPrompt=yes
@@ -32,6 +36,14 @@ CloseApplications=force
 DisableDirPage=no
 DisableProgramGroupPage=no
 
+#if MyBuildTarget == "win64"
+ArchitecturesAllowed=x64
+ArchitecturesInstallIn64BitMode=x64
+OutputBaseFilename=cloudveil_messenger_setup-x64.{#MyAppVersionFull}
+#else
+OutputBaseFilename=cloudveil_messenger_setup.{#MyAppVersionFull}
+#endif
+
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "it"; MessagesFile: "compiler:Languages\Italian.isl"
@@ -39,14 +51,17 @@ Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
 Name: "de"; MessagesFile: "compiler:Languages\German.isl"
 Name: "nl"; MessagesFile: "compiler:Languages\Dutch.isl"
 Name: "pt_BR"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
+Name: "ru"; MessagesFile: "compiler:Languages\Russian.isl"
+Name: "fr"; MessagesFile: "compiler:Languages\French.isl"
+Name: "ua"; MessagesFile: "compiler:Languages\Ukrainian.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; OnlyBelowVersion: 0,6.1
 
 [Files]
-Source: "{#ReleasePath}\Telegram.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#ReleasePath}\Updater.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ReleasePath}\CloudVeilMessenger.exe"; DestDir: "{app}"; Flags: ignoreversion
+;Source: "{#ReleasePath}\Updater.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]

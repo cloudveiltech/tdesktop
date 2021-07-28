@@ -7,8 +7,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/notifications_utilities.h"
 
-#include "platform/platform_specific.h"
-#include "messenger.h"
+#include "base/platform/base_platform_file_utilities.h"
+#include "base/openssl_help.h"
+#include "core/application.h"
+#include "data/data_peer.h"
+#include "ui/empty_userpic.h"
 #include "styles/style_window.h"
 
 namespace Window {
@@ -20,13 +23,28 @@ constexpr int kNotifyDeletePhotoAfterMs = 60000;
 
 } // namespace
 
-CachedUserpics::CachedUserpics(Type type) : _type(type) {
-	connect(&_clearTimer, SIGNAL(timeout()), this, SLOT(onClear()));
+CachedUserpics::CachedUserpics(Type type)
+: _type(type)
+, _clearTimer([=] { clear(); }) {
 	QDir().mkpath(cWorkingDir() + qsl("tdata/temp"));
 }
 
-QString CachedUserpics::get(const StorageKey &key, PeerData *peer) {
-	auto ms = getms(true);
+CachedUserpics::~CachedUserpics() {
+	if (_someSavedFlag) {
+		for (const auto &item : std::as_const(_images)) {
+			QFile(item.path).remove();
+		}
+
+		// This works about 1200ms on Windows for a folder with one image O_o
+		//		base::Platform::DeleteDirectory(cWorkingDir() + qsl("tdata/temp"));
+	}
+}
+
+QString CachedUserpics::get(
+		const InMemoryKey &key,
+		not_null<PeerData*> peer,
+		std::shared_ptr<Data::CloudImageView> &view) {
+	auto ms = crl::now();
 	auto i = _images.find(key);
 	if (i != _images.cend()) {
 		if (i->until) {
@@ -41,15 +59,27 @@ QString CachedUserpics::get(const StorageKey &key, PeerData *peer) {
 		} else {
 			v.until = 0;
 		}
-		v.path = cWorkingDir() + qsl("tdata/temp/") + QString::number(rand_value<uint64>(), 16) + qsl(".png");
+		v.path = u"%1tdata/temp/%2.png"_q.arg(
+			cWorkingDir(),
+			QString::number(openssl::RandomValue<uint64>(), 16));
 		if (key.first || key.second) {
-			if (_type == Type::Rounded) {
-				peer->saveUserpicRounded(v.path, st::notifyMacPhotoSize);
+			if (peer->isSelf()) {
+				const auto method = (_type == Type::Rounded)
+					? Ui::EmptyUserpic::GenerateSavedMessagesRounded
+					: Ui::EmptyUserpic::GenerateSavedMessages;
+				method(st::notifyMacPhotoSize).save(v.path, "PNG");
+			} else if (peer->isRepliesChat()) {
+				const auto method = (_type == Type::Rounded)
+					? Ui::EmptyUserpic::GenerateRepliesMessagesRounded
+					: Ui::EmptyUserpic::GenerateRepliesMessages;
+				method(st::notifyMacPhotoSize).save(v.path, "PNG");
+			} else if (_type == Type::Rounded) {
+				peer->saveUserpicRounded(view, v.path, st::notifyMacPhotoSize);
 			} else {
-				peer->saveUserpic(v.path, st::notifyMacPhotoSize);
+				peer->saveUserpic(view, v.path, st::notifyMacPhotoSize);
 			}
 		} else {
-			Messenger::Instance().logoNoMargin().save(v.path, "PNG");
+			Core::App().logoNoMargin().save(v.path, "PNG");
 		}
 		i = _images.insert(key, v);
 		_someSavedFlag = true;
@@ -57,8 +87,8 @@ QString CachedUserpics::get(const StorageKey &key, PeerData *peer) {
 	return i->path;
 }
 
-TimeMs CachedUserpics::clear(TimeMs ms) {
-	TimeMs result = 0;
+crl::time CachedUserpics::clear(crl::time ms) {
+	crl::time result = 0;
 	for (auto i = _images.begin(); i != _images.end();) {
 		if (!i->until) {
 			++i;
@@ -86,26 +116,14 @@ void CachedUserpics::clearInMs(int ms) {
 			return;
 		}
 	}
-	_clearTimer.start(ms);
+	_clearTimer.callOnce(ms);
 }
 
-void CachedUserpics::onClear() {
-	auto ms = getms(true);
+void CachedUserpics::clear() {
+	auto ms = crl::now();
 	auto minuntil = clear(ms);
 	if (minuntil) {
 		clearInMs(int(minuntil - ms));
-	}
-}
-
-CachedUserpics::~CachedUserpics() {
-	if (_someSavedFlag) {
-		TimeMs result = 0;
-		for_const (auto &item, _images) {
-			QFile(item.path).remove();
-		}
-
-// This works about 1200ms on Windows for a folder with one image O_o
-//		psDeleteDir(cWorkingDir() + qsl("tdata/temp"));
 	}
 }
 

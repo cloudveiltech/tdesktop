@@ -5,7 +5,7 @@ the official desktop application for the Telegram messaging service.
 For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
-using "basic.style";
+using "ui/basic.style";
 using "ui/widgets/widgets.style";
 
 countryRipple: defaultRippleAnimation;
@@ -59,6 +59,7 @@ introTitle: FlatLabel(defaultFlatLabel) {
 }
 introTitleTop: 1px;
 introDescription: FlatLabel(defaultFlatLabel) {
+	minWidth: 300px;
 	textFg: introDescriptionFg;
 	style: TextStyle(defaultTextStyle) {
 		lineHeight: 20px;
@@ -73,8 +74,10 @@ introPlaneHeight: 38px;
 introHeight: 406px;
 introStepTopMin: 76px;
 introStepWidth: 380px;
-introStepHeight: 266px;
-introStepHeightAdd: 30px;
+introNextTop: 266px;
+introNextSlide: 200px;
+introStepHeight: 384px;
+introContentTopAdd: 30px;
 introStepHeightFull: 590px;
 introSlideDuration: 200;
 introCoverDuration: 200;
@@ -104,6 +107,7 @@ introPhone: InputField(introCountry) {
 	textMargins: margins(12px, 27px, 12px, 6px);
 	width: 225px;
 }
+introQrLoginLinkTop: 368px;
 introCode: introCountry;
 introName: introCountry;
 introPassword: introCountry;
@@ -125,6 +129,11 @@ introResetButton: RoundButton(defaultLightButton) {
 }
 introResetBottom: 20px;
 
+introTermsLabel: FlatLabel(defaultFlatLabel) {
+	align: align(top);
+}
+introTermsBottom: 20px;
+
 introCountryIcon: icon {{ "intro_country_dropdown", menuIconFg }};
 introCountryIconPosition: point(8px, 37px);
 
@@ -144,8 +153,8 @@ introBackButton: IconButton(defaultIconButton) {
 	width: 56px;
 	height: 56px;
 
-	icon: icon {{ "box_button_back", menuIconFg }};
-	iconOver: icon {{ "box_button_back", menuIconFgOver }};
+	icon: backButtonIcon;
+	iconOver: backButtonIconOver;
 
 	rippleAreaPosition: point(8px, 8px);
 	rippleAreaSize: 40px;
@@ -154,3 +163,30 @@ introBackButton: IconButton(defaultIconButton) {
 	}
 }
 
+introQrTop: -18px;
+introQrPixel: 50px; // large enough
+introQrMaxSize: 180px;
+introQrBackgroundSkip: 12px;
+introQrBackgroundRadius: 8px;
+introQrLabelsWidth: 292px;
+introQrTitleWidth: 320px;
+introQrTitle: FlatLabel(defaultFlatLabel) {
+	textFg: introTitleFg;
+	align: align(top);
+	minWidth: introQrTitleWidth;
+	style: TextStyle(defaultTextStyle) {
+		font: font(20px semibold);
+		linkFont: font(20px semibold);
+		linkFontOver: font(20px semibold underline);
+	}
+}
+introQrErrorTop: 336px;
+introQrTitleTop: 196px;
+introQrStep: FlatLabel(defaultFlatLabel) {
+	minWidth: introQrLabelsWidth;
+}
+introQrStepsTop: 232px;
+introQrStepMargins: margins(20px, 8px, 0px, 0px);
+introQrSkipTop: 360px;
+introQrCenterSize: 44px;
+introQrPlane: icon {{ "intro_qr_plane", activeButtonFg }};

@@ -7,18 +7,26 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/effects/round_checkbox.h"
 
+#include "ui/rp_widget.h"
+#include "ui/ui_utility.h"
+
+#include <QtCore/QCoreApplication>
+
 namespace Ui {
 namespace {
 
-static constexpr int kWideScale = 3;
+constexpr auto kWideScale = 3;
 
 class CheckCaches : public QObject {
 public:
 	CheckCaches(QObject *parent) : QObject(parent) {
 		Expects(parent != nullptr);
-	}
 
-	void clear();
+		style::PaletteChanged(
+		) | rpl::start_with_next([=] {
+			_data.clear();
+		}, _lifetime);
+	}
 
 	QPixmap frame(
 		const style::RoundCheckbox *st,
@@ -48,6 +56,7 @@ private:
 		float64 progress);
 
 	std::map<const style::RoundCheckbox *, Frames> _data;
+	rpl::lifetime _lifetime;
 
 };
 
@@ -72,7 +81,7 @@ QPixmap PrepareOuterWide(const style::RoundCheckbox *st) {
 			size + 2. * half,
 			size + 2. * half));
 	}
-	return App::pixmapFromImageInPlace(std::move(result));
+	return Ui::PixmapFromImage(std::move(result));
 }
 
 QPixmap PrepareInner(const style::RoundCheckbox *st, bool displayInactive) {
@@ -95,7 +104,7 @@ QPixmap PrepareInner(const style::RoundCheckbox *st, bool displayInactive) {
 			size - (displayInactive ? 0. : 2. * half),
 			size - (displayInactive ? 0. : 2. * half)));
 	}
-	return App::pixmapFromImageInPlace(std::move(result));
+	return Ui::PixmapFromImage(std::move(result));
 }
 
 QPixmap PrepareCheck(const style::RoundCheckbox *st) {
@@ -109,7 +118,7 @@ QPixmap PrepareCheck(const style::RoundCheckbox *st) {
 		Painter p(&result);
 		st->check.paint(p, 0, 0, size);
 	}
-	return App::pixmapFromImageInPlace(std::move(result));
+	return Ui::PixmapFromImage(std::move(result));
 }
 
 QRect WideDestRect(
@@ -126,10 +135,6 @@ QRect WideDestRect(
 	auto iconLeft = x - (kWideScale - 1) * st->size / 2 + iconShift;
 	auto iconTop = y - (kWideScale - 1) * st->size / 2 + iconShift;
 	return QRect(iconLeft, iconTop, iconSize, iconSize);
-}
-
-void CheckCaches::clear() {
-	_data.clear();
 }
 
 int CheckCaches::countFramesCount(const style::RoundCheckbox *st) {
@@ -231,66 +236,37 @@ QPixmap CheckCaches::paintFrame(
 			remove,
 			remove));
 	}
-	return App::pixmapFromImageInPlace(std::move(result));
+	return Ui::PixmapFromImage(std::move(result));
 }
 
 CheckCaches *FrameCaches() {
 	static QPointer<CheckCaches> Instance;
 
-	if (auto instance = Instance.data()) {
+	if (const auto instance = Instance.data()) {
 		return instance;
 	}
-	auto result = new CheckCaches(QGuiApplication::instance());
+	const auto result = new CheckCaches(QCoreApplication::instance());
 	Instance = result;
 	return result;
 }
 
-void prepareCheckCaches(const style::RoundCheckbox *st, bool displayInactive, QPixmap &checkBgCache, QPixmap &checkFullCache) {
-	auto size = st->size;
-	auto wideSize = size * kWideScale;
-	auto cache = QImage(wideSize * cIntRetinaFactor(), wideSize * cIntRetinaFactor(), QImage::Format_ARGB32_Premultiplied);
-	cache.setDevicePixelRatio(cRetinaFactor());
-	cache.fill(Qt::transparent);
-	{
-		Painter p(&cache);
-		PainterHighQualityEnabler hq(p);
-
-		if (displayInactive) {
-			p.setPen(Qt::NoPen);
-		} else {
-			auto pen = st->border->p;
-			pen.setWidth(st->width);
-			p.setPen(pen);
-		}
-		p.setBrush(st->bgActive);
-		auto ellipse = QRect((wideSize - size) / 2, (wideSize - size) / 2, size, size);
-		p.drawEllipse(ellipse);
-	}
-	auto cacheIcon = cache;
-	{
-		Painter p(&cacheIcon);
-		auto ellipse = QRect((wideSize - size) / 2, (wideSize - size) / 2, size, size);
-		st->check.paint(p, ellipse.topLeft(), wideSize);
-	}
-	checkBgCache = App::pixmapFromImageInPlace(std::move(cache));
-	checkFullCache = App::pixmapFromImageInPlace(std::move(cacheIcon));
-}
-
 } // namespace
 
-RoundCheckbox::RoundCheckbox(const style::RoundCheckbox &st, base::lambda<void()> updateCallback)
+RoundCheckbox::RoundCheckbox(const style::RoundCheckbox &st, Fn<void()> updateCallback)
 : _st(st)
 , _updateCallback(updateCallback) {
 }
 
-void RoundCheckbox::paint(Painter &p, TimeMs ms, int x, int y, int outerWidth, float64 masterScale) {
-	if (!_checkedProgress.animating() && !_checked && !_displayInactive) {
+void RoundCheckbox::paint(Painter &p, int x, int y, int outerWidth, float64 masterScale) {
+	if (!_st.size
+		|| (!_checkedProgress.animating()
+			&& !_checked
+			&& !_displayInactive)) {
 		return;
 	}
 
 	auto cacheSize = kWideScale * _st.size * cIntRetinaFactor();
 	auto cacheFrom = QRect(0, 0, cacheSize, cacheSize);
-	auto displayInactive = !_inactiveCacheBg.isNull();
 	auto inactiveTo = WideDestRect(&_st, x, y, masterScale);
 
 	PainterHighQualityEnabler hq(p);
@@ -298,7 +274,7 @@ void RoundCheckbox::paint(Painter &p, TimeMs ms, int x, int y, int outerWidth, f
 		p.drawPixmap(inactiveTo, _inactiveCacheBg, cacheFrom);
 	}
 
-	const auto progress = _checkedProgress.current(ms, _checked ? 1. : 0.);
+	const auto progress = _checkedProgress.value(_checked ? 1. : 0.);
 	if (progress > 0.) {
 		auto frame = FrameCaches()->frame(&_st, _displayInactive, progress);
 		p.drawPixmap(inactiveTo, frame, cacheFrom);
@@ -309,24 +285,27 @@ void RoundCheckbox::paint(Painter &p, TimeMs ms, int x, int y, int outerWidth, f
 	}
 }
 
-void RoundCheckbox::setChecked(bool newChecked, SetStyle speed) {
+void RoundCheckbox::setChecked(bool newChecked, anim::type animated) {
 	if (_checked == newChecked) {
-		if (speed != SetStyle::Animated) {
-			_checkedProgress.finish();
+		if (animated == anim::type::instant) {
+			_checkedProgress.stop();
 		}
 		return;
 	}
 	_checked = newChecked;
-	_checkedProgress.start(
-		_updateCallback,
-		_checked ? 0. : 1.,
-		_checked ? 1. : 0.,
-		_st.duration,
-		anim::linear);
+	if (animated == anim::type::normal) {
+		_checkedProgress.start(
+			_updateCallback,
+			_checked ? 0. : 1.,
+			_checked ? 1. : 0.,
+			_st.duration,
+			anim::linear);
+	} else {
+		_checkedProgress.stop();
+	}
 }
 
 void RoundCheckbox::invalidateCache() {
-	FrameCaches()->clear();
 	if (!_inactiveCacheBg.isNull() || !_inactiveCacheFg.isNull()) {
 		prepareInactiveCache();
 	}
@@ -359,7 +338,7 @@ void RoundCheckbox::prepareInactiveCache() {
 		p.setBrush(_st.bgInactive);
 		p.drawEllipse(ellipse);
 	}
-	_inactiveCacheBg = App::pixmapFromImageInPlace(std::move(cacheBg));
+	_inactiveCacheBg = Ui::PixmapFromImage(std::move(cacheBg));
 
 	{
 		Painter p(&cacheFg);
@@ -371,20 +350,18 @@ void RoundCheckbox::prepareInactiveCache() {
 		p.setBrush(Qt::NoBrush);
 		p.drawEllipse(ellipse);
 	}
-	_inactiveCacheFg = App::pixmapFromImageInPlace(std::move(cacheFg));
+	_inactiveCacheFg = Ui::PixmapFromImage(std::move(cacheFg));
 }
 
-RoundImageCheckbox::RoundImageCheckbox(const style::RoundImageCheckbox &st, base::lambda<void()> updateCallback, PaintRoundImage &&paintRoundImage)
+RoundImageCheckbox::RoundImageCheckbox(const style::RoundImageCheckbox &st, Fn<void()> updateCallback, PaintRoundImage &&paintRoundImage)
 : _st(st)
 , _updateCallback(updateCallback)
 , _paintRoundImage(std::move(paintRoundImage))
 , _check(_st.check, _updateCallback) {
 }
 
-void RoundImageCheckbox::paint(Painter &p, TimeMs ms, int x, int y, int outerWidth) {
-	_selection.step(ms);
-
-	auto selectionLevel = _selection.current(checked() ? 1. : 0.);
+void RoundImageCheckbox::paint(Painter &p, int x, int y, int outerWidth) {
+	auto selectionLevel = _selection.value(checked() ? 1. : 0.);
 	if (_selection.animating()) {
 		auto userpicRadius = qRound(kWideScale * (_st.imageRadius + (_st.imageSmallRadius - _st.imageRadius) * selectionLevel));
 		auto userpicShift = kWideScale * _st.imageRadius - userpicRadius;
@@ -408,38 +385,39 @@ void RoundImageCheckbox::paint(Painter &p, TimeMs ms, int x, int y, int outerWid
 
 	if (selectionLevel > 0) {
 		PainterHighQualityEnabler hq(p);
-		p.setOpacity(snap(selectionLevel, 0., 1.));
+		p.setOpacity(std::clamp(selectionLevel, 0., 1.));
 		p.setBrush(Qt::NoBrush);
 		auto pen = _st.selectFg->p;
 		pen.setWidth(_st.selectWidth);
 		p.setPen(pen);
-		p.drawEllipse(rtlrect(x, y, _st.imageRadius * 2, _st.imageRadius * 2, outerWidth));
+		p.drawEllipse(style::rtlrect(x, y, _st.imageRadius * 2, _st.imageRadius * 2, outerWidth));
 		p.setOpacity(1.);
 	}
-
-	auto iconLeft = x + 2 * _st.imageRadius + _st.selectWidth - _st.check.size;
-	auto iconTop = y + 2 * _st.imageRadius + _st.selectWidth - _st.check.size;
-	_check.paint(p, ms, iconLeft, iconTop, outerWidth);
+	if (_st.check.size > 0) {
+		auto iconLeft = x + 2 * _st.imageRadius + _st.selectWidth - _st.check.size;
+		auto iconTop = y + 2 * _st.imageRadius + _st.selectWidth - _st.check.size;
+		_check.paint(p, iconLeft, iconTop, outerWidth);
+	}
 }
 
 float64 RoundImageCheckbox::checkedAnimationRatio() const {
-	return snap(_selection.current(checked() ? 1. : 0.), 0., 1.);
+	return std::clamp(_selection.value(checked() ? 1. : 0.), 0., 1.);
 }
 
-void RoundImageCheckbox::setChecked(bool newChecked, SetStyle speed) {
+void RoundImageCheckbox::setChecked(bool newChecked, anim::type animated) {
 	auto changed = (checked() != newChecked);
-	_check.setChecked(newChecked, speed);
+	_check.setChecked(newChecked, animated);
 	if (!changed) {
-		if (speed != SetStyle::Animated) {
-			_selection.finish();
+		if (animated == anim::type::instant) {
+			_selection.stop();
 		}
 		return;
 	}
-	if (speed == SetStyle::Animated) {
+	if (animated == anim::type::normal) {
 		prepareWideCache();
 		_selection.start(_updateCallback, checked() ? 0 : 1, checked() ? 1 : 0, _st.selectDuration, anim::bumpy(1.25));
 	} else {
-		_selection.finish();
+		_selection.stop();
 	}
 }
 
@@ -456,7 +434,7 @@ void RoundImageCheckbox::prepareWideCache() {
 			p.setCompositionMode(QPainter::CompositionMode_SourceOver);
 			_paintRoundImage(p, (wideSize - size) / 2, (wideSize - size) / 2, wideSize, size);
 		}
-		_wideCache = App::pixmapFromImageInPlace(std::move(cache));
+		_wideCache = Ui::PixmapFromImage(std::move(cache));
 	}
 }
 

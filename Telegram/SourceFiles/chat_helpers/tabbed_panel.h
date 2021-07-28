@@ -7,11 +7,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "ui/effects/animations.h"
 #include "ui/rp_widget.h"
 #include "base/timer.h"
+#include "base/object_ptr.h"
 
 namespace Window {
-class Controller;
+class SessionController;
 } // namespace Window
 
 namespace Ui {
@@ -22,16 +24,25 @@ namespace ChatHelpers {
 
 class TabbedSelector;
 
-class TabbedPanel : public Ui::RpWidget{
-	Q_OBJECT
-
+class TabbedPanel : public Ui::RpWidget {
 public:
-	TabbedPanel(QWidget *parent, not_null<Window::Controller*> controller);
-	TabbedPanel(QWidget *parent, not_null<Window::Controller*> controller, object_ptr<TabbedSelector> selector);
+	TabbedPanel(
+		QWidget *parent,
+		not_null<Window::SessionController*> controller,
+		not_null<TabbedSelector*> selector);
+	TabbedPanel(
+		QWidget *parent,
+		not_null<Window::SessionController*> controller,
+		object_ptr<TabbedSelector> selector);
 
-	object_ptr<TabbedSelector> takeSelector();
-	QPointer<TabbedSelector> getSelector() const;
-	void moveBottom(int bottom);
+	[[nodiscard]] bool isSelectorStolen() const;
+	[[nodiscard]] not_null<TabbedSelector*> selector() const;
+
+	void moveBottomRight(int bottom, int right);
+	void setDesiredHeightValues(
+		float64 ratio,
+		int minHeight,
+		int maxHeight);
 
 	void hideFast();
 	bool hiding() const {
@@ -55,15 +66,15 @@ protected:
 	void paintEvent(QPaintEvent *e) override;
 	bool eventFilter(QObject *obj, QEvent *e) override;
 
-private slots:
-	void onWndActiveChanged();
-
 private:
+	TabbedPanel(
+		QWidget *parent,
+		not_null<Window::SessionController*> controller,
+		object_ptr<TabbedSelector> ownedSelector,
+		TabbedSelector *nonOwnedSelector);
+
 	void hideByTimerOrLeave();
 	void moveByBottom();
-	bool isDestroying() const {
-		return !_selector;
-	}
 	void showFromSelector();
 
 	style::margins innerPadding() const;
@@ -71,18 +82,10 @@ private:
 	// Rounded rect which has shadow around it.
 	QRect innerRect() const;
 
-	// Inner rect with removed st::buttonRadius from top and bottom.
-	// This one is allowed to be not rounded.
-	QRect horizontalRect() const;
-
-	// Inner rect with removed st::buttonRadius from left and right.
-	// This one is allowed to be not rounded.
-	QRect verticalRect() const;
-
 	QImage grabForAnimation();
 	void startShowAnimation();
 	void startOpacityAnimation(bool hiding);
-	void prepareCache();
+	void prepareCacheFor(bool hiding);
 
 	void opacityAnimationCallback();
 
@@ -92,20 +95,27 @@ private:
 	bool preventAutoHide() const;
 	void updateContentHeight();
 
-	not_null<Window::Controller*> _controller;
-	object_ptr<TabbedSelector> _selector;
+	const not_null<Window::SessionController*> _controller;
+	const object_ptr<TabbedSelector> _ownedSelector = { nullptr };
+	const not_null<TabbedSelector*> _selector;
 
 	int _contentMaxHeight = 0;
 	int _contentHeight = 0;
 	int _bottom = 0;
+	int _right = 0;
+	float64 _heightRatio = 1.;
+	int _minContentHeight = 0;
+	int _maxContentHeight = 0;
 
 	std::unique_ptr<Ui::PanelAnimation> _showAnimation;
-	Animation _a_show;
+	Ui::Animations::Simple _a_show;
+
+	bool _shouldFinishHide = false;
 
 	bool _hiding = false;
 	bool _hideAfterSlide = false;
 	QPixmap _cache;
-	Animation _a_opacity;
+	Ui::Animations::Simple _a_opacity;
 	base::Timer _hideTimer;
 
 };

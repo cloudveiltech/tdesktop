@@ -10,13 +10,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/common_groups/info_common_groups_widget.h"
 #include "info/info_controller.h"
 #include "lang/lang_keys.h"
-#include "styles/style_info.h"
-#include "styles/style_widgets.h"
 #include "mtproto/sender.h"
-#include "window/window_controller.h"
+#include "main/main_session.h"
+#include "window/window_session_controller.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/search_field_controller.h"
-#include "apiwrap.h"
+#include "data/data_user.h"
+#include "data/data_session.h"
+#include "styles/style_info.h"
+#include "styles/style_widgets.h"
 
 namespace Info {
 namespace CommonGroups {
@@ -25,15 +27,13 @@ namespace {
 constexpr auto kCommonGroupsPerPage = 40;
 constexpr auto kCommonGroupsSearchAfter = 20;
 
-class ListController
-	: public PeerListController
-	, private base::Subscriber
-	, private MTP::Sender {
+class ListController final : public PeerListController {
 public:
 	ListController(
 		not_null<Controller*> controller,
 		not_null<UserData*> user);
 
+	Main::Session &session() const override;
 	void prepare() override;
 	void rowClicked(not_null<PeerListRow*> row) override;
 	void loadMoreRows() override;
@@ -50,15 +50,16 @@ private:
 	std::unique_ptr<PeerListRow> createRow(not_null<PeerData*> peer);
 
 	struct SavedState : SavedStateBase {
-		int32 preloadGroupId = 0;
+		PeerId preloadGroupId = 0;
 		bool allLoaded = false;
 		bool wasLoading = false;
 	};
 	const not_null<Controller*> _controller;
+	MTP::Sender _api;
 	not_null<UserData*> _user;
 	mtpRequestId _preloadRequestId = 0;
 	bool _allLoaded = false;
-	int32 _preloadGroupId = 0;
+	PeerId _preloadGroupId = 0;
 
 };
 
@@ -67,8 +68,13 @@ ListController::ListController(
 	not_null<UserData*> user)
 : PeerListController()
 , _controller(controller)
+, _api(&_controller->session().mtp())
 , _user(user) {
 	_controller->setSearchEnabledByContent(false);
+}
+
+Main::Session &ListController::session() const {
+	return _user->session();
 }
 
 std::unique_ptr<PeerListRow> ListController::createRow(
@@ -79,38 +85,40 @@ std::unique_ptr<PeerListRow> ListController::createRow(
 }
 
 void ListController::prepare() {
-	setSearchNoResultsText(lang(lng_bot_groups_not_found));
+	setSearchNoResultsText(tr::lng_bot_groups_not_found(tr::now));
 	delegate()->peerListSetSearchMode(PeerListSearchMode::Enabled);
-	delegate()->peerListSetTitle(langFactory(lng_profile_common_groups_section));
+	delegate()->peerListSetTitle(tr::lng_profile_common_groups_section());
 }
 
 void ListController::loadMoreRows() {
 	if (_preloadRequestId || _allLoaded) {
 		return;
 	}
-	_preloadRequestId = request(MTPmessages_GetCommonChats(
+	_preloadRequestId = _api.request(MTPmessages_GetCommonChats(
 		_user->inputUser,
-		MTP_int(_preloadGroupId),
+		MTP_int(peerIsChat(_preloadGroupId)
+			? peerToChat(_preloadGroupId).bare
+			: peerToChannel(_preloadGroupId).bare), // #TODO ids
 		MTP_int(kCommonGroupsPerPage)
 	)).done([this](const MTPmessages_Chats &result) {
 		_preloadRequestId = 0;
 		_preloadGroupId = 0;
 		_allLoaded = true;
-		if (auto chats = Api::getChatsFromMessagesChats(result)) {
-			auto &list = chats->v;
-			if (!list.empty()) {
-				for_const (auto &chatData, list) {
-					if (auto chat = App::feedChat(chatData)) {
-						if (!chat->migrateTo()) {
-							delegate()->peerListAppendRow(
-								createRow(chat));
-						}
-						_preloadGroupId = chat->bareId();
-						_allLoaded = false;
+		const auto &chats = result.match([](const auto &data) {
+			return data.vchats().v;
+		});
+		if (!chats.empty()) {
+			for (const auto &chat : chats) {
+				if (const auto peer = _user->owner().processChat(chat)) {
+					if (!peer->migrateTo()) {
+						delegate()->peerListAppendRow(
+							createRow(peer));
 					}
+					_preloadGroupId = peer->id;
+					_allLoaded = false;
 				}
-				delegate()->peerListRefreshRows();
 			}
+			delegate()->peerListRefreshRows();
 		}
 		auto fullCount = delegate()->peerListFullRowsCount();
 		if (fullCount > kCommonGroupsSearchAfter) {
@@ -136,7 +144,7 @@ void ListController::restoreState(
 		: nullptr;
 	if (auto my = dynamic_cast<SavedState*>(typeErasedState)) {
 		if (auto requestId = base::take(_preloadRequestId)) {
-			request(requestId).cancel();
+			_api.request(requestId).cancel();
 		}
 		_allLoaded = my->allLoaded;
 		_preloadGroupId = my->preloadGroupId;
@@ -207,10 +215,10 @@ int InnerWidget::desiredHeight() const {
 object_ptr<InnerWidget::ListWidget> InnerWidget::setupList(
 		RpWidget *parent,
 		not_null<PeerListController*> controller) const {
+	controller->setStyleOverrides(&st::infoCommonGroupsList);
 	auto result = object_ptr<ListWidget>(
 		parent,
-		controller,
-		st::infoCommonGroupsList);
+		controller);
 	result->scrollToRequests(
 	) | rpl::start_with_next([this](Ui::ScrollToRequest request) {
 		auto addmin = (request.ymin < 0)
@@ -238,14 +246,13 @@ object_ptr<InnerWidget::ListWidget> InnerWidget::setupList(
 	return result;
 }
 
-void InnerWidget::peerListSetTitle(base::lambda<QString()> title) {
+void InnerWidget::peerListSetTitle(rpl::producer<QString> title) {
 }
 
-void InnerWidget::peerListSetAdditionalTitle(
-		base::lambda<QString()> title) {
+void InnerWidget::peerListSetAdditionalTitle(rpl::producer<QString> title) {
 }
 
-bool InnerWidget::peerListIsRowSelected(not_null<PeerData*> peer) {
+bool InnerWidget::peerListIsRowChecked(not_null<PeerListRow*> row) {
 	return false;
 }
 
@@ -253,15 +260,15 @@ int InnerWidget::peerListSelectedRowsCount() {
 	return 0;
 }
 
-std::vector<not_null<PeerData*>> InnerWidget::peerListCollectSelectedRows() {
-	return {};
-}
-
 void InnerWidget::peerListScrollToTop() {
 	_scrollToRequests.fire({ -1, -1 });
 }
 
-void InnerWidget::peerListAddSelectedRowInBunch(not_null<PeerData*> peer) {
+void InnerWidget::peerListAddSelectedPeerInBunch(not_null<PeerData*> peer) {
+	Unexpected("Item selection in Info::Profile::Members.");
+}
+
+void InnerWidget::peerListAddSelectedRowInBunch(not_null<PeerListRow*> row) {
 	Unexpected("Item selection in Info::Profile::Members.");
 }
 

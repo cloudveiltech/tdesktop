@@ -7,8 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include <rpl/event_stream.h>
 #include "ui/rp_widget.h"
+#include "ui/effects/animations.h"
 #include "styles/style_widgets.h"
 
 namespace Ui {
@@ -20,7 +20,7 @@ public:
 	DiscreteSlider(QWidget *parent);
 
 	void addSection(const QString &label);
-	void setSections(const QStringList &labels);
+	void setSections(const std::vector<QString> &labels);
 	int activeSection() const {
 		return _activeIndex;
 	}
@@ -41,15 +41,15 @@ protected:
 	int resizeGetHeight(int newWidth) override = 0;
 
 	struct Section {
-		Section(const QString &label, const style::font &font);
+		Section(const QString &label, const style::TextStyle &st);
 
-		int left, width;
-		QString label;
-		int labelWidth;
+		int left = 0;
+		int width = 0;
+		Ui::Text::String label;
 		std::unique_ptr<RippleAnimation> ripple;
 	};
 
-	int getCurrentActiveLeft(TimeMs ms);
+	int getCurrentActiveLeft();
 
 	int getSectionsCount() const {
 		return _sections.size();
@@ -65,14 +65,14 @@ protected:
 	}
 
 	void stopAnimation() {
-		_a_left.finish();
+		_a_left.stop();
 	}
 
 	void setSelectOnPress(bool selectOnPress);
 
 private:
 	void activateCallback();
-	virtual const style::font &getLabelFont() const = 0;
+	virtual const style::TextStyle &getLabelStyle() const = 0;
 	virtual int getAnimationDuration() const = 0;
 
 	int getIndexFromPosition(QPoint pos);
@@ -86,10 +86,10 @@ private:
 
 	int _pressed = -1;
 	int _selected = 0;
-	Animation _a_left;
+	Ui::Animations::Simple _a_left;
 
 	int _timerId = -1;
-	TimeMs _callbackAfterMs = 0;
+	crl::time _callbackAfterMs = 0;
 
 };
 
@@ -107,7 +107,7 @@ protected:
 	void startRipple(int sectionIndex) override;
 
 private:
-	const style::font &getLabelFont() const override;
+	const style::TextStyle &getLabelStyle() const override;
 	int getAnimationDuration() const override;
 	QImage prepareRippleMask(int sectionIndex, const Section &section);
 

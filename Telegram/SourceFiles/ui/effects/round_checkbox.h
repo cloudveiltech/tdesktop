@@ -7,25 +7,24 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "ui/effects/animations.h"
 #include "styles/style_widgets.h"
 
 namespace Ui {
 
 class RoundCheckbox {
 public:
-	RoundCheckbox(const style::RoundCheckbox &st, base::lambda<void()> updateCallback);
+	RoundCheckbox(const style::RoundCheckbox &st, Fn<void()> updateCallback);
 
-	void paint(Painter &p, TimeMs ms, int x, int y, int outerWidth, float64 masterScale = 1.);
+	void paint(Painter &p, int x, int y, int outerWidth, float64 masterScale = 1.);
 
 	void setDisplayInactive(bool displayInactive);
 	bool checked() const {
 		return _checked;
 	}
-	enum class SetStyle {
-		Animated,
-		Fast,
-	};
-	void setChecked(bool newChecked, SetStyle speed = SetStyle::Animated);
+	void setChecked(
+		bool newChecked,
+		anim::type animated = anim::type::normal);
 
 	void invalidateCache();
 
@@ -33,10 +32,10 @@ private:
 	void prepareInactiveCache();
 
 	const style::RoundCheckbox &_st;
-	base::lambda<void()> _updateCallback;
+	Fn<void()> _updateCallback;
 
 	bool _checked = false;
-	Animation _checkedProgress;
+	Ui::Animations::Simple _checkedProgress;
 
 	bool _displayInactive = false;
 	QPixmap _inactiveCacheBg, _inactiveCacheFg;
@@ -45,17 +44,18 @@ private:
 
 class RoundImageCheckbox {
 public:
-	using PaintRoundImage = base::lambda<void(Painter &p, int x, int y, int outerWidth, int size)>;
-	RoundImageCheckbox(const style::RoundImageCheckbox &st, base::lambda<void()> updateCallback, PaintRoundImage &&paintRoundImage);
+	using PaintRoundImage = Fn<void(Painter &p, int x, int y, int outerWidth, int size)>;
+	RoundImageCheckbox(const style::RoundImageCheckbox &st, Fn<void()> updateCallback, PaintRoundImage &&paintRoundImage);
 
-	void paint(Painter &p, TimeMs ms, int x, int y, int outerWidth);
+	void paint(Painter &p, int x, int y, int outerWidth);
 	float64 checkedAnimationRatio() const;
 
 	bool checked() const {
 		return _check.checked();
 	}
-	using SetStyle = RoundCheckbox::SetStyle;
-	void setChecked(bool newChecked, SetStyle speed = SetStyle::Animated);
+	void setChecked(
+		bool newChecked,
+		anim::type animated = anim::type::normal);
 
 	void invalidateCache() {
 		_check.invalidateCache();
@@ -65,11 +65,11 @@ private:
 	void prepareWideCache();
 
 	const style::RoundImageCheckbox &_st;
-	base::lambda<void()> _updateCallback;
+	Fn<void()> _updateCallback;
 	PaintRoundImage _paintRoundImage;
 
 	QPixmap _wideCache;
-	Animation _selection;
+	Ui::Animations::Simple _selection;
 
 	RoundCheckbox _check;
 

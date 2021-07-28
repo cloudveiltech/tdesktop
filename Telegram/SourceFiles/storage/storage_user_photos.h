@@ -42,8 +42,8 @@ struct UserPhotosRemoveOne {
 	UserPhotosRemoveOne(
 		UserId userId,
 		PhotoId photoId)
-		: userId(userId)
-		, photoId(photoId) {
+	: userId(userId)
+	, photoId(photoId) {
 	}
 
 	UserId userId = 0;
@@ -80,7 +80,7 @@ struct UserPhotosKey {
 		return !(*this == other);
 	}
 
-	PeerId userId = 0;
+	UserId userId = 0;
 	PhotoId photoId = 0;
 
 };
@@ -102,8 +102,8 @@ struct UserPhotosQuery {
 };
 
 struct UserPhotosResult {
-	base::optional<int> count;
-	base::optional<int> skippedBefore;
+	std::optional<int> count;
+	std::optional<int> skippedBefore;
 	int skippedAfter = 0;
 	std::deque<PhotoId> photoIds;
 };
@@ -112,7 +112,7 @@ struct UserPhotosSliceUpdate {
 	UserPhotosSliceUpdate(
 		UserId userId,
 		const std::deque<PhotoId> *photoIds,
-		base::optional<int> count)
+		std::optional<int> count)
 		: userId(userId)
 		, photoIds(photoIds)
 		, count(count) {
@@ -120,7 +120,7 @@ struct UserPhotosSliceUpdate {
 
 	UserId userId = 0;
 	const std::deque<PhotoId> *photoIds = nullptr;
-	base::optional<int> count;
+	std::optional<int> count;
 };
 
 class UserPhotos {
@@ -146,14 +146,14 @@ private:
 
 		struct SliceUpdate {
 			const std::deque<PhotoId> *photoIds = nullptr;
-			base::optional<int> count;
+			std::optional<int> count;
 		};
 		rpl::producer<SliceUpdate> sliceUpdated() const;
 
 	private:
 		void sendUpdate();
 
-		base::optional<int> _count;
+		std::optional<int> _count;
 		std::deque<PhotoId> _photoIds;
 
 		rpl::event_stream<SliceUpdate> _sliceUpdated;

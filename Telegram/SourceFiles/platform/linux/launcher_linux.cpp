@@ -8,9 +8,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/linux/launcher_linux.h"
 
 #include "core/crash_reports.h"
+#include "core/update_checker.h"
+#include "platform/linux/linux_gtk_integration.h"
+
+#include <QtWidgets/QApplication>
 
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <cstdlib>
 #include <unistd.h>
 #include <dirent.h>
@@ -18,6 +23,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Platform {
 namespace {
+
+using Platform::internal::GtkIntegration;
 
 class Arguments {
 public:
@@ -40,30 +47,88 @@ private:
 
 } // namespace
 
+Launcher::Launcher(int argc, char *argv[])
+: Core::Launcher(argc, argv)
+, _arguments(argv, argv + argc) {
+}
+
+int Launcher::exec() {
+	for (auto i = begin(_arguments), e = end(_arguments); i != e; ++i) {
+		if (*i == "-basegtkintegration" && std::distance(i, e) > 2) {
+			return GtkIntegration::Exec(
+				GtkIntegration::Type::Base,
+				QString::fromStdString(*(i + 1)),
+				QString::fromStdString(*(i + 2)));
+		} else if (*i == "-webviewhelper" && std::distance(i, e) > 2) {
+			return GtkIntegration::Exec(
+				GtkIntegration::Type::Webview,
+				QString::fromStdString(*(i + 1)),
+				QString::fromStdString(*(i + 2)));
+		} else if (*i == "-gtkintegration" && std::distance(i, e) > 2) {
+			return GtkIntegration::Exec(
+				GtkIntegration::Type::TDesktop,
+				QString::fromStdString(*(i + 1)),
+				QString::fromStdString(*(i + 2)));
+		}
+	}
+
+	return Core::Launcher::exec();
+}
+
+void Launcher::initHook() {
+	QApplication::setAttribute(Qt::AA_DisableSessionManager, true);
+	QApplication::setDesktopFileName([] {
+		if (!Core::UpdaterDisabled() && !cExeName().isEmpty()) {
+			const auto appimagePath = qsl("file://%1%2").arg(
+				cExeDir(),
+				cExeName()).toUtf8();
+
+			char md5Hash[33] = { 0 };
+			hashMd5Hex(
+				appimagePath.constData(),
+				appimagePath.size(),
+				md5Hash);
+
+			return qsl("appimagekit_%1-%2.desktop").arg(
+				md5Hash,
+				AppName.utf16().replace(' ', '_'));
+		}
+
+		return qsl(QT_STRINGIFY(TDESKTOP_LAUNCHER_BASENAME) ".desktop");
+	}());
+}
+
 bool Launcher::launchUpdater(UpdaterLaunch action) {
 	if (cExeName().isEmpty()) {
 		return false;
 	}
 
-	const auto binaryName = (action == UpdaterLaunch::JustRelaunch)
-		? cExeName()
-		: QStringLiteral("Updater");
+	const auto binaryPath = (action == UpdaterLaunch::JustRelaunch)
+		? (cExeDir() + cExeName())
+		: (cWriteProtected()
+			? (cWorkingDir() + qsl("tupdates/temp/Updater"))
+			: (cExeDir() + qsl("Updater")));
 
 	auto argumentsList = Arguments();
-	argumentsList.push(QFile::encodeName(cExeDir() + binaryName));
+	if (action == UpdaterLaunch::PerformUpdate && cWriteProtected()) {
+		argumentsList.push("pkexec");
+	}
+	argumentsList.push(QFile::encodeName(binaryPath));
 
 	if (cLaunchMode() == LaunchModeAutoStart) {
 		argumentsList.push("-autostart");
 	}
-	if (cDebug()) {
+	if (Logs::DebugEnabled()) {
 		argumentsList.push("-debug");
 	}
 	if (cStartInTray()) {
 		argumentsList.push("-startintray");
 	}
-	if (cTestMode()) {
-		argumentsList.push("-testmode");
+#ifndef TDESKTOP_DISABLE_AUTOUPDATE
+	if (Core::UpdaterDisabled()) {
+		argumentsList.push("-externalupdater");
 	}
+#endif // !TDESKTOP_DISABLE_AUTOUPDATE
 	if (cDataFile() != qsl("data")) {
 		argumentsList.push("-key");
 		argumentsList.push(QFile::encodeName(cDataFile()));
@@ -86,6 +151,9 @@ bool Launcher::launchUpdater(UpdaterLaunch action) {
 		if (customWorkingDir()) {
 			argumentsList.push("-workdir_custom");
 		}
+		if (cWriteProtected()) {
+			argumentsList.push("-writeprotected");
+		}
 	}
 
 	Logs::closeMain();
@@ -96,8 +164,16 @@ bool Launcher::launchUpdater(UpdaterLaunch action) {
 	pid_t pid = fork();
 	switch (pid) {
 	case -1: return false;
-	case 0: execv(args[0], args); return false;
+	case 0: execvp(args[0], args); return false;
 	}
+
+	// pkexec needs an alive parent
+	if (action == UpdaterLaunch::PerformUpdate && cWriteProtected()) {
+		waitpid(pid, nullptr, 0);
+		// launch new version in the same environment
+		return launchUpdater(UpdaterLaunch::JustRelaunch);
+	}
+
 	return true;
 }
 

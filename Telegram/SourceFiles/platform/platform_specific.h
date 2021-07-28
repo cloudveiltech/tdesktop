@@ -12,15 +12,40 @@ namespace Platform {
 void start();
 void finish();
 
-void SetWatchingMediaKeys(bool watching);
-bool TranslucentWindowsSupported(QPoint globalPosition);
-void StartTranslucentPaint(QPainter &p, QPaintEvent *e);
-void InitOnTopPanel(QWidget *panel);
-void DeInitOnTopPanel(QWidget *panel);
-void ReInitOnTopPanel(QWidget *panel);
+enum class PermissionStatus {
+	Granted,
+	CanRequest,
+	Denied,
+};
 
-QString SystemLanguage();
-QString SystemCountry();
+enum class PermissionType {
+	Microphone,
+	Camera,
+};
+
+enum class SystemSettingsType {
+	Audio,
+};
+
+void SetWatchingMediaKeys(bool watching);
+void SetApplicationIcon(const QIcon &icon);
+QString SingleInstanceLocalServerName(const QString &hash);
+void RegisterCustomScheme(bool force = false);
+PermissionStatus GetPermissionStatus(PermissionType type);
+void RequestPermission(PermissionType type, Fn<void(PermissionStatus)> resultCallback);
+void OpenSystemSettingsForPermission(PermissionType type);
+bool OpenSystemSettings(SystemSettingsType type);
+void IgnoreApplicationActivationRightNow();
+bool AutostartSupported();
+bool TrayIconSupported();
+bool SkipTaskbarSupported();
+[[nodiscard]] QImage GetImageFromClipboard();
+void WriteCrashDumpDetails();
+
+[[nodiscard]] std::optional<bool> IsDarkMode();
+[[nodiscard]] inline bool IsDarkModeSupported() {
+	return IsDarkMode().has_value();
+}
 
 namespace ThirdParty {
 
@@ -32,8 +57,8 @@ void finish();
 
 #ifdef Q_OS_MAC
 #include "platform/mac/specific_mac.h"
-#elif defined Q_OS_LINUX // Q_OS_MAC
+#elif defined Q_OS_UNIX // Q_OS_MAC
 #include "platform/linux/specific_linux.h"
-#elif defined Q_OS_WIN // Q_OS_MAC || Q_OS_LINUX
+#elif defined Q_OS_WIN // Q_OS_MAC || Q_OS_UNIX
 #include "platform/win/specific_win.h"
-#endif // Q_OS_MAC || Q_OS_LINUX || Q_OS_WIN
+#endif // Q_OS_MAC || Q_OS_UNIX || Q_OS_WIN

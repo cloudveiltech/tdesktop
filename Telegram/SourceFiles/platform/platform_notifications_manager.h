@@ -12,12 +12,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Platform {
 namespace Notifications {
 
-bool SkipAudio();
-bool SkipToast();
+[[nodiscard]] bool SkipAudioForCustom();
+[[nodiscard]] bool SkipToastForCustom();
+[[nodiscard]] bool SkipFlashBounceForCustom();
 
-bool Supported();
-std::unique_ptr<Window::Notifications::Manager> Create(Window::Notifications::System *system);
-void FlashBounce();
+[[nodiscard]] bool Supported();
+[[nodiscard]] bool Enforced();
+[[nodiscard]] bool ByDefault();
+void Create(Window::Notifications::System *system);
 
 } // namespace Notifications
 } // namespace Platform
@@ -26,8 +28,8 @@ void FlashBounce();
 
 #ifdef Q_OS_MAC
 #include "platform/mac/notifications_manager_mac.h"
-#elif defined Q_OS_LINUX // Q_OS_MAC
+#elif defined Q_OS_UNIX // Q_OS_MAC
 #include "platform/linux/notifications_manager_linux.h"
-#elif defined Q_OS_WIN // Q_OS_MAC || Q_OS_LINUX
+#elif defined Q_OS_WIN // Q_OS_MAC || Q_OS_UNIX
 #include "platform/win/notifications_manager_win.h"
-#endif // Q_OS_MAC || Q_OS_LINUX || Q_OS_WIN
+#endif // Q_OS_MAC || Q_OS_UNIX || Q_OS_WIN

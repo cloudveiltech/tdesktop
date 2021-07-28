@@ -7,9 +7,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "chat_helpers/bot_keyboard.h"
 
+#include "history/history.h"
 #include "history/history_item_components.h"
+#include "data/data_user.h"
+#include "data/data_session.h"
+#include "main/main_session.h"
+#include "ui/cached_round_corners.h"
+#include "facades.h"
 #include "styles/style_widgets.h"
-#include "styles/style_history.h"
+#include "styles/style_chat.h"
 
 namespace {
 
@@ -63,14 +69,14 @@ void Style::repaint(not_null<const HistoryItem*> item) const {
 }
 
 int Style::buttonRadius() const {
-	return st::buttonRadius;
+	return st::roundRadiusSmall;
 }
 
 void Style::paintButtonBg(
 		Painter &p,
 		const QRect &rect,
 		float64 howMuchOver) const {
-	App::roundRect(p, rect, st::botKbBg, BotKeyboardCorners);
+	Ui::FillRoundRect(p, rect, st::botKbBg, Ui::BotKeyboardCorners);
 }
 
 void Style::paintButtonIcon(
@@ -92,7 +98,9 @@ int Style::minButtonWidth(HistoryMessageMarkupButton::Type type) const {
 
 } // namespace
 
-BotKeyboard::BotKeyboard(QWidget *parent) : TWidget(parent)
+BotKeyboard::BotKeyboard(not_null<Main::Session*> session, QWidget *parent)
+: TWidget(parent)
+, _session(session)
 , _st(&st::botKbButton) {
 	setGeometry(0, 0, _st->margin, st::botKbScroll.deltat);
 	_height = st::botKbScroll.deltat;
@@ -108,7 +116,7 @@ void BotKeyboard::paintEvent(QPaintEvent *e) {
 	if (_impl) {
 		int x = rtl() ? st::botKbScroll.width : _st->margin;
 		p.translate(x, st::botKbScroll.deltat);
-		_impl->paint(p, width(), clip.translated(-x, -st::botKbScroll.deltat), getms());
+		_impl->paint(p, width(), clip.translated(-x, -st::botKbScroll.deltat));
 	}
 }
 
@@ -129,7 +137,7 @@ void BotKeyboard::mouseReleaseEvent(QMouseEvent *e) {
 	updateSelected();
 
 	if (ClickHandlerPtr activated = ClickHandler::unpressed()) {
-		App::activateClickHandler(activated, e->button());
+		ActivateClickHandler(window(), activated, e->button());
 	}
 }
 
@@ -143,9 +151,9 @@ void BotKeyboard::leaveEventHook(QEvent *e) {
 }
 
 bool BotKeyboard::moderateKeyActivate(int key) {
-	if (const auto item = App::histItemById(_wasForMsgId)) {
+	if (const auto item = _session->data().message(_wasForMsgId)) {
 		if (const auto markup = item->Get<HistoryMessageReplyMarkup>()) {
-			if (key >= Qt::Key_1 && key <= Qt::Key_9) {
+			if (key >= Qt::Key_1 && key <= Qt::Key_2) {
 				const auto index = int(key - Qt::Key_1);
 				if (!markup->rows.empty()
 					&& index >= 0
@@ -153,12 +161,24 @@ bool BotKeyboard::moderateKeyActivate(int key) {
 					App::activateBotCommand(item, 0, index);
 					return true;
 				}
-			} else if (key == Qt::Key_Q) {
-				if (const auto user = item->history()->peer->asUser()) {
-					if (user->botInfo && item->from() == user) {
+			} else if (const auto user = item->history()->peer->asUser()) {
+				if (user->isBot() && item->from() == user) {
+					if (key == Qt::Key_Q || key == Qt::Key_6) {
 						App::sendBotCommand(user, user, qsl("/translate"));
-						return true;
+					} else if (key == Qt::Key_W || key == Qt::Key_5) {
+						App::sendBotCommand(user, user, qsl("/eng"));
+					} else if (key == Qt::Key_3) {
+						App::sendBotCommand(user, user, qsl("/pattern"));
+					} else if (key == Qt::Key_4) {
+						App::sendBotCommand(user, user, qsl("/abuse"));
+					} else if (key == Qt::Key_0 || key == Qt::Key_E || key == Qt::Key_9) {
+						App::sendBotCommand(user, user, qsl("/undo"));
+					} else if (key == Qt::Key_Plus || key == Qt::Key_QuoteLeft || key == Qt::Key_7) {
+						App::sendBotCommand(user, user, qsl("/next"));
+					} else if (key == Qt::Key_Period || key == Qt::Key_S || key == Qt::Key_8) {
+						App::sendBotCommand(user, user, qsl("/stats"));
 					}
+					return true;
 				}
 			}
 		}
@@ -181,6 +201,7 @@ bool BotKeyboard::updateMarkup(HistoryItem *to, bool force) {
 		if (_wasForMsgId.msg) {
 			_maximizeSize = _singleUse = _forceReply = false;
 			_wasForMsgId = FullMsgId();
+			_placeholder = QString();
 			_impl = nullptr;
 			return true;
 		}
@@ -197,6 +218,12 @@ bool BotKeyboard::updateMarkup(HistoryItem *to, bool force) {
 	_forceReply = markupFlags & MTPDreplyKeyboardMarkup_ClientFlag::f_force_reply;
 	_maximizeSize = !(markupFlags & MTPDreplyKeyboardMarkup::Flag::f_resize);
 	_singleUse = _forceReply || (markupFlags & MTPDreplyKeyboardMarkup::Flag::f_single_use);
+
+	if (const auto markup = to->Get<HistoryMessageReplyMarkup>()) {
+		_placeholder = markup->placeholder;
+	} else {
+		_placeholder = QString();
+	}
 
 	_impl = nullptr;
 	if (auto markup = to->Get<HistoryMessageReplyMarkup>()) {
@@ -264,6 +291,10 @@ QPoint BotKeyboard::tooltipPos() const {
 	return _lastMousePos;
 }
 
+bool BotKeyboard::tooltipWindowActive() const {
+	return Ui::AppInFocus() && Ui::InFocusChain(window());
+}
+
 QString BotKeyboard::tooltipText() const {
 	if (ClickHandlerPtr lnk = ClickHandler::getActive()) {
 		return lnk->tooltip();
@@ -279,7 +310,7 @@ void BotKeyboard::updateSelected() {
 	auto p = mapFromGlobal(_lastMousePos);
 	auto x = rtl() ? st::botKbScroll.width : _st->margin;
 
-	auto link = _impl->getState(p - QPoint(x, _st->margin));
+	auto link = _impl->getLink(p - QPoint(x, _st->margin));
 	if (ClickHandler::setActive(link, this)) {
 		Ui::Tooltip::Hide();
 		setCursor(link ? style::cur_pointer : style::cur_default);

@@ -7,20 +7,31 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "core/base_integration.h"
+
 namespace Core {
 
 class Launcher {
 public:
-	Launcher(int argc, char *argv[]);
+	Launcher(
+		int argc,
+		char *argv[]);
 
 	static std::unique_ptr<Launcher> Create(int argc, char *argv[]);
 
-	int exec();
+	virtual int exec();
 
 	QString argumentsString() const;
-	bool customWorkingDir() const {
-		return _customWorkingDir;
-	}
+	bool customWorkingDir() const;
+
+	uint64 installationTag() const;
+
+	bool checkPortableVersionFolder();
+	void workingFolderReady();
+	void writeDebugModeSetting();
+	void writeInstallBetaVersionsSetting();
+
+	virtual ~Launcher() = default;
 
 protected:
 	enum class UpdaterLaunch {
@@ -30,13 +41,14 @@ protected:
 
 private:
 	void prepareSettings();
+	void initQtMessageLogging();
 	void processArguments();
 
 	QStringList readArguments(int argc, char *argv[]) const;
-	virtual base::optional<QStringList> readArgumentsHook(
+	virtual std::optional<QStringList> readArgumentsHook(
 			int argc,
 			char *argv[]) const {
-		return base::none;
+		return std::nullopt;
 	}
 
 	void init();
@@ -50,6 +62,7 @@ private:
 	int _argc;
 	char **_argv;
 	QStringList _arguments;
+	BaseIntegration _baseIntegration;
 
 	bool _customWorkingDir = false;
 

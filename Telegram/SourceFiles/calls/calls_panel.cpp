@@ -8,290 +8,209 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "calls/calls_panel.h"
 
 #include "data/data_photo.h"
+#include "data/data_session.h"
+#include "data/data_user.h"
+#include "data/data_file_origin.h"
+#include "data/data_photo_media.h"
+#include "data/data_cloud_file.h"
+#include "data/data_changes.h"
 #include "calls/calls_emoji_fingerprint.h"
-#include "styles/style_calls.h"
-#include "styles/style_history.h"
+#include "calls/calls_signal_bars.h"
+#include "calls/calls_userpic.h"
+#include "calls/calls_video_bubble.h"
+#include "calls/calls_video_incoming.h"
+#include "ui/platform/ui_platform_window_title.h"
+#include "ui/widgets/call_button.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/shadow.h"
-#include "ui/effects/ripple_animation.h"
+#include "ui/widgets/window.h"
+#include "ui/image/image.h"
+#include "ui/text/format_values.h"
 #include "ui/wrap/fade_wrap.h"
+#include "ui/wrap/padding_wrap.h"
+#include "ui/platform/ui_platform_utility.h"
+#include "ui/gl/gl_surface.h"
+#include "ui/gl/gl_shader.h"
+#include "ui/toast/toast.h"
 #include "ui/empty_userpic.h"
-#include "messenger.h"
-#include "mainwindow.h"
+#include "ui/emoji_config.h"
+#include "core/application.h"
 #include "lang/lang_keys.h"
-#include "auth_session.h"
+#include "main/main_session.h"
 #include "apiwrap.h"
-#include "observer_peer.h"
 #include "platform/platform_specific.h"
+#include "base/platform/base_platform_info.h"
 #include "window/main_window.h"
+#include "app.h"
+#include "webrtc/webrtc_video_track.h"
+#include "styles/style_calls.h"
+#include "styles/style_chat.h"
+
+#include <QtWidgets/QDesktopWidget>
+#include <QtWidgets/QApplication>
+#include <QtGui/QWindow>
+#include <QtCore/QTimer>
 
 namespace Calls {
-namespace {
-
-constexpr auto kTooltipShowTimeoutMs = 1000;
-
-} // namespace
-
-class Panel::Button : public Ui::RippleButton {
-public:
-	Button(QWidget *parent, const style::CallButton &stFrom, const style::CallButton *stTo = nullptr);
-
-	void setProgress(float64 progress);
-	void setOuterValue(float64 value);
-
-protected:
-	void paintEvent(QPaintEvent *e) override;
-
-	void onStateChanged(State was, StateChangeSource source) override;
-
-	QImage prepareRippleMask() const override;
-	QPoint prepareRippleStartPosition() const override;
-
-private:
-	QPoint iconPosition(not_null<const style::CallButton*> st) const;
-	void mixIconMasks();
-
-	not_null<const style::CallButton*> _stFrom;
-	const style::CallButton *_stTo = nullptr;
-	float64 _progress = 0.;
-
-	QImage _bgMask, _bg;
-	QPixmap _bgFrom, _bgTo;
-	QImage _iconMixedMask, _iconFrom, _iconTo, _iconMixed;
-
-	float64 _outerValue = 0.;
-	Animation _outerAnimation;
-
-};
-
-Panel::Button::Button(QWidget *parent, const style::CallButton &stFrom, const style::CallButton *stTo) : Ui::RippleButton(parent, stFrom.button.ripple)
-, _stFrom(&stFrom)
-, _stTo(stTo) {
-	resize(_stFrom->button.width, _stFrom->button.height);
-
-	_bgMask = prepareRippleMask();
-	_bgFrom = App::pixmapFromImageInPlace(style::colorizeImage(_bgMask, _stFrom->bg));
-	if (_stTo) {
-		Assert(_stFrom->button.width == _stTo->button.width);
-		Assert(_stFrom->button.height == _stTo->button.height);
-		Assert(_stFrom->button.rippleAreaPosition == _stTo->button.rippleAreaPosition);
-		Assert(_stFrom->button.rippleAreaSize == _stTo->button.rippleAreaSize);
-
-		_bg = QImage(_bgMask.size(), QImage::Format_ARGB32_Premultiplied);
-		_bg.setDevicePixelRatio(cRetinaFactor());
-		_bgTo = App::pixmapFromImageInPlace(style::colorizeImage(_bgMask, _stTo->bg));
-		_iconMixedMask = QImage(_bgMask.size(), QImage::Format_ARGB32_Premultiplied);
-		_iconMixedMask.setDevicePixelRatio(cRetinaFactor());
-		_iconFrom = QImage(_bgMask.size(), QImage::Format_ARGB32_Premultiplied);
-		_iconFrom.setDevicePixelRatio(cRetinaFactor());
-		_iconFrom.fill(Qt::black);
-		{
-			Painter p(&_iconFrom);
-			p.drawImage((_stFrom->button.rippleAreaSize - _stFrom->button.icon.width()) / 2, (_stFrom->button.rippleAreaSize - _stFrom->button.icon.height()) / 2, _stFrom->button.icon.instance(Qt::white));
-		}
-		_iconTo = QImage(_bgMask.size(), QImage::Format_ARGB32_Premultiplied);
-		_iconTo.setDevicePixelRatio(cRetinaFactor());
-		_iconTo.fill(Qt::black);
-		{
-			Painter p(&_iconTo);
-			p.drawImage((_stTo->button.rippleAreaSize - _stTo->button.icon.width()) / 2, (_stTo->button.rippleAreaSize - _stTo->button.icon.height()) / 2, _stTo->button.icon.instance(Qt::white));
-		}
-		_iconMixed = QImage(_bgMask.size(), QImage::Format_ARGB32_Premultiplied);
-		_iconMixed.setDevicePixelRatio(cRetinaFactor());
-	}
-}
-
-void Panel::Button::setOuterValue(float64 value) {
-	if (_outerValue != value) {
-		_outerAnimation.start([this] {
-			if (_progress == 0. || _progress == 1.) {
-				update();
-			}
-		}, _outerValue, value, Call::kSoundSampleMs);
-		_outerValue = value;
-	}
-}
-
-void Panel::Button::setProgress(float64 progress) {
-	_progress = progress;
-	update();
-}
-
-void Panel::Button::paintEvent(QPaintEvent *e) {
-	Painter p(this);
-
-	auto ms = getms();
-	auto bgPosition = myrtlpoint(_stFrom->button.rippleAreaPosition);
-	auto paintFrom = (_progress == 0.) || !_stTo;
-	auto paintTo = !paintFrom && (_progress == 1.);
-
-	auto outerValue = _outerAnimation.current(ms, _outerValue);
-	if (outerValue > 0.) {
-		auto outerRadius = paintFrom ? _stFrom->outerRadius : paintTo ? _stTo->outerRadius : (_stFrom->outerRadius * (1. - _progress) + _stTo->outerRadius * _progress);
-		auto outerPixels = outerValue * outerRadius;
-		auto outerRect = QRectF(myrtlrect(bgPosition.x(), bgPosition.y(), _stFrom->button.rippleAreaSize, _stFrom->button.rippleAreaSize));
-		outerRect = outerRect.marginsAdded(QMarginsF(outerPixels, outerPixels, outerPixels, outerPixels));
-
-		PainterHighQualityEnabler hq(p);
-		if (paintFrom) {
-			p.setBrush(_stFrom->outerBg);
-		} else if (paintTo) {
-			p.setBrush(_stTo->outerBg);
-		} else {
-			p.setBrush(anim::brush(_stFrom->outerBg, _stTo->outerBg, _progress));
-		}
-		p.setPen(Qt::NoPen);
-		p.drawEllipse(outerRect);
-	}
-
-	if (paintFrom) {
-		p.drawPixmap(bgPosition, _bgFrom);
-	} else if (paintTo) {
-		p.drawPixmap(bgPosition, _bgTo);
-	} else {
-		style::colorizeImage(_bgMask, anim::color(_stFrom->bg, _stTo->bg, _progress), &_bg);
-		p.drawImage(bgPosition, _bg);
-	}
-
-	auto rippleColorInterpolated = QColor();
-	auto rippleColorOverride = &rippleColorInterpolated;
-	if (paintFrom) {
-		rippleColorOverride = nullptr;
-	} else if (paintTo) {
-		rippleColorOverride = &_stTo->button.ripple.color->c;
-	} else {
-		rippleColorInterpolated = anim::color(_stFrom->button.ripple.color, _stTo->button.ripple.color, _progress);
-	}
-	paintRipple(p, _stFrom->button.rippleAreaPosition.x(), _stFrom->button.rippleAreaPosition.y(), ms, rippleColorOverride);
-
-	auto positionFrom = iconPosition(_stFrom);
-	if (paintFrom) {
-		_stFrom->button.icon.paint(p, positionFrom, width());
-	} else {
-		auto positionTo = iconPosition(_stTo);
-		if (paintTo) {
-			_stTo->button.icon.paint(p, positionTo, width());
-		} else {
-			mixIconMasks();
-			style::colorizeImage(_iconMixedMask, st::callIconFg->c, &_iconMixed);
-			p.drawImage(myrtlpoint(_stFrom->button.rippleAreaPosition), _iconMixed);
-		}
-	}
-}
-
-QPoint Panel::Button::iconPosition(not_null<const style::CallButton*> st) const {
-	auto result = st->button.iconPosition;
-	if (result.x() < 0) {
-		result.setX((width() - st->button.icon.width()) / 2);
-	}
-	if (result.y() < 0) {
-		result.setY((height() - st->button.icon.height()) / 2);
-	}
-	return result;
-}
-
-void Panel::Button::mixIconMasks() {
-	_iconMixedMask.fill(Qt::black);
-
-	Painter p(&_iconMixedMask);
-	PainterHighQualityEnabler hq(p);
-	auto paintIconMask = [this, &p](const QImage &mask, float64 angle) {
-		auto skipFrom = _stFrom->button.rippleAreaSize / 2;
-		p.translate(skipFrom, skipFrom);
-		p.rotate(angle);
-		p.translate(-skipFrom, -skipFrom);
-		p.drawImage(0, 0, mask);
-	};
-	p.save();
-	paintIconMask(_iconFrom, (_stFrom->angle - _stTo->angle) * _progress);
-	p.restore();
-	p.setOpacity(_progress);
-	paintIconMask(_iconTo, (_stTo->angle - _stFrom->angle) * (1. - _progress));
-}
-
-void Panel::Button::onStateChanged(State was, StateChangeSource source) {
-	RippleButton::onStateChanged(was, source);
-
-	auto over = isOver();
-	auto wasOver = static_cast<bool>(was & StateFlag::Over);
-	if (over != wasOver) {
-		update();
-	}
-}
-
-QPoint Panel::Button::prepareRippleStartPosition() const {
-	return mapFromGlobal(QCursor::pos()) - _stFrom->button.rippleAreaPosition;
-}
-
-QImage Panel::Button::prepareRippleMask() const {
-	return Ui::RippleAnimation::ellipseMask(QSize(_stFrom->button.rippleAreaSize, _stFrom->button.rippleAreaSize));
-}
 
 Panel::Panel(not_null<Call*> call)
 : _call(call)
 , _user(call->user())
-, _answerHangupRedial(this, st::callAnswer, &st::callHangup)
-, _decline(this, object_ptr<Button>(this, st::callHangup))
-, _cancel(this, object_ptr<Button>(this, st::callCancel))
-, _mute(this, st::callMuteToggle)
-, _name(this, st::callName)
-, _status(this, st::callStatus) {
+#ifndef Q_OS_MAC
+, _controls(std::make_unique<Ui::Platform::TitleControls>(
+	widget(),
+	st::callTitle,
+	[=](bool maximized) { toggleFullScreen(maximized); }))
+#endif // !Q_OS_MAC
+, _bodySt(&st::callBodyLayout)
+, _answerHangupRedial(widget(), st::callAnswer, &st::callHangup)
+, _decline(widget(), object_ptr<Ui::CallButton>(widget(), st::callHangup))
+, _cancel(widget(), object_ptr<Ui::CallButton>(widget(), st::callCancel))
+, _camera(widget(), st::callCameraMute, &st::callCameraUnmute)
+, _mute(widget(), st::callMicrophoneMute, &st::callMicrophoneUnmute)
+, _name(widget(), st::callName)
+, _status(widget(), st::callStatus) {
 	_decline->setDuration(st::callPanelDuration);
+	_decline->entity()->setText(tr::lng_call_decline());
 	_cancel->setDuration(st::callPanelDuration);
+	_cancel->entity()->setText(tr::lng_call_cancel());
 
-	setMouseTracking(true);
-	setWindowIcon(Window::CreateIcon());
+	initWindow();
+	initWidget();
 	initControls();
 	initLayout();
 	showAndActivate();
 }
 
+Panel::~Panel() = default;
+
+bool Panel::isActive() const {
+	return window()->isActiveWindow()
+		&& window()->isVisible()
+		&& !(window()->windowState() & Qt::WindowMinimized);
+}
+
 void Panel::showAndActivate() {
-	toggleOpacityAnimation(true);
-	raise();
-	setWindowState(windowState() | Qt::WindowActive);
-	activateWindow();
-	setFocus();
+	if (window()->isHidden()) {
+		window()->show();
+	}
+	const auto state = window()->windowState();
+	if (state & Qt::WindowMinimized) {
+		window()->setWindowState(state & ~Qt::WindowMinimized);
+	}
+	window()->raise();
+	window()->activateWindow();
+	window()->setFocus();
+}
+
+void Panel::minimize() {
+	window()->setWindowState(window()->windowState() | Qt::WindowMinimized);
 }
 
 void Panel::replaceCall(not_null<Call*> call) {
-	_call = call;
-	_user = call->user();
-	reinitControls();
+	reinitWithCall(call);
 	updateControlsGeometry();
 }
 
-bool Panel::eventHook(QEvent *e) {
-	if (e->type() == QEvent::WindowDeactivate) {
-		if (_call && _call->state() == State::Established) {
-			hideDeactivated();
+void Panel::initWindow() {
+	window()->setAttribute(Qt::WA_OpaquePaintEvent);
+	window()->setAttribute(Qt::WA_NoSystemBackground);
+	window()->setTitle(_user->name);
+	window()->setTitleStyle(st::callTitle);
+
+	window()->events(
+	) | rpl::start_with_next([=](not_null<QEvent*> e) {
+		if (e->type() == QEvent::Close) {
+			handleClose();
+		} else if (e->type() == QEvent::KeyPress) {
+			if ((static_cast<QKeyEvent*>(e.get())->key() == Qt::Key_Escape)
+				&& window()->isFullScreen()) {
+				window()->showNormal();
+			}
 		}
-	}
-	return RpWidget::eventHook(e);
+	}, window()->lifetime());
+
+	window()->setBodyTitleArea([=](QPoint widgetPoint) {
+		using Flag = Ui::WindowTitleHitTestFlag;
+		if (!widget()->rect().contains(widgetPoint)) {
+			return Flag::None | Flag(0);
+		}
+#ifndef Q_OS_MAC
+		if (_controls->geometry().contains(widgetPoint)) {
+			return Flag::None | Flag(0);
+		}
+#endif // !Q_OS_MAC
+		const auto buttonWidth = st::callCancel.button.width;
+		const auto buttonsWidth = buttonWidth * 4;
+		const auto inControls = (_fingerprint
+			&& _fingerprint->geometry().contains(widgetPoint))
+			|| QRect(
+				(widget()->width() - buttonsWidth) / 2,
+				_answerHangupRedial->y(),
+				buttonsWidth,
+				_answerHangupRedial->height()).contains(widgetPoint)
+			|| (!_outgoingPreviewInBody
+				&& _outgoingVideoBubble->geometry().contains(widgetPoint));
+		return inControls
+			? Flag::None
+			: (Flag::Move | Flag::FullScreen);
+	});
+
+	// Don't do that, it looks awful :(
+//#ifdef Q_OS_WIN
+//	// On Windows we replace snap-to-top maximizing with fullscreen.
+//	//
+//	// We have to switch first to showNormal, so that showFullScreen
+//	// will remember correct normal window geometry and next showNormal
+//	// will show it instead of a moving maximized window.
+//	//
+//	// We have to do it in InvokeQueued, otherwise it still captures
+//	// the maximized window geometry and saves it.
+//	//
+//	// I couldn't find a less glitchy way to do that *sigh*.
+//	const auto object = window()->windowHandle();
+//	const auto signal = &QWindow::windowStateChanged;
+//	QObject::connect(object, signal, [=](Qt::WindowState state) {
+//		if (state == Qt::WindowMaximized) {
+//			InvokeQueued(object, [=] {
+//				window()->showNormal();
+//				InvokeQueued(object, [=] {
+//					window()->showFullScreen();
+//				});
+//			});
+//		}
+//	});
+//#endif // Q_OS_WIN
 }
 
-void Panel::hideDeactivated() {
-	toggleOpacityAnimation(false);
+void Panel::initWidget() {
+	widget()->setMouseTracking(true);
+
+	widget()->paintRequest(
+	) | rpl::start_with_next([=](QRect clip) {
+		paint(clip);
+	}, widget()->lifetime());
+
+	widget()->sizeValue(
+	) | rpl::skip(1) | rpl::start_with_next([=] {
+		updateControlsGeometry();
+	}, widget()->lifetime());
 }
 
 void Panel::initControls() {
 	_hangupShown = (_call->type() == Type::Outgoing);
-	_mute->setClickedCallback([this] {
+	_mute->setClickedCallback([=] {
 		if (_call) {
-			_call->setMute(!_call->isMute());
+			_call->setMuted(!_call->muted());
 		}
 	});
-	subscribe(_call->muteChanged(), [this](bool mute) {
-		_mute->setIconOverride(mute ? &st::callUnmuteIcon : nullptr);
-	});
-	subscribe(Notify::PeerUpdated(), Notify::PeerUpdatedHandler(Notify::PeerUpdate::Flag::NameChanged, [this](const Notify::PeerUpdate &update) {
-		if (!_call || update.peer != _call->user()) {
-			return;
+	_camera->setClickedCallback([=] {
+		if (_call) {
+			_call->switchVideoOutgoing();
 		}
-		_name->setText(App::peerName(_call->user()));
-		updateControlsGeometry();
-	}));
+	});
+
 	_updateDurationTimer.setCallback([this] {
 		if (_call) {
 			updateStatusText(_call->state());
@@ -326,454 +245,536 @@ void Panel::initControls() {
 	_decline->entity()->setClickedCallback(hangupCallback);
 	_cancel->entity()->setClickedCallback(hangupCallback);
 
-	reinitControls();
+	reinitWithCall(_call);
 
 	_decline->finishAnimating();
 	_cancel->finishAnimating();
 }
 
-void Panel::reinitControls() {
+void Panel::setIncomingSize(QSize size) {
+	if (_incomingFrameSize == size) {
+		return;
+	}
+	_incomingFrameSize = size;
+	refreshIncomingGeometry();
+	showControls();
+}
+
+void Panel::refreshIncomingGeometry() {
 	Expects(_call != nullptr);
+	Expects(_incoming != nullptr);
 
-	unsubscribe(_stateChangedSubscription);
-	_stateChangedSubscription = subscribe(_call->stateChanged(), [this](State state) { stateChanged(state); });
-	stateChanged(_call->state());
+	if (_incomingFrameSize.isEmpty()) {
+		_incoming->widget()->hide();
+		return;
+	}
+	const auto to = widget()->size();
+	const auto small = _incomingFrameSize.scaled(to, Qt::KeepAspectRatio);
+	const auto big = _incomingFrameSize.scaled(
+		to,
+		Qt::KeepAspectRatioByExpanding);
 
-	_name->setText(App::peerName(_call->user()));
-	updateStatusText(_call->state());
+	// If we cut out no more than 0.25 of the original, let's use expanding.
+	const auto use = ((big.width() * 3 <= to.width() * 4)
+		&& (big.height() * 3 <= to.height() * 4))
+		? big
+		: small;
+	const auto pos = QPoint(
+		(to.width() - use.width()) / 2,
+		(to.height() - use.height()) / 2);
+	_incoming->widget()->setGeometry(QRect(pos, use));
+	_incoming->widget()->show();
 }
 
-void Panel::initLayout() {
-	setWindowFlags(Qt::WindowFlags(Qt::FramelessWindowHint) | Qt::WindowStaysOnTopHint | Qt::BypassWindowManagerHint | Qt::NoDropShadowWindowHint | Qt::Dialog);
-	setAttribute(Qt::WA_MacAlwaysShowToolWindow);
-	setAttribute(Qt::WA_NoSystemBackground, true);
-	setAttribute(Qt::WA_TranslucentBackground, true);
-
-	initGeometry();
-
-	Notify::PeerUpdateValue(
-		_user,
-		Notify::PeerUpdate::Flag::PhotoChanged
-	) | rpl::start_with_next(
-		[this] { processUserPhoto(); },
-		lifetime());
-	subscribe(Auth().downloaderTaskFinished(), [this] {
-		refreshUserPhoto();
-	});
-	createDefaultCacheImage();
-
-	Platform::InitOnTopPanel(this);
-}
-
-void Panel::toggleOpacityAnimation(bool visible) {
-	if (!_call || _visible == visible) {
+void Panel::reinitWithCall(Call *call) {
+	_callLifetime.destroy();
+	_call = call;
+	if (!_call) {
+		_incoming = nullptr;
+		_outgoingVideoBubble = nullptr;
 		return;
 	}
 
-	_visible = visible;
-	if (_useTransparency) {
-		if (_animationCache.isNull()) {
-			showControls();
-			_animationCache = Ui::GrabWidget(this);
-			hideChildren();
+	_user = _call->user();
+
+	auto remoteMuted = _call->remoteAudioStateValue(
+	) | rpl::map([=](Call::RemoteAudioState state) {
+		return (state == Call::RemoteAudioState::Muted);
+	});
+	rpl::duplicate(
+		remoteMuted
+	) | rpl::start_with_next([=](bool muted) {
+		if (muted) {
+			createRemoteAudioMute();
+		} else {
+			_remoteAudioMute.destroy();
 		}
-		_opacityAnimation.start(
-			[this] { update(); },
-			_visible ? 0. : 1.,
-			_visible ? 1. : 0.,
-			st::callPanelDuration,
-			_visible ? anim::easeOutCirc : anim::easeInCirc);
-	}
-	if (isHidden() && _visible) {
-		show();
-	}
+	}, _callLifetime);
+	_userpic = std::make_unique<Userpic>(
+		widget(),
+		_user,
+		std::move(remoteMuted));
+	_outgoingVideoBubble = std::make_unique<VideoBubble>(
+		widget(),
+		_call->videoOutgoing());
+	_incoming = std::make_unique<Incoming>(
+		widget(),
+		_call->videoIncoming(),
+		_window.backend());
+	_incoming->widget()->hide();
+
+	_call->mutedValue(
+	) | rpl::start_with_next([=](bool mute) {
+		_mute->setProgress(mute ? 1. : 0.);
+		_mute->setText(mute
+			? tr::lng_call_unmute_audio()
+			: tr::lng_call_mute_audio());
+	}, _callLifetime);
+
+	_call->videoOutgoing()->stateValue(
+	) | rpl::start_with_next([=](Webrtc::VideoState state) {
+		const auto active = (state == Webrtc::VideoState::Active);
+		_camera->setProgress(active ? 0. : 1.);
+		_camera->setText(active
+			? tr::lng_call_stop_video()
+			: tr::lng_call_start_video());
+	}, _callLifetime);
+
+	_call->stateValue(
+	) | rpl::start_with_next([=](State state) {
+		stateChanged(state);
+	}, _callLifetime);
+
+	_call->videoIncoming()->renderNextFrame(
+	) | rpl::start_with_next([=] {
+		const auto track = _call->videoIncoming();
+		setIncomingSize(track->state() == Webrtc::VideoState::Active
+			? track->frameSize()
+			: QSize());
+		if (_incoming->widget()->isHidden()) {
+			return;
+		}
+		const auto incoming = incomingFrameGeometry();
+		const auto outgoing = outgoingFrameGeometry();
+		_incoming->widget()->update();
+		if (incoming.intersects(outgoing)) {
+			widget()->update(outgoing);
+		}
+	}, _callLifetime);
+
+	_call->videoIncoming()->stateValue(
+	) | rpl::start_with_next([=](Webrtc::VideoState state) {
+		setIncomingSize((state == Webrtc::VideoState::Active)
+			? _call->videoIncoming()->frameSize()
+			: QSize());
+	}, _callLifetime);
+
+	_call->videoOutgoing()->renderNextFrame(
+	) | rpl::start_with_next([=] {
+		const auto incoming = incomingFrameGeometry();
+		const auto outgoing = outgoingFrameGeometry();
+		widget()->update(outgoing);
+		if (incoming.intersects(outgoing)) {
+			_incoming->widget()->update();
+		}
+	}, _callLifetime);
+
+	rpl::combine(
+		_call->stateValue(),
+		_call->videoOutgoing()->renderNextFrame()
+	) | rpl::start_with_next([=](State state, auto) {
+		if (state != State::Ended
+			&& state != State::EndedByOtherDevice
+			&& state != State::Failed
+			&& state != State::FailedHangingUp
+			&& state != State::HangingUp) {
+			refreshOutgoingPreviewInBody(state);
+		}
+	}, _callLifetime);
+
+	_call->errors(
+	) | rpl::start_with_next([=](Error error) {
+		const auto text = [=] {
+			switch (error.type) {
+			case ErrorType::NoCamera:
+				return tr::lng_call_error_no_camera(tr::now);
+			case ErrorType::NotVideoCall:
+				return tr::lng_call_error_camera_outdated(tr::now, lt_user, _user->name);
+			case ErrorType::NotStartedCall:
+				return tr::lng_call_error_camera_not_started(tr::now);
+				//case ErrorType::NoMicrophone:
+				//	return tr::lng_call_error_no_camera(tr::now);
+			case ErrorType::Unknown:
+				return Lang::Hard::CallErrorIncompatible();
+			}
+			Unexpected("Error type in _call->errors().");
+		}();
+		Ui::Toast::Show(widget(), Ui::Toast::Config{
+			.text = { text },
+			.st = &st::callErrorToast,
+			.multiline = true,
+		});
+	}, _callLifetime);
+
+	_name->setText(_user->name);
+	updateStatusText(_call->state());
+
+	_answerHangupRedial->raise();
+	_decline->raise();
+	_cancel->raise();
+	_camera->raise();
+	_mute->raise();
+
+	_incoming->widget()->lower();
 }
 
-void Panel::finishAnimating() {
-	_animationCache = QPixmap();
-	if (_call) {
-		if (!_visible) {
-			hide();
-		} else {
-			showControls();
-		}
-	} else {
-		destroyDelayed();
-	}
+void Panel::createRemoteAudioMute() {
+	_remoteAudioMute.create(
+		widget(),
+		object_ptr<Ui::FlatLabel>(
+			widget(),
+			tr::lng_call_microphone_off(
+				lt_user,
+				rpl::single(_user->shortName())),
+			st::callRemoteAudioMute),
+		st::callTooltipPadding);
+	_remoteAudioMute->setAttribute(Qt::WA_TransparentForMouseEvents);
+
+	_remoteAudioMute->paintRequest(
+	) | rpl::start_with_next([=] {
+		auto p = QPainter(_remoteAudioMute);
+		const auto height = _remoteAudioMute->height();
+
+		auto hq = PainterHighQualityEnabler(p);
+		p.setBrush(st::videoPlayIconBg);
+		p.setPen(Qt::NoPen);
+		p.drawRoundedRect(_remoteAudioMute->rect(), height / 2, height / 2);
+
+		st::callTooltipMutedIcon.paint(
+			p,
+			st::callTooltipMutedIconPosition,
+			_remoteAudioMute->width());
+	}, _remoteAudioMute->lifetime());
+
+	showControls();
+	updateControlsGeometry();
+}
+
+void Panel::initLayout() {
+	initGeometry();
+
+	_name->setAttribute(Qt::WA_TransparentForMouseEvents);
+	_status->setAttribute(Qt::WA_TransparentForMouseEvents);
+
+	using UpdateFlag = Data::PeerUpdate::Flag;
+	_user->session().changes().peerUpdates(
+		UpdateFlag::Name
+	) | rpl::filter([=](const Data::PeerUpdate &update) {
+		// _user may change for the same Panel.
+		return (_call != nullptr) && (update.peer == _user);
+	}) | rpl::start_with_next([=](const Data::PeerUpdate &update) {
+		_name->setText(_call->user()->name);
+		updateControlsGeometry();
+	}, widget()->lifetime());
+
+#ifndef Q_OS_MAC
+	_controls->raise();
+#endif // !Q_OS_MAC
 }
 
 void Panel::showControls() {
 	Expects(_call != nullptr);
-	showChildren();
+
+	widget()->showChildren();
 	_decline->setVisible(_decline->toggled());
 	_cancel->setVisible(_cancel->toggled());
-}
 
-void Panel::destroyDelayed() {
-	hide();
-	crl::on_main(this, [=] {
-		delete this;
-	});
-}
-
-void Panel::hideAndDestroy() {
-	toggleOpacityAnimation(false);
-	_call = nullptr;
-	if (_animationCache.isNull()) {
-		destroyDelayed();
+	const auto shown = !_incomingFrameSize.isEmpty();
+	_incoming->widget()->setVisible(shown);
+	_name->setVisible(!shown);
+	_status->setVisible(!shown);
+	_userpic->setVisible(!shown);
+	if (_remoteAudioMute) {
+		_remoteAudioMute->setVisible(shown);
 	}
 }
 
-void Panel::processUserPhoto() {
-	if (!_user->userpicLoaded()) {
-		_user->loadUserpic(true);
-	}
-	const auto photo = _user->userpicPhotoId()
-		? App::photo(_user->userpicPhotoId())
-		: nullptr;
-	if (isGoodUserPhoto(photo)) {
-		photo->full->load(true);
-	} else if (_user->userpicPhotoUnknown() || (photo && !photo->date)) {
-		Auth().api().requestFullPeer(_user);
-	}
-	refreshUserPhoto();
+void Panel::closeBeforeDestroy() {
+	window()->close();
+	reinitWithCall(nullptr);
 }
 
-void Panel::refreshUserPhoto() {
-	const auto photo = _user->userpicPhotoId()
-		? App::photo(_user->userpicPhotoId())
-		: nullptr;
-	const auto isNewPhoto = [&](not_null<PhotoData*> photo) {
-		return photo->full->loaded()
-			&& (photo->id != _userPhotoId || !_userPhotoFull);
-	};
-	if (isGoodUserPhoto(photo) && isNewPhoto(photo)) {
-		_userPhotoId = photo->id;
-		_userPhotoFull = true;
-		createUserpicCache(photo->full);
-	} else if (_userPhoto.isNull()) {
-		createUserpicCache(_user->currentUserpic());
-	}
-}
-
-void Panel::createUserpicCache(ImagePtr image) {
-	auto size = st::callWidth * cIntRetinaFactor();
-	auto options = _useTransparency ? (Images::Option::RoundedLarge | Images::Option::RoundedTopLeft | Images::Option::RoundedTopRight | Images::Option::Smooth) : Images::Option::None;
-	if (image) {
-		auto width = image->width();
-		auto height = image->height();
-		if (width > height) {
-			width = qMax((width * size) / height, 1);
-			height = size;
-		} else {
-			height = qMax((height * size) / width, 1);
-			width = size;
-		}
-		_userPhoto = image->pixNoCache(width, height, options, st::callWidth, st::callWidth);
-		if (cRetina()) _userPhoto.setDevicePixelRatio(cRetinaFactor());
-	} else {
-		auto filled = QImage(QSize(st::callWidth, st::callWidth) * cIntRetinaFactor(), QImage::Format_ARGB32_Premultiplied);
-		filled.setDevicePixelRatio(cRetinaFactor());
-		{
-			Painter p(&filled);
-			Ui::EmptyUserpic(
-				Data::PeerUserpicColor(_user->id),
-				_user->name
-			).paintSquare(p, 0, 0, st::callWidth, st::callWidth);
-		}
-		Images::prepareRound(filled, ImageRoundRadius::Large, RectPart::TopLeft | RectPart::TopRight);
-		_userPhoto = App::pixmapFromImageInPlace(std::move(filled));
-	}
-	refreshCacheImageUserPhoto();
-
-	update();
-}
-
-bool Panel::isGoodUserPhoto(PhotoData *photo) {
-	if (!photo || !photo->date) {
-		return false;
-	}
-	auto badAspect = [](int a, int b) {
-		return a > 10 * b;
-	};
-	auto width = photo->full->width();
-	auto height = photo->full->height();
-	return !badAspect(width, height) && !badAspect(height, width);
+rpl::lifetime &Panel::lifetime() {
+	return window()->lifetime();
 }
 
 void Panel::initGeometry() {
-	auto center = Messenger::Instance().getPointForCallPanelCenter();
-	_useTransparency = Platform::TranslucentWindowsSupported(center);
-	setAttribute(Qt::WA_OpaquePaintEvent, !_useTransparency);
-	_padding = _useTransparency ? st::callShadow.extend : style::margins(st::lineWidth, st::lineWidth, st::lineWidth, st::lineWidth);
-	_contentTop = _padding.top() + st::callWidth;
-	auto screen = QApplication::desktop()->screenGeometry(center);
-	auto rect = QRect(0, 0, st::callWidth, st::callHeight);
-	setGeometry(rect.translated(center - rect.center()).marginsAdded(_padding));
-	createBottomImage();
+	const auto center = Core::App().getPointForCallPanelCenter();
+	const auto initRect = QRect(0, 0, st::callWidth, st::callHeight);
+	window()->setGeometry(initRect.translated(center - initRect.center()));
+	window()->setMinimumSize({ st::callWidthMin, st::callHeightMin });
+	window()->show();
 	updateControlsGeometry();
 }
 
-void Panel::createBottomImage() {
-	if (!_useTransparency) {
+void Panel::refreshOutgoingPreviewInBody(State state) {
+	const auto inBody = (state != State::Established)
+		&& (_call->videoOutgoing()->state() != Webrtc::VideoState::Inactive)
+		&& !_call->videoOutgoing()->frameSize().isEmpty();
+	if (_outgoingPreviewInBody == inBody) {
 		return;
 	}
-	auto bottomWidth = width();
-	auto bottomHeight = height() - _padding.top() - st::callWidth;
-	auto image = QImage(QSize(bottomWidth, bottomHeight) * cIntRetinaFactor(), QImage::Format_ARGB32_Premultiplied);
-	image.fill(Qt::transparent);
-	{
-		Painter p(&image);
-		Ui::Shadow::paint(p, QRect(_padding.left(), 0, st::callWidth, bottomHeight - _padding.bottom()), width(), st::callShadow, RectPart::Left | RectPart::Right | RectPart::Bottom);
-		p.setCompositionMode(QPainter::CompositionMode_Source);
-		p.setBrush(st::callBg);
-		p.setPen(Qt::NoPen);
-		PainterHighQualityEnabler hq(p);
-		p.drawRoundedRect(myrtlrect(_padding.left(), -st::historyMessageRadius, st::callWidth, bottomHeight - _padding.bottom() + st::historyMessageRadius), st::historyMessageRadius, st::historyMessageRadius);
-	}
-	_bottomCache = App::pixmapFromImageInPlace(std::move(image));
-}
-
-void Panel::createDefaultCacheImage() {
-	if (!_useTransparency || !_cache.isNull()) {
-		return;
-	}
-	auto cache = QImage(size() * cIntRetinaFactor(), QImage::Format_ARGB32_Premultiplied);
-	cache.setDevicePixelRatio(cRetinaFactor());
-	cache.fill(Qt::transparent);
-	{
-		Painter p(&cache);
-		auto inner = rect().marginsRemoved(_padding);
-		Ui::Shadow::paint(p, inner, width(), st::callShadow);
-		p.setCompositionMode(QPainter::CompositionMode_Source);
-		p.setBrush(st::callBg);
-		p.setPen(Qt::NoPen);
-		PainterHighQualityEnabler hq(p);
-		p.drawRoundedRect(myrtlrect(inner), st::historyMessageRadius, st::historyMessageRadius);
-	}
-	_cache = App::pixmapFromImageInPlace(std::move(cache));
-}
-
-void Panel::refreshCacheImageUserPhoto() {
-	auto cache = QImage(size() * cIntRetinaFactor(), QImage::Format_ARGB32_Premultiplied);
-	cache.setDevicePixelRatio(cRetinaFactor());
-	cache.fill(Qt::transparent);
-	{
-		Painter p(&cache);
-		Ui::Shadow::paint(p, QRect(_padding.left(), _padding.top(), st::callWidth, st::callWidth), width(), st::callShadow, RectPart::Top | RectPart::Left | RectPart::Right);
-		p.drawPixmapLeft(_padding.left(), _padding.top(), width(), _userPhoto);
-		p.drawPixmapLeft(0, _padding.top() + st::callWidth, width(), _bottomCache);
-	}
-	_cache = App::pixmapFromImageInPlace(std::move(cache));
-}
-
-void Panel::resizeEvent(QResizeEvent *e) {
+	_outgoingPreviewInBody = inBody;
+	_bodySt = inBody ? &st::callBodyWithPreview : &st::callBodyLayout;
 	updateControlsGeometry();
+}
+
+void Panel::toggleFullScreen(bool fullscreen) {
+	if (fullscreen) {
+		window()->showFullScreen();
+	} else {
+		window()->showNormal();
+	}
+}
+
+QRect Panel::incomingFrameGeometry() const {
+	return (!_incoming || _incoming->widget()->isHidden())
+		? QRect()
+		: _incoming->widget()->geometry();
+}
+
+QRect Panel::outgoingFrameGeometry() const {
+	return _outgoingVideoBubble->geometry();
 }
 
 void Panel::updateControlsGeometry() {
-	_name->moveToLeft((width() - _name->width()) / 2, _contentTop + st::callNameTop);
+	if (widget()->size().isEmpty()) {
+		return;
+	}
+	if (_incoming) {
+		refreshIncomingGeometry();
+	}
+	if (_fingerprint) {
+#ifndef Q_OS_MAC
+		const auto controlsGeometry = _controls->geometry();
+		const auto halfWidth = widget()->width() / 2;
+		const auto minLeft = (controlsGeometry.center().x() < halfWidth)
+			? (controlsGeometry.width() + st::callFingerprintTop)
+			: 0;
+		const auto minRight = (controlsGeometry.center().x() >= halfWidth)
+			? (controlsGeometry.width() + st::callFingerprintTop)
+			: 0;
+		_incoming->setControlsAlignment(minLeft
+			? style::al_left
+			: style::al_right);
+#else // !Q_OS_MAC
+		const auto minLeft = 0;
+		const auto minRight = 0;
+#endif // _controls
+		const auto desired = (widget()->width() - _fingerprint->width()) / 2;
+		if (minLeft) {
+			_fingerprint->moveToLeft(
+				std::max(desired, minLeft),
+				st::callFingerprintTop);
+		} else {
+			_fingerprint->moveToRight(
+				std::max(desired, minRight),
+				st::callFingerprintTop);
+		}
+	}
+	const auto innerHeight = std::max(widget()->height(), st::callHeightMin);
+	const auto innerWidth = widget()->width() - 2 * st::callInnerPadding;
+	const auto availableTop = st::callFingerprintTop
+		+ (_fingerprint ? _fingerprint->height() : 0)
+		+ st::callFingerprintBottom;
+	const auto available = widget()->height()
+		- st::callBottomControlsHeight
+		- availableTop;
+	const auto bodyPreviewSizeMax = st::callOutgoingPreviewMin
+		+ ((st::callOutgoingPreview
+			- st::callOutgoingPreviewMin)
+			* (innerHeight - st::callHeightMin)
+			/ (st::callHeight - st::callHeightMin));
+	const auto bodyPreviewSize = QSize(
+		std::min(
+			bodyPreviewSizeMax.width(),
+			std::min(innerWidth, st::callOutgoingPreviewMax.width())),
+		std::min(
+			bodyPreviewSizeMax.height(),
+			st::callOutgoingPreviewMax.height()));
+	const auto contentHeight = _bodySt->height
+		+ (_outgoingPreviewInBody ? bodyPreviewSize.height() : 0);
+	const auto remainingHeight = available - contentHeight;
+	const auto skipHeight = remainingHeight
+		/ (_outgoingPreviewInBody ? 3 : 2);
+
+	_bodyTop = availableTop + skipHeight;
+	_buttonsTop = availableTop + available;
+	const auto previewTop = _bodyTop + _bodySt->height + skipHeight;
+
+	_userpic->setGeometry(
+		(widget()->width() - _bodySt->photoSize) / 2,
+		_bodyTop + _bodySt->photoTop,
+		_bodySt->photoSize);
+	_userpic->setMuteLayout(
+		_bodySt->mutePosition,
+		_bodySt->muteSize,
+		_bodySt->muteStroke);
+
+	_name->moveToLeft(
+		(widget()->width() - _name->width()) / 2,
+		_bodyTop + _bodySt->nameTop);
 	updateStatusGeometry();
 
-	auto controlsTop = _contentTop + st::callControlsTop;
-	auto bothWidth = _answerHangupRedial->width() + st::callControlsSkip + st::callCancel.button.width;
-	_decline->moveToLeft((width() - bothWidth) / 2, controlsTop);
-	_cancel->moveToLeft((width() - bothWidth) / 2, controlsTop);
+	if (_remoteAudioMute) {
+		_remoteAudioMute->moveToLeft(
+			(widget()->width() - _remoteAudioMute->width()) / 2,
+			(_buttonsTop
+				- st::callRemoteAudioMuteSkip
+				- _remoteAudioMute->height()));
+	}
+
+	if (_outgoingPreviewInBody) {
+		_outgoingVideoBubble->updateGeometry(
+			VideoBubble::DragMode::None,
+			QRect(
+				(widget()->width() - bodyPreviewSize.width()) / 2,
+				previewTop,
+				bodyPreviewSize.width(),
+				bodyPreviewSize.height()));
+	} else {
+		updateOutgoingVideoBubbleGeometry();
+	}
+
+	auto bothWidth = _answerHangupRedial->width() + st::callCancel.button.width;
+	_decline->moveToLeft((widget()->width() - bothWidth) / 2, _buttonsTop);
+	_cancel->moveToLeft((widget()->width() - bothWidth) / 2, _buttonsTop);
 
 	updateHangupGeometry();
+}
 
-	_mute->moveToRight(_padding.right() + st::callMuteRight, controlsTop);
+void Panel::updateOutgoingVideoBubbleGeometry() {
+	Expects(!_outgoingPreviewInBody);
+
+	const auto margins = QMargins{
+		st::callInnerPadding,
+		st::callInnerPadding,
+		st::callInnerPadding,
+		st::callInnerPadding,
+	};
+	const auto size = st::callOutgoingDefaultSize;
+	_outgoingVideoBubble->updateGeometry(
+		VideoBubble::DragMode::SnapToCorners,
+		widget()->rect().marginsRemoved(margins),
+		size);
 }
 
 void Panel::updateHangupGeometry() {
 	auto singleWidth = _answerHangupRedial->width();
-	auto bothWidth = singleWidth + st::callControlsSkip + st::callCancel.button.width;
-	auto rightFrom = (width() - bothWidth) / 2;
-	auto rightTo = (width() - singleWidth) / 2;
-	auto hangupProgress = _hangupShownProgress.current(_hangupShown ? 1. : 0.);
+	auto bothWidth = singleWidth + st::callCancel.button.width;
+	auto rightFrom = (widget()->width() - bothWidth) / 2;
+	auto rightTo = (widget()->width() - singleWidth) / 2;
+	auto hangupProgress = _hangupShownProgress.value(_hangupShown ? 1. : 0.);
 	auto hangupRight = anim::interpolate(rightFrom, rightTo, hangupProgress);
-	auto controlsTop = _contentTop + st::callControlsTop;
-	_answerHangupRedial->moveToRight(hangupRight, controlsTop);
+	_answerHangupRedial->moveToRight(hangupRight, _buttonsTop);
 	_answerHangupRedial->setProgress(hangupProgress);
+	_mute->moveToRight(hangupRight - _mute->width(), _buttonsTop);
+	_camera->moveToLeft(hangupRight - _mute->width(), _buttonsTop);
 }
 
 void Panel::updateStatusGeometry() {
-	_status->moveToLeft((width() - _status->width()) / 2, _contentTop + st::callStatusTop);
+	_status->moveToLeft(
+		(widget()->width() - _status->width()) / 2,
+		_bodyTop + _bodySt->statusTop);
 }
 
-void Panel::paintEvent(QPaintEvent *e) {
-	Painter p(this);
-	if (!_animationCache.isNull()) {
-		auto opacity = _opacityAnimation.current(getms(), _call ? 1. : 0.);
-		if (!_opacityAnimation.animating()) {
-			finishAnimating();
-			if (!_call || isHidden()) return;
-		} else {
-			Platform::StartTranslucentPaint(p, e);
-			p.setOpacity(opacity);
+void Panel::paint(QRect clip) {
+	Painter p(widget());
 
-			PainterHighQualityEnabler hq(p);
-			auto marginRatio = (1. - opacity) / 5;
-			auto marginWidth = qRound(width() * marginRatio);
-			auto marginHeight = qRound(height() * marginRatio);
-			p.drawPixmap(rect().marginsRemoved(QMargins(marginWidth, marginHeight, marginWidth, marginHeight)), _animationCache, QRect(QPoint(0, 0), _animationCache.size()));
-			return;
-		}
+	auto region = QRegion(clip);
+	if (!_incoming->widget()->isHidden()) {
+		region = region.subtracted(QRegion(_incoming->widget()->geometry()));
 	}
-
-	if (_useTransparency) {
-		Platform::StartTranslucentPaint(p, e);
-		p.drawPixmapLeft(0, 0, width(), _cache);
-	} else {
-		p.drawPixmapLeft(_padding.left(), _padding.top(), width(), _userPhoto);
-		auto callBgOpaque = st::callBg->c;
-		callBgOpaque.setAlpha(255);
-		auto brush = QBrush(callBgOpaque);
-		p.fillRect(0, 0, width(), _padding.top(), brush);
-		p.fillRect(myrtlrect(0, _padding.top(), _padding.left(), _contentTop - _padding.top()), brush);
-		p.fillRect(myrtlrect(width() - _padding.right(), _padding.top(), _padding.right(), _contentTop - _padding.top()), brush);
-		p.fillRect(0, _contentTop, width(), height() - _contentTop, brush);
+	for (const auto rect : region) {
+		p.fillRect(rect, st::callBgOpaque);
 	}
-
-	if (!_fingerprint.empty()) {
-		App::roundRect(p, _fingerprintArea, st::callFingerprintBg, ImageRoundRadius::Small);
-
-		auto realSize = Ui::Emoji::Size(Ui::Emoji::Index() + 1);
-		auto size = realSize / cIntRetinaFactor();
-		auto left = _fingerprintArea.left() + st::callFingerprintPadding.left();
-		auto top = _fingerprintArea.top() + st::callFingerprintPadding.top();
-		for (auto emoji : _fingerprint) {
-			p.drawPixmap(QPoint(left, top), App::emojiLarge(), QRect(emoji->x() * realSize, emoji->y() * realSize, realSize, realSize));
-			left += st::callFingerprintSkip + size;
-		}
+	if (_incoming && _incoming->widget()->isHidden()) {
+		_call->videoIncoming()->markFrameShown();
 	}
 }
 
-void Panel::closeEvent(QCloseEvent *e) {
+void Panel::handleClose() {
 	if (_call) {
 		_call->hangup();
 	}
 }
 
-void Panel::mousePressEvent(QMouseEvent *e) {
-	auto dragArea = myrtlrect(_padding.left(), _padding.top(), st::callWidth, st::callWidth);
-	if (e->button() == Qt::LeftButton) {
-		if (dragArea.contains(e->pos())) {
-			_dragging = true;
-			_dragStartMousePosition = e->globalPos();
-			_dragStartMyPosition = QPoint(x(), y());
-		} else if (!rect().contains(e->pos())) {
-			if (_call && _call->state() == State::Established) {
-				hideDeactivated();
-			}
-		}
-	}
+not_null<Ui::Window*> Panel::window() const {
+	return _window.window();
 }
 
-void Panel::mouseMoveEvent(QMouseEvent *e) {
-	if (_dragging) {
-		Ui::Tooltip::Hide();
-		if (!(e->buttons() & Qt::LeftButton)) {
-			_dragging = false;
-		} else {
-			move(_dragStartMyPosition + (e->globalPos() - _dragStartMousePosition));
-		}
-	} else if (_fingerprintArea.contains(e->pos())) {
-		Ui::Tooltip::Show(kTooltipShowTimeoutMs, this);
-	} else {
-		Ui::Tooltip::Hide();
-	}
-}
-
-void Panel::mouseReleaseEvent(QMouseEvent *e) {
-	if (e->button() == Qt::LeftButton) {
-		_dragging = false;
-	}
-}
-
-void Panel::leaveEventHook(QEvent *e) {
-	Ui::Tooltip::Hide();
-}
-
-void Panel::leaveToChildEvent(QEvent *e, QWidget *child) {
-	Ui::Tooltip::Hide();
-}
-
-QString Panel::tooltipText() const {
-	return lng_call_fingerprint_tooltip(lt_user, App::peerName(_user));
-}
-
-QPoint Panel::tooltipPos() const {
-	return QCursor::pos();
-}
-
-bool Panel::tooltipWindowActive() const {
-	return !isHidden();
+not_null<Ui::RpWidget*> Panel::widget() const {
+	return _window.widget();
 }
 
 void Panel::stateChanged(State state) {
+	Expects(_call != nullptr);
+
 	updateStatusText(state);
 
-	if (_call) {
-		if ((state != State::HangingUp)
-			&& (state != State::Ended)
-			&& (state != State::EndedByOtherDevice)
-			&& (state != State::FailedHangingUp)
-			&& (state != State::Failed)) {
-			auto toggleButton = [this](auto &&button, bool visible) {
-				button->toggle(
-					visible,
-					isHidden()
-						? anim::type::instant
-						: anim::type::normal);
-			};
-			auto incomingWaiting = _call->isIncomingWaiting();
-			if (incomingWaiting) {
-				_updateOuterRippleTimer.callEach(Call::kSoundSampleMs);
-			}
-			toggleButton(_decline, incomingWaiting);
-			toggleButton(_cancel, (state == State::Busy));
-			auto hangupShown = !_decline->toggled()
-				&& !_cancel->toggled();
-			if (_hangupShown != hangupShown) {
-				_hangupShown = hangupShown;
-				_hangupShownProgress.start([this] { updateHangupGeometry(); }, _hangupShown ? 0. : 1., _hangupShown ? 1. : 0., st::callPanelDuration, anim::sineInOut);
-			}
-			if (_fingerprint.empty() && _call->isKeyShaForFingerprintReady()) {
-				fillFingerprint();
-			}
+	if ((state != State::HangingUp)
+		&& (state != State::Ended)
+		&& (state != State::EndedByOtherDevice)
+		&& (state != State::FailedHangingUp)
+		&& (state != State::Failed)) {
+		auto toggleButton = [&](auto &&button, bool visible) {
+			button->toggle(
+				visible,
+				window()->isHidden()
+				? anim::type::instant
+				: anim::type::normal);
+		};
+		auto incomingWaiting = _call->isIncomingWaiting();
+		if (incomingWaiting) {
+			_updateOuterRippleTimer.callEach(Call::kSoundSampleMs);
 		}
-	}
-
-	if (windowHandle()) {
-		// First stateChanged() is called before the first Platform::InitOnTopPanel(this).
-		if ((state == State::Starting) || (state == State::WaitingIncoming)) {
-			Platform::ReInitOnTopPanel(this);
-		} else {
-			Platform::DeInitOnTopPanel(this);
+		toggleButton(_decline, incomingWaiting);
+		toggleButton(_cancel, (state == State::Busy));
+		auto hangupShown = !_decline->toggled()
+			&& !_cancel->toggled();
+		if (_hangupShown != hangupShown) {
+			_hangupShown = hangupShown;
+			_hangupShownProgress.start([this] { updateHangupGeometry(); }, _hangupShown ? 0. : 1., _hangupShown ? 1. : 0., st::callPanelDuration, anim::sineInOut);
 		}
-	}
-	if (state == State::Established) {
-		if (!isActiveWindow()) {
-			hideDeactivated();
+		const auto answerHangupRedialState = incomingWaiting
+			? AnswerHangupRedialState::Answer
+			: (state == State::Busy)
+			? AnswerHangupRedialState::Redial
+			: AnswerHangupRedialState::Hangup;
+		if (_answerHangupRedialState != answerHangupRedialState) {
+			_answerHangupRedialState = answerHangupRedialState;
+			refreshAnswerHangupRedialLabel();
+		}
+		if (!_call->isKeyShaForFingerprintReady()) {
+			_fingerprint.destroy();
+		} else if (!_fingerprint) {
+			_fingerprint = CreateFingerprintAndSignalBars(widget(), _call);
+			updateControlsGeometry();
 		}
 	}
 }
 
-void Panel::fillFingerprint() {
-	Expects(_call != nullptr);
-	_fingerprint = ComputeEmojiFingerprint(_call);
+void Panel::refreshAnswerHangupRedialLabel() {
+	Expects(_answerHangupRedialState.has_value());
 
-	auto realSize = Ui::Emoji::Size(Ui::Emoji::Index() + 1);
-	auto size = realSize / cIntRetinaFactor();
-	auto count = _fingerprint.size();
-	auto rectWidth = count * size + (count - 1) * st::callFingerprintSkip;
-	auto rectHeight = size;
-	auto left = (width() - rectWidth) / 2;
-	auto top = _contentTop - st::callFingerprintBottom - st::callFingerprintPadding.bottom() - size;
-	_fingerprintArea = QRect(left, top, rectWidth, rectHeight).marginsAdded(st::callFingerprintPadding);
-
-	update();
+	_answerHangupRedial->setText([&] {
+		switch (*_answerHangupRedialState) {
+		case AnswerHangupRedialState::Answer: return tr::lng_call_accept();
+		case AnswerHangupRedialState::Hangup: return tr::lng_call_end_call();
+		case AnswerHangupRedialState::Redial: return tr::lng_call_redial();
+		}
+		Unexpected("AnswerHangupRedialState value.");
+	}());
 }
 
 void Panel::updateStatusText(State state) {
@@ -781,27 +782,27 @@ void Panel::updateStatusText(State state) {
 		switch (state) {
 		case State::Starting:
 		case State::WaitingInit:
-		case State::WaitingInitAck: return lang(lng_call_status_connecting);
+		case State::WaitingInitAck: return tr::lng_call_status_connecting(tr::now);
 		case State::Established: {
 			if (_call) {
 				auto durationMs = _call->getDurationMs();
 				auto durationSeconds = durationMs / 1000;
 				startDurationUpdateTimer(durationMs);
-				return formatDurationText(durationSeconds);
+				return Ui::FormatDurationText(durationSeconds);
 			}
-			return lang(lng_call_status_ended);
+			return tr::lng_call_status_ended(tr::now);
 		} break;
 		case State::FailedHangingUp:
-		case State::Failed: return lang(lng_call_status_failed);
-		case State::HangingUp: return lang(lng_call_status_hanging);
+		case State::Failed: return tr::lng_call_status_failed(tr::now);
+		case State::HangingUp: return tr::lng_call_status_hanging(tr::now);
 		case State::Ended:
-		case State::EndedByOtherDevice: return lang(lng_call_status_ended);
-		case State::ExchangingKeys: return lang(lng_call_status_exchanging);
-		case State::Waiting: return lang(lng_call_status_waiting);
-		case State::Requesting: return lang(lng_call_status_requesting);
-		case State::WaitingIncoming: return lang(lng_call_status_incoming);
-		case State::Ringing: return lang(lng_call_status_ringing);
-		case State::Busy: return lang(lng_call_status_busy);
+		case State::EndedByOtherDevice: return tr::lng_call_status_ended(tr::now);
+		case State::ExchangingKeys: return tr::lng_call_status_exchanging(tr::now);
+		case State::Waiting: return tr::lng_call_status_waiting(tr::now);
+		case State::Requesting: return tr::lng_call_status_requesting(tr::now);
+		case State::WaitingIncoming: return tr::lng_call_status_incoming(tr::now);
+		case State::Ringing: return tr::lng_call_status_ringing(tr::now);
+		case State::Busy: return tr::lng_call_status_busy(tr::now);
 		}
 		Unexpected("State in stateChanged()");
 	};
@@ -809,7 +810,7 @@ void Panel::updateStatusText(State state) {
 	updateStatusGeometry();
 }
 
-void Panel::startDurationUpdateTimer(TimeMs currentDuration) {
+void Panel::startDurationUpdateTimer(crl::time currentDuration) {
 	auto msTillNextSecond = 1000 - (currentDuration % 1000);
 	_updateDurationTimer.callOnce(msTillNextSecond + 5);
 }

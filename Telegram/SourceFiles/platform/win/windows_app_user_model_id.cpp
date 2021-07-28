@@ -12,9 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <propkey.h>
 
 #include <roapi.h>
-#include <wrl\client.h>
-#include <wrl\implements.h>
-#include <windows.ui.notifications.h>
+#include <wrl/client.h>
 
 using namespace Microsoft::WRL;
 
@@ -30,7 +28,7 @@ const WCHAR AppUserModelIdRelease[] = L"Telegram.TelegramDesktop.Store";
 #else // OS_WIN_STORE
 const WCHAR AppUserModelIdRelease[] = L"Telegram.TelegramDesktop";
 #endif // OS_WIN_STORE
-const WCHAR AppUserModelIdBeta[] = L"Telegram.TelegramDesktop.Beta";
+const WCHAR AppUserModelIdAlpha[] = L"Telegram.TelegramDesktop.Alpha";
 
 } // namespace
 
@@ -252,8 +250,8 @@ bool validateShortcut() {
 	QString path = systemShortcutPath();
 	if (path.isEmpty() || cExeName().isEmpty()) return false;
 
-	if (cBetaVersion()) {
-		path += qsl("TelegramBeta.lnk");
+	if (cAlphaVersion()) {
+		path += qsl("TelegramAlpha.lnk");
 		if (validateShortcutAt(path)) return true;
 	} else {
 		if (validateShortcutAt(path + qsl("Telegram Desktop/Telegram.lnk"))) return true;
@@ -288,6 +286,7 @@ bool validateShortcut() {
 	PropVariantClear(&appIdPropVar);
 	if (!SUCCEEDED(hr)) return false;
 
+#if WINVER >= 0x602
 	PROPVARIANT startPinPropVar;
 	hr = InitPropVariantFromUInt32(APPUSERMODEL_STARTPINOPTION_NOPINONINSTALL, &startPinPropVar);
 	if (!SUCCEEDED(hr)) return false;
@@ -295,6 +294,7 @@ bool validateShortcut() {
 	hr = propertyStore->SetValue(pkey_AppUserModel_StartPinOption, startPinPropVar);
 	PropVariantClear(&startPinPropVar);
 	if (!SUCCEEDED(hr)) return false;
+#endif // WINVER >= 0x602
 
 	hr = propertyStore->Commit();
 	if (!SUCCEEDED(hr)) return false;
@@ -310,7 +310,7 @@ bool validateShortcut() {
 }
 
 const WCHAR *getId() {
-	return cBetaVersion() ? AppUserModelIdBeta : AppUserModelIdRelease;
+	return cAlphaVersion() ? AppUserModelIdAlpha : AppUserModelIdRelease;
 }
 
 const PROPERTYKEY &getKey() {

@@ -7,9 +7,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+namespace Core {
+class Launcher;
+} // namespace Core
+
 namespace CrashReports {
 
-#ifndef TDESKTOP_DISABLE_CRASH_REPORTS
+QString PlatformString();
+
+#ifndef DESKTOP_APP_DISABLE_CRASH_REPORTS
 
 struct dump {
 	~dump();
@@ -22,18 +28,20 @@ const dump &operator<<(const dump &stream, unsigned long num);
 const dump &operator<<(const dump &stream, unsigned long long num);
 const dump &operator<<(const dump &stream, double num);
 
-#endif // TDESKTOP_DISABLE_CRASH_REPORTS
+#endif // DESKTOP_APP_DISABLE_CRASH_REPORTS
 
 enum Status {
 	CantOpen,
-	LastCrashed,
 	Started
 };
-Status Start();
+// Open status or crash report dump.
+using StartResult = std::variant<Status, QByteArray>;
+StartResult Start();
 Status Restart(); // can be only CantOpen or Started
 void Finish();
 
 void SetAnnotation(const std::string &key, const QString &value);
+void SetAnnotationHex(const std::string &key, const QString &value);
 inline void ClearAnnotation(const std::string &key) {
 	SetAnnotation(key, QString());
 }
@@ -45,28 +53,7 @@ inline void ClearAnnotationRef(const std::string &key) {
 	SetAnnotationRef(key, nullptr);
 }
 
-void StartCatching();
+void StartCatching(not_null<Core::Launcher*> launcher);
 void FinishCatching();
 
 } // namespace CrashReports
-
-namespace base {
-namespace assertion {
-
-inline void log(const char *message, const char *file, int line) {
-	const auto info = QStringLiteral("%1 %2:%3"
-	).arg(message
-	).arg(file
-	).arg(line
-	);
-	const auto entry = QStringLiteral("Assertion Failed! ") + info;
-
-#ifdef LOG
-	LOG((entry));
-#endif // LOG
-
-	CrashReports::SetAnnotation("Assertion", info);
-}
-
-} // namespace assertion
-} // namespace base

@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "dialogs/dialogs_common.h"
+#include "dialogs/dialogs_entry.h"
 #include "dialogs/dialogs_list.h"
 
 class History;
@@ -16,42 +16,51 @@ namespace Dialogs {
 
 class IndexedList {
 public:
-	IndexedList(SortMode sortMode);
+	IndexedList(SortMode sortMode, FilterId filterId = 0);
 
-	RowsByLetter addToEnd(History *history);
-	Row *addByName(History *history);
-	void adjustByPos(const RowsByLetter &links);
-	void moveToTop(not_null<PeerData*> peer);
+	RowsByLetter addToEnd(Key key);
+	Row *addByName(Key key);
+	void adjustByDate(const RowsByLetter &links);
+	void moveToTop(Key key);
 
 	// row must belong to this indexed list all().
 	void movePinned(Row *row, int deltaSign);
 
-	// For sortMode != SortMode::Date
-	void peerNameChanged(not_null<PeerData*> peer, const PeerData::NameFirstChars &oldChars);
+	// For sortMode != SortMode::Date && != Complex
+	void peerNameChanged(
+		not_null<PeerData*> peer,
+		const base::flat_set<QChar> &oldChars);
 
-	//For sortMode == SortMode::Date
-	void peerNameChanged(Mode list, not_null<PeerData*> peer, const PeerData::NameFirstChars &oldChars);
+	//For sortMode == SortMode::Date || == Complex
+	void peerNameChanged(
+		FilterId filterId,
+		not_null<PeerData*> peer,
+		const base::flat_set<QChar> &oldChars);
 
-	void del(not_null<const PeerData*> peer, Row *replacedBy = nullptr);
+	void del(Key key, Row *replacedBy = nullptr);
 	void clear();
 
 	const List &all() const {
 		return _list;
 	}
 	const List *filtered(QChar ch) const {
-		if (auto it = _index.find(ch); it != _index.cend()) {
-			return it->second.get();
-		}
-		return &_empty;
+		const auto i = _index.find(ch);
+		return (i != _index.end()) ? &i->second : nullptr;
 	}
-
-	~IndexedList();
-
+	std::vector<not_null<Row*>> filtered(const QStringList &words) const;
+	
+	//CloudVeil start
+	void clearAll() {
+		clear();
+		_list.resetAll();
+	}
+	//CloudVeil end
+	// 
 	// Part of List interface is duplicated here for all() list.
 	int size() const { return all().size(); }
-	bool isEmpty() const { return all().isEmpty(); }
-	bool contains(PeerId peerId) const { return all().contains(peerId); }
-	Row *getRow(PeerId peerId) const { return all().getRow(peerId); }
+	bool empty() const { return all().empty(); }
+	bool contains(Key key) const { return all().contains(key); }
+	Row *getRow(Key key) const { return all().getRow(key); }
 	Row *rowAtY(int32 y, int32 h) const { return all().rowAtY(y, h); }
 
 	using iterator = List::iterator;
@@ -70,12 +79,18 @@ public:
 	iterator find(int y, int h) { return all().find(y, h); }
 
 private:
-	void adjustByName(not_null<PeerData*> peer, const PeerData::NameFirstChars &oldChars);
-	void adjustNames(Mode list, not_null<PeerData*> peer, const PeerData::NameFirstChars &oldChars);
+	void adjustByName(
+		Key key,
+		const base::flat_set<QChar> &oldChars);
+	void adjustNames(
+		FilterId filterId,
+		not_null<History*> history,
+		const base::flat_set<QChar> &oldChars);
 
-	SortMode _sortMode;
+	SortMode _sortMode = SortMode();
+	FilterId _filterId = 0;
 	List _list, _empty;
-	base::flat_map<QChar, std::unique_ptr<List>> _index;
+	base::flat_map<QChar, List> _index;
 
 };
 

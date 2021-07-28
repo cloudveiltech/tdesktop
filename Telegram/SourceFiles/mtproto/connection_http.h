@@ -9,20 +9,28 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "mtproto/connection_abstract.h"
 
+#include <QtNetwork/QNetworkAccessManager>
+#include <QtNetwork/QNetworkReply>
+
 namespace MTP {
-namespace internal {
+namespace details {
 
-class HTTPConnection : public AbstractConnection {
-	Q_OBJECT
-
+class HttpConnection : public AbstractConnection {
 public:
-	HTTPConnection(QThread *thread);
+	HttpConnection(QThread *thread, const ProxyData &proxy);
 
-	void sendData(mtpBuffer &buffer) override;
+	ConnectionPointer clone(const ProxyData &proxy) override;
+
+	crl::time pingTime() const override;
+	crl::time fullConnectTimeout() const override;
+	void sendData(mtpBuffer &&buffer) override;
 	void disconnectFromServer() override;
-	void connectTcp(const DcOptions::Endpoint &endpoint) override { // not supported
-	}
-	void connectHttp(const DcOptions::Endpoint &endpoint) override;
+	void connectToServer(
+		const QString &address,
+		int port,
+		const bytes::vector &protocolSecret,
+		int16 protocolDcId,
+		bool protocolForFiles) override;
 	bool isConnected() const override;
 	bool usingHttpWait() override;
 	bool needHttpWait() override;
@@ -30,30 +38,32 @@ public:
 	int32 debugState() const override;
 
 	QString transport() const override;
+	QString tag() const override;
 
 	static mtpBuffer handleResponse(QNetworkReply *reply);
-	static qint32 handleError(QNetworkReply *reply); // returnes error code
-
-public slots:
-	void requestFinished(QNetworkReply *reply);
+	static qint32 handleError(QNetworkReply *reply); // Returns error code.
 
 private:
-	enum Status {
-		WaitingHttp = 0,
-		UsingHttp,
-		FinishedWork
+	QUrl url() const;
+
+	void requestFinished(QNetworkReply *reply);
+
+	enum class Status {
+		Waiting = 0,
+		Ready,
+		Finished,
 	};
-	Status status;
-	MTPint128 httpNonce;
-	MTPDdcOption::Flags _flags;
+	Status _status = Status::Waiting;
+	MTPint128 _checkNonce;
 
-	QNetworkAccessManager manager;
-	QUrl address;
+	QNetworkAccessManager _manager;
+	QString _address;
 
-	typedef QSet<QNetworkReply*> Requests;
-	Requests requests;
+	QSet<QNetworkReply*> _requests;
+
+	crl::time _pingTime = 0;
 
 };
 
-} // namespace internal
+} // namespace details
 } // namespace MTP

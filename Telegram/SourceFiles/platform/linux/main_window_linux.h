@@ -8,40 +8,45 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "platform/platform_main_window.h"
+#include "base/unique_qptr.h"
+
+namespace Ui {
+class PopupMenu;
+} // namespace Ui
 
 namespace Platform {
 
 class MainWindow : public Window::MainWindow {
-	Q_OBJECT
-
 public:
-	MainWindow();
+	explicit MainWindow(not_null<Window::Controller*> controller);
 
-	void psFirstShow();
-	void psInitSysMenu();
-	void psUpdateMargins();
+	virtual QImage iconWithCounter(
+		int size,
+		int count,
+		style::color bg,
+		style::color fg,
+		bool smallIcon) = 0;
 
-	void psRefreshTaskbarIcon() {
+	void psShowTrayMenu();
+
+	bool trayAvailable() {
+		return _sniAvailable || QSystemTrayIcon::isSystemTrayAvailable();
 	}
 
-	virtual QImage iconWithCounter(int size, int count, style::color bg, style::color fg, bool smallIcon) = 0;
-
-	static void LibsLoaded();
+	bool isActiveForTrayMenu() override;
 
 	~MainWindow();
 
-public slots:
-	void psShowTrayMenu();
-
-	void psStatusIconCheck();
-	void psUpdateIndicator();
-
 protected:
+	void initHook() override;
 	void unreadCounterChangedHook() override;
+	void updateGlobalMenuHook() override;
 
+	void initTrayMenuHook() override;
 	bool hasTrayIcon() const override;
 
-	void workmodeUpdated(DBIWorkMode mode) override;
+	void workmodeUpdated(Core::Settings::WorkMode mode) override;
+	void createGlobalMenu() override;
 
 	QSystemTrayIcon *trayIcon = nullptr;
 	QMenu *trayIconMenu = nullptr;
@@ -49,17 +54,60 @@ protected:
 	void psTrayMenuUpdated();
 	void psSetupTrayIcon();
 
-	virtual void placeSmallCounter(QImage &img, int size, int count, style::color bg, const QPoint &shift, style::color color) = 0;
+	virtual void placeSmallCounter(
+		QImage &img,
+		int size,
+		int count,
+		style::color bg,
+		const QPoint &shift,
+		style::color color) = 0;
 
 private:
+	class Private;
+	friend class Private;
+	const std::unique_ptr<Private> _private;
+
+	bool _sniAvailable = false;
+	base::unique_qptr<Ui::PopupMenu> _trayIconMenuXEmbed;
+
+	QMenu *psMainMenu = nullptr;
+	QAction *psLogout = nullptr;
+	QAction *psUndo = nullptr;
+	QAction *psRedo = nullptr;
+	QAction *psCut = nullptr;
+	QAction *psCopy = nullptr;
+	QAction *psPaste = nullptr;
+	QAction *psDelete = nullptr;
+	QAction *psSelectAll = nullptr;
+	QAction *psContacts = nullptr;
+	QAction *psAddContact = nullptr;
+	QAction *psNewGroup = nullptr;
+	QAction *psNewChannel = nullptr;
+
+	QAction *psBold = nullptr;
+	QAction *psItalic = nullptr;
+	QAction *psUnderline = nullptr;
+	QAction *psStrikeOut = nullptr;
+	QAction *psMonospace = nullptr;
+	QAction *psClearFormat = nullptr;
+
 	void updateIconCounters();
-	void psCreateTrayIcon();
+	void handleNativeSurfaceChanged(bool exist);
 
-	QTimer _psCheckStatusIconTimer;
-	int _psCheckStatusIconLeft = 100;
+	void psLinuxUndo();
+	void psLinuxRedo();
+	void psLinuxCut();
+	void psLinuxCopy();
+	void psLinuxPaste();
+	void psLinuxDelete();
+	void psLinuxSelectAll();
 
-	QTimer _psUpdateIndicatorTimer;
-	TimeMs _psLastIndicatorUpdate = 0;
+	void psLinuxBold();
+	void psLinuxItalic();
+	void psLinuxUnderline();
+	void psLinuxStrikeOut();
+	void psLinuxMonospace();
+	void psLinuxClearFormat();
 
 };
 

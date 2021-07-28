@@ -14,7 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Storage {
 
 // Allow forward declarations.
-enum class SharedMediaType : char {
+enum class SharedMediaType : signed char {
 	Photo,
 	Video,
 	PhotoVideo,
@@ -26,6 +26,7 @@ enum class SharedMediaType : char {
 	RoundVoiceFile,
 	GIF,
 	RoundFile,
+	Pinned,
 
 	kCount,
 };
@@ -73,7 +74,7 @@ struct SharedMediaAddSlice {
 		SharedMediaType type,
 		std::vector<MsgId> &&messageIds,
 		MsgRange noSkipRange,
-		base::optional<int> count = base::none)
+		std::optional<int> count = std::nullopt)
 		: peerId(peerId)
 		, messageIds(std::move(messageIds))
 		, noSkipRange(noSkipRange)
@@ -85,7 +86,7 @@ struct SharedMediaAddSlice {
 	std::vector<MsgId> messageIds;
 	MsgRange noSkipRange;
 	SharedMediaType type = SharedMediaType::kCount;
-	base::optional<int> count;
+	std::optional<int> count;
 
 };
 
@@ -106,7 +107,20 @@ struct SharedMediaRemoveOne {
 };
 
 struct SharedMediaRemoveAll {
-	SharedMediaRemoveAll(PeerId peerId) : peerId(peerId) {
+	SharedMediaRemoveAll(
+		PeerId peerId,
+		SharedMediaTypesMask types = SharedMediaTypesMask::All())
+	: peerId(peerId)
+	, types(types) {
+	}
+
+	PeerId peerId = 0;
+	SharedMediaTypesMask types;
+
+};
+
+struct SharedMediaInvalidateBottom {
+	SharedMediaInvalidateBottom(PeerId peerId) : peerId(peerId) {
 	}
 
 	PeerId peerId = 0;
@@ -180,11 +194,15 @@ public:
 	void add(SharedMediaAddSlice &&query);
 	void remove(SharedMediaRemoveOne &&query);
 	void remove(SharedMediaRemoveAll &&query);
+	void invalidate(SharedMediaInvalidateBottom &&query);
 
 	rpl::producer<SharedMediaResult> query(SharedMediaQuery &&query) const;
+	SharedMediaResult snapshot(const SharedMediaQuery &query) const;
+	bool empty(const SharedMediaKey &key) const;
 	rpl::producer<SharedMediaSliceUpdate> sliceUpdated() const;
 	rpl::producer<SharedMediaRemoveOne> oneRemoved() const;
 	rpl::producer<SharedMediaRemoveAll> allRemoved() const;
+	rpl::producer<SharedMediaInvalidateBottom> bottomInvalidated() const;
 
 private:
 	using Lists = std::array<SparseIdsList, kSharedMediaTypeCount>;
@@ -196,6 +214,7 @@ private:
 	rpl::event_stream<SharedMediaSliceUpdate> _sliceUpdated;
 	rpl::event_stream<SharedMediaRemoveOne> _oneRemoved;
 	rpl::event_stream<SharedMediaRemoveAll> _allRemoved;
+	rpl::event_stream<SharedMediaInvalidateBottom> _bottomInvalidated;
 
 	rpl::lifetime _lifetime;
 

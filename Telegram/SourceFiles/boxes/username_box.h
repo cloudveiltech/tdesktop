@@ -8,17 +8,20 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "boxes/abstract_box.h"
+#include "mtproto/sender.h"
 
 namespace Ui {
 class UsernameInput;
 class LinkButton;
 } // namespace Ui
 
-class UsernameBox : public BoxContent, public RPCSender {
-	Q_OBJECT
+namespace Main {
+class Session;
+} // namespace Main
 
+class UsernameBox : public Ui::BoxContent {
 public:
-	UsernameBox(QWidget*);
+	UsernameBox(QWidget*, not_null<Main::Session*> session);
 
 protected:
 	void prepare() override;
@@ -27,23 +30,25 @@ protected:
 	void paintEvent(QPaintEvent *e) override;
 	void resizeEvent(QResizeEvent *e) override;
 
-private slots:
-	void onSave();
-
-	void onCheck();
-	void onChanged();
-
-	void onLinkClick();
-
 private:
-	void onUpdateDone(const MTPUser &result);
-	bool onUpdateFail(const RPCError &error);
+	void updateDone(const MTPUser &result);
+	void updateFail(const MTP::Error &error);
 
-	void onCheckDone(const MTPBool &result);
-	bool onCheckFail(const RPCError &error);
+	void checkDone(const MTPBool &result);
+	void checkFail(const MTP::Error &error);
+
+	void save();
+
+	void check();
+	void changed();
+
+	void linkClick();
 
 	QString getName() const;
 	void updateLinkText();
+
+	const not_null<Main::Session*> _session;
+	MTP::Sender _api;
 
 	object_ptr<Ui::UsernameInput> _username;
 	object_ptr<Ui::LinkButton> _link;
@@ -52,7 +57,7 @@ private:
 	mtpRequestId _checkRequestId = 0;
 	QString _sentUsername, _checkUsername, _errorText, _goodText;
 
-	Text _about;
+	Ui::Text::String _about;
 	object_ptr<QTimer> _checkTimer;
 
 };

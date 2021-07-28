@@ -17,6 +17,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <zlib.h>
 
+extern "C" {
 #include <openssl/bn.h>
 #include <openssl/rsa.h>
 #include <openssl/pem.h>
@@ -24,8 +25,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <openssl/err.h>
 #include <openssl/aes.h>
 #include <openssl/evp.h>
+} // extern "C"
 
-#ifdef Q_OS_WIN // use Lzma SDK for win
+#if defined Q_OS_WIN && !defined DESKTOP_APP_USE_PACKAGED // use Lzma SDK for win
 #include <LzmaLib.h>
 #else
 #include <lzma.h>
@@ -34,6 +36,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <string>
 #include <iostream>
 #include <exception>
+
 using std::string;
 using std::wstring;
 using std::cout;

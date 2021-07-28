@@ -8,9 +8,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/serialize_document.h"
 
 #include "storage/serialize_common.h"
-#include "chat_helpers/stickers.h"
+#include "storage/serialize_peer.h"
+#include "data/data_session.h"
+#include "data/stickers/data_stickers.h"
+#include "ui/image/image.h"
+#include "main/main_session.h"
 
+namespace Serialize {
 namespace {
+
+constexpr auto kVersionTag = int32(0x7FFFFFFF);
+constexpr auto kVersion = 2;
 
 enum StickerSetType {
 	StickerSetTypeEmpty = 0,
@@ -20,43 +28,53 @@ enum StickerSetType {
 
 } // namespace
 
-namespace Serialize {
-
 void Document::writeToStream(QDataStream &stream, DocumentData *document) {
 	stream << quint64(document->id) << quint64(document->_access) << qint32(document->date);
-	stream << qint32(document->_version);
+	stream << document->_fileReference << qint32(kVersionTag) << qint32(kVersion);
 	stream << document->filename() << document->mimeString() << qint32(document->_dc) << qint32(document->size);
 	stream << qint32(document->dimensions.width()) << qint32(document->dimensions.height());
 	stream << qint32(document->type);
-	if (auto sticker = document->sticker()) {
+	if (const auto sticker = document->sticker()) {
 		stream << document->sticker()->alt;
-		switch (document->sticker()->set.type()) {
-		case mtpc_inputStickerSetID: {
+		if (document->sticker()->set.id) {
 			stream << qint32(StickerSetTypeID);
-		} break;
-		case mtpc_inputStickerSetShortName: {
+		} else if (!document->sticker()->set.shortName.isEmpty()) {
 			stream << qint32(StickerSetTypeShortName);
-		} break;
-		case mtpc_inputStickerSetEmpty:
-		default: {
+		} else {
 			stream << qint32(StickerSetTypeEmpty);
-		} break;
 		}
-		writeStorageImageLocation(stream, document->sticker()->loc);
 	} else {
-		stream << qint32(document->duration());
-		writeStorageImageLocation(stream, document->thumb->location());
+		stream << qint32(document->getDuration());
 	}
+	writeImageLocation(stream, document->thumbnailLocation());
+	stream << qint32(document->thumbnailByteSize());
+	writeImageLocation(stream, document->videoThumbnailLocation());
+	stream
+		<< qint32(document->videoThumbnailByteSize())
+		<< qint32(document->inlineThumbnailIsPath() ? 1 : 0)
+		<< document->inlineThumbnailBytes();
 }
 
-DocumentData *Document::readFromStreamHelper(int streamAppVersion, QDataStream &stream, const StickerSetInfo *info) {
+DocumentData *Document::readFromStreamHelper(
+		not_null<Main::Session*> session,
+		int streamAppVersion,
+		QDataStream &stream,
+		const StickerSetInfo *info) {
 	quint64 id, access;
 	QString name, mime;
-	qint32 date, dc, size, width, height, type, version;
+	qint32 date, dc, size, width, height, type, versionTag, version = 0;
+	QByteArray fileReference;
 	stream >> id >> access >> date;
 	if (streamAppVersion >= 9061) {
-		stream >> version;
+		if (streamAppVersion >= 1003013) {
+			stream >> fileReference;
+		}
+		stream >> versionTag;
+		if (versionTag == kVersionTag) {
+			stream >> version;
+		}
 	} else {
+		versionTag = 0;
 		version = 0;
 	}
 	stream >> name >> mime >> dc >> size;
@@ -69,18 +87,18 @@ DocumentData *Document::readFromStreamHelper(int streamAppVersion, QDataStream &
 	}
 
 	qint32 duration = -1;
-	StorageImageLocation thumb;
 	if (type == StickerDocument) {
 		QString alt;
 		qint32 typeOfSet;
 		stream >> alt >> typeOfSet;
-
-		thumb = readStorageImageLocation(stream);
-
 		if (typeOfSet == StickerSetTypeEmpty) {
 			attributes.push_back(MTP_documentAttributeSticker(MTP_flags(0), MTP_string(alt), MTP_inputStickerSetEmpty(), MTPMaskCoords()));
 		} else if (info) {
-			if (info->setId == Stickers::DefaultSetId || info->setId == Stickers::CloudRecentSetId || info->setId == Stickers::FavedSetId || info->setId == Stickers::CustomSetId) {
+			if (info->setId == Data::Stickers::DefaultSetId
+				|| info->setId == Data::Stickers::CloudRecentSetId
+				|| info->setId == Data::Stickers::CloudRecentAttachedSetId
+				|| info->setId == Data::Stickers::FavedSetId
+				|| info->setId == Data::Stickers::CustomSetId) {
 				typeOfSet = StickerSetTypeEmpty;
 			}
 
@@ -102,7 +120,21 @@ DocumentData *Document::readFromStreamHelper(int streamAppVersion, QDataStream &
 		if (type == AnimatedDocument) {
 			attributes.push_back(MTP_documentAttributeAnimated());
 		}
-		thumb = readStorageImageLocation(stream);
+	}
+	std::optional<ImageLocation> videoThumb;
+	qint32 thumbnailByteSize = 0, videoThumbnailByteSize = 0;
+	qint32 inlineThumbnailIsPath = 0;
+	QByteArray inlineThumbnailBytes;
+	const auto thumb = readImageLocation(streamAppVersion, stream);
+	if (version >= 1) {
+		stream >> thumbnailByteSize;
+		videoThumb = readImageLocation(streamAppVersion, stream);
+		stream >> videoThumbnailByteSize;
+		if (version >= 2) {
+			stream >> inlineThumbnailIsPath >> inlineThumbnailBytes;
+		}
+	} else {
+		videoThumb = ImageLocation();
 	}
 	if (width > 0 && height > 0) {
 		if (duration >= 0) {
@@ -116,25 +148,64 @@ DocumentData *Document::readFromStreamHelper(int streamAppVersion, QDataStream &
 		}
 	}
 
-	if (!dc && !access) {
+	const auto storage = std::get_if<StorageFileLocation>(
+		&thumb->file().data);
+	if ((stream.status() != QDataStream::Ok)
+		|| (!dc && !access)
+		|| !thumb
+		|| !videoThumb
+		|| (thumb->valid()
+			&& (!storage || !storage->isDocumentThumbnail()))) {
+		stream.setStatus(QDataStream::ReadCorruptData);
+		// We can't convert legacy thumbnail location to modern, because
+		// size letter ('s' or 'm') is lost, it was not saved in legacy.
 		return nullptr;
 	}
-	return App::documentSet(id, nullptr, access, version, date, attributes, mime, thumb.isNull() ? ImagePtr() : ImagePtr(thumb), dc, size, thumb);
+	return session->data().document(
+		id,
+		access,
+		fileReference,
+		date,
+		attributes,
+		mime,
+		InlineImageLocation{
+			inlineThumbnailBytes,
+			(inlineThumbnailIsPath == 1),
+		},
+		ImageWithLocation{
+			.location = *thumb,
+			.bytesCount = thumbnailByteSize
+		},
+		ImageWithLocation{
+			.location = *videoThumb,
+			.bytesCount = videoThumbnailByteSize
+		},
+		dc,
+		size);
 }
 
-DocumentData *Document::readStickerFromStream(int streamAppVersion, QDataStream &stream, const StickerSetInfo &info) {
-	return readFromStreamHelper(streamAppVersion, stream, &info);
+DocumentData *Document::readStickerFromStream(
+		not_null<Main::Session*> session,
+		int streamAppVersion,
+		QDataStream &stream,
+		const StickerSetInfo &info) {
+	return readFromStreamHelper(session, streamAppVersion, stream, &info);
 }
 
-DocumentData *Document::readFromStream(int streamAppVersion, QDataStream &stream) {
-	return readFromStreamHelper(streamAppVersion, stream, nullptr);
+DocumentData *Document::readFromStream(
+		not_null<Main::Session*> session,
+		int streamAppVersion,
+		QDataStream &stream) {
+	return readFromStreamHelper(session, streamAppVersion, stream, nullptr);
 }
 
 int Document::sizeInStream(DocumentData *document) {
 	int result = 0;
 
-	// id + access + date + version
-	result += sizeof(quint64) + sizeof(quint64) + sizeof(qint32) + sizeof(qint32);
+	// id + access + date
+	result += sizeof(quint64) + sizeof(quint64) + sizeof(qint32);
+	// file_reference + version tag + version
+	result += bytearraySize(document->_fileReference) + sizeof(qint32) * 2;
 	// + namelen + name + mimelen + mime + dc + size
 	result += stringSize(document->filename()) + stringSize(document->mimeString()) + sizeof(qint32) + sizeof(qint32);
 	// + width + height
@@ -145,14 +216,17 @@ int Document::sizeInStream(DocumentData *document) {
 	if (auto sticker = document->sticker()) { // type == StickerDocument
 		// + altlen + alt + type-of-set
 		result += stringSize(sticker->alt) + sizeof(qint32);
-		// + thumb loc
-		result += Serialize::storageImageLocationSize();
 	} else {
 		// + duration
 		result += sizeof(qint32);
-		// + thumb loc
-		result += Serialize::storageImageLocationSize();
 	}
+	// + thumb loc
+	result += Serialize::imageLocationSize(document->thumbnailLocation());
+	result += sizeof(qint32); // thumbnail_byte_size
+	result += Serialize::imageLocationSize(document->videoThumbnailLocation());
+	result += sizeof(qint32); // video_thumbnail_byte_size
+
+	result += sizeof(qint32) + Serialize::bytearraySize(document->inlineThumbnailBytes());
 
 	return result;
 }

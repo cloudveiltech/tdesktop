@@ -7,75 +7,18 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-void initLocationManager();
-void reinitLocationManager();
-void deinitLocationManager();
-
-class LocationCoords {
-public:
-	LocationCoords() = default;
-	LocationCoords(float64 lat, float64 lon) : _lat(lat), _lon(lon) {
-	}
-	LocationCoords(const MTPDgeoPoint &point) : _lat(point.vlat.v), _lon(point.vlong.v) {
-	}
-
-	QString latAsString() const {
-		return asString(_lat);
-	}
-	QString lonAsString() const {
-		return asString(_lon);
-	}
-	MTPGeoPoint toMTP() const {
-		return MTP_geoPoint(MTP_double(_lon), MTP_double(_lat));
-	}
-
-private:
-	static QString asString(float64 value) {
-		static constexpr auto kPrecision = 6;
-		return QString::number(value, 'f', kPrecision);
-	}
-
-	friend inline bool operator==(const LocationCoords &a, const LocationCoords &b) {
-		return (a._lat == b._lat) && (a._lon == b._lon);
-	}
-
-	friend inline bool operator<(const LocationCoords &a, const LocationCoords &b) {
-		return (a._lat < b._lat) || ((a._lat == b._lat) && (a._lon < b._lon));
-	}
-
-	friend inline uint qHash(const LocationCoords &t, uint seed = 0) {
-#ifndef OS_MAC_OLD
-		return qHash(QtPrivate::QHashCombine().operator()(qHash(t._lat), t._lon), seed);
-#else // OS_MAC_OLD
-		uint h1 = qHash(t._lat, seed);
-		uint h2 = qHash(t._lon, seed);
-		return ((h1 << 16) | (h1 >> 16)) ^ h2 ^ seed;
-#endif // OS_MAC_OLD
-	}
-
-	float64 _lat = 0;
-	float64 _lon = 0;
-
-};
-
-struct LocationData {
-	LocationData(const LocationCoords &coords) : coords(coords), loading(false) {
-	}
-
-	LocationCoords coords;
-	ImagePtr thumb;
-	bool loading;
-
-	void load();
-};
+#include "data/data_location.h"
 
 class LocationClickHandler : public ClickHandler {
 public:
-	LocationClickHandler(const LocationCoords &coords) : _coords(coords) {
+	LocationClickHandler(const Data::LocationPoint &point)
+	: _point(point) {
 		setup();
 	}
 
-	void onClick(Qt::MouseButton button) const override;
+	static QString Url(const Data::LocationPoint &coords);
+
+	void onClick(ClickContext context) const override;
 
 	QString tooltip() const override {
 		return QString();
@@ -85,45 +28,13 @@ public:
 		return _text;
 	}
 
-	void copyToClipboard() const override {
-		if (!_text.isEmpty()) {
-			QApplication::clipboard()->setText(_text);
-		}
-	}
+	QString copyToClipboardText() const override;
 	QString copyToClipboardContextItemText() const override;
 
 private:
 
 	void setup();
-	LocationCoords _coords;
+	Data::LocationPoint _point;
 	QString _text;
-
-};
-
-class LocationManager : public QObject {
-	Q_OBJECT
-
-public:
-	void init();
-	void reinit();
-	void deinit();
-
-	void getData(LocationData *data);
-
-	~LocationManager() {
-		deinit();
-	}
-
-public slots:
-	void onFinished(QNetworkReply *reply);
-	void onFailed(QNetworkReply *reply);
-
-private:
-	void failed(LocationData *data);
-
-	QNetworkAccessManager *manager = nullptr;
-	QMap<QNetworkReply*, LocationData*> dataLoadings, imageLoadings;
-	QMap<LocationData*, int32> serverRedirects;
-	ImagePtr *notLoadedPlaceholder = nullptr;
 
 };

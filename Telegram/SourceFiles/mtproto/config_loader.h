@@ -9,27 +9,41 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/timer.h"
 #include "base/weak_ptr.h"
-#include "mtproto/rpc_sender.h"
+#include "base/bytes.h"
+#include "mtproto/mtproto_response.h"
 
 namespace MTP {
 
-class SpecialConfigRequest;
 class Instance;
 
-namespace internal {
+namespace details {
+
+class SpecialConfigRequest;
 
 class ConfigLoader : public base::has_weak_ptr {
 public:
-	ConfigLoader(not_null<Instance*> instance, RPCDoneHandlerPtr onDone, RPCFailHandlerPtr onFail);
+	ConfigLoader(
+		not_null<Instance*> instance,
+		const QString &phone,
+		Fn<void(const MTPConfig &result)> onDone,
+		FailHandler onFail,
+		bool proxyEnabled);
 	~ConfigLoader();
 
 	void load();
+	void setPhone(const QString &phone);
+	void setProxyEnabled(bool value);
 
 private:
 	mtpRequestId sendRequest(ShiftedDcId shiftedDcId);
-	void addSpecialEndpoint(DcId dcId, const std::string &ip, int port);
+	void addSpecialEndpoint(
+		DcId dcId,
+		const std::string &ip,
+		int port,
+		bytes::const_span secret);
 	void sendSpecialRequest();
 	void enumerate();
+	void refreshSpecialLoader();
 	void createSpecialLoader();
 	DcId specialToRealDcId(DcId specialDcId);
 	void specialConfigLoaded(const MTPConfig &result);
@@ -45,6 +59,7 @@ private:
 		DcId dcId;
 		std::string ip;
 		int port;
+		bytes::vector secret;
 	};
 	friend bool operator==(const SpecialEndpoint &a, const SpecialEndpoint &b);
 	std::unique_ptr<SpecialConfigRequest> _specialLoader;
@@ -53,9 +68,11 @@ private:
 	base::Timer _specialEnumTimer;
 	DcId _specialEnumCurrent = 0;
 	mtpRequestId _specialEnumRequest = 0;
+	QString _phone;
+	bool _proxyEnabled = false;
 
-	RPCDoneHandlerPtr _doneHandler;
-	RPCFailHandlerPtr _failHandler;
+	Fn<void(const MTPConfig &result)> _doneHandler;
+	FailHandler _failHandler;
 
 };
 
@@ -63,5 +80,5 @@ inline bool operator==(const ConfigLoader::SpecialEndpoint &a, const ConfigLoade
 	return (a.dcId == b.dcId) && (a.ip == b.ip) && (a.port == b.port);
 }
 
-} // namespace internal
+} // namespace details
 } // namespace MTP

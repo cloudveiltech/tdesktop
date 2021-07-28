@@ -11,39 +11,50 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 class ReplyKeyboard;
 
+namespace style {
+struct BotKeyboardButton;
+} // namespace style
+
+namespace Main {
+class Session;
+} // namespace Main
+
 class BotKeyboard
 	: public TWidget
 	, public Ui::AbstractTooltipShower
 	, public ClickHandlerHost {
-	Q_OBJECT
-
 public:
-	BotKeyboard(QWidget *parent);
+	BotKeyboard(not_null<Main::Session*> session, QWidget *parent);
 
 	bool moderateKeyActivate(int index);
 
 	// With force=true the markup is updated even if it is
 	// already shown for the passed history item.
 	bool updateMarkup(HistoryItem *last, bool force = false);
-	bool hasMarkup() const;
-	bool forceReply() const;
+	[[nodiscard]] bool hasMarkup() const;
+	[[nodiscard]] bool forceReply() const;
 
-	void step_selected(TimeMs ms, bool timer);
+	[[nodiscard]] QString placeholder() const {
+		return _placeholder;
+	}
+
+	void step_selected(crl::time ms, bool timer);
 	void resizeToWidth(int newWidth, int maxOuterHeight) {
 		_maxOuterHeight = maxOuterHeight;
 		return TWidget::resizeToWidth(newWidth);
 	}
 
-	bool maximizeSize() const;
-	bool singleUse() const;
+	[[nodiscard]] bool maximizeSize() const;
+	[[nodiscard]] bool singleUse() const;
 
-	FullMsgId forMsgId() const {
+	[[nodiscard]] FullMsgId forMsgId() const {
 		return _wasForMsgId;
 	}
 
 	// AbstractTooltipShower interface
 	QString tooltipText() const override;
 	QPoint tooltipPos() const override;
+	bool tooltipWindowActive() const override;
 
 	// ClickHandlerHost interface
 	void clickHandlerActiveChanged(const ClickHandlerPtr &p, bool active) override;
@@ -67,7 +78,9 @@ private:
 	void updateStyle(int newWidth);
 	void clearSelection();
 
+	const not_null<Main::Session*> _session;
 	FullMsgId _wasForMsgId;
+	QString _placeholder;
 	int _height = 0;
 	int _maxOuterHeight = 0;
 	bool _maximizeSize = false;

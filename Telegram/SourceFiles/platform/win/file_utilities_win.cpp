@@ -11,7 +11,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/localstorage.h"
 #include "platform/win/windows_dlls.h"
 #include "lang/lang_keys.h"
-#include "messenger.h"
+#include "core/application.h"
+#include "core/crash_reports.h"
+#include "window/window_controller.h"
+#include "ui/ui_utility.h"
+
+#include <QtWidgets/QFileDialog>
+#include <QtGui/QDesktopServices>
+#include <QtCore/QSettings>
 
 #include <Shlwapi.h>
 #include <Windowsx.h>
@@ -83,7 +90,14 @@ HBITMAP IconToBitmap(LPWSTR icon, int iconindex) {
 		if (!iconindex) { // try to read image
 			QImage img(QString::fromWCharArray(icon));
 			if (!img.isNull()) {
-				return qt_pixmapToWinHBITMAP(App::pixmapFromImageInPlace(img.scaled(w, h, Qt::IgnoreAspectRatio, Qt::SmoothTransformation)), /* HBitmapAlpha */ 2);
+				return qt_pixmapToWinHBITMAP(
+					Ui::PixmapFromImage(
+						img.scaled(
+							w,
+							h,
+							Qt::IgnoreAspectRatio,
+							Qt::SmoothTransformation)),
+					/* HBitmapAlpha */ 2);
 			}
 		}
 		return 0;
@@ -110,7 +124,13 @@ void UnsafeOpenEmailLink(const QString &email) {
 		auto wstringUrl = url.toString(QUrl::FullyEncoded).toStdWString();
 		if (Dlls::SHOpenWithDialog) {
 			OPENASINFO info;
-			info.oaifInFlags = OAIF_ALLOW_REGISTRATION | OAIF_REGISTER_EXT | OAIF_EXEC | OAIF_FILE_IS_URI | OAIF_URL_PROTOCOL;
+			info.oaifInFlags = OAIF_ALLOW_REGISTRATION
+				| OAIF_REGISTER_EXT
+				| OAIF_EXEC
+#if WINVER >= 0x0602
+				| OAIF_FILE_IS_URI
+#endif // WINVER >= 0x602
+				| OAIF_URL_PROTOCOL;
 			info.pcszClass = NULL;
 			info.pcszFile = wstringUrl.c_str();
 			Dlls::SHOpenWithDialog(0, &info);
@@ -127,12 +147,12 @@ bool UnsafeShowOpenWithDropdown(const QString &filepath, QPoint menuPosition) {
 		return false;
 	}
 
-	auto window = App::wnd();
+	auto window = Core::App().activeWindow();
 	if (!window) {
 		return false;
 	}
 
-	auto parentHWND = window->psHwnd();
+	auto parentHWND = window->widget()->psHwnd();
 	auto wstringPath = QDir::toNativeSeparators(filepath).toStdWString();
 
 	auto result = false;
@@ -202,7 +222,7 @@ bool UnsafeShowOpenWithDropdown(const QString &filepath, QPoint menuPosition) {
 			menuInfo.fType = MFT_STRING;
 			menuInfo.wID = handlers.size() + 1;
 
-			QString name = lang(lng_wnd_choose_program_menu);
+			QString name = tr::lng_wnd_choose_program_menu(tr::now);
 			if (name.size() > 512) name = name.mid(0, 512);
 			WCHAR nameArr[1024];
 			name.toWCharArray(nameArr);
@@ -251,19 +271,6 @@ bool UnsafeShowOpenWith(const QString &filepath) {
 void UnsafeLaunch(const QString &filepath) {
 	auto wstringPath = QDir::toNativeSeparators(filepath).toStdWString();
 	ShellExecute(0, L"open", wstringPath.c_str(), 0, 0, SW_SHOWNORMAL);
-}
-
-void UnsafeShowInFolder(const QString &filepath) {
-	auto nativePath = QDir::toNativeSeparators(filepath);
-	auto wstringPath = nativePath.toStdWString();
-	if (auto pidl = ILCreateFromPathW(wstringPath.c_str())) {
-		SHOpenFolderAndSelectItems(pidl, 0, nullptr, 0);
-		ILFree(pidl);
-	} else {
-		auto pathEscaped = nativePath.replace('"', qsl("\"\""));
-		auto wstringParam = (qstr("/select,") + pathEscaped).toStdWString();
-		ShellExecute(0, 0, L"explorer", wstringParam.c_str(), 0, SW_SHOWNORMAL);
-	}
 }
 
 void PostprocessDownloaded(const QString &filepath) {
@@ -333,7 +340,14 @@ void InitLastPath() {
 	}
 }
 
-bool Get(QStringList &files, QByteArray &remoteContent, const QString &caption, const QString &filter, ::FileDialog::internal::Type type, QString startFile) {
+bool Get(
+		QPointer<QWidget> parent,
+		QStringList &files,
+		QByteArray &remoteContent,
+		const QString &caption,
+		const QString &filter,
+		::FileDialog::internal::Type type,
+		QString startFile) {
 	if (cDialogLastPath().isEmpty()) {
 		Platform::FileDialog::InitLastPath();
 	}
@@ -344,7 +358,6 @@ bool Get(QStringList &files, QByteArray &remoteContent, const QString &caption, 
 	// that forced file icon and maybe other properties being resolved and this was
 	// a blocking operation.
 	auto helperPath = cDialogHelperPathFinal();
-	auto parent = Messenger::Instance().getFileDialogParent();
 	QFileDialog dialog(parent, caption, helperPath, filter);
 
 	dialog.setModal(true);
@@ -353,11 +366,7 @@ bool Get(QStringList &files, QByteArray &remoteContent, const QString &caption, 
 		dialog.setAcceptMode(QFileDialog::AcceptOpen);
 	} else if (type == Type::ReadFolder) { // save dir
 		dialog.setAcceptMode(QFileDialog::AcceptOpen);
-
-		// We use "obsolete" value ::DirectoryOnly instead of ::Directory + ::ShowDirsOnly
-		// because in Windows XP native dialog this one works, while the "preferred" one
-		// shows a native file choose dialog where you can't choose a directory, only open one.
-		dialog.setFileMode(QFileDialog::DirectoryOnly);
+		dialog.setFileMode(QFileDialog::Directory);
 		dialog.setOption(QFileDialog::ShowDirsOnly);
 	} else { // save file
 		dialog.setFileMode(QFileDialog::AnyFile);
@@ -365,51 +374,61 @@ bool Get(QStringList &files, QByteArray &remoteContent, const QString &caption, 
 	}
 	dialog.show();
 
-	auto realLastPath = ([startFile] {
+	auto realLastPath = [=] {
 		// If we're given some non empty path containing a folder - use it.
 		if (!startFile.isEmpty() && (startFile.indexOf('/') >= 0 || startFile.indexOf('\\') >= 0)) {
 			return QFileInfo(startFile).dir().absolutePath();
 		}
 		return cDialogLastPath();
-	})();
+	}();
 	if (realLastPath.isEmpty() || realLastPath.endsWith(qstr("/tdummy"))) {
-		realLastPath = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+		realLastPath = QStandardPaths::writableLocation(
+			QStandardPaths::DownloadLocation);
 	}
 	dialog.setDirectory(realLastPath);
 
+	auto toSelect = startFile;
 	if (type == Type::WriteFile) {
-		auto toSelect = startFile;
-		auto lastSlash = toSelect.lastIndexOf('/');
+		const auto lastSlash = toSelect.lastIndexOf('/');
 		if (lastSlash >= 0) {
 			toSelect = toSelect.mid(lastSlash + 1);
 		}
-		auto lastBackSlash = toSelect.lastIndexOf('\\');
+		const auto lastBackSlash = toSelect.lastIndexOf('\\');
 		if (lastBackSlash >= 0) {
 			toSelect = toSelect.mid(lastBackSlash + 1);
 		}
 		dialog.selectFile(toSelect);
 	}
 
-	int res = dialog.exec();
+	CrashReports::SetAnnotation(
+		"file_dialog",
+		QString("caption:%1;helper:%2;filter:%3;real:%4;select:%5"
+		).arg(caption
+		).arg(helperPath
+		).arg(filter
+		).arg(realLastPath
+		).arg(toSelect));
+	const auto result = dialog.exec();
+	CrashReports::ClearAnnotation("file_dialog");
 
 	if (type != Type::ReadFolder) {
 		// Save last used directory for all queries except directory choosing.
-		auto path = dialog.directory().absolutePath();
+		const auto path = dialog.directory().absolutePath();
 		if (path != cDialogLastPath()) {
 			cSetDialogLastPath(path);
-			Local::writeUserSettings();
+			Local::writeSettings();
 		}
 	}
 
-	if (res == QDialog::Accepted) {
+	if (result == QDialog::Accepted) {
 		if (type == Type::ReadFiles) {
 			files = dialog.selectedFiles();
 		} else {
 			files = dialog.selectedFiles().mid(0, 1);
 		}
-		if (type == Type::ReadFile || type == Type::ReadFiles) {
-			remoteContent = dialog.selectedRemoteContent();
-		}
+		//if (type == Type::ReadFile || type == Type::ReadFiles) {
+		//	remoteContent = dialog.selectedRemoteContent();
+		//}
 		return true;
 	}
 

@@ -12,7 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/info_wrap_widget.h"
 
 namespace Storage {
-enum class SharedMediaType : char;
+enum class SharedMediaType : signed char;
 } // namespace Storage
 
 namespace Ui {
@@ -24,6 +24,9 @@ class PaddingWrap;
 } // namespace Ui
 
 namespace Info {
+namespace Settings {
+struct Tag;
+} // namespace Settings
 
 class ContentMemento;
 class Controller;
@@ -36,15 +39,14 @@ public:
 
 	virtual bool showInternal(
 		not_null<ContentMemento*> memento) = 0;
-	std::unique_ptr<ContentMemento> createMemento();
+	std::shared_ptr<ContentMemento> createMemento();
 
-	virtual rpl::producer<Section> sectionRequest() const;
 	virtual void setIsStackBottom(bool isStackBottom) {
 	}
 
 	rpl::producer<int> scrollHeightValue() const;
 	rpl::producer<int> desiredHeightValue() const override;
-	rpl::producer<bool> desiredShadowVisibility() const;
+	virtual rpl::producer<bool> desiredShadowVisibility() const;
 	bool hasTopBarShadow() const;
 
 	virtual void setInnerFocus();
@@ -60,12 +62,15 @@ public:
 	rpl::producer<int> scrollTillBottomChanges() const;
 
 	// Float player interface.
-	bool wheelEventFromFloatPlayer(QEvent *e);
-	QRect rectForFloatPlayer() const;
+	bool floatPlayerHandleWheelEvent(QEvent *e);
+	QRect floatPlayerAvailableRect() const;
 
 	virtual rpl::producer<SelectedItems> selectedListValue() const;
 	virtual void cancelSelection() {
 	}
+
+	virtual rpl::producer<bool> canSaveChanges() const;
+	virtual void saveChanges(FnMut<void()> done);
 
 protected:
 	template <typename Widget>
@@ -91,7 +96,7 @@ private:
 	void updateControlsGeometry();
 	void refreshSearchField(bool shown);
 
-	virtual std::unique_ptr<ContentMemento> doCreateMemento() = 0;
+	virtual std::shared_ptr<ContentMemento> doCreateMemento() = 0;
 
 	const not_null<Controller*> _controller;
 
@@ -111,9 +116,14 @@ private:
 
 class ContentMemento {
 public:
-	ContentMemento(PeerId peerId, PeerId migratedPeerId)
-	: _peerId(peerId)
+	ContentMemento(not_null<PeerData*> peer, PeerId migratedPeerId)
+	: _peer(peer)
 	, _migratedPeerId(migratedPeerId) {
+	}
+	explicit ContentMemento(Settings::Tag settings);
+	ContentMemento(not_null<PollData*> poll, FullMsgId contextId)
+	: _poll(poll)
+	, _pollContextId(contextId) {
 	}
 
 	virtual object_ptr<ContentWidget> createWidget(
@@ -121,12 +131,22 @@ public:
 		not_null<Controller*> controller,
 		const QRect &geometry) = 0;
 
-	PeerId peerId() const {
-		return _peerId;
+	PeerData *peer() const {
+		return _peer;
 	}
 	PeerId migratedPeerId() const {
 		return _migratedPeerId;
 	}
+	UserData *settingsSelf() const {
+		return _settingsSelf;
+	}
+	PollData *poll() const {
+		return _poll;
+	}
+	FullMsgId pollContextId() const {
+		return _pollContextId;
+	}
+	Key key() const;
 
 	virtual Section section() const = 0;
 
@@ -158,8 +178,12 @@ public:
 	}
 
 private:
-	const PeerId _peerId = 0;
+	PeerData * const _peer = nullptr;
 	const PeerId _migratedPeerId = 0;
+	UserData * const _settingsSelf = nullptr;
+	PollData * const _poll = nullptr;
+	const FullMsgId _pollContextId;
+
 	int _scrollTop = 0;
 	QString _searchFieldQuery;
 	bool _searchEnabledByContent = false;

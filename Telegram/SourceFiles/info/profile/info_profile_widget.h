@@ -19,9 +19,7 @@ struct MembersState;
 class Memento final : public ContentMemento {
 public:
 	Memento(not_null<Controller*> controller);
-	Memento(PeerId peerId, PeerId migratedPeerId)
-	: ContentMemento(peerId, migratedPeerId) {
-	}
+	Memento(not_null<PeerData*> peer, PeerId migratedPeerId);
 
 	object_ptr<ContentWidget> createWidget(
 		QWidget *parent,
@@ -43,7 +41,6 @@ public:
 
 private:
 	bool _infoExpanded = true;
-	base::optional<QString> _membersSearch;
 	std::unique_ptr<MembersState> _membersState;
 
 };
@@ -69,7 +66,7 @@ private:
 	void saveState(not_null<Memento*> memento);
 	void restoreState(not_null<Memento*> memento);
 
-	std::unique_ptr<ContentMemento> doCreateMemento() override;
+	std::shared_ptr<ContentMemento> doCreateMemento() override;
 
 	InnerWidget *_inner = nullptr;
 

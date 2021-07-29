@@ -1,0 +1,59 @@
+#pragma once
+#include "cloudveil/request/SettingsRequest.h"
+#include "data/stickers/data_stickers.h"
+#include "data/data_document.h"
+
+class History;
+
+class SettingsResponse
+{
+public:
+	QMap<int32, bool> channels;
+	QMap<int32, bool> bots;
+	QMap<int32, bool> groups;
+	QMap<uint64, bool> stickers;
+	QMap<int32, bool> users;
+
+	bool secretChat;
+	int secretChatMinimumLength;
+
+	bool disableBio;
+	bool disableBioChange;
+	bool disableProfilePhoto;
+	bool disableProfilePhotoChange;
+	bool disableStickers;
+	bool disableGifs = true;
+	bool manageUsers;
+	QString bannedImageUrl;
+
+public:
+	void readFromJson(QJsonObject &jsonObject);
+
+	void saveToCache();
+	static SettingsResponse loadFromCache();
+
+	bool isDialogAllowed(History *history); 
+	bool isDialogAllowed(PeerData *peer);
+	bool isDialogSecured(PeerData *peer);
+	bool isStickerSetAllowed(Data::StickersSet &set);
+	bool isStickerSetAllowed(Data::StickersSet *set);
+	bool isStickerSetKnown(DocumentData *data);
+	bool isStickerSetAllowed(StickerData *stickerData);
+	bool isStickerSetAllowed(DocumentData *data);
+	bool isStickerSetAllowed(uint64 id);
+
+	void saveBannedImage();
+	Data::StickersPack filterStickersPack(Data::StickersPack &pack);
+
+	SettingsResponse();
+	~SettingsResponse();
+
+private:
+	template<typename T> void readAcccessObject(QJsonObject& accessObject, QString key, QMap<T, bool> &objects);
+	template<typename T> void readArrayFromJson(QJsonArray &jsonArray, QMap<T, bool> &objects);
+
+	void writeToJson(QJsonObject &json);
+	template<typename T> void writeAcccessObject(QJsonObject& accessObject, QString key, QMap<T, bool> &objects);
+	template<typename T> void writeArrayToJson(QJsonArray &jsonArray, QMap<T, bool> channels);
+};
+

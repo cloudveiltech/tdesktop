@@ -257,7 +257,11 @@ public Q_SLOTS:
 	//CloudVeil start
 	void requestCloudVeil();
 	void simpleUpdateReceived(UpdateResponse* response);
-	//CloudVeil end
+        
+Q_SIGNALS:
+    void dialogsUpdated();
+    //CloudVeil end
+        
 protected:
 	void paintEvent(QPaintEvent *e) override;
 	void resizeEvent(QResizeEvent *e) override;

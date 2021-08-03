@@ -112,6 +112,8 @@ class HistoryInner;
 struct HistoryMessageMarkupButton;
 
 class HistoryWidget final : public Window::AbstractSectionWidget {
+    
+    Q_OBJECT
 public:
 	using FieldHistoryAction = Ui::InputField::HistoryAction;
 	using RecordLock = HistoryView::Controls::RecordLock;
@@ -763,7 +765,7 @@ private:
 	rpl::event_stream<> _cancelRequests;
 
 	//CloudVeil start
-private Q_SLOTS:
+public Q_SLOTS:
 	void onSettingsUpdate();
 	//CloudVeil end
 };

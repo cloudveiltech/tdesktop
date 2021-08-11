@@ -1111,6 +1111,9 @@ bool Session::sendActionsAnimationCallback(crl::time now) {
 }
 
 bool Session::chatsListLoaded(Data::Folder *folder) {
+	//CloudVeil start
+	App::main()->dialogsUpdated();
+	//CloudVeil end
 	return chatsList(folder)->loaded();
 }
 
@@ -1120,6 +1123,9 @@ void Session::chatsListChanged(FolderId folderId) {
 
 void Session::chatsListChanged(Data::Folder *folder) {
 	_chatsListChanged.fire_copy(folder);
+	//CloudVeil start
+	App::main()->dialogsUpdated();
+	//CloudVeil end
 }
 
 void Session::chatsListDone(Data::Folder *folder) {

@@ -2104,6 +2104,9 @@ void InnerWidget::peerSearchReceived(
 	if (_state != WidgetState::Filtered) {
 		return;
 	}
+	//CloudVeil start disable global search
+	return;
+	//CloudVeil end
 
 	const auto alreadyAdded = [&](not_null<PeerData*> peer) {
 		for (const auto &row : _filterResults) {

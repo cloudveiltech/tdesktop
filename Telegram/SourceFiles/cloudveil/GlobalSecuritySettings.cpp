@@ -36,7 +36,9 @@ GlobalSecuritySettings::GlobalSecuritySettings(QObject *parent) : QObject(parent
 }
 
 GlobalSecuritySettings::~GlobalSecuritySettings() {
-	instance = nullptr;
+	if (instance == this) {
+		instance = nullptr;
+	}
 }
 
 void GlobalSecuritySettings::updateFromServer() {

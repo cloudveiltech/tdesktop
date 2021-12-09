@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_peer.h"
 #include "media/view/media_view_pip.h"
 #include "webrtc/webrtc_video_track.h"
+#include "ui/image/image_prepare.h"
 #include "lang/lang_keys.h"
 #include "styles/style_calls.h"
 #include "styles/palette.h"
@@ -50,7 +51,7 @@ void Viewport::RendererSW::paintFallback(
 		}
 		paintTile(p, tile.get(), bounding, bg);
 	}
-	for (const auto rect : bg) {
+	for (const auto &rect : bg) {
 		p.fillRect(rect, st::groupCallBg);
 	}
 	for (auto i = _tileData.begin(); i != _tileData.end();) {
@@ -71,21 +72,12 @@ void Viewport::RendererSW::validateUserpicFrame(
 	} else if (!data.userpicFrame.isNull()) {
 		return;
 	}
-	auto userpic = QImage(
-		tile->trackOrUserpicSize(),
-		QImage::Format_ARGB32_Premultiplied);
-	userpic.fill(Qt::black);
-	{
-		auto p = Painter(&userpic);
-		tile->row()->peer()->paintUserpicSquare(
-			p,
-			tile->row()->ensureUserpicView(),
-			0,
-			0,
-			userpic.width());
-	}
+	const auto size = tile->trackOrUserpicSize();
 	data.userpicFrame = Images::BlurLargeImage(
-		std::move(userpic),
+		tile->row()->peer()->generateUserpicImage(
+			tile->row()->ensureUserpicView(),
+			size.width(),
+			ImageRoundRadius::None),
 		kBlurRadius);
 }
 
@@ -286,7 +278,10 @@ void Viewport::RendererSW::paintTileControls(
 
 	// Shadow.
 	if (_shadow.isNull()) {
-		_shadow = GenerateShadow(st.shadowHeight, 0, kShadowMaxAlpha);
+		_shadow = Images::GenerateShadow(
+			st.shadowHeight,
+			0,
+			kShadowMaxAlpha);
 	}
 	const auto shadowRect = QRect(
 		x,

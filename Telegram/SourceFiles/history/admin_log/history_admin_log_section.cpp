@@ -23,7 +23,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/themes/window_theme.h"
 #include "window/window_adaptive.h"
 #include "window/window_session_controller.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "base/timer.h"
 #include "data/data_channel.h"
 #include "data/data_session.h"
@@ -275,11 +275,14 @@ Widget::Widget(
 	QWidget *parent,
 	not_null<Window::SessionController*> controller,
 	not_null<ChannelData*> channel)
-: Window::SectionWidget(parent, controller)
+: Window::SectionWidget(parent, controller, rpl::single<PeerData*>(channel))
 , _scroll(this, st::historyScroll, false)
 , _fixedBar(this, controller, channel)
 , _fixedBarShadow(this)
-, _whatIsThis(this, tr::lng_admin_log_about(tr::now).toUpper(), st::historyComposeButton) {
+, _whatIsThis(
+		this,
+		tr::lng_admin_log_about(tr::now).toUpper(),
+		st::historyComposeButton) {
 	_fixedBar->move(0, 0);
 	_fixedBar->resizeToWidth(width());
 	_fixedBar->showFilterRequests(
@@ -319,11 +322,13 @@ Widget::Widget(
 
 	_scroll->move(0, _fixedBar->height());
 	_scroll->show();
-
-	connect(_scroll, &Ui::ScrollArea::scrolled, this, [this] { onScroll(); });
+	_scroll->scrolls(
+	) | rpl::start_with_next([=] {
+		onScroll();
+	}, lifetime());
 
 	_whatIsThis->setClickedCallback([=] {
-		controller->show(Box<InformBox>(channel->isMegagroup()
+		controller->show(Box<Ui::InformBox>(channel->isMegagroup()
 			? tr::lng_admin_log_about_text(tr::now)
 			: tr::lng_admin_log_about_text_channel(tr::now)));
 	});
@@ -467,7 +472,8 @@ void Widget::paintEvent(QPaintEvent *e) {
 	//auto ms = crl::now();
 	//_historyDownShown.step(ms);
 
-	SectionWidget::PaintBackground(controller(), this, e->rect());
+	const auto clip = e->rect();
+	SectionWidget::PaintBackground(controller(), _inner->theme(), this, clip);
 }
 
 void Widget::onScroll() {

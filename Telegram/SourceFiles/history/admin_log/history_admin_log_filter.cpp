@@ -32,7 +32,6 @@ public:
 		return _check->checked();
 	}
 	rpl::producer<bool> checkedChanges() const;
-	rpl::producer<bool> checkedValue() const;
 
 	enum class NotifyAboutChange {
 		Notify,
@@ -41,8 +40,6 @@ public:
 	void setChecked(
 		bool checked,
 		NotifyAboutChange notify = NotifyAboutChange::Notify);
-
-	void finishAnimating();
 
 	QMargins getMargins() const override {
 		return _st.margin;
@@ -90,10 +87,6 @@ rpl::producer<bool> UserCheckbox::checkedChanges() const {
 	return _checkedChanges.events();
 }
 
-rpl::producer<bool> UserCheckbox::checkedValue() const {
-	return _checkedChanges.events_starting_with(checked());
-}
-
 void UserCheckbox::setChecked(bool checked, NotifyAboutChange notify) {
 	if (_check->checked() != checked) {
 		_check->setChecked(checked, anim::type::normal);
@@ -131,10 +124,6 @@ void UserCheckbox::paintEvent(QPaintEvent *e) {
 	p.setFont(st::contactsStatusFont);
 	p.setPen(_statusOnline ? st::contactsStatusFgOnline : st::contactsStatusFg);
 	p.drawTextLeft(statusLeft, statusTop, width(), _statusText);
-}
-
-void UserCheckbox::finishAnimating() {
-	_check->finishAnimating();
 }
 
 int UserCheckbox::resizeGetHeight(int newWidth) {
@@ -193,10 +182,12 @@ private:
 	not_null<ChannelData*> _channel;
 
 	QPointer<Ui::Checkbox> _allFlags;
-	QMap<MTPDchannelAdminLogEventsFilter::Flags, QPointer<Ui::Checkbox>> _filterFlags;
+	base::flat_map<
+		FilterValue::Flags,
+		QPointer<Ui::Checkbox>> _filterFlags;
 
 	QPointer<Ui::Checkbox> _allUsers;
-	QMap<not_null<UserData*>, QPointer<UserCheckbox>> _admins;
+	base::flat_map<not_null<UserData*>, QPointer<UserCheckbox>> _admins;
 	bool _restoringInvariant = false;
 
 	struct Row {
@@ -235,7 +226,7 @@ void FilterBox::Inner::createAllActionsCheckbox(const FilterValue &filter) {
 	) | rpl::start_with_next([=](bool checked) {
 		if (!std::exchange(_restoringInvariant, true)) {
 			auto allChecked = _allFlags->checked();
-			for_const (auto &&checkbox, _filterFlags) {
+			for (const auto &[flag, checkbox] : _filterFlags) {
 				checkbox->setChecked(allChecked);
 			}
 			_restoringInvariant = false;
@@ -247,17 +238,17 @@ void FilterBox::Inner::createAllActionsCheckbox(const FilterValue &filter) {
 }
 
 void FilterBox::Inner::createActionsCheckboxes(const FilterValue &filter) {
-	using Flag = MTPDchannelAdminLogEventsFilter::Flag;
-	using Flags = MTPDchannelAdminLogEventsFilter::Flags;
+	using Flag = FilterValue::Flag;
+	using Flags = FilterValue::Flags;
 	auto addFlag = [this, &filter](Flags flag, QString &&text) {
 		auto checked = (filter.flags == 0) || (filter.flags & flag);
 		auto checkbox = addRow(object_ptr<Ui::Checkbox>(this, std::move(text), checked, st::defaultBoxCheckbox), st::adminLogFilterLittleSkip);
-		_filterFlags.insert(flag, checkbox);
+		_filterFlags[flag] = checkbox;
 		checkbox->checkedChanges(
 		) | rpl::start_with_next([=](bool checked) {
 			if (!std::exchange(_restoringInvariant, true)) {
 				auto allChecked = true;
-				for_const (auto &&checkbox, _filterFlags) {
+				for (const auto &[flag, checkbox] : _filterFlags) {
 					if (!checkbox->checked()) {
 						allChecked = false;
 						break;
@@ -273,19 +264,40 @@ void FilterBox::Inner::createActionsCheckboxes(const FilterValue &filter) {
 	};
 	auto isGroup = _channel->isMegagroup();
 	if (isGroup) {
-		addFlag(Flag::f_ban | Flag::f_unban | Flag::f_kick | Flag::f_unkick, tr::lng_admin_log_filter_restrictions(tr::now));
+		addFlag(
+			Flag::Ban
+			| Flag::Unban
+			| Flag::Kick
+			| Flag::Unkick,
+			tr::lng_admin_log_filter_restrictions(tr::now));
 	}
-	addFlag(Flag::f_promote | Flag::f_demote, tr::lng_admin_log_filter_admins_new(tr::now));
-	addFlag(Flag::f_join | Flag::f_invite, tr::lng_admin_log_filter_members_new(tr::now));
-	addFlag(Flag::f_info | Flag::f_settings, _channel->isMegagroup() ? tr::lng_admin_log_filter_info_group(tr::now) : tr::lng_admin_log_filter_info_channel(tr::now));
-	addFlag(Flag::f_delete, tr::lng_admin_log_filter_messages_deleted(tr::now));
-	addFlag(Flag::f_edit, tr::lng_admin_log_filter_messages_edited(tr::now));
+	addFlag(
+		Flag::Promote | Flag::Demote,
+		tr::lng_admin_log_filter_admins_new(tr::now));
+	addFlag(
+		Flag::Join | Flag::Invite,
+		tr::lng_admin_log_filter_members_new(tr::now));
+	addFlag(
+		Flag::Info | Flag::Settings,
+		_channel->isMegagroup()
+			? tr::lng_admin_log_filter_info_group(tr::now)
+			: tr::lng_admin_log_filter_info_channel(tr::now));
+	addFlag(Flag::Delete, tr::lng_admin_log_filter_messages_deleted(tr::now));
+	addFlag(Flag::Edit, tr::lng_admin_log_filter_messages_edited(tr::now));
 	if (isGroup) {
-		addFlag(Flag::f_pinned, tr::lng_admin_log_filter_messages_pinned(tr::now));
+		addFlag(
+			Flag::Pinned,
+			tr::lng_admin_log_filter_messages_pinned(tr::now));
+		addFlag(
+			Flag::GroupCall,
+			tr::lng_admin_log_filter_voice_chats(tr::now));
+	} else {
+		addFlag(
+			Flag::GroupCall,
+			tr::lng_admin_log_filter_voice_chats_channel(tr::now));
 	}
-	addFlag(Flag::f_group_call, tr::lng_admin_log_filter_voice_chats(tr::now));
-	addFlag(Flag::f_invites, tr::lng_admin_log_filter_invite_links(tr::now));
-	addFlag(Flag::f_leave, tr::lng_admin_log_filter_members_removed(tr::now));
+	addFlag(Flag::Invites, tr::lng_admin_log_filter_invite_links(tr::now));
+	addFlag(Flag::Leave, tr::lng_admin_log_filter_members_removed(tr::now));
 }
 
 void FilterBox::Inner::createAllUsersCheckbox(const FilterValue &filter) {
@@ -294,7 +306,7 @@ void FilterBox::Inner::createAllUsersCheckbox(const FilterValue &filter) {
 	) | rpl::start_with_next([=](bool checked) {
 		if (!std::exchange(_restoringInvariant, true)) {
 			auto allChecked = _allUsers->checked();
-			for_const (auto &&checkbox, _admins) {
+			for (const auto &[user, checkbox] : _admins) {
 				checkbox->setChecked(allChecked);
 			}
 			_restoringInvariant = false;
@@ -306,14 +318,16 @@ void FilterBox::Inner::createAllUsersCheckbox(const FilterValue &filter) {
 }
 
 void FilterBox::Inner::createAdminsCheckboxes(const std::vector<not_null<UserData*>> &admins, const FilterValue &filter) {
-	for (auto user : admins) {
-		auto checked = filter.allUsers || base::contains(filter.admins, user);
-		auto checkbox = addRow(object_ptr<UserCheckbox>(this, user, checked), st::adminLogFilterLittleSkip);
+	for (const auto &user : admins) {
+		const auto checked = filter.allUsers || base::contains(filter.admins, user);
+		const auto checkbox = addRow(
+			object_ptr<UserCheckbox>(this, user, checked),
+			st::adminLogFilterLittleSkip);
 		checkbox->checkedChanges(
 		) | rpl::start_with_next([=](bool checked) {
 			if (!std::exchange(_restoringInvariant, true)) {
 				auto allChecked = true;
-				for_const (auto &&checkbox, _admins) {
+				for (const auto &[user, checkbox] : _admins) {
 					if (!checkbox->checked()) {
 						allChecked = false;
 						break;
@@ -328,13 +342,13 @@ void FilterBox::Inner::createAdminsCheckboxes(const std::vector<not_null<UserDat
 				}
 			}
 		}, checkbox->lifetime());
-		_admins.insert(user, checkbox);
+		_admins[user] = checkbox;
 	}
 }
 
 bool FilterBox::Inner::canSave() const {
-	for (auto i = _filterFlags.cbegin(), e = _filterFlags.cend(); i != e; ++i) {
-		if (i.value()->checked()) {
+	for (const auto &[flag, checkbox] : _filterFlags) {
+		if (checkbox->checked()) {
 			return true;
 		}
 	}
@@ -344,9 +358,9 @@ bool FilterBox::Inner::canSave() const {
 FilterValue FilterBox::Inner::filter() const {
 	auto result = FilterValue();
 	auto allChecked = true;
-	for (auto i = _filterFlags.cbegin(), e = _filterFlags.cend(); i != e; ++i) {
-		if (i.value()->checked()) {
-			result.flags |= i.key();
+	for (const auto &[flag, checkbox] : _filterFlags) {
+		if (checkbox->checked()) {
+			result.flags |= flag;
 		} else {
 			allChecked = false;
 		}
@@ -357,9 +371,9 @@ FilterValue FilterBox::Inner::filter() const {
 	result.allUsers = _allUsers->checked();
 	if (!result.allUsers) {
 		result.admins.reserve(_admins.size());
-		for (auto i = _admins.cbegin(), e = _admins.cend(); i != e; ++i) {
-			if (i.value()->checked()) {
-				result.admins.push_back(i.key());
+		for (const auto &[user, checkbox] : _admins) {
+			if (checkbox->checked()) {
+				result.admins.push_back(user);
 			}
 		}
 	}

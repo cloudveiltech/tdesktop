@@ -29,8 +29,8 @@ constexpr auto kMessagesPerPage = 50;
 		TimeId date,
 		const QString &text) {
 	return history->makeServiceMessage(
-		history->session().data().nextNonHistoryEntryId(),
-		MTPDmessage_ClientFlag::f_fake_history_item,
+		history->nextNonHistoryEntryId(),
+		MessageFlag::FakeHistoryItem,
 		date,
 		HistoryService::PreparedText{ text });
 }
@@ -44,7 +44,6 @@ struct RepliesList::Viewer {
 	int limitAfter = 0;
 	int injectedForRoot = 0;
 	base::has_weak_ptr guard;
-	bool stale = true;
 	bool scheduled = false;
 };
 
@@ -65,23 +64,6 @@ rpl::producer<MessagesSlice> RepliesList::source(
 		MessagePosition aroundId,
 		int limitBefore,
 		int limitAfter) {
-	return rpl::combine(
-		sourceFromServer(aroundId, limitBefore, limitAfter),
-		_history->session().changes().historyFlagsValue(
-			_history,
-			Data::HistoryUpdate::Flag::LocalMessages)
-	) | rpl::filter([=](const MessagesSlice &data, const auto &) {
-		return (data.fullCount.value_or(0) >= 0);
-	}) | rpl::map([=](MessagesSlice &&server, const auto &) {
-		appendLocalMessages(server);
-		return std::move(server);
-	});
-}
-
-rpl::producer<MessagesSlice> RepliesList::sourceFromServer(
-		MessagePosition aroundId,
-		int limitBefore,
-		int limitAfter) {
 	const auto around = aroundId.fullId.msg;
 	return [=](auto consumer) {
 		auto lifetime = rpl::lifetime();
@@ -89,15 +71,11 @@ rpl::producer<MessagesSlice> RepliesList::sourceFromServer(
 		const auto push = [=] {
 			viewer->scheduled = false;
 			if (buildFromData(viewer)) {
-				viewer->stale = false;
+				appendClientSideMessages(viewer->slice);
 				consumer.put_next_copy(viewer->slice);
 			}
 		};
 		const auto pushDelayed = [=] {
-			if (!viewer->stale) {
-				viewer->stale = true;
-				consumer.put_next_copy(MessagesSlice{ .fullCount = -1 });
-			}
 			if (!viewer->scheduled) {
 				viewer->scheduled = true;
 				crl::on_main(&viewer->guard, push);
@@ -115,24 +93,38 @@ rpl::producer<MessagesSlice> RepliesList::sourceFromServer(
 			return applyUpdate(viewer, update);
 		}) | rpl::start_with_next(pushDelayed, lifetime);
 
+		_history->session().changes().historyUpdates(
+			_history,
+			Data::HistoryUpdate::Flag::ClientSideMessages
+		) | rpl::start_with_next(pushDelayed, lifetime);
+
 		_partLoaded.events(
 		) | rpl::start_with_next(pushDelayed, lifetime);
+
+		_history->owner().channelDifferenceTooLong(
+		) | rpl::filter([=](not_null<ChannelData*> channel) {
+			if (_history->peer != channel || !_skippedAfter.has_value()) {
+				return false;
+			}
+			_skippedAfter = std::nullopt;
+			return true;
+		}) | rpl::start_with_next(pushDelayed, lifetime);
 
 		push();
 		return lifetime;
 	};
 }
 
-void RepliesList::appendLocalMessages(MessagesSlice &slice) {
-	const auto &local = _history->localMessages();
-	if (local.empty()) {
+void RepliesList::appendClientSideMessages(MessagesSlice &slice) {
+	const auto &messages = _history->clientSideMessages();
+	if (messages.empty()) {
 		return;
 	} else if (slice.ids.empty()) {
 		if (slice.skippedBefore != 0 || slice.skippedAfter != 0) {
 			return;
 		}
-		slice.ids.reserve(local.size());
-		for (const auto item : local) {
+		slice.ids.reserve(messages.size());
+		for (const auto &item : messages) {
 			if (item->replyToTop() != _rootId) {
 				continue;
 			}
@@ -150,7 +142,7 @@ void RepliesList::appendLocalMessages(MessagesSlice &slice) {
 
 		dates.push_back(message->date());
 	}
-	for (const auto item : local) {
+	for (const auto &item : messages) {
 		if (item->replyToTop() != _rootId) {
 			continue;
 		}
@@ -186,6 +178,64 @@ rpl::producer<int> RepliesList::fullCount() const {
 	return _fullCount.value() | rpl::filter_optional();
 }
 
+std::optional<int> RepliesList::fullUnreadCountAfter(
+		MsgId readTillId,
+		MsgId wasReadTillId,
+		std::optional<int> wasUnreadCountAfter) const {
+	Expects(readTillId >= wasReadTillId);
+
+	readTillId = std::max(readTillId, _rootId);
+	wasReadTillId = std::max(wasReadTillId, _rootId);
+	const auto backLoaded = (_skippedBefore == 0);
+	const auto frontLoaded = (_skippedAfter == 0);
+	const auto fullLoaded = backLoaded && frontLoaded;
+	const auto allUnread = (readTillId == _rootId)
+		|| (fullLoaded && _list.empty());
+	const auto countIncoming = [&](auto from, auto till) {
+		auto &owner = _history->owner();
+		const auto channelId = _history->channelId();
+		auto count = 0;
+		for (auto i = from; i != till; ++i) {
+			if (!owner.message(channelId, *i)->out()) {
+				++count;
+			}
+		}
+		return count;
+	};
+	if (allUnread && fullLoaded) {
+		// Should not happen too often unless the list is empty.
+		return countIncoming(begin(_list), end(_list));
+	} else if (frontLoaded && !_list.empty() && readTillId >= _list.front()) {
+		// Always "count by local data" if read till the end.
+		return 0;
+	} else if (wasReadTillId == readTillId) {
+		// Otherwise don't recount the same value over and over.
+		return wasUnreadCountAfter;
+	} else if (frontLoaded && !_list.empty() && readTillId >= _list.back()) {
+		// And count by local data if it is available and read-till changed.
+		return countIncoming(
+			begin(_list),
+			ranges::lower_bound(_list, readTillId, std::greater<>()));
+	} else if (_list.empty()) {
+		return std::nullopt;
+	} else if (wasUnreadCountAfter.has_value()
+		&& (frontLoaded || readTillId <= _list.front())
+		&& (backLoaded || wasReadTillId >= _list.back())) {
+		// Count how many were read since previous value.
+		const auto from = ranges::lower_bound(
+			_list,
+			readTillId,
+			std::greater<>());
+		const auto till = ranges::lower_bound(
+			from,
+			end(_list),
+			wasReadTillId,
+			std::greater<>());
+		return std::max(*wasUnreadCountAfter - countIncoming(from, till), 0);
+	}
+	return std::nullopt;
+}
+
 void RepliesList::injectRootMessageAndReverse(not_null<Viewer*> viewer) {
 	injectRootMessage(viewer);
 	ranges::reverse(viewer->slice.ids);
@@ -204,7 +254,7 @@ void RepliesList::injectRootMessage(not_null<Viewer*> viewer) {
 	injectRootDivider(root, slice);
 
 	if (const auto group = _history->owner().groups().find(root)) {
-		for (const auto item : ranges::views::reverse(group->items)) {
+		for (const auto &item : ranges::views::reverse(group->items)) {
 			slice->ids.push_back(item->fullId());
 		}
 		viewer->injectedForRoot = group->items.size();
@@ -319,8 +369,7 @@ bool RepliesList::buildFromData(not_null<Viewer*> viewer) {
 bool RepliesList::applyUpdate(
 		not_null<Viewer*> viewer,
 		const MessageUpdate &update) {
-	if (update.item->history() != _history
-		|| !IsServerMsgId(update.item->id)) {
+	if (update.item->history() != _history || !update.item->isRegular()) {
 		return false;
 	}
 	if (update.flags & MessageUpdate::Flag::Destroyed) {
@@ -389,7 +438,7 @@ void RepliesList::loadAround(MsgId id) {
 			MTP_int(kMessagesPerPage), // limit
 			MTP_int(0), // max_id
 			MTP_int(0), // min_id
-			MTP_int(0) // hash
+			MTP_long(0) // hash
 		)).done([=](const MTPmessages_Messages &result) {
 			_beforeId = 0;
 			_loadingAround = std::nullopt;
@@ -404,7 +453,7 @@ void RepliesList::loadAround(MsgId id) {
 			_list.clear();
 			if (processMessagesIsEmpty(result)) {
 				_fullCount = _skippedBefore = _skippedAfter = 0;
-			} else if (id > 0) {
+			} else if (id) {
 				Assert(!_list.empty());
 				if (_list.front() <= id) {
 					_skippedAfter = 0;
@@ -412,7 +461,7 @@ void RepliesList::loadAround(MsgId id) {
 					_skippedBefore = 0;
 				}
 			}
-		}).fail([=](const MTP::Error &error) {
+		}).fail([=] {
 			_beforeId = 0;
 			_loadingAround = std::nullopt;
 			finish();
@@ -445,7 +494,7 @@ void RepliesList::loadBefore() {
 			MTP_int(kMessagesPerPage), // limit
 			MTP_int(0), // min_id
 			MTP_int(0), // max_id
-			MTP_int(0) // hash
+			MTP_long(0) // hash
 		)).done([=](const MTPmessages_Messages &result) {
 			_beforeId = 0;
 			finish();
@@ -460,7 +509,7 @@ void RepliesList::loadBefore() {
 					_fullCount = _list.size();
 				}
 			}
-		}).fail([=](const MTP::Error &error) {
+		}).fail([=] {
 			_beforeId = 0;
 			finish();
 		}).send();
@@ -489,7 +538,7 @@ void RepliesList::loadAfter() {
 			MTP_int(kMessagesPerPage), // limit
 			MTP_int(0), // min_id
 			MTP_int(0), // max_id
-			MTP_int(0) // hash
+			MTP_long(0) // hash
 		)).done([=](const MTPmessages_Messages &result) {
 			_afterId = 0;
 			finish();
@@ -504,7 +553,7 @@ void RepliesList::loadAfter() {
 					_fullCount = _list.size();
 				}
 			}
-		}).fail([=](const MTP::Error &error) {
+		}).fail([=] {
 			_afterId = 0;
 			finish();
 		}).send();
@@ -555,7 +604,7 @@ bool RepliesList::processMessagesIsEmpty(const MTPmessages_Messages &result) {
 	const auto maxId = IdFromMessage(list.front());
 	const auto wasSize = int(_list.size());
 	const auto toFront = (wasSize > 0) && (maxId > _list.front());
-	const auto clientFlags = MTPDmessage_ClientFlags();
+	const auto localFlags = MessageFlags();
 	const auto type = NewMessageType::Existing;
 	auto refreshed = std::vector<MsgId>();
 	if (toFront) {
@@ -563,7 +612,7 @@ bool RepliesList::processMessagesIsEmpty(const MTPmessages_Messages &result) {
 	}
 	auto skipped = 0;
 	for (const auto &message : list) {
-		if (const auto item = owner.addNewMessage(message, clientFlags, type)) {
+		if (const auto item = owner.addNewMessage(message, localFlags, type)) {
 			if (item->replyToTop() == _rootId) {
 				if (toFront) {
 					refreshed.push_back(item->id);

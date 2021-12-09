@@ -6,16 +6,22 @@
 //
 #include "base/platform/win/base_info_win.h"
 
+#include "base/algorithm.h"
 #include "base/platform/base_platform_info.h"
 #include "base/platform/win/base_windows_h.h"
 
+#include <QtCore/QOperatingSystemVersion>
 #include <QtCore/QJsonObject>
 #include <QtCore/QDate>
+#include <QtCore/QSettings>
 
 #include <VersionHelpers.h>
 
 namespace Platform {
 namespace {
+
+constexpr auto kMaxDeviceModelLength = 15;
+constexpr auto kMaxGoodDeviceModelLength = 32;
 
 #define qsl(S) QStringLiteral(S)
 
@@ -138,23 +144,79 @@ QString GetLangCodeById(unsigned int lngId) {
 	return QString();
 }
 
+[[nodiscard]] QString SimplifyDeviceModel(QString model) {
+	return base::CleanAndSimplify(model.replace(QChar('_'), QString()));
+}
+
+[[nodiscard]] QString SimplifyGoodDeviceModel(
+		QString model,
+		int limit,
+		std::vector<QString> remove) {
+	const auto words = model.split(QChar(' '));
+	auto result = QString();
+	for (const auto &word : model.split(QChar(' '))) {
+		if (ranges::contains(remove, word.toLower())) {
+			continue;
+		} else if (result.isEmpty()) {
+			result = word;
+		} else if (result.size() + word.size() + 1 > limit) {
+			return result;
+		} else {
+			result += ' ' + word;
+		}
+	}
+	return result;
+}
+
 } // namespace
 
 QString DeviceModelPretty() {
-#ifdef Q_PROCESSOR_X86_64
-	return "PC 64bit";
-#elif defined Q_PROCESSOR_X86_32 // Q_PROCESSOR_X86_64
-	auto bIsWow64 = BOOL(FALSE);
-	return (IsWow64Process(GetCurrentProcess(), &bIsWow64) && bIsWow64)
-		? "PC 64bit"
-		: "PC 32bit";
-#else // Q_PROCESSOR_X86_64 || Q_PROCESSOR_X86_32
-	return "PC " + QSysInfo::buildCpuArchitecture();
-#endif // else for Q_PROCESSOR_X86_64 || Q_PROCESSOR_X86_32
+	static const auto result = [&] {
+		const auto bios = QSettings(
+			"HKEY_LOCAL_MACHINE\\HARDWARE\\DESCRIPTION\\System\\BIOS",
+			QSettings::NativeFormat);
+		const auto value = [&](const char *key) {
+			return SimplifyDeviceModel(bios.value(key).toString());
+		};
+
+		const auto systemProductName = value("SystemProductName");
+		if (systemProductName.startsWith("HP ")) {
+			// Some special cases for good strings, like HP laptops.
+			return SimplifyGoodDeviceModel(
+				systemProductName,
+				kMaxGoodDeviceModelLength,
+				{ "notebook", "desktop", "mobile", "workstation", "pc" });
+		} else if (!systemProductName.isEmpty()
+			&& systemProductName.size() <= kMaxDeviceModelLength) {
+			return systemProductName;
+		}
+
+		const auto systemFamily = value("SystemFamily");
+		const auto baseBoardProduct = value("BaseBoardProduct");
+		const auto familyBoard = SimplifyDeviceModel(
+			systemFamily + ' ' + baseBoardProduct);
+
+		if (!familyBoard.isEmpty()
+			&& familyBoard.size() <= kMaxDeviceModelLength) {
+			return familyBoard;
+		} else if (!baseBoardProduct.isEmpty()
+			&& baseBoardProduct.size() <= kMaxDeviceModelLength) {
+			return baseBoardProduct;
+		} else if (!systemFamily.isEmpty()
+			&& systemFamily.size() <= kMaxDeviceModelLength) {
+			return systemFamily;
+		}
+
+		return u"Desktop"_q;
+	}();
+
+	return result;
 }
 
 QString SystemVersionPretty() {
-	if (IsWindows10OrGreater()) {
+	if (IsWindows11OrGreater()) {
+		return "Windows 11";
+	} else if (IsWindows10OrGreater()) {
 		return "Windows 10";
 	} else if (IsWindows8Point1OrGreater()) {
 		return "Windows 8.1";
@@ -162,10 +224,6 @@ QString SystemVersionPretty() {
 		return "Windows 8";
 	} else if (IsWindows7OrGreater()) {
 		return "Windows 7";
-	} else if (IsWindowsVistaOrGreater()) {
-		return "Windows Vista";
-	} else if (IsWindowsXPOrGreater()) {
-		return "Windows XP";
 	} else {
 		return QSysInfo::prettyProductName();
 	}
@@ -225,16 +283,10 @@ QString SystemLanguage() {
 }
 
 QDate WhenSystemBecomesOutdated() {
-	if (!IsWindows7OrGreater()) {
-		return QDate(2019, 9, 1);
-	}
 	return QDate();
 }
 
 int AutoUpdateVersion() {
-	if (!IsWindows7OrGreater()) {
-		return 1;
-	}
 	return 2;
 }
 
@@ -244,16 +296,6 @@ QString AutoUpdateKey() {
 	} else {
 		return "win";
 	}
-}
-
-bool IsWindowsXPOrGreater() {
-	static const auto result = ::IsWindowsXPOrGreater();
-	return result;
-}
-
-bool IsWindowsVistaOrGreater() {
-	static const auto result = ::IsWindowsVistaOrGreater();
-	return result;
 }
 
 bool IsWindows7OrGreater() {
@@ -273,6 +315,18 @@ bool IsWindows8Point1OrGreater() {
 
 bool IsWindows10OrGreater() {
 	static const auto result = ::IsWindows10OrGreater();
+	return result;
+}
+
+bool IsWindows11OrGreater() {
+	static const auto result = [&] {
+		if (!IsWindows10OrGreater()) {
+			return false;
+		}
+		const auto version = QOperatingSystemVersion::current();
+		return (version.majorVersion() > 10)
+			|| (version.microVersion() >= 22000);
+	}();
 	return result;
 }
 

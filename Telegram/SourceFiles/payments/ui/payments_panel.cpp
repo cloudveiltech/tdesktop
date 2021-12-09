@@ -5,7 +5,6 @@ the official desktop application for the Telegram messaging service.
 For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
-
 #include "payments/ui/payments_panel.h"
 
 #include "payments/ui/payments_form_summary.h"
@@ -50,6 +49,7 @@ struct Panel::WebviewWithLifetime {
 		Webview::WindowConfig config = Webview::WindowConfig());
 
 	Webview::Window window;
+	QPointer<RpWidget> lastHidingBox;
 	rpl::lifetime lifetime;
 };
 
@@ -226,11 +226,33 @@ void Panel::showForm(
 		const RequestedInformation &current,
 		const PaymentMethodDetails &method,
 		const ShippingOptions &options) {
+	if (invoice && !method.ready && !method.native.supported) {
+		const auto available = Webview::Availability();
+		if (available.error != Webview::Available::Error::None) {
+			showWebviewError(
+				tr::lng_payments_webview_no_use(tr::now),
+				available);
+			return;
+		}
+	}
 
-	//CloudVeil start
-	return;
-	//CloudVeil end
-	
+	_testMode = invoice.isTest;
+	setTitle(invoice.receipt
+		? tr::lng_payments_receipt_title()
+		: tr::lng_payments_checkout_title());
+	auto form = base::make_unique_q<FormSummary>(
+		_widget.get(),
+		invoice,
+		current,
+		method,
+		options,
+		_delegate,
+		_formScrollTop.current());
+	_weakFormSummary = form.get();
+	_widget->showInner(std::move(form));
+	_widget->setBackAllowed(false);
+	_formScrollTop = _weakFormSummary->scrollTopValue();
+	setupProgressGeometry();
 }
 
 void Panel::updateFormThumbnail(const QImage &thumbnail) {
@@ -666,6 +688,26 @@ rpl::producer<> Panel::backRequests() const {
 }
 
 void Panel::showBox(object_ptr<BoxContent> box) {
+	if (const auto widget = _webview ? _webview->window.widget() : nullptr) {
+		const auto hideNow = !widget->isHidden();
+		if (hideNow || _webview->lastHidingBox) {
+			const auto raw = _webview->lastHidingBox = box.data();
+			box->boxClosing(
+			) | rpl::start_with_next([=] {
+				const auto widget = _webview
+					? _webview->window.widget()
+					: nullptr;
+				if (widget
+					&& widget->isHidden()
+					&& _webview->lastHidingBox == raw) {
+					widget->show();
+				}
+			}, _webview->lifetime);
+			if (hideNow) {
+				widget->hide();
+			}
+		}
+	}
 	_widget->showBox(
 		std::move(box),
 		LayerOption::KeepOther,

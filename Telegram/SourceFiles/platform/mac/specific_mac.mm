@@ -23,7 +23,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QtGui/QDesktopServices>
 #include <QtWidgets/QApplication>
-#include <QtWidgets/QDesktopWidget>
 
 #include <cstdlib>
 #include <execinfo.h>
@@ -49,7 +48,7 @@ QString psAppDataPath() {
 
 void psDoCleanup() {
 	try {
-		psAutoStart(false, true);
+		Platform::AutostartToggle(false);
 		psSendToMenu(false, true);
 	} catch (...) {
 	}
@@ -112,16 +111,10 @@ void WriteCrashDumpDetails() {
 #endif // DESKTOP_APP_DISABLE_CRASH_REPORTS
 }
 
-void RegisterCustomScheme(bool force) {
-	OSStatus result = LSSetDefaultHandlerForURLScheme(CFSTR("tg"), (CFStringRef)[[NSBundle mainBundle] bundleIdentifier]);
-	DEBUG_LOG(("App Info: set default handler for 'tg' scheme result: %1").arg(result));
-}
-
 // I do check for availability, just not in the exact way clang is content with
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunguarded-availability"
 PermissionStatus GetPermissionStatus(PermissionType type) {
-#ifndef OS_MAC_OLD
 	switch (type) {
 	case PermissionType::Microphone:
 	case PermissionType::Camera:
@@ -141,12 +134,10 @@ PermissionStatus GetPermissionStatus(PermissionType type) {
 		}
 		break;
 	}
-#endif // OS_MAC_OLD
 	return PermissionStatus::Granted;
 }
 
 void RequestPermission(PermissionType type, Fn<void(PermissionStatus)> resultCallback) {
-#ifndef OS_MAC_OLD
 	switch (type) {
 	case PermissionType::Microphone:
 	case PermissionType::Camera:
@@ -162,13 +153,11 @@ void RequestPermission(PermissionType type, Fn<void(PermissionStatus)> resultCal
 		}
 		break;
 	}
-#endif // OS_MAC_OLD
 	resultCallback(PermissionStatus::Granted);
 }
 #pragma clang diagnostic pop // -Wunguarded-availability
 
 void OpenSystemSettingsForPermission(PermissionType type) {
-#ifndef OS_MAC_OLD
 	switch (type) {
 	case PermissionType::Microphone:
 		[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"]];
@@ -177,7 +166,6 @@ void OpenSystemSettingsForPermission(PermissionType type) {
 		[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"]];
 		break;
 	}
-#endif // OS_MAC_OLD
 }
 
 bool OpenSystemSettings(SystemSettingsType type) {
@@ -193,13 +181,19 @@ void IgnoreApplicationActivationRightNow() {
 	objc_ignoreApplicationActivationRightNow();
 }
 
+void AutostartToggle(bool enabled, Fn<void(bool)> done) {
+	if (done) {
+		done(false);
+	}
+}
+
+bool AutostartSkip() {
+	return !cAutoStart();
+}
+
 } // namespace Platform
 
 void psNewVersion() {
-	Platform::RegisterCustomScheme();
-}
-
-void psAutoStart(bool start, bool silent) {
 }
 
 void psSendToMenu(bool send, bool silent) {

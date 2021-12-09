@@ -8,7 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "dialogs/dialogs_list.h"
 
 #include "dialogs/dialogs_entry.h"
-#include "dialogs/dialogs_layout.h"
+#include "dialogs/ui/dialogs_layout.h"
 #include "data/data_session.h"
 #include "mainwidget.h"
 
@@ -144,4 +144,5 @@ bool List::del(Key key, Row *replacedBy) {
 	_rowByKey.erase(i);
 	return true;
 }
+
 } // namespace Dialogs

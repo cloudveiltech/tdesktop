@@ -8,7 +8,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/format_values.h"
 
 #include "lang/lang_keys.h"
+#include "countries/countries_instance.h"
 
+#include <QRegularExpression>
 #include <QtCore/QLocale>
 #include <locale>
 #include <sstream>
@@ -77,25 +79,28 @@ QString FormatProgressText(qint64 ready, qint64 total) {
 		total);
 }
 
-QString FormatDateTime(QDateTime date, QString format) {
+QString FormatDateTime(
+		QDateTime date,
+		QString dateFormat,
+		QString timeFormat) {
 	const auto now = QDateTime::currentDateTime();
 	if (date.date() == now.date()) {
 		return tr::lng_mediaview_today(
 			tr::now,
 			lt_time,
-			date.time().toString(format));
+			date.time().toString(timeFormat));
 	} else if (date.date().addDays(1) == now.date()) {
 		return tr::lng_mediaview_yesterday(
 			tr::now,
 			lt_time,
-			date.time().toString(format));
+			date.time().toString(timeFormat));
 	} else {
 		return tr::lng_mediaview_date_time(
 			tr::now,
 			lt_date,
-			date.date().toString(u"dd.MM.yy"_q),
+			date.date().toString(dateFormat),
 			lt_time,
-			date.time().toString(format));
+			date.time().toString(timeFormat));
 	}
 }
 
@@ -367,6 +372,16 @@ QString FormatImageSizeText(const QSize &size) {
 	return QString::number(size.width())
 		+ QChar(215)
 		+ QString::number(size.height());
+}
+
+QString FormatPhone(const QString &phone) {
+	if (phone.isEmpty()) {
+		return QString();
+	}
+	if (phone.at(0) == '0') {
+		return phone;
+	}
+	return Countries::Instance().format({ .phone = phone }).formatted;
 }
 
 } // namespace Ui

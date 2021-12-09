@@ -7,7 +7,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/send_files_box.h"
 
-#include "platform/platform_specific.h"
 #include "lang/lang_keys.h"
 #include "storage/localstorage.h"
 #include "storage/storage_media_prepare.h"
@@ -20,7 +19,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/emoji_suggestions_widget.h"
 #include "chat_helpers/tabbed_panel.h"
 #include "chat_helpers/tabbed_selector.h"
-#include "confirm_box.h"
 #include "editor/photo_editor_layer_widget.h"
 #include "history/history_drag_area.h"
 #include "history/view/history_view_schedule_box.h"
@@ -52,7 +50,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "facades.h" // App::LambdaDelayed.
-#include "app.h"
 #include "styles/style_chat.h"
 #include "styles/style_layers.h"
 #include "styles/style_boxes.h"
@@ -551,9 +548,6 @@ void SendFilesBox::pushBlock(int from, int till) {
 		block.takeWidget(),
 		QMargins(0, _inner->count() ? st::sendMediaRowSkip : 0, 0, 0));
 
-	const auto preventDelete =
-		widget->lifetime().make_state<rpl::event_stream<int>>();
-
 	block.itemDeleteRequest(
 	) | rpl::filter([=] {
 		return !_removingIndex;
@@ -564,9 +558,9 @@ void SendFilesBox::pushBlock(int from, int till) {
 			if (index < 0 || index >= _list.files.size()) {
 				return;
 			}
-			// Prevent item delete if it is the only one.
+			// Just close the box if it is the only one.
 			if (_list.files.size() == 1) {
-				preventDelete->fire_copy(0);
+				closeBox();
 				return;
 			}
 			_list.files.erase(_list.files.begin() + index);
@@ -574,9 +568,7 @@ void SendFilesBox::pushBlock(int from, int till) {
 		});
 	}, widget->lifetime());
 
-	rpl::merge(
-		block.itemReplaceRequest(),
-		preventDelete->events()
+	block.itemReplaceRequest(
 	) | rpl::start_with_next([=](int index) {
 		const auto replace = [=](Ui::PreparedList list) {
 			if (list.files.empty()) {
@@ -615,8 +607,14 @@ void SendFilesBox::pushBlock(int from, int till) {
 			crl::guard(this, callback));
 	}, widget->lifetime());
 
+	const auto openedOnce = widget->lifetime().make_state<bool>(false);
 	block.itemModifyRequest(
 	) | rpl::start_with_next([=, controller = _controller](int index) {
+		if (!(*openedOnce)) {
+			controller->session().settings().incrementPhotoEditorHintShown();
+			controller->session().saveSettings();
+		}
+		*openedOnce = true;
 		Editor::OpenWithPreparedFile(
 			this,
 			controller,
@@ -800,10 +798,7 @@ bool SendFilesBox::addFiles(not_null<const QMimeData*> data) {
 		if (result.error == Ui::PreparedList::Error::None) {
 			return result;
 		} else if (data->hasImage()) {
-			auto image = Platform::GetImageFromClipboard();
-			if (image.isNull()) {
-				image = qvariant_cast<QImage>(data->imageData());
-			}
+			auto image = qvariant_cast<QImage>(data->imageData());
 			if (!image.isNull()) {
 				return Storage::PrepareMediaFromImage(
 					std::move(image),
@@ -1013,10 +1008,7 @@ void SendFilesBox::send(
 		block.applyAlbumOrder();
 	}
 
-	if (Storage::ApplyModifications(_list)) {
-		_controller->session().settings().incrementPhotoEditorHintShown();
-		_controller->session().saveSettings();
-	}
+	Storage::ApplyModifications(_list);
 
 	_confirmed = true;
 	if (_confirmedCallback) {
@@ -1034,9 +1026,7 @@ void SendFilesBox::send(
 }
 
 void SendFilesBox::sendSilent() {
-	auto options = Api::SendOptions();
-	options.silent = true;
-	send(options);
+	send({ .silent = true });
 }
 
 void SendFilesBox::sendScheduled() {

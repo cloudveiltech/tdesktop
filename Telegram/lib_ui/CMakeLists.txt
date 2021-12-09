@@ -24,7 +24,8 @@ generate_palette(lib_ui ui/colors.palette)
 generate_styles(lib_ui ${src_loc} "${style_files}" ui/colors.palette)
 generate_emoji(lib_ui emoji.txt emoji_suggestions/emoji_autocomplete.json)
 
-set_target_properties(lib_ui PROPERTIES AUTOMOC ON AUTORCC ON)
+set_target_properties(lib_ui PROPERTIES AUTOMOC ON)
+target_prepare_qrc(lib_ui)
 
 target_precompile_headers(lib_ui PRIVATE ${src_loc}/ui/ui_pch.h)
 nice_target_sources(lib_ui ${src_loc}
@@ -131,10 +132,14 @@ PRIVATE
     ui/style/style_core_font.h
     ui/style/style_core_icon.cpp
     ui/style/style_core_icon.h
+    ui/style/style_core_palette.cpp
+    ui/style/style_core_palette.h
     ui/style/style_core_scale.cpp
     ui/style/style_core_scale.h
     ui/style/style_core_types.cpp
     ui/style/style_core_types.h
+    ui/style/style_palette_colorizer.cpp
+    ui/style/style_palette_colorizer.h
     ui/text/text.cpp
     ui/text/text.h
     ui/text/text_block.cpp
@@ -180,16 +185,18 @@ PRIVATE
     ui/widgets/menu/menu_toggle.h
     ui/widgets/popup_menu.cpp
     ui/widgets/popup_menu.h
+    ui/widgets/rp_window.cpp
+    ui/widgets/rp_window.h
     ui/widgets/scroll_area.cpp
     ui/widgets/scroll_area.h
     ui/widgets/side_bar_button.cpp
     ui/widgets/side_bar_button.h
     ui/widgets/shadow.cpp
     ui/widgets/shadow.h
+    ui/widgets/time_input.cpp
+    ui/widgets/time_input.h
     ui/widgets/tooltip.cpp
     ui/widgets/tooltip.h
-    ui/widgets/window.cpp
-    ui/widgets/window.h
     ui/wrap/fade_wrap.cpp
     ui/wrap/fade_wrap.h
     ui/wrap/padding_wrap.cpp
@@ -253,6 +260,7 @@ elseif(LINUX)
     target_link_libraries(lib_ui
     PUBLIC
         desktop-app::lib_waylandshells
+        desktop-app::external_kwayland
     )
 endif()
 
@@ -265,4 +273,6 @@ PUBLIC
 target_link_libraries(lib_ui
 PUBLIC
     desktop-app::lib_base
+PRIVATE
+    desktop-app::external_zlib
 )

@@ -122,18 +122,18 @@ MTPDialogFilter ChatFilter::tl(FilterId replaceId) const {
 	auto always = _always;
 	auto pinned = QVector<MTPInputPeer>();
 	pinned.reserve(_pinned.size());
-	for (const auto history : _pinned) {
+	for (const auto &history : _pinned) {
 		pinned.push_back(history->peer->input);
 		always.remove(history);
 	}
 	auto include = QVector<MTPInputPeer>();
 	include.reserve(always.size());
-	for (const auto history : always) {
+	for (const auto &history : always) {
 		include.push_back(history->peer->input);
 	}
 	auto never = QVector<MTPInputPeer>();
 	never.reserve(_never.size());
-	for (const auto history : _never) {
+	for (const auto &history : _never) {
 		never.push_back(history->peer->input);
 	}
 	return MTP_dialogFilter(
@@ -256,7 +256,7 @@ void ChatFilters::load(bool force) {
 	)).done([=](const MTPVector<MTPDialogFilter> &result) {
 		received(result.v);
 		_loadRequestId = 0;
-	}).fail([=](const MTP::Error &error) {
+	}).fail([=] {
 		_loadRequestId = 0;
 	}).send();
 }
@@ -417,7 +417,7 @@ bool ChatFilters::applyOrder(const QVector<MTPint> &order) {
 		&ChatFilter::id
 	) | ranges::to_vector;
 	auto b = indices.begin(), e = indices.end();
-	for (const auto id : order) {
+	for (const auto &id : order) {
 		const auto i = ranges::find(b, e, id.v);
 		if (i == e) {
 			return false;
@@ -428,7 +428,7 @@ bool ChatFilters::applyOrder(const QVector<MTPint> &order) {
 	}
 	auto changed = false;
 	auto begin = _list.begin(), end = _list.end();
-	for (const auto id : order) {
+	for (const auto &id : order) {
 		const auto i = ranges::find(begin, end, id.v, &ChatFilter::id);
 		Assert(i != end);
 		if (i != begin) {
@@ -526,7 +526,7 @@ bool ChatFilters::loadNextExceptions(bool chatsListLoaded) {
 		const auto i = ranges::find(_list, id, &ChatFilter::id);
 		if (i != end(_list)) {
 			result.reserve(i->always().size());
-			for (const auto history : i->always()) {
+			for (const auto &history : i->always()) {
 				if (!history->folderKnown()) {
 					inputs.push_back(
 						MTP_inputDialogPeer(history->peer->input));
@@ -555,7 +555,7 @@ bool ChatFilters::loadNextExceptions(bool chatsListLoaded) {
 		_exceptionsLoadRequestId = 0;
 		_owner->session().data().histories().applyPeerDialogs(result);
 		_owner->session().api().requestMoreDialogsIfNeeded();
-	}).fail([=](const MTP::Error &error) {
+	}).fail([=] {
 		_exceptionsLoadRequestId = 0;
 		_owner->session().api().requestMoreDialogsIfNeeded();
 	}).send();
@@ -594,7 +594,7 @@ void ChatFilters::requestSuggested() {
 		}) | ranges::to_vector;
 
 		_suggestedUpdated.fire({});
-	}).fail([=](const MTP::Error &error) {
+	}).fail([=] {
 		_suggestedRequestId = 0;
 		_suggestedLastReceived = crl::now() + kRefreshSuggestedTimeout / 2;
 

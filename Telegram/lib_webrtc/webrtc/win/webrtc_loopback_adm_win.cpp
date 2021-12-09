@@ -70,9 +70,8 @@ void SetStringToArray(const std::string &string, char *array, int size) {
 }
 
 [[nodiscard]] auto CreateAudioProcessing()
--> std::unique_ptr<webrtc::AudioProcessing> {
-	auto result = std::unique_ptr<webrtc::AudioProcessing>(
-		webrtc::AudioProcessingBuilder().Create(webrtc::Config()));
+-> rtc::scoped_refptr<webrtc::AudioProcessing> {
+	auto result = webrtc::AudioProcessingBuilder().Create(webrtc::Config());
 
 	auto config = webrtc::AudioProcessing::Config();
 	config.echo_canceller.enabled = true;
@@ -763,7 +762,7 @@ int32_t AudioDeviceLoopbackWin::InitRecording() {
 	_renderedFrame->num_channels_ = kFarEndChannels;
 	_renderedFrame->samples_per_channel_ = kFarEndChannelFrameSize;
 
-	LARGE_INTEGER counterFrequency;
+	LARGE_INTEGER counterFrequency{};
 	QueryPerformanceFrequency(&counterFrequency);
 	if (counterFrequency.QuadPart) {
 		_queryPerformanceMultiplier = 10'000'000. / counterFrequency.QuadPart;
@@ -805,19 +804,23 @@ void AudioDeviceLoopbackWin::processData() {
 		data = nullptr;
 	}
 
-	const auto nowCounter = [&] {
+	const auto counterDelta = [&] {
 		if ((flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY)
 			|| (flags & AUDCLNT_BUFFERFLAGS_TIMESTAMP_ERROR)) {
-			return double(counter);
+			return 0.;
 		}
 		LARGE_INTEGER counterValue;
 		QueryPerformanceCounter(&counterValue);
-		const auto result = (_queryPerformanceMultiplier > 0.)
+		const auto wasCounter = double(counter);
+		const auto nowCounter = (_queryPerformanceMultiplier > 0.)
 			? (_queryPerformanceMultiplier * counterValue.QuadPart)
 			: 0.;
-		return (result < counter || result > counter + 200) // wtf
-			? double(counter)
-			: result;
+		const auto result = (nowCounter - wasCounter);
+		constexpr auto kBadDelayMs = crl::time(200);
+		if (result < 0 || result > 10'000. * kBadDelayMs) {
+			return 0.;
+		}
+		return result;
 	}();
 
 	const auto deviceData = _swrContext
@@ -878,9 +881,9 @@ void AudioDeviceLoopbackWin::processData() {
 				AV_ROUND_UP)
 			: samplesAvailable;
 		const auto deviceSamplesBefore = deviceSamplesCount - framesAvailable;
-		const auto fullDelay = (nowCounter - double(counter))
+		const auto fullDelay = counterDelta
 			+ (deviceSamplesBefore * _deviceFrequencyMultiplier);
-		return now - crl::time(std::round(fullDelay / 10'000.));
+		return now - crl::time(base::SafeRound(fullDelay / 10'000.));
 	};
 
 	while (samplesAvailable >= kWantedPartSize) {

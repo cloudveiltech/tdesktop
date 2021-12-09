@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "lang/lang_keys.h"
 #include "ui/text/text.h"
+#include "base/qt_adapters.h"
 
 namespace Lang {
 namespace {
@@ -903,7 +904,7 @@ QString FormatDouble(float64 value) {
 
 int NonZeroPartToInt(QString value) {
 	auto zeros = 0;
-	for (const auto ch : value) {
+	for (const auto &ch : value) {
 		if (ch == '0') {
 			++zeros;
 		} else {
@@ -911,7 +912,7 @@ int NonZeroPartToInt(QString value) {
 		}
 	}
 	return (zeros > 0)
-		? (zeros < value.size() ? value.midRef(zeros).toInt() : 0)
+		? (zeros < value.size() ? base::StringViewMid(value, zeros).toInt() : 0)
 		: (value.isEmpty() ? 0 : value.toInt());
 }
 
@@ -988,7 +989,7 @@ void UpdatePluralRules(const QString &languageId) {
 	static auto kMap = GeneratePluralRulesMap();
 	auto parent = uint64(0);
 	auto key = uint64(0);
-	for (const auto ch : languageId) {
+	for (const auto &ch : languageId) {
 		const auto converted = ConvertKeyChar(ch.unicode());
 		if (converted == '-' && !parent) {
 			parent = key;
@@ -1008,11 +1009,11 @@ QString ReplaceTag<QString>::Replace(QString &&original, const QString &replacem
 	auto result = QString();
 	result.reserve(original.size() + replacement.size() - kTagReplacementSize);
 	if (replacementPosition > 0) {
-		result.append(original.midRef(0, replacementPosition));
+		result.append(base::StringViewMid(original, 0, replacementPosition));
 	}
 	result.append(replacement);
 	if (replacementPosition + kTagReplacementSize < original.size()) {
-		result.append(original.midRef(replacementPosition + kTagReplacementSize));
+		result.append(base::StringViewMid(original, replacementPosition + kTagReplacementSize));
 	}
 	return result;
 }

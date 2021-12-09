@@ -66,6 +66,11 @@ public:
 		const QRect &geometry,
 		not_null<PinnedMemento*> memento);
 
+	Window::SectionActionResult sendBotCommand(
+			Bot::SendCommandRequest request) override {
+		return Window::SectionActionResult::Fallback;
+	}
+
 	// Float player interface.
 	bool floatPlayerHandleWheelEvent(QEvent *e) override;
 	QRect floatPlayerAvailableRect() override;
@@ -97,6 +102,9 @@ public:
 		const QString &command,
 		const FullMsgId &context) override;
 	void listHandleViaClick(not_null<UserData*> bot) override;
+	not_null<Ui::ChatTheme*> listChatTheme() override;
+	CopyRestrictionType listCopyRestrictionType(HistoryItem *item) override;
+	CopyRestrictionType listSelectRestrictionType() override;
 
 protected:
 	void resizeEvent(QResizeEvent *e) override;
@@ -140,6 +148,7 @@ private:
 	void refreshClearButtonText();
 
 	const not_null<History*> _history;
+	std::shared_ptr<Ui::ChatTheme> _theme;
 	PeerData *_migratedPeer = nullptr;
 	QPointer<ListWidget> _inner;
 	object_ptr<TopBarWidget> _topBar;
@@ -153,14 +162,13 @@ private:
 	bool _scrollDownIsShown = false;
 	object_ptr<Ui::HistoryDownButton> _scrollDown;
 
-	Data::MessagesSlice _lastSlice;
 	int _messagesCount = -1;
 
 };
 
 class PinnedMemento : public Window::SectionMemento {
 public:
-	using UniversalMsgId = int32;
+	using UniversalMsgId = MsgId;
 
 	explicit PinnedMemento(
 		not_null<History*> history,

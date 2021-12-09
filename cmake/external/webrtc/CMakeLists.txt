@@ -24,6 +24,7 @@ else()
         WEBRTC_USE_BUILTIN_ISAC_FLOAT
         WEBRTC_LIBRARY_IMPL
         WEBRTC_NON_STATIC_TRACE_EVENT_HANDLERS=1
+        WEBRTC_HAVE_USRSCTP
         ABSL_ALLOCATOR_NOTHROW=1
     )
 
@@ -59,7 +60,7 @@ else()
         )
     endif()
 
-    target_include_directories(external_webrtc
+    target_include_directories(external_webrtc SYSTEM
     INTERFACE
         ${webrtc_loc}
         ${webrtc_loc}/third_party/abseil-cpp
@@ -70,7 +71,7 @@ else()
         ${webrtc_lib_prefix}tg_owt
     )
     if (APPLE)
-        target_include_directories(external_webrtc
+        target_include_directories(external_webrtc SYSTEM
         INTERFACE
             ${webrtc_loc}/sdk/objc
             ${webrtc_loc}/sdk/objc/base
@@ -93,10 +94,6 @@ else()
         target_link_libraries(external_webrtc
         INTERFACE
             Secur32.lib # Required for rtc_base/http_common.cc
-            dmoguids.lib # Required for the built-in WASAPI AEC, see modules/audio_device/BUILD.gn
-            wmcodecdspuuid.lib
-            amstrmid.lib
-            msdmo.lib
         )
     elseif (APPLE)
         target_link_libraries(external_webrtc
@@ -114,6 +111,13 @@ else()
             Xrandr
             Xrender
             Xtst
+        )
+        target_link_libraries(external_webrtc
+        INTERFACE
+            X11
+            gio-2.0
+            gobject-2.0
+            glib-2.0
         )
     endif()
 endif()

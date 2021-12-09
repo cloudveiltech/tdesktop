@@ -16,13 +16,17 @@ inline constexpr auto FileStatusSizeFailed = 0x7FFFFFF2;
 [[nodiscard]] QString FormatSizeText(qint64 size);
 [[nodiscard]] QString FormatDownloadText(qint64 ready, qint64 total);
 [[nodiscard]] QString FormatProgressText(qint64 ready, qint64 total);
-[[nodiscard]] QString FormatDateTime(QDateTime date, QString format);
+[[nodiscard]] QString FormatDateTime(
+	QDateTime date,
+	QString dateFormat,
+	QString timeFormat);
 [[nodiscard]] QString FormatDurationText(qint64 duration);
 [[nodiscard]] QString FormatDurationWords(qint64 duration);
 [[nodiscard]] QString FormatDurationAndSizeText(qint64 duration, qint64 size);
 [[nodiscard]] QString FormatGifAndSizeText(qint64 size);
 [[nodiscard]] QString FormatPlayedText(qint64 played, qint64 duration);
 [[nodiscard]] QString FormatImageSizeText(const QSize &size);
+[[nodiscard]] QString FormatPhone(const QString &phone);
 
 struct CurrencyRule {
 	const char *international = "";

@@ -5,6 +5,7 @@
 # https://github.com/desktop-app/legal/blob/master/LEGAL
 
 add_library(linux_wayland_helper STATIC)
+init_target(linux_wayland_helper "(external)")
 add_library(desktop-app::linux_wayland_helper ALIAS linux_wayland_helper)
 
 nice_target_sources(linux_wayland_helper ${CMAKE_CURRENT_SOURCE_DIR}
@@ -12,10 +13,8 @@ PRIVATE
     linux_wayland_helper.cpp
 )
 
-target_compile_definitions(linux_wayland_helper PRIVATE G_LOG_DOMAIN="WaylandHelper")
-
 target_link_libraries(linux_wayland_helper
 PUBLIC
-    desktop-app::external_glib
     desktop-app::external_gsl
+    ${CMAKE_DL_LIBS}
 )

@@ -22,8 +22,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 #include "core/crash_reports.h"
 #include "base/bytes.h"
-#include "base/openssl_help.h"
-#include "app.h"
 
 namespace {
 
@@ -163,11 +161,10 @@ void FileLoader::readImage(int progressiveSizeLimit) const {
 	const auto buffer = progressiveSizeLimit
 		? QByteArray::fromRawData(_data.data(), progressiveSizeLimit)
 		: _data;
-	auto format = QByteArray();
-	auto image = App::readImage(buffer, &format, false);
-	if (!image.isNull()) {
-		_imageData = std::move(image);
-		_imageFormat = format;
+	auto read = Images::Read({ .content = buffer });
+	if (!read.image.isNull()) {
+		_imageData = std::move(read.image);
+		_imageFormat = read.format;
 	}
 }
 
@@ -290,13 +287,12 @@ void FileLoader::loadLocal(const Storage::Cache::Key &key) {
 				value = std::move(value),
 				done = std::move(callback)
 			]() mutable {
-				auto format = QByteArray();
-				auto image = App::readImage(value, &format, false);
-				if (!image.isNull()) {
+				auto read = Images::Read({ .content = value });
+				if (!read.image.isNull()) {
 					done(
 						std::move(value),
-						std::move(image),
-						std::move(format));
+						std::move(read.image),
+						std::move(read.format));
 				} else {
 					done(std::move(value), {}, {});
 				}

@@ -30,7 +30,7 @@ public:
 		not_null<PollData*> poll);
 	~Poll();
 
-	void draw(Painter &p, const QRect &r, TextSelection selection, crl::time ms) const override;
+	void draw(Painter &p, const PaintContext &context) const override;
 	TextState textState(QPoint point, StateRequest request) const override;
 
 	bool toggleSelectionByHandlerClick(const ClickHandlerPtr &p) const override {
@@ -107,17 +107,17 @@ private:
 		Painter &p,
 		int left,
 		int top,
-		TextSelection selection) const;
+		const PaintContext &context) const;
 	void paintCloseByTimer(
 		Painter &p,
 		int right,
 		int top,
-		TextSelection selection) const;
+		const PaintContext &context) const;
 	void paintShowSolution(
 		Painter &p,
 		int right,
 		int top,
-		TextSelection selection) const;
+		const PaintContext &context) const;
 	int paintAnswer(
 		Painter &p,
 		const Answer &answer,
@@ -126,13 +126,13 @@ private:
 		int top,
 		int width,
 		int outerWidth,
-		TextSelection selection) const;
+		const PaintContext &context) const;
 	void paintRadio(
 		Painter &p,
 		const Answer &answer,
 		int left,
 		int top,
-		TextSelection selection) const;
+		const PaintContext &context) const;
 	void paintPercent(
 		Painter &p,
 		const QString &percent,
@@ -140,7 +140,7 @@ private:
 		int left,
 		int top,
 		int outerWidth,
-		TextSelection selection) const;
+		const PaintContext &context) const;
 	void paintFilling(
 		Painter &p,
 		bool chosen,
@@ -150,19 +150,19 @@ private:
 		int top,
 		int width,
 		int height,
-		TextSelection selection) const;
+		const PaintContext &context) const;
 	void paintInlineFooter(
 		Painter &p,
 		int left,
 		int top,
 		int paintw,
-		TextSelection selection) const;
+		const PaintContext &context) const;
 	void paintBottom(
 		Painter &p,
 		int left,
 		int top,
 		int paintw,
-		TextSelection selection) const;
+		const PaintContext &context) const;
 
 	bool checkAnimationStart() const;
 	bool answerVotesChanged() const;
@@ -213,6 +213,8 @@ private:
 	mutable std::unique_ptr<Ui::FireworksAnimation> _fireworksAnimation;
 	Ui::Animations::Simple _wrongAnswerAnimation;
 	mutable QPoint _lastLinkPoint;
+	mutable QImage _userpicCircleCache;
+	mutable QImage _fillingIconCache;
 
 	mutable std::unique_ptr<CloseInformation> _close;
 

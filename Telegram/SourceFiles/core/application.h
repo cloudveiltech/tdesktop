@@ -143,15 +143,8 @@ public:
 	// Media view interface.
 	void checkMediaViewActivation();
 	bool hideMediaView();
-	[[nodiscard]] PeerData *ui_getPeerForMouseAction();
 
 	[[nodiscard]] QPoint getPointForCallPanelCenter() const;
-	[[nodiscard]] QImage logo() const {
-		return _logo;
-	}
-	[[nodiscard]] QImage logoNoMargin() const {
-		return _logoNoMargin;
-	}
 
 	void startSettingsAndBackground();
 	[[nodiscard]] Settings &settings() {
@@ -277,6 +270,8 @@ public:
 	void setScreenIsLocked(bool locked);
 	bool screenIsLocked() const;
 
+	static void RegisterUrlScheme();
+
 protected:
 	bool eventFilter(QObject *object, QEvent *event) override;
 
@@ -352,9 +347,6 @@ private:
 	std::unique_ptr<Media::Player::FloatController> _floatPlayers;
 	Media::Player::FloatDelegate *_defaultFloatPlayerDelegate = nullptr;
 	Media::Player::FloatDelegate *_replacementFloatPlayerDelegate = nullptr;
-
-	const QImage _logo;
-	const QImage _logoNoMargin;
 
 	rpl::variable<bool> _passcodeLock;
 	bool _screenIsLocked = false;

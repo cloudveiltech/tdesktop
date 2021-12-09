@@ -20,7 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/image/image_prepare.h"
 #include "ui/painter.h"
 #include "main/main_account.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "core/application.h"
 #include "core/core_cloud_password.h"
 #include "core/update_checker.h"
@@ -317,7 +317,7 @@ void QrWidget::refreshCode() {
 	_requestId = api().request(MTPauth_ExportLoginToken(
 		MTP_int(ApiId),
 		MTP_string(ApiHash),
-		MTP_vector<MTPint>(0)
+		MTP_vector<MTPlong>(0)
 	)).done([=](const MTPauth_LoginToken &result) {
 		handleTokenResult(result);
 	}).fail([=](const MTP::Error &error) {
@@ -391,26 +391,22 @@ void QrWidget::sendCheckPasswordRequest() {
 	_requestId = api().request(MTPaccount_GetPassword(
 	)).done([=](const MTPaccount_Password &result) {
 		result.match([&](const MTPDaccount_password &data) {
-			getData()->pwdRequest = Core::ParseCloudPasswordCheckRequest(
-				data);
+			getData()->pwdState = Core::ParseCloudPasswordState(data);
 			if (!data.vcurrent_algo() || !data.vsrp_id() || !data.vsrp_B()) {
 				LOG(("API Error: No current password received on login."));
 				goReplace<QrWidget>(Animate::Forward);
 				return;
-			} else if (!getData()->pwdRequest) {
+			} else if (!getData()->pwdState.request) {
 				const auto callback = [=](Fn<void()> &&close) {
 					Core::UpdateApplication();
 					close();
 				};
-				Ui::show(Box<ConfirmBox>(
+				Ui::show(Box<Ui::ConfirmBox>(
 					tr::lng_passport_app_out_of_date(tr::now),
 					tr::lng_menu_update(tr::now),
 					callback));
 				return;
 			}
-			getData()->hasRecovery = data.is_has_recovery();
-			getData()->pwdHint = qs(data.vhint().value_or_empty());
-			getData()->pwdNotEmptyPassport = data.is_has_secure_values();
 			goReplace<PasswordCheckWidget>(Animate::Forward);
 		});
 	}).fail([=](const MTP::Error &error) {

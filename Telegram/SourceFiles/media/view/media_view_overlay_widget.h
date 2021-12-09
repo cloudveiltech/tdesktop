@@ -92,8 +92,6 @@ public:
 	void activateControls();
 	void close();
 
-	PeerData *ui_getPeerForMouseAction();
-
 	void notifyFileDialogShown(bool shown);
 
 	void clearSession();
@@ -265,8 +263,8 @@ private:
 	[[nodiscard]] Data::FileOrigin fileOrigin() const;
 	[[nodiscard]] Data::FileOrigin fileOrigin(const Entity& entity) const;
 
-	void refreshFromLabel(HistoryItem *item);
-	void refreshCaption(HistoryItem *item);
+	void refreshFromLabel();
+	void refreshCaption();
 	void refreshMediaViewer();
 	void refreshNavVisibility();
 	void refreshGroupThumbs();
@@ -282,10 +280,9 @@ private:
 	void resizeCenteredControls();
 	void resizeContentByScreenSize();
 
-	void displayPhoto(not_null<PhotoData*> photo, HistoryItem *item);
+	void displayPhoto(not_null<PhotoData*> photo);
 	void displayDocument(
 		DocumentData *document,
-		HistoryItem *item,
 		const Data::CloudTheme &cloud = Data::CloudTheme(),
 		bool continueStreaming = false);
 	void displayFinished();
@@ -296,6 +293,8 @@ private:
 	void setZoomLevel(int newZoom, bool force = false);
 
 	void updatePlaybackState();
+	void seekRelativeTime(crl::time time);
+	void restartAtProgress(float64 progress);
 	void restartAtSeekPosition(crl::time position);
 
 	void refreshClipControllerGeometry();
@@ -387,6 +386,9 @@ private:
 	void validatePhotoImage(Image *image, bool blurred);
 	void validatePhotoCurrentImage();
 
+	[[nodiscard]] bool hasCopyRestriction() const;
+	[[nodiscard]] bool showCopyRestriction();
+
 	[[nodiscard]] QSize flipSizeByRotation(QSize size) const;
 
 	void applyVideoSize();
@@ -411,7 +413,7 @@ private:
 
 	void applyHideWindowWorkaround();
 
-	Window::SessionController *findWindow() const;
+	Window::SessionController *findWindow(bool switchTo = true) const;
 
 	bool _opengl = false;
 	const std::unique_ptr<Ui::RpWidgetWrap> _surface;
@@ -516,9 +518,7 @@ private:
 	std::optional<int> _index; // Index in current _sharedMedia data.
 	std::optional<int> _fullIndex; // Index in full shared media.
 	std::optional<int> _fullCount;
-	FullMsgId _msgid;
-	bool _canForwardItem = false;
-	bool _canDeleteItem = false;
+	HistoryItem *_message = nullptr;
 
 	mtpRequestId _loadRequest = 0;
 

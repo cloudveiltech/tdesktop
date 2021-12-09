@@ -14,7 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/mtproto_response.h"
 #include "base/value_ordering.h"
 #include "base/bytes.h"
-#include "base/openssl_help.h"
+#include "base/random.h"
 #include <set>
 #include <deque>
 
@@ -515,7 +515,7 @@ void ApiWrap::requestDialogsCount() {
 	const auto offsetId = 0;
 	const auto offsetPeer = MTP_inputPeerEmpty();
 	const auto limit = 1;
-	const auto hash = 0;
+	const auto hash = uint64(0);
 	splitRequest(_startProcess->splitIndex, MTPmessages_GetDialogs(
 		MTP_flags(0),
 		MTPint(), // folder_id
@@ -523,7 +523,7 @@ void ApiWrap::requestDialogsCount() {
 		MTP_int(offsetId),
 		offsetPeer,
 		MTP_int(limit),
-		MTP_int(hash)
+		MTP_long(hash)
 	)).done([=](const MTPmessages_Dialogs &result) {
 		Expects(_settings != nullptr);
 		Expects(_startProcess != nullptr);
@@ -674,15 +674,14 @@ void ApiWrap::startMainSession(FnMut<void()> done) {
 void ApiWrap::requestPersonalInfo(FnMut<void(Data::PersonalInfo&&)> done) {
 	mainRequest(MTPusers_GetFullUser(
 		_user
-	)).done([=, done = std::move(done)](const MTPUserFull &result) mutable {
-		Expects(result.type() == mtpc_userFull);
-
-		const auto &full = result.c_userFull();
-		if (full.vuser().type() == mtpc_user) {
-			done(Data::ParsePersonalInfo(result));
-		} else {
-			error("Bad user type.");
-		}
+	)).done([=, done = std::move(done)](const MTPusers_UserFull &result) mutable {
+		result.match([&](const MTPDusers_userFull &data) {
+			if (!data.vusers().v.empty()) {
+				done(Data::ParsePersonalInfo(data));
+			} else {
+				error("Bad user type.");
+			}
+		});
 	}).send();
 }
 
@@ -736,7 +735,7 @@ void ApiWrap::requestUserpics(
 
 		auto startInfo = result.match(
 		[](const MTPDphotos_photos &data) {
-			return Data::UserpicsInfo{ data.vphotos().v.size() };
+			return Data::UserpicsInfo{ int(data.vphotos().v.size()) };
 		}, [](const MTPDphotos_photosSlice &data) {
 			return Data::UserpicsInfo{ data.vcount().v };
 		});
@@ -879,7 +878,7 @@ void ApiWrap::requestTopPeersSlice() {
 			| Flag::f_phone_calls),
 		MTP_int(_contactsProcess->topPeersOffset),
 		MTP_int(kTopPeerSliceLimit),
-		MTP_int(0) // hash
+		MTP_long(0) // hash
 	)).done([=](const MTPcontacts_TopPeers &result) {
 		Expects(_contactsProcess != nullptr);
 
@@ -968,7 +967,7 @@ void ApiWrap::requestMessagesCount(int localSplitIndex) {
 
 		const auto count = result.match(
 			[](const MTPDmessages_messages &data) {
-			return data.vmessages().v.size();
+			return int(data.vmessages().v.size());
 		}, [](const MTPDmessages_messagesSlice &data) {
 			return data.vcount().v;
 		}, [](const MTPDmessages_channelMessages &data) {
@@ -1071,7 +1070,7 @@ void ApiWrap::requestSinglePeerDialog() {
 		requestUser(MTP_inputUser(data.vuser_id(), data.vaccess_hash()));
 	}, [&](const MTPDinputPeerChat &data) {
 		mainRequest(MTPmessages_GetChats(
-			MTP_vector<MTPint>(1, data.vchat_id())
+			MTP_vector<MTPlong>(1, data.vchat_id())
 		)).done(std::move(doneSinglePeer)).send();
 	}, [&](const MTPDinputPeerChannel &data) {
 		mainRequest(MTPchannels_GetChannels(
@@ -1108,12 +1107,12 @@ mtpRequestId ApiWrap::requestSinglePeerMigrated(
 			const auto migratedChatId = data.vfull_chat().match([&](
 					const MTPDchannelFull &data) {
 				return data.vmigrated_from_chat_id().value_or_empty();
-			}, [](auto &&other) {
+			}, [](auto &&other) -> BareId {
 				return 0;
 			});
 			return migratedChatId
 				? Data::ParseDialogsInfo(
-					MTP_inputPeerChat(MTP_int(migratedChatId)),
+					MTP_inputPeerChat(MTP_long(migratedChatId)),
 					MTP_messages_chats(data.vchats()))
 				: Data::DialogsInfo();
 		});
@@ -1169,7 +1168,7 @@ void ApiWrap::requestDialogsSlice() {
 	}
 
 	const auto splitIndex = _dialogsProcess->splitIndexPlusOne - 1;
-	const auto hash = 0;
+	const auto hash = uint64(0);
 	splitRequest(splitIndex, MTPmessages_GetDialogs(
 		MTP_flags(0),
 		MTPint(), // folder_id
@@ -1177,7 +1176,7 @@ void ApiWrap::requestDialogsSlice() {
 		MTP_int(_dialogsProcess->offsetId),
 		_dialogsProcess->offsetPeer,
 		MTP_int(kChatsSliceLimit),
-		MTP_int(hash)
+		MTP_long(hash)
 	)).done([=](const MTPmessages_Dialogs &result) {
 		if (result.type() == mtpc_messages_dialogsNotModified) {
 			error("Unexpected dialogsNotModified received.");
@@ -1429,7 +1428,7 @@ void ApiWrap::requestChatMessages(
 			MTP_int(limit),
 			MTP_int(0), // max_id
 			MTP_int(0), // min_id
-			MTP_int(0) // hash
+			MTP_long(0) // hash
 		)).done(doneHandler).send();
 	} else {
 		splitRequest(realSplitIndex, MTPmessages_GetHistory(
@@ -1440,7 +1439,7 @@ void ApiWrap::requestChatMessages(
 			MTP_int(limit),
 			MTP_int(0), // max_id
 			MTP_int(0), // min_id
-			MTP_int(0)  // hash
+			MTP_long(0)  // hash
 		)).fail([=](const MTP::Error &error) {
 			Expects(_chatProcess != nullptr);
 
@@ -1748,7 +1747,7 @@ auto ApiWrap::prepareFileProcess(
 	result->location = file.location;
 	result->size = file.size;
 	result->origin = origin;
-	result->randomId = openssl::RandomValue<uint64>();
+	result->randomId = base::RandomValue<uint64>();
 	return result;
 }
 

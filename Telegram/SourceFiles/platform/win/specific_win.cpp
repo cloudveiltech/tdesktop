@@ -11,13 +11,19 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/win/notifications_manager_win.h"
 #include "platform/win/windows_app_user_model_id.h"
 #include "platform/win/windows_dlls.h"
+#include "platform/win/windows_autostart_task.h"
 #include "base/platform/base_platform_info.h"
+#include "base/platform/win/base_windows_co_task_mem.h"
+#include "base/platform/win/base_windows_winrt.h"
 #include "base/call_delayed.h"
+#include "ui/boxes/confirm_box.h"
 #include "lang/lang_keys.h"
 #include "mainwindow.h"
 #include "mainwidget.h"
 #include "history/history_location_manager.h"
 #include "storage/localstorage.h"
+#include "core/application.h"
+#include "window/window_controller.h"
 #include "core/crash_reports.h"
 
 #include <QtCore/QOperatingSystemVersion>
@@ -28,10 +34,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <qpa/qplatformnativeinterface.h>
 
 #include <Shobjidl.h>
+#include <ShObjIdl_core.h>
 #include <shellapi.h>
-
-#include <roapi.h>
-#include <wrl/client.h>
 
 #include <openssl/conf.h>
 #include <openssl/engine.h>
@@ -65,7 +69,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #define WM_NCPOINTERUP 0x0243
 #endif
 
-using namespace Microsoft::WRL;
 using namespace Platform;
 
 namespace {
@@ -75,7 +78,7 @@ bool finished = true;
 QMargins simpleMargins, margins;
 HICON bigIcon = 0, smallIcon = 0, overlayIcon = 0;
 
-BOOL CALLBACK _ActivateProcess(HWND hWnd, LPARAM lParam) {
+BOOL CALLBACK ActivateProcessByPid(HWND hWnd, LPARAM lParam) {
 	uint64 &processId(*(uint64*)lParam);
 
 	DWORD dwProcessId;
@@ -96,11 +99,102 @@ BOOL CALLBACK _ActivateProcess(HWND hWnd, LPARAM lParam) {
 	return TRUE;
 }
 
+void DeleteMyModules() {
+	constexpr auto kMaxPathLong = 32767;
+	auto exePath = std::array<WCHAR, kMaxPathLong + 1>{ 0 };
+	const auto exeLength = GetModuleFileName(
+		nullptr,
+		exePath.data(),
+		kMaxPathLong + 1);
+	if (!exeLength || exeLength >= kMaxPathLong + 1) {
+		return;
+	}
+	const auto exe = std::wstring(exePath.data());
+	const auto last1 = exe.find_last_of('\\');
+	const auto last2 = exe.find_last_of('/');
+	const auto last = std::max(
+		(last1 == std::wstring::npos) ? -1 : int(last1),
+		(last2 == std::wstring::npos) ? -1 : int(last2));
+	if (last < 0) {
+		return;
+	}
+	const auto modules = exe.substr(0, last + 1) + L"modules";
+	const auto deleteOne = [&](const wchar_t *name, const wchar_t *arch) {
+		const auto path = modules + L'\\' + arch + L'\\' + name;
+		DeleteFile(path.c_str());
+	};
+	const auto deleteBoth = [&](const wchar_t *name) {
+		deleteOne(name, L"x86");
+		deleteOne(name, L"x64");
+	};
+	const auto removeOne = [&](const std::wstring &name) {
+		const auto path = modules + L'\\' + name;
+		RemoveDirectory(path.c_str());
+	};
+	const auto removeBoth = [&](const std::wstring &name) {
+		removeOne(L"x86\\" + name);
+		removeOne(L"x64\\" + name);
+	};
+	deleteBoth(L"d3d\\d3dcompiler_47.dll");
+
+	removeBoth(L"d3d");
+	removeOne(L"x86");
+	removeOne(L"x64");
+	RemoveDirectory(modules.c_str());
+}
+
+void ManageAppLink(bool create, bool silent, int path_csidl, const wchar_t *args, const wchar_t *description) {
+	if (cExeName().isEmpty()) {
+		return;
+	}
+	WCHAR startupFolder[MAX_PATH];
+	HRESULT hr = SHGetFolderPath(0, path_csidl, 0, SHGFP_TYPE_CURRENT, startupFolder);
+	if (SUCCEEDED(hr)) {
+		QString lnk = QString::fromWCharArray(startupFolder) + '\\' + AppFile.utf16() + qsl(".lnk");
+		if (create) {
+			const auto shellLink = base::WinRT::TryCreateInstance<IShellLink>(
+				CLSID_ShellLink,
+				CLSCTX_INPROC_SERVER);
+			if (shellLink) {
+				QString exe = QDir::toNativeSeparators(cExeDir() + cExeName()), dir = QDir::toNativeSeparators(QDir(cWorkingDir()).absolutePath());
+				shellLink->SetArguments(args);
+				shellLink->SetPath(exe.toStdWString().c_str());
+				shellLink->SetWorkingDirectory(dir.toStdWString().c_str());
+				shellLink->SetDescription(description);
+
+				if (const auto propertyStore = shellLink.try_as<IPropertyStore>()) {
+					PROPVARIANT appIdPropVar;
+					hr = InitPropVariantFromString(AppUserModelId::getId(), &appIdPropVar);
+					if (SUCCEEDED(hr)) {
+						hr = propertyStore->SetValue(AppUserModelId::getKey(), appIdPropVar);
+						PropVariantClear(&appIdPropVar);
+						if (SUCCEEDED(hr)) {
+							hr = propertyStore->Commit();
+						}
+					}
+				}
+
+				if (const auto persistFile = shellLink.try_as<IPersistFile>()) {
+					hr = persistFile->Save(lnk.toStdWString().c_str(), TRUE);
+				} else {
+					if (!silent) LOG(("App Error: could not create interface IID_IPersistFile %1").arg(hr));
+				}
+			} else {
+				if (!silent) LOG(("App Error: could not create instance of IID_IShellLink %1").arg(hr));
+			}
+		} else {
+			QFile::remove(lnk);
+		}
+	} else {
+		if (!silent) LOG(("App Error: could not get CSIDL %1 folder %2").arg(path_csidl).arg(hr));
+	}
+}
+
 } // namespace
 
 void psActivateProcess(uint64 pid) {
 	if (pid) {
-		::EnumWindows((WNDENUMPROC)_ActivateProcess, (LPARAM)&pid);
+		::EnumWindows((WNDENUMPROC)ActivateProcessByPid, (LPARAM)&pid);
 	}
 }
 
@@ -130,9 +224,10 @@ QString psAppDataPathOld() {
 
 void psDoCleanup() {
 	try {
-		psAutoStart(false, true);
+		Platform::AutostartToggle(false);
 		psSendToMenu(false, true);
 		AppUserModelId::cleanupShortcut();
+		DeleteMyModules();
 	} catch (...) {
 	}
 }
@@ -231,6 +326,7 @@ void StartOpenSSL() {
 
 void start() {
 	StartOpenSSL();
+	Dlls::CheckLoadedModules();
 }
 
 } // namespace ThirdParty
@@ -281,7 +377,54 @@ std::optional<bool> IsDarkMode() {
 }
 
 bool AutostartSupported() {
-	return !IsWindowsStoreBuild();
+	return true;
+}
+
+void AutostartRequestStateFromSystem(Fn<void(bool)> callback) {
+#ifdef OS_WIN_STORE
+	AutostartTask::RequestState([=](bool enabled) {
+		crl::on_main([=] {
+			callback(enabled);
+		});
+	});
+#endif // OS_WIN_STORE
+}
+
+void AutostartToggle(bool enabled, Fn<void(bool)> done) {
+#ifdef OS_WIN_STORE
+	const auto requested = enabled;
+	const auto callback = [=](bool enabled) { crl::on_main([=] {
+		if (!Core::IsAppLaunched()) {
+			return;
+		}
+		done(enabled);
+		if (!requested || enabled) {
+			return;
+		} else if (const auto window = Core::App().activeWindow()) {
+			window->show(Box<Ui::ConfirmBox>(
+				tr::lng_settings_auto_start_disabled_uwp(tr::now),
+				tr::lng_settings_open_system_settings(tr::now),
+				[] { AutostartTask::OpenSettings(); Ui::hideLayer(); }));
+		}
+	}); };
+	AutostartTask::Toggle(
+		enabled,
+		done ? Fn<void(bool)>(callback) : nullptr);
+#else // OS_WIN_STORE
+	const auto silent = !done;
+	ManageAppLink(enabled, silent, CSIDL_STARTUP, L"-autostart", L"Telegram autorun link.\nYou can disable autorun in Telegram settings.");
+	if (done) {
+		done(enabled);
+	}
+#endif // OS_WIN_STORE
+}
+
+bool AutostartSkip() {
+#ifdef OS_WIN_STORE
+	return false;
+#else // OS_WIN_STORE
+	return !cAutoStart();
+#endif // OS_WIN_STORE
 }
 
 void WriteCrashDumpDetails() {
@@ -372,61 +515,18 @@ namespace {
 
 namespace Platform {
 
-void RegisterCustomScheme(bool force) {
-	if (cExeName().isEmpty()) {
-		return;
-	}
-	DEBUG_LOG(("App Info: Checking custom scheme 'tg'..."));
-
-	HKEY rkey;
-	QString exe = QDir::toNativeSeparators(cExeDir() + cExeName());
-
-	// Legacy URI scheme registration
-	if (!_psOpenRegKey(L"Software\\Classes\\tg", &rkey)) return;
-	if (!_psSetKeyValue(rkey, L"URL Protocol", QString())) return;
-	if (!_psSetKeyValue(rkey, 0, qsl("URL:Telegram Link"))) return;
-
-	if (!_psOpenRegKey(L"Software\\Classes\\tg\\DefaultIcon", &rkey)) return;
-	if (!_psSetKeyValue(rkey, 0, '"' + exe + qsl(",1\""))) return;
-
-	if (!_psOpenRegKey(L"Software\\Classes\\tg\\shell", &rkey)) return;
-	if (!_psOpenRegKey(L"Software\\Classes\\tg\\shell\\open", &rkey)) return;
-	if (!_psOpenRegKey(L"Software\\Classes\\tg\\shell\\open\\command", &rkey)) return;
-	if (!_psSetKeyValue(rkey, 0, '"' + exe + qsl("\" -workdir \"") + cWorkingDir() + qsl("\" -- \"%1\""))) return;
-
-	// URI scheme registration as Default Program - Windows Vista and above
-	if (!_psOpenRegKey(L"Software\\Classes\\tdesktop.tg", &rkey)) return;
-	if (!_psOpenRegKey(L"Software\\Classes\\tdesktop.tg\\DefaultIcon", &rkey)) return;
-	if (!_psSetKeyValue(rkey, 0, '"' + exe + qsl(",1\""))) return;
-
-	if (!_psOpenRegKey(L"Software\\Classes\\tdesktop.tg\\shell", &rkey)) return;
-	if (!_psOpenRegKey(L"Software\\Classes\\tdesktop.tg\\shell\\open", &rkey)) return;
-	if (!_psOpenRegKey(L"Software\\Classes\\tdesktop.tg\\shell\\open\\command", &rkey)) return;
-	if (!_psSetKeyValue(rkey, 0, '"' + exe + qsl("\" -workdir \"") + cWorkingDir() + qsl("\" -- \"%1\""))) return;
-
-	if (!_psOpenRegKey(L"Software\\TelegramDesktop", &rkey)) return;
-	if (!_psOpenRegKey(L"Software\\TelegramDesktop\\Capabilities", &rkey)) return;
-	if (!_psSetKeyValue(rkey, L"ApplicationName", qsl("CloudVeil Messenger"))) return;
-	if (!_psSetKeyValue(rkey, L"ApplicationDescription", qsl("CloudVeil Messenger"))) return;
-	if (!_psOpenRegKey(L"Software\\TelegramDesktop\\Capabilities\\UrlAssociations", &rkey)) return;
-	if (!_psSetKeyValue(rkey, L"tg", qsl("tdesktop.tg"))) return;
-
-	if (!_psOpenRegKey(L"Software\\RegisteredApplications", &rkey)) return;
-	if (!_psSetKeyValue(rkey, L"CloudVeil Messenger", qsl("SOFTWARE\\TelegramDesktop\\Capabilities"))) return;
-}
-
 PermissionStatus GetPermissionStatus(PermissionType type) {
-	if (type==PermissionType::Microphone) {
-		PermissionStatus result=PermissionStatus::Granted;
+	if (type == PermissionType::Microphone) {
+		PermissionStatus result = PermissionStatus::Granted;
 		HKEY hKey;
-		LSTATUS res=RegOpenKeyEx(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\microphone", 0, KEY_QUERY_VALUE, &hKey);
-		if(res==ERROR_SUCCESS) {
+		LSTATUS res = RegOpenKeyEx(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\microphone", 0, KEY_QUERY_VALUE, &hKey);
+		if (res == ERROR_SUCCESS) {
 			wchar_t buf[20];
-			DWORD length=sizeof(buf);
-			res=RegQueryValueEx(hKey, L"Value", NULL, NULL, (LPBYTE)buf, &length);
-			if(res==ERROR_SUCCESS) {
-				if(wcscmp(buf, L"Deny")==0) {
-					result=PermissionStatus::Denied;
+			DWORD length = sizeof(buf);
+			res = RegQueryValueEx(hKey, L"Value", NULL, NULL, (LPBYTE)buf, &length);
+			if (res == ERROR_SUCCESS) {
+				if (wcscmp(buf, L"Deny") == 0) {
+					result = PermissionStatus::Denied;
 				}
 			}
 			RegCloseKey(hKey);
@@ -467,77 +567,45 @@ bool OpenSystemSettings(SystemSettingsType type) {
 } // namespace Platform
 
 void psNewVersion() {
-	Platform::RegisterCustomScheme();
 	if (Local::oldSettingsVersion() < 8051) {
 		AppUserModelId::checkPinned();
 	}
-	if (Local::oldSettingsVersion() > 0 && Local::oldSettingsVersion() < 10021) {
+	if (Local::oldSettingsVersion() > 0
+		&& Local::oldSettingsVersion() < 2008012) {
 		// Reset icons cache, because we've changed the application icon.
 		if (Dlls::SHChangeNotify) {
-			Dlls::SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+			Dlls::SHChangeNotify(
+				SHCNE_ASSOCCHANGED,
+				SHCNF_IDLIST,
+				nullptr,
+				nullptr);
 		}
 	}
-}
-
-void _manageAppLnk(bool create, bool silent, int path_csidl, const wchar_t *args, const wchar_t *description) {
-	if (cExeName().isEmpty()) {
-		return;
-	}
-	WCHAR startupFolder[MAX_PATH];
-	HRESULT hr = SHGetFolderPath(0, path_csidl, 0, SHGFP_TYPE_CURRENT, startupFolder);
-	if (SUCCEEDED(hr)) {
-		QString lnk = QString::fromWCharArray(startupFolder) + '\\' + AppFile.utf16() + qsl(".lnk");
-		if (create) {
-			ComPtr<IShellLink> shellLink;
-			hr = CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&shellLink));
-			if (SUCCEEDED(hr)) {
-				ComPtr<IPersistFile> persistFile;
-
-				QString exe = QDir::toNativeSeparators(cExeDir() + cExeName()), dir = QDir::toNativeSeparators(QDir(cWorkingDir()).absolutePath());
-				shellLink->SetArguments(args);
-				shellLink->SetPath(exe.toStdWString().c_str());
-				shellLink->SetWorkingDirectory(dir.toStdWString().c_str());
-				shellLink->SetDescription(description);
-
-				ComPtr<IPropertyStore> propertyStore;
-				hr = shellLink.As(&propertyStore);
-				if (SUCCEEDED(hr)) {
-					PROPVARIANT appIdPropVar;
-					hr = InitPropVariantFromString(AppUserModelId::getId(), &appIdPropVar);
-					if (SUCCEEDED(hr)) {
-						hr = propertyStore->SetValue(AppUserModelId::getKey(), appIdPropVar);
-						PropVariantClear(&appIdPropVar);
-						if (SUCCEEDED(hr)) {
-							hr = propertyStore->Commit();
-						}
-					}
-				}
-
-				hr = shellLink.As(&persistFile);
-				if (SUCCEEDED(hr)) {
-					hr = persistFile->Save(lnk.toStdWString().c_str(), TRUE);
-				} else {
-					if (!silent) LOG(("App Error: could not create interface IID_IPersistFile %1").arg(hr));
-				}
-			} else {
-				if (!silent) LOG(("App Error: could not create instance of IID_IShellLink %1").arg(hr));
-			}
-		} else {
-			QFile::remove(lnk);
-		}
-	} else {
-		if (!silent) LOG(("App Error: could not get CSIDL %1 folder %2").arg(path_csidl).arg(hr));
-	}
-}
-
-void psAutoStart(bool start, bool silent) {
-	_manageAppLnk(start, silent, CSIDL_STARTUP, L"-autostart", L"Telegram autorun link.\nYou can disable autorun in Telegram settings.");
 }
 
 void psSendToMenu(bool send, bool silent) {
-	_manageAppLnk(send, silent, CSIDL_SENDTO, L"-sendpath", L"Telegram send to link.\nYou can disable send to menu item in Telegram settings.");
+	ManageAppLink(send, silent, CSIDL_SENDTO, L"-sendpath", L"Telegram send to link.\nYou can disable send to menu item in Telegram settings.");
 }
 
 bool psLaunchMaps(const Data::LocationPoint &point) {
-	return QDesktopServices::openUrl(qsl("bingmaps:?lvl=16&collection=point.%1_%2_Point").arg(point.latAsString()).arg(point.lonAsString()));
+	const auto aar = base::WinRT::TryCreateInstance<
+		IApplicationAssociationRegistration
+	>(CLSID_ApplicationAssociationRegistration);
+	if (!aar) {
+		return false;
+	}
+
+	auto handler = base::CoTaskMemString();
+	const auto result = aar->QueryCurrentDefault(
+		L"bingmaps",
+		AT_URLPROTOCOL,
+		AL_EFFECTIVE,
+		handler.put());
+	if (FAILED(result) || !handler) {
+		return false;
+	}
+
+	const auto url = u"bingmaps:?lvl=16&collection=point.%1_%2_Point"_q;
+	return QDesktopServices::openUrl(
+		url.arg(point.latAsString()).arg(point.lonAsString()));
 }

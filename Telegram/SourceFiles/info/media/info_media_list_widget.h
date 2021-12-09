@@ -46,7 +46,7 @@ class AbstractController;
 namespace Media {
 
 using BaseLayout = Overview::Layout::ItemBase;
-using UniversalMsgId = int32;
+using UniversalMsgId = MsgId;
 
 class ListWidget final
 	: public Ui::RpWidget
@@ -76,16 +76,21 @@ public:
 	void saveState(not_null<Memento*> memento);
 	void restoreState(not_null<Memento*> memento);
 
+	// Overview::Layout::Delegate
 	void registerHeavyItem(not_null<const BaseLayout*> item) override;
 	void unregisterHeavyItem(not_null<const BaseLayout*> item) override;
+	void repaintItem(not_null<const BaseLayout*> item) override;
+	bool itemVisible(not_null<const BaseLayout*> item) override;
 
 	void openPhoto(not_null<PhotoData*> photo, FullMsgId id) override;
 	void openDocument(
 		not_null<DocumentData*> document,
-		FullMsgId id) override;
+		FullMsgId id,
+		bool showInMediaView = false) override;
 
 private:
 	struct Context;
+	struct DateBadge;
 	class Section;
 	using CursorState = HistoryView::CursorState;
 	using TextState = HistoryView::TextState;
@@ -164,12 +169,15 @@ private:
 	void mouseReleaseEvent(QMouseEvent *e) override;
 	void mouseDoubleClickEvent(QMouseEvent *e) override;
 	void contextMenuEvent(QContextMenuEvent *e) override;
-	void enterEventHook(QEvent *e) override;
+	void enterEventHook(QEnterEvent *e) override;
 	void leaveEventHook(QEvent *e) override;
 
 	void start();
 	int recountHeight();
 	void refreshHeight();
+
+	void setupSelectRestriction();
+	[[nodiscard]] bool hasSelectRestriction() const;
 
 	QMargins padding() const;
 	bool isMyItem(not_null<const HistoryItem*> item) const;
@@ -327,15 +335,7 @@ private:
 	DragSelectAction _dragSelectAction = DragSelectAction::None;
 	bool _wasSelectedText = false; // was some text selected in current drag action
 
-	struct DateBadge {
-		SingleQueuedInvokation check;
-		base::Timer hideTimer;
-		Ui::Animations::Simple opacity;
-		bool goodType = false;
-		bool shown = false;
-		QString text;
-		QRect rect;
-	} _dateBadge;
+	const std::unique_ptr<DateBadge> _dateBadge;
 
 	base::unique_qptr<Ui::PopupMenu> _contextMenu;
 	rpl::event_stream<> _checkForHide;

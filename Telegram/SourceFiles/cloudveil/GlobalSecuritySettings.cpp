@@ -114,7 +114,7 @@ void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 		session.local().readRecentHashtagsAndBots();
 	}
 
-	for_const(UserData* user, cRecentInlineBots()) {
+	for (const auto user : cRecentInlineBots()) {
 		addDialogToRequest(request, user);
 	}
 
@@ -147,13 +147,12 @@ void GlobalSecuritySettings::checkStickerSetByDocumentAsync(DocumentData* sticke
 
 		Main::Session& session = App::main()->session();
 		MTP::Sender api(&session.mtp());
+
 		api.request(MTPmessages_GetStickerSet(
-				MTP_inputStickerSetID(
-					MTP_long(data->set.id),
-					MTP_long(data->set.accessHash)
-				)
-			)
-			).done([=](const MTPmessages_StickerSet& result) {
+			Data::InputStickerSet(data->set),
+			MTP_int(data->set.accessHash) // hash
+			))
+		.done([=](const MTPmessages_StickerSet& result) {
 			gotStickersSet(result);
 		}).send();
 	}

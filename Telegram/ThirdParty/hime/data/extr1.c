@@ -1,4 +1,6 @@
-/* Copyright (C) 2011 Edward Der-Hua Liu, Hsin-Chu, Taiwan
+/*
+ * Copyright (C) 2020 The HIME team, Taiwan
+ * Copyright (C) 2011 Edward Der-Hua Liu, Hsin-Chu, Taiwan
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -17,29 +19,27 @@
 
 #include <stdio.h>
 #include <string.h>
-#include "util.h"
-int utf8_str_N(char *str);
 
+#include "hime.h"
 
-int main()
-{
-  FILE *fp;
+int main (void) {
+    FILE *fp = fopen ("tsin.src", "r");
 
-  if ((fp=fopen("tsin.src", "r"))==NULL)
-    p_err("cannot open");
+    if (!fp)
+        p_err ("cannot open");
 
-  while (!feof(fp)) {
-    char aa[128];
-    char bb[128];
-    int usecount;
-    char line[256];
+    while (!feof (fp)) {
+        char aa[128];
+        char bb[128];
+        int usecount;
+        char line[256];
 
-    fgets(line, sizeof(line), fp);
-    sscanf(line, "%s %s %d", aa, bb, &usecount);
+        fgets (line, sizeof (line), fp);
+        sscanf (line, "%s %s %d", aa, bb, &usecount);
 
-    if (utf8_str_N(aa)==1)
-      printf("%s", line);
-  }
+        if (utf8_str_N (aa) == 1)
+            printf ("%s", line);
+    }
 
-  return 0;
+    return 0;
 }

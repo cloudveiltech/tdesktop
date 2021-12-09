@@ -18,12 +18,11 @@ namespace Platform {
 
 [[nodiscard]] bool IsDarkMenuBar();
 
-inline QImage GetImageFromClipboard() {
-	return {};
-}
-
 inline bool AutostartSupported() {
 	return false;
+}
+
+inline void AutostartRequestStateFromSystem(Fn<void(bool)> callback) {
 }
 
 inline bool TrayIconSupported() {
@@ -54,7 +53,6 @@ inline void psCheckLocalSocket(const QString &serverName) {
 
 void psActivateProcess(uint64 pid = 0);
 QString psAppDataPath();
-void psAutoStart(bool start, bool silent = false);
 void psSendToMenu(bool send, bool silent = false);
 
 int psCleanup();

@@ -7,6 +7,7 @@
 #include "base/platform/mac/base_info_mac.h"
 
 #include "base/timer.h"
+#include "base/algorithm.h"
 #include "base/platform/base_platform_info.h"
 #include "base/platform/mac/base_utilities_mac.h"
 
@@ -44,7 +45,7 @@ QString FromIdentifier(const QString &model) {
 	}
 	QStringList words;
 	QString word;
-	for (const QChar ch : model) {
+	for (const QChar &ch : model) {
 		if (!ch.isLetter()) {
 			continue;
 		}
@@ -60,7 +61,7 @@ QString FromIdentifier(const QString &model) {
 		words.push_back(word);
 	}
 	QString result;
-	for (const QString word : words) {
+	for (const QString &word : words) {
 		if (!result.isEmpty()
 			&& word != "Mac"
 			&& word != "Book") {
@@ -71,14 +72,19 @@ QString FromIdentifier(const QString &model) {
 	return result;
 }
 
-int MajorVersion() {
+[[nodiscard]] int MajorVersion() {
 	static const auto current = QOperatingSystemVersion::current();
 	return current.majorVersion();
 }
 
-int MinorVersion() {
+[[nodiscard]] int MinorVersion() {
 	static const auto current = QOperatingSystemVersion::current();
 	return current.minorVersion();
+}
+
+[[nodiscard]] int PatchVersion() {
+	static const auto current = QOperatingSystemVersion::current();
+	return current.microVersion();
 }
 
 template <int Major, int Minor>
@@ -89,13 +95,22 @@ bool IsMacThatOrGreater() {
 }
 
 template <int Minor>
-bool IsMac10ThatOrGreater() {
+[[nodiscard]] bool IsMac10ThatOrGreater() {
 	return IsMacThatOrGreater<10, Minor>();
 }
 
-NSURL *PrivacySettingsUrl(const QString &section) {
-	NSString *url = Q2NSString("x-apple.systempreferences:com.apple.preference.security?" + section);
+[[nodiscard]] NSURL *PrivacySettingsUrl(const QString &section) {
+	NSString *url = Q2NSString(
+		"x-apple.systempreferences:com.apple.preference.security?" + section
+	);
 	return [NSURL URLWithString:url];
+}
+
+[[nodiscard]] bool RunningThroughRosetta() {
+	 auto result = int(0);
+	 auto size = sizeof(result);
+	 sysctlbyname("sysctl.proc_translated", &result, &size, nullptr, 0);
+	 return (result == 1);
 }
 
 } // namespace
@@ -106,7 +121,8 @@ QString DeviceModelPretty() {
 	if (length > 0) {
 		QByteArray bytes(length, Qt::Uninitialized);
 		sysctlbyname("hw.model", bytes.data(), &length, nullptr, 0);
-		const QString parsed = FromIdentifier(QString::fromUtf8(bytes));
+		const auto parsed = base::CleanAndSimplify(
+			FromIdentifier(QString::fromUtf8(bytes)));
 		if (!parsed.isEmpty()) {
 			return parsed;
 		}
@@ -117,12 +133,14 @@ QString DeviceModelPretty() {
 QString SystemVersionPretty() {
 	const auto major = MajorVersion();
 	const auto minor = MinorVersion();
+	const auto patch = PatchVersion();
+	const auto addAsPatch = (patch > 0) ? u".%1"_q.arg(patch) : QString();
 	if (major < 10) {
 		return "OS X";
 	} else if (major == 10 && minor < 12) {
-		return QString("OS X 10.%1").arg(minor);
+		return QString("OS X 10.%1").arg(minor) + addAsPatch;
 	}
-	return QString("macOS %1.%2").arg(major).arg(minor);
+	return QString("macOS %1.%2").arg(major).arg(minor) + addAsPatch;
 }
 
 QString SystemCountry() {
@@ -147,51 +165,20 @@ QString SystemLanguage() {
 }
 
 QDate WhenSystemBecomesOutdated() {
-	if (!IsMac10_10OrGreater()) {
-		return QDate(2019, 9, 1);
-	} else if (!IsMac10_12OrGreater()) {
-		return QDate(2020, 9, 1);
-	}
 	return QDate();
 }
 
 int AutoUpdateVersion() {
-	if (!IsMac10_10OrGreater()) {
-		return 1;
-	}
 	return 2;
 }
 
 QString AutoUpdateKey() {
-	if (!IsMac10_12OrGreater()) {
-		return "osx";
+	if (QSysInfo::currentCpuArchitecture().startsWith("arm")
+		|| RunningThroughRosetta()) {
+		return "armac";
 	} else {
 		return "mac";
 	}
-}
-
-bool IsMac10_6OrGreater() {
-	return IsMac10ThatOrGreater<6>();
-}
-
-bool IsMac10_7OrGreater() {
-	return IsMac10ThatOrGreater<7>();
-}
-
-bool IsMac10_8OrGreater() {
-	return IsMac10ThatOrGreater<8>();
-}
-
-bool IsMac10_9OrGreater() {
-	return IsMac10ThatOrGreater<9>();
-}
-
-bool IsMac10_10OrGreater() {
-	return IsMac10ThatOrGreater<10>();
-}
-
-bool IsMac10_11OrGreater() {
-	return IsMac10ThatOrGreater<11>();
 }
 
 bool IsMac10_12OrGreater() {

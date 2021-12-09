@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "storage/storage_domain.h"
 #include "data/data_session.h"
+#include "base/qt_adapters.h"
 #include "mainwindow.h"
 #include "apiwrap.h"
 
@@ -22,130 +23,125 @@ namespace {
 std::map<int, const char*> BetaLogs() {
 	return {
 	{
-		2005002,
-		"- Fix possible crash in video calls.\n"
-
-		"- Fix possible crash in connecting to voice chats.\n"
-
-		"- Use different audio module code on Windows in calls.\n"
+		2009004,
+		"- Choose one from dozens of new gorgeous animated backgrounds"
+		" in Chat Settings > Chat background.\n"
 	},
 	{
-		2005003,
-		"- Allow using mouse buttons in Push-to-Talk shortcut.\n"
+		2009005,
+		"- Tile chat background patterns horizontally.\n"
 
-		"- Fix blurred thumbnails in Shared Links section.\n"
+		"- Fix a rare crash in spellchecker on Windows.\n"
+
+		"- Fix animated chat backgrounds in Saved Messages.\n"
+
+		"- Fix \"Sorry, group is inaccessible\" message "
+		"in scheduled voice chats.\n",
 	},
 	{
-		2005004,
-		"- Implement new audio module code for calls and voice chats.\n"
-
-		"- Allow retracting votes from polls in comments to channel posts.\n"
-
-		"- Show small voice chat button for empty voice chats.\n"
-
-		"- Fix media viewer updating when screen resolution is changed.\n"
+		2009013,
+		"- See unread comments count when scrolling discussions in channels."
 	},
 	{
-		2005005,
-		"- Fix recording of audio in voice chats.\n"
+		3000002,
+		"- Check who've seen your message in small groups "
+		"from the context menu.\n"
 
-		"- Fix media viewer zoom and crashing.\n"
+		"- Enable recording with video in live streams and video chats."
 	},
 	{
-		2005006,
-		"- Press Up arrow to edit your last sent comment.\n"
+		3000004,
+		"- Fix a crash when joining video chat or live broadcast.\n"
 
-		"- Add more information to date tooltips "
-		"in Recent Actions and channel comments.\n"
-
-		"- Bug and crash fixes.\n"
+		"- Add a \"Close to Taskbar\" option when tray icon is disabled "
+		"(Windows and Linux)."
 	},
 	{
-		2006002,
-		"- Fix text disappearing because of cloud drafts sync.\n"
+		3000005,
+		"- Add support for Emoji 13.1."
 	},
 	{
-		2006003,
-		"- Fix audio device selection in voice chats.\n"
+		3001002,
+		"- Control video in fullscreen mode using arrows and numbers.\n"
 
-		"- Fix blinking self profile photo "
-		"in case the profile photo privacy is used.\n"
+		"- Open locations in browser if default Bing Maps is not installed.\n"
 
-		"- Fix voice chat admin menu on macOS.\n"
+		"- Reconnect without timeout when network availability changes.\n"
+
+		"- Crash fixes."
 	},
 	{
-		2006004,
-		"- Fix freeze in voice chats.\n"
+		3001005,
+		"- Choose one of 8 new preset themes for any individual private chat.\n"
 
-		"- Make default interface scale 110% on macOS Retina screens.\n"
+		"- Click on '...' menu > 'Change Colors' to pick a theme.\n"
+
+		"- Both chat participants will see the same theme in that chat "
+		"– on all their devices.\n"
+
+		"- Each new theme features colorful gradient message bubbles, "
+		"beautifully animated backgrounds and unique background patterns.\n"
+
+		"- All chat themes have day and night versions and will follow "
+		"your overall dark mode settings.\n"
+
+		"- Implement main window rounded corners on Windows 11.\n"
+
+		"- Fix audio capture from AirPods on macOS.\n"
 	},
 	{
-		2006005,
-		"- Improvements and fixes in new voice chat features.\n"
+		3001006,
+		"- Show small media previews in chats list.\n"
+
+		"- Show media album previews and caption text in chats list.\n"
+
+		"- Add \"Quick Reply\" and \"Mark as Read\" "
+		"to native Windows notifications.\n"
 	},
 	{
-		2006007,
-		"- Improve voice chat participants list updating.\n"
+		3001012,
+		"- Create special invite links that require admins "
+		"to approve users before they become members.\n"
+
+		"- Admins can view the applicants' profiles and bios "
+		"by tapping the Join Requests bar at the top of the chat.\n"
+
+		"- Add internal labels to your chat's Invite Links "
+		"to keep them organized.\n"
+
+		"- Run natively on Apple Silicon (macOS only).\n"
 	},
 	{
-		2006008,
-		"- Fix connecting and getting allowed to speak on voice chats.\n"
+		3001013,
+		"- Fix requests to groups / channels processing.\n"
 
-		"- MPRIS support on Linux.\n"
-	},
-	{
-		2007005,
-		"- Add \"Voice chats\" filter in \"Recent actions\" for channels.\n"
+		"- Fix internal link previews with View Content button layout.\n"
 
-		"- Write local drafts to disk on a background thread.\n"
+		"- Fix crash in messages search with imported messages results.\n"
 
-		"- Support autoupdate for Telegram in write-protected folders on Linux.\n"
+		"- Don't use fractional system UI scaling on Linux.\n"
 
-		"- Fix crash in native notifications on Linux.\n"
-
-		"- Fix crash in file dialog on Linux.\n"
-	},
-	{
-		2007007,
-		"- Optimized video playback in media viewer and Picture-in-Picture mode.\n"
-
-		"- Added integration with System Media Transport Controls on Windows 10.\n"
-
-		"- Added \"Now Playing\" integration for music playback on macOS.\n"
-
-		"- Added \"Archive Sticker\" into the \"...\" menu of the Sticker Set Box.\n"
-
-		"- Fixed memory not being freed on Linux.\n"
+		"- Fix invite link icons on macOS.\n"
 
 		"- Several crash fixes.\n"
 	},
 	{
-		2007009,
-		"- Added \"Enable noise suppression\" option to group calls Settings.\n"
+		3002006,
+		"- Try out the new audio player with playlist shuffle and repeat.\n"
 
-		"- Fix media viewer with Retina + Non-Retina dual monitor setup on macOS.\n"
-
-		"- Several bug and crash fixes.\n"
+		"- Give a custom name to your desktop session "
+		"to distinguish it in the sessions list.\n"
 	},
 	{
-		2007010,
-		"- Added ability to mix together bold, italic and other formatting.\n"
+		3002007,
+		"- Active sessions list redesign.\n"
 
-		"- Fix voice chats and video calls OpenGL with some drivers on Windows.\n"
+		"- Fix disappearing emoji selector button.\n"
 
-		"- Several bug fixes.\n"
-	},
-	{
-		2008006,
-		"- Added a simple image editor. "
-		"Crop photos or highlight parts of screenshots before sending.\n"
-
-		"- Use Direct3D 9 backend in ANGLE by default (Windows).\n"
-
-		"- Fix \"Show in Finder\" not focusing the Finder window (macOS).\n"
-
-		"- Use GTK from a child process (Linux).\n"
-	},
+		"- Fix a crash in archived stickers loading.\n"
+		
+		"- Fix a crash in calls to old Telegram versions.\n"
+	}
 	};
 };
 
@@ -230,7 +226,7 @@ void Changelogs::addLocalLog(const QString &text) {
 };
 
 void Changelogs::addBetaLogs() {
-	for (const auto [version, changes] : BetaLogs()) {
+	for (const auto &[version, changes] : BetaLogs()) {
 		addBetaLog(version, changes);
 	}
 }
@@ -243,7 +239,7 @@ void Changelogs::addBetaLog(int changeVersion, const char *changes) {
 		static const auto simple = u"\n- "_q;
 		static const auto separator = QString::fromUtf8("\n\xE2\x80\xA2 ");
 		auto result = QString::fromUtf8(changes).trimmed();
-		if (result.startsWith(simple.midRef(1))) {
+		if (result.startsWith(base::StringViewMid(simple, 1))) {
 			result = separator.mid(1) + result.mid(simple.size() - 1);
 		}
 		return result.replace(simple, separator);

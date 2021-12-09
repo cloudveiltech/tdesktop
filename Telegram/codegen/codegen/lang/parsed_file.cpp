@@ -23,15 +23,6 @@ using BasicType = BasicToken::Type;
 
 constexpr int kErrorBadString          = 806;
 
-bool ValidateAnsiString(const QString &value) {
-	for (auto ch : value) {
-		if (ch.unicode() > 127) {
-			return false;
-		}
-	}
-	return true;
-}
-
 bool ValidateKey(const QString &key) {
 	static const auto validator = QRegularExpression("^[a-z0-9_.-]+(#(one|other))?$", QRegularExpression::CaseInsensitiveOption);
 	if (!validator.match(key).hasMatch()) {
@@ -182,7 +173,7 @@ QString ParsedFile::extractTagsData(const QString &value, LangPack *to) {
 	finalValue.reserve(value.size() * 2);
 	while (tagStart >= 0) {
 		if (tagStart > tagEnd) {
-			finalValue.append(value.midRef(tagEnd, tagStart - tagEnd));
+			finalValue.append(value.mid(tagEnd, tagStart - tagEnd));
 		}
 		++tagStart;
 		tagEnd = value.indexOf('}', tagStart);
@@ -195,7 +186,7 @@ QString ParsedFile::extractTagsData(const QString &value, LangPack *to) {
 		tagStart = value.indexOf('{', tagEnd);
 	}
 	if (tagEnd < value.size()) {
-		finalValue.append(value.midRef(tagEnd));
+		finalValue.append(value.mid(tagEnd));
 	}
 	return finalValue;
 }

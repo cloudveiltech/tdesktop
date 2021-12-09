@@ -53,8 +53,8 @@ bool GroupCallParticipant::screenPaused() const {
 
 GroupCall::GroupCall(
 	not_null<PeerData*> peer,
-	uint64 id,
-	uint64 accessHash,
+	CallId id,
+	CallId accessHash,
 	TimeId scheduleDate)
 : _id(id)
 , _accessHash(accessHash)
@@ -70,7 +70,7 @@ GroupCall::~GroupCall() {
 	api().request(_reloadRequestId).cancel();
 }
 
-uint64 GroupCall::id() const {
+CallId GroupCall::id() const {
 	return _id;
 }
 
@@ -135,7 +135,7 @@ void GroupCall::requestParticipants() {
 				_participantsReloaded.fire({});
 			}
 		});
-	}).fail([=](const MTP::Error &error) {
+	}).fail([=] {
 		_participantsRequestId = 0;
 		const auto reloaded = processSavedFullCall();
 		setServerParticipantsCount(_participants.size());
@@ -328,7 +328,7 @@ void GroupCall::discard(const MTPDgroupCallDiscarded &data) {
 	Core::App().calls().applyGroupCallUpdateChecked(
 		&peer->session(),
 		MTP_updateGroupCall(
-			MTP_int(peer->isChat()
+			MTP_long(peer->isChat()
 				? peerToChat(peer->id).bare
 				: peerToChannel(peer->id).bare),
 			MTP_groupCallDiscarded(
@@ -389,7 +389,10 @@ void GroupCall::applyCallFields(const MTPDgroupCall &data) {
 	setServerParticipantsCount(data.vparticipants_count().v);
 	changePeerEmptyCallFlag();
 	_title = qs(data.vtitle().value_or_empty());
-	_recordStartDate = data.vrecord_start_date().value_or_empty();
+	{
+		_recordVideo = data.is_record_video_active();
+		_recordStartDate = data.vrecord_start_date().value_or_empty();
+	}
 	_scheduleDate = data.vschedule_date().value_or_empty();
 	_scheduleStartSubscribed = data.is_schedule_start_subscribed();
 	_unmutedVideoLimit = data.vunmuted_video_limit().v;
@@ -496,8 +499,9 @@ void GroupCall::reload() {
 	}
 	_reloadByQueuedUpdatesTimer.cancel();
 
+	const auto limit = 3;
 	_reloadRequestId = api().request(
-		MTPphone_GetGroupCall(input())
+		MTPphone_GetGroupCall(input(), MTP_int(limit))
 	).done([=](const MTPphone_GroupCall &result) {
 		if (requestParticipantsAfterReload(result)) {
 			_savedFull = result;
@@ -507,7 +511,7 @@ void GroupCall::reload() {
 		}
 		_reloadRequestId = 0;
 		processFullCall(result);
-	}).fail([=](const MTP::Error &error) {
+	}).fail([=] {
 		_reloadRequestId = 0;
 	}).send();
 }
@@ -846,12 +850,12 @@ void GroupCall::requestUnknownParticipants() {
 	for (const auto &[participantPeerId, when] : participantPeerIds) {
 		if (const auto userId = peerToUser(participantPeerId)) {
 			peerInputs.push_back(
-				MTP_inputPeerUser(MTP_int(userId.bare), MTP_long(0))); // #TODO ids
+				MTP_inputPeerUser(MTP_long(userId.bare), MTP_long(0)));
 		} else if (const auto chatId = peerToChat(participantPeerId)) {
-			peerInputs.push_back(MTP_inputPeerChat(MTP_int(chatId.bare))); // #TODO ids
+			peerInputs.push_back(MTP_inputPeerChat(MTP_long(chatId.bare)));
 		} else if (const auto channelId = peerToChannel(participantPeerId)) {
 			peerInputs.push_back(
-				MTP_inputPeerChannel(MTP_int(channelId.bare), MTP_long(0))); // #TODO ids
+				MTP_inputPeerChannel(MTP_long(channelId.bare), MTP_long(0)));
 		}
 	}
 	_unknownParticipantPeersRequestId = api().request(
@@ -894,7 +898,7 @@ void GroupCall::requestUnknownParticipants() {
 			_participantsResolved.fire(&ssrcs);
 		}
 		requestUnknownParticipants();
-	}).fail([=](const MTP::Error &error) {
+	}).fail([=] {
 		_unknownParticipantPeersRequestId = 0;
 		for (const auto &[ssrc, when] : ssrcs) {
 			_unknownSpokenSsrcs.remove(ssrc);

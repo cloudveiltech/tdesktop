@@ -12,11 +12,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/image/image.h"
 #include "ui/toast/toast.h"
 #include "ui/text/text_options.h"
+#include "ui/chat/chat_style.h"
+#include "ui/chat/chat_theme.h"
 #include "history/history.h"
 #include "history/history_message.h"
 #include "history/view/history_view_service_message.h"
 #include "history/view/media/history_view_document.h"
 #include "core/click_handler_types.h"
+#include "layout/layout_position.h"
 #include "mainwindow.h"
 #include "media/audio/media_audio.h"
 #include "media/player/media_player_instance.h"
@@ -25,11 +28,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_user.h"
 #include "data/data_file_origin.h"
 #include "data/data_document.h"
+#include "data/data_web_page.h"
 #include "data/data_file_click_handler.h"
 #include "main/main_session.h"
 #include "window/window_session_controller.h"
 #include "facades.h"
-#include "base/qt_adapters.h"
 #include "styles/style_widgets.h"
 #include "styles/style_chat.h"
 
@@ -113,6 +116,17 @@ int HistoryMessageEdited::maxWidth() const {
 	return text.maxWidth();
 }
 
+HistoryMessageSponsored::HistoryMessageSponsored() {
+	text.setText(
+		st::msgDateTextStyle,
+		tr::lng_sponsored(tr::now),
+		Ui::NameTextOptions());
+}
+
+int HistoryMessageSponsored::maxWidth() const {
+	return text.maxWidth();
+}
+
 HiddenSenderInfo::HiddenSenderInfo(const QString &name, bool external)
 : name(name)
 , colorPeerId(Data::FakePeerIdForJustName(name))
@@ -121,8 +135,10 @@ HiddenSenderInfo::HiddenSenderInfo(const QString &name, bool external)
 	(external
 		? Ui::EmptyUserpic::ExternalName()
 		: name)) {
+	Expects(!name.isEmpty());
+
 	nameText.setText(st::msgNameStyle, name, Ui::NameTextOptions());
-	const auto parts = name.trimmed().split(' ', base::QStringSkipEmptyParts);
+	const auto parts = name.trimmed().split(' ', Qt::SkipEmptyParts);
 	firstName = parts[0];
 	for (const auto &part : parts.mid(1)) {
 		if (!lastName.isEmpty()) {
@@ -211,7 +227,7 @@ void HistoryMessageForwarded::create(const HistoryMessageVia *via) const {
 bool HistoryMessageReply::updateData(
 		not_null<HistoryMessage*> holder,
 		bool force) {
-	const auto guard = gsl::finally([&] { refreshReplyToDocument(); });
+	const auto guard = gsl::finally([&] { refreshReplyToMedia(); });
 	if (!force) {
 		if (replyToMsg || !replyToMsgId) {
 			return true;
@@ -278,7 +294,7 @@ void HistoryMessageReply::clearData(not_null<HistoryMessage*> holder) {
 		replyToMsg = nullptr;
 	}
 	replyToMsgId = 0;
-	refreshReplyToDocument();
+	refreshReplyToMedia();
 }
 
 bool HistoryMessageReply::isNameUpdated() const {
@@ -336,16 +352,17 @@ void HistoryMessageReply::itemRemoved(
 void HistoryMessageReply::paint(
 		Painter &p,
 		not_null<const HistoryView::Element*> holder,
+		const Ui::ChatPaintContext &context,
 		int x,
 		int y,
 		int w,
-		PaintFlags flags) const {
-	bool selected = (flags & PaintFlag::Selected), outbg = holder->hasOutLayout();
+		bool inBubble) const {
+	const auto st = context.st;
+	const auto stm = context.messageStyle();
 
-	style::color bar = st::msgImgReplyBarColor;
-	if (flags & PaintFlag::InBubble) {
-		bar = (flags & PaintFlag::Selected) ? (outbg ? st::msgOutReplyBarSelColor : st::msgInReplyBarSelColor) : (outbg ? st::msgOutReplyBarColor : st::msgInReplyBarColor);
-	}
+	const auto &bar = inBubble
+		? stm->msgReplyBarColor
+		: st->msgImgReplyBarColor();
 	QRect rbar(style::rtlrect(x + st::msgReplyBarPos.x(), y + st::msgReplyPadding.top() + st::msgReplyBarPos.y(), st::msgReplyBarSize.width(), st::msgReplyBarSize.height(), w + 2 * x));
 	p.fillRect(rbar, bar);
 
@@ -362,45 +379,54 @@ void HistoryMessageReply::paint(
 					auto to = style::rtlrect(x + st::msgReplyBarSkip, y + st::msgReplyPadding.top() + st::msgReplyBarPos.y(), st::msgReplyBarSize.height(), st::msgReplyBarSize.height(), w + 2 * x);
 					auto previewWidth = image->width() / cIntRetinaFactor();
 					auto previewHeight = image->height() / cIntRetinaFactor();
-					auto preview = image->pixSingle(previewWidth, previewHeight, to.width(), to.height(), ImageRoundRadius::Small, RectPart::AllCorners, selected ? &st::msgStickerOverlay : nullptr);
+					auto preview = image->pixSingle(
+						previewWidth,
+						previewHeight,
+						to.width(),
+						to.height(),
+						ImageRoundRadius::Small,
+						RectPart::AllCorners,
+						context.selected() ? &st->msgStickerOverlay() : nullptr);
 					p.drawPixmap(to.x(), to.y(), preview);
 				}
 			}
 			if (w > st::msgReplyBarSkip + previewSkip) {
-				if (flags & PaintFlag::InBubble) {
-					p.setPen(selected ? (outbg ? st::msgOutServiceFgSelected : st::msgInServiceFgSelected) : (outbg ? st::msgOutServiceFg : st::msgInServiceFg));
-				} else {
-					p.setPen(st::msgImgReplyBarColor);
-				}
+				p.setPen(inBubble
+					? stm->msgServiceFg
+					: st->msgImgReplyBarColor());
 				replyToName.drawLeftElided(p, x + st::msgReplyBarSkip + previewSkip, y + st::msgReplyPadding.top(), w - st::msgReplyBarSkip - previewSkip, w + 2 * x);
 				if (replyToVia && w > st::msgReplyBarSkip + previewSkip + replyToName.maxWidth() + st::msgServiceFont->spacew) {
 					p.setFont(st::msgServiceFont);
 					p.drawText(x + st::msgReplyBarSkip + previewSkip + replyToName.maxWidth() + st::msgServiceFont->spacew, y + st::msgReplyPadding.top() + st::msgServiceFont->ascent, replyToVia->text);
 				}
 
-				if (flags & PaintFlag::InBubble) {
-					p.setPen(outbg ? (selected ? st::historyTextOutFgSelected : st::historyTextOutFg) : (selected ? st::historyTextInFgSelected : st::historyTextInFg));
-					p.setTextPalette(outbg ? (selected ? st::outReplyTextPaletteSelected : st::outReplyTextPalette) : (selected ? st::inReplyTextPaletteSelected : st::inReplyTextPalette));
-				} else {
-					p.setTextPalette(st::imgReplyTextPalette);
-				}
+				p.setPen(inBubble
+					? stm->historyTextFg
+					: st->msgImgReplyBarColor());
+				p.setTextPalette(inBubble
+					? stm->replyTextPalette
+					: st->imgReplyTextPalette());
 				replyToText.drawLeftElided(p, x + st::msgReplyBarSkip + previewSkip, y + st::msgReplyPadding.top() + st::msgServiceNameFont->height, w - st::msgReplyBarSkip - previewSkip, w + 2 * x);
-				p.setTextPalette(selected ? (outbg ? st::outTextPaletteSelected : st::inTextPaletteSelected) : (outbg ? st::outTextPalette : st::inTextPalette));
+				p.setTextPalette(stm->textPalette);
 			}
 		} else {
 			p.setFont(st::msgDateFont);
-			auto &date = outbg ? (selected ? st::msgOutDateFgSelected : st::msgOutDateFg) : (selected ? st::msgInDateFgSelected : st::msgInDateFg);
-			p.setPen((flags & PaintFlag::InBubble) ? date : st::msgDateImgFg);
+			p.setPen(inBubble
+				? stm->msgDateFg
+				: st->msgDateImgFg());
 			p.drawTextLeft(x + st::msgReplyBarSkip, y + st::msgReplyPadding.top() + (st::msgReplyBarSize.height() - st::msgDateFont->height) / 2, w + 2 * x, st::msgDateFont->elided(replyToMsgId ? tr::lng_profile_loading(tr::now) : tr::lng_deleted_message(tr::now), w - st::msgReplyBarSkip));
 		}
 	}
 }
 
-void HistoryMessageReply::refreshReplyToDocument() {
+void HistoryMessageReply::refreshReplyToMedia() {
 	replyToDocumentId = 0;
+	replyToWebPageId = 0;
 	if (const auto media = replyToMsg ? replyToMsg->media() : nullptr) {
 		if (const auto document = media->document()) {
 			replyToDocumentId = document->id;
+		} else if (const auto webpage = media->webpage()) {
+			replyToWebPageId = webpage->id;
 		}
 	}
 }
@@ -446,9 +472,13 @@ auto ReplyMarkupClickHandler::getUrlButton() const
 	return nullptr;
 }
 
-void ReplyMarkupClickHandler::onClickImpl() const {
+void ReplyMarkupClickHandler::onClick(ClickContext context) const {
+	if (context.button != Qt::LeftButton) {
+		return;
+	}
 	if (const auto item = _owner->message(_itemId)) {
-		App::activateBotCommand(item, _row, _column);
+		const auto my = context.other.value<ClickHandlerContext>();
+		App::activateBotCommand(my.sessionWindow.get(), item, _row, _column);
 	}
 }
 
@@ -490,10 +520,10 @@ ReplyKeyboard::ReplyKeyboard(
 	if (const auto markup = _item->Get<HistoryMessageReplyMarkup>()) {
 		const auto owner = &_item->history()->owner();
 		const auto context = _item->fullId();
-		const auto rowCount = int(markup->rows.size());
+		const auto rowCount = int(markup->data.rows.size());
 		_rows.reserve(rowCount);
 		for (auto i = 0; i != rowCount; ++i) {
-			const auto &row = markup->rows.at(i);
+			const auto &row = markup->data.rows[i];
 			const auto rowSize = int(row.size());
 			auto newRow = std::vector<Button>();
 			newRow.reserve(rowSize);
@@ -542,7 +572,7 @@ void ReplyKeyboard::resize(int width, int height) {
 		int widthForText = widthForButtons;
 		int widthOfText = 0;
 		int maxMinButtonWidth = 0;
-		for_const (auto &button, row) {
+		for (const auto &button : row) {
 			widthOfText += qMax(button.text.maxWidth(), 1);
 			int minButtonWidth = _st->minButtonWidth(button.type);
 			widthForText -= minButtonWidth;
@@ -552,7 +582,7 @@ void ReplyKeyboard::resize(int width, int height) {
 		bool enough = (widthForButtons - s * maxMinButtonWidth) >= widthOfText;
 
 		float64 x = 0;
-		for (Button &button : row) {
+		for (auto &button : row) {
 			int buttonw = qMax(button.text.maxWidth(), 1);
 			float64 textw = buttonw, minw = _st->minButtonWidth(button.type);
 			float64 w = textw;
@@ -580,10 +610,10 @@ void ReplyKeyboard::resize(int width, int height) {
 }
 
 bool ReplyKeyboard::isEnoughSpace(int width, const style::BotKeyboardButton &st) const {
-	for_const (auto &row, _rows) {
+	for (const auto &row : _rows) {
 		int s = row.size();
 		int widthLeft = width - ((s - 1) * st.margin + s * 2 * st.padding);
-		for_const (auto &button, row) {
+		for (const auto &button : row) {
 			widthLeft -= qMax(button.text.maxWidth(), 1);
 			if (widthLeft < 0) {
 				if (row.size() > 3) {
@@ -629,11 +659,15 @@ int ReplyKeyboard::naturalHeight() const {
 	return (_rows.size() - 1) * _st->buttonSkip() + _rows.size() * _st->buttonHeight();
 }
 
-void ReplyKeyboard::paint(Painter &p, int outerWidth, const QRect &clip) const {
+void ReplyKeyboard::paint(
+		Painter &p,
+		const Ui::ChatStyle *st,
+		int outerWidth,
+		const QRect &clip) const {
 	Assert(_st != nullptr);
 	Assert(_width > 0);
 
-	_st->startPaint(p);
+	_st->startPaint(p, st);
 	for (const auto &row : _rows) {
 		for (const auto &button : row) {
 			const auto rect = button.rect;
@@ -643,7 +677,7 @@ void ReplyKeyboard::paint(Painter &p, int outerWidth, const QRect &clip) const {
 			// just ignore the buttons that didn't layout well
 			if (rect.x() + rect.width() > _width) break;
 
-			_st->paintButton(p, outerWidth, button);
+			_st->paintButton(p, st, outerWidth, button);
 		}
 	}
 }
@@ -651,8 +685,8 @@ void ReplyKeyboard::paint(Painter &p, int outerWidth, const QRect &clip) const {
 ClickHandlerPtr ReplyKeyboard::getLink(QPoint point) const {
 	Assert(_width > 0);
 
-	for_const (auto &row, _rows) {
-		for_const (auto &button, row) {
+	for (const auto &row : _rows) {
+		for (const auto &button : row) {
 			QRect rect(button.rect);
 
 			// just ignore the buttons that didn't layout well
@@ -723,7 +757,7 @@ void ReplyKeyboard::clickHandlerPressedChanged(
 void ReplyKeyboard::startAnimation(int i, int j, int direction) {
 	auto notStarted = _animations.empty();
 
-	int indexForAnimation = (i * MatrixRowShift + j + 1) * direction;
+	int indexForAnimation = Layout::PositionToIndex(i, j + 1) * direction;
 
 	_animations.remove(-indexForAnimation);
 	if (!_animations.contains(indexForAnimation)) {
@@ -741,8 +775,7 @@ bool ReplyKeyboard::selectedAnimationCallback(crl::time now) {
 	}
 	for (auto i = _animations.begin(); i != _animations.end();) {
 		const auto index = std::abs(i->first) - 1;
-		const auto row = (index / MatrixRowShift);
-		const auto col = index % MatrixRowShift;
+		const auto &[row, col] = Layout::IndexToPosition(index);
 		const auto dt = float64(now - i->second) / st::botKbDuration;
 		if (dt >= 1) {
 			_rows[row][col].howMuchOver = (i->first > 0) ? 1 : 0;
@@ -759,8 +792,7 @@ bool ReplyKeyboard::selectedAnimationCallback(crl::time now) {
 void ReplyKeyboard::clearSelection() {
 	for (const auto &[relativeIndex, time] : _animations) {
 		const auto index = std::abs(relativeIndex) - 1;
-		const auto row = (index / MatrixRowShift);
-		const auto col = index % MatrixRowShift;
+		const auto &[row, col] = Layout::IndexToPosition(index);
 		_rows[row][col].howMuchOver = 0;
 	}
 	_animations.clear();
@@ -781,23 +813,25 @@ int ReplyKeyboard::Style::buttonHeight() const {
 
 void ReplyKeyboard::Style::paintButton(
 		Painter &p,
+		const Ui::ChatStyle *st,
 		int outerWidth,
 		const ReplyKeyboard::Button &button) const {
 	const QRect &rect = button.rect;
-	paintButtonBg(p, rect, button.howMuchOver);
+	paintButtonBg(p, st, rect, button.howMuchOver);
 	if (button.ripple) {
-		button.ripple->paint(p, rect.x(), rect.y(), outerWidth);
+		const auto color = st ? &st->msgBotKbRippleBg()->c : nullptr;
+		button.ripple->paint(p, rect.x(), rect.y(), outerWidth, color);
 		if (button.ripple->empty()) {
 			button.ripple.reset();
 		}
 	}
-	paintButtonIcon(p, rect, outerWidth, button.type);
+	paintButtonIcon(p, st, rect, outerWidth, button.type);
 	if (button.type == HistoryMessageMarkupButton::Type::CallbackWithPassword
 		|| button.type == HistoryMessageMarkupButton::Type::Callback
 		|| button.type == HistoryMessageMarkupButton::Type::Game) {
-		if (auto data = button.link->getButton()) {
+		if (const auto data = button.link->getButton()) {
 			if (data->requestId) {
-				paintButtonLoading(p, rect);
+				paintButtonLoading(p, st, rect);
 			}
 		}
 	}
@@ -813,183 +847,17 @@ void ReplyKeyboard::Style::paintButton(
 	button.text.drawElided(p, tx, rect.y() + _st->textTop + ((rect.height() - _st->height) / 2), tw, 1, style::al_top);
 }
 
-HistoryMessageMarkupButton::HistoryMessageMarkupButton(
-	Type type,
-	const QString &text,
-	const QByteArray &data,
-	const QString &forwardText,
-	int32 buttonId)
-: type(type)
-, text(text)
-, forwardText(forwardText)
-, data(data)
-, buttonId(buttonId) {
+void HistoryMessageReplyMarkup::createForwarded(
+		const HistoryMessageReplyMarkup &original) {
+	Expects(!inlineKeyboard);
+
+	data.fillForwardedData(original.data);
 }
 
-HistoryMessageMarkupButton *HistoryMessageMarkupButton::Get(
-		not_null<Data::Session*> owner,
-		FullMsgId itemId,
-		int row,
-		int column) {
-	if (const auto item = owner->message(itemId)) {
-		if (const auto markup = item->Get<HistoryMessageReplyMarkup>()) {
-			if (row < markup->rows.size()) {
-				auto &buttons = markup->rows[row];
-				if (column < buttons.size()) {
-					return &buttons[column];
-				}
-			}
-		}
-	}
-	return nullptr;
-}
-
-void HistoryMessageReplyMarkup::createFromButtonRows(
-		const QVector<MTPKeyboardButtonRow> &list) {
-	rows.clear();
-	if (list.isEmpty()) {
-		return;
-	}
-
-	rows.reserve(list.size());
-	for (const auto &row : list) {
-		row.match([&](const MTPDkeyboardButtonRow &data) {
-			auto row = std::vector<Button>();
-			row.reserve(data.vbuttons().v.size());
-			for (const auto &button : data.vbuttons().v) {
-				using Type = Button::Type;
-				button.match([&](const MTPDkeyboardButton &data) {
-					row.emplace_back(Type::Default, qs(data.vtext()));
-				}, [&](const MTPDkeyboardButtonCallback &data) {
-					row.emplace_back(
-						(data.is_requires_password()
-							? Type::CallbackWithPassword
-							: Type::Callback),
-						qs(data.vtext()),
-						qba(data.vdata()));
-				}, [&](const MTPDkeyboardButtonRequestGeoLocation &data) {
-					row.emplace_back(Type::RequestLocation, qs(data.vtext()));
-				}, [&](const MTPDkeyboardButtonRequestPhone &data) {
-					row.emplace_back(Type::RequestPhone, qs(data.vtext()));
-				}, [&](const MTPDkeyboardButtonUrl &data) {
-					row.emplace_back(
-						Type::Url,
-						qs(data.vtext()),
-						qba(data.vurl()));
-				}, [&](const MTPDkeyboardButtonSwitchInline &data) {
-					const auto type = data.is_same_peer()
-						? Type::SwitchInlineSame
-						: Type::SwitchInline;
-					row.emplace_back(type, qs(data.vtext()), qba(data.vquery()));
-					if (type == Type::SwitchInline) {
-						// Optimization flag.
-						// Fast check on all new messages if there is a switch button to auto-click it.
-						flags |= MTPDreplyKeyboardMarkup_ClientFlag::f_has_switch_inline_button;
-					}
-				}, [&](const MTPDkeyboardButtonGame &data) {
-					row.emplace_back(Type::Game, qs(data.vtext()));
-				}, [&](const MTPDkeyboardButtonBuy &data) {
-					row.emplace_back(Type::Buy, qs(data.vtext()));
-				}, [&](const MTPDkeyboardButtonUrlAuth &data) {
-					row.emplace_back(
-						Type::Auth,
-						qs(data.vtext()),
-						qba(data.vurl()),
-						qs(data.vfwd_text().value_or_empty()),
-						data.vbutton_id().v);
-				}, [&](const MTPDinputKeyboardButtonUrlAuth &data) {
-					LOG(("API Error: inputKeyboardButtonUrlAuth received."));
-					// Should not get those for the users.
-				}, [&](const MTPDkeyboardButtonRequestPoll &data) {
-					const auto quiz = [&] {
-						if (!data.vquiz()) {
-							return QByteArray();
-						}
-						return data.vquiz()->match([&](const MTPDboolTrue&) {
-							return QByteArray(1, 1);
-						}, [&](const MTPDboolFalse&) {
-							return QByteArray(1, 0);
-						});
-					}();
-					row.emplace_back(
-						Type::RequestPoll,
-						qs(data.vtext()),
-						quiz);
-				});
-			}
-			if (!row.empty()) {
-				rows.push_back(std::move(row));
-			}
-		});
-	}
-}
-
-void HistoryMessageReplyMarkup::create(const MTPReplyMarkup &markup) {
-	flags = 0;
-	rows.clear();
+void HistoryMessageReplyMarkup::updateData(
+		HistoryMessageMarkupData &&markup) {
+	data = std::move(markup);
 	inlineKeyboard = nullptr;
-
-	switch (markup.type()) {
-	case mtpc_replyKeyboardMarkup: {
-		auto &d = markup.c_replyKeyboardMarkup();
-		flags = d.vflags().v;
-		placeholder = d.vplaceholder() ? qs(*d.vplaceholder()) : QString();
-
-		createFromButtonRows(d.vrows().v);
-	} break;
-
-	case mtpc_replyInlineMarkup: {
-		auto &d = markup.c_replyInlineMarkup();
-		flags = MTPDreplyKeyboardMarkup::Flags(0) | MTPDreplyKeyboardMarkup_ClientFlag::f_inline;
-		placeholder = QString();
-
-		createFromButtonRows(d.vrows().v);
-	} break;
-
-	case mtpc_replyKeyboardHide: {
-		auto &d = markup.c_replyKeyboardHide();
-		flags = mtpCastFlags(d.vflags()) | MTPDreplyKeyboardMarkup_ClientFlag::f_zero;
-		placeholder = QString();
-	} break;
-
-	case mtpc_replyKeyboardForceReply: {
-		auto &d = markup.c_replyKeyboardForceReply();
-		flags = mtpCastFlags(d.vflags()) | MTPDreplyKeyboardMarkup_ClientFlag::f_force_reply;
-		placeholder = d.vplaceholder() ? qs(*d.vplaceholder()) : QString();
-	} break;
-	}
-}
-
-void HistoryMessageReplyMarkup::create(
-		const HistoryMessageReplyMarkup &markup) {
-	flags = markup.flags;
-	placeholder = markup.placeholder;
-	inlineKeyboard = nullptr;
-
-	rows.clear();
-	rows.reserve(markup.rows.size());
-	using Type = HistoryMessageMarkupButton::Type;
-	for (const auto &existing : markup.rows) {
-		auto row = std::vector<Button>();
-		row.reserve(existing.size());
-		for (const auto &button : existing) {
-			const auto newType = (button.type != Type::SwitchInlineSame)
-				? button.type
-				: Type::SwitchInline;
-			const auto text = button.forwardText.isEmpty()
-				? button.text
-				: button.forwardText;
-			row.emplace_back(
-				newType,
-				text,
-				button.data,
-				QString(),
-				button.buttonId);
-		}
-		if (!row.empty()) {
-			rows.push_back(std::move(row));
-		}
-	}
 }
 
 HistoryMessageLogEntryOriginal::HistoryMessageLogEntryOriginal() = default;

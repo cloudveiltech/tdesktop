@@ -16,6 +16,13 @@
 
 #include <QtWidgets/QWidget>
 #include <QtCore/QPointer>
+#include <QtGui/QtEvents>
+
+namespace Ui {
+
+void ToggleChildrenVisibility(not_null<QWidget*> widget, bool visible);
+
+} // namespace Ui
 
 class TWidget;
 
@@ -29,18 +36,10 @@ public:
 	}
 
 	void hideChildren() {
-		for (auto child : Base::children()) {
-			if (child->isWidgetType()) {
-				static_cast<QWidget*>(child)->hide();
-			}
-		}
+		Ui::ToggleChildrenVisibility(this, false);
 	}
 	void showChildren() {
-		for (auto child : Base::children()) {
-			if (child->isWidgetType()) {
-				static_cast<QWidget*>(child)->show();
-			}
-		}
+		Ui::ToggleChildrenVisibility(this, true);
 	}
 
 	void moveToLeft(int x, int y, int outerw = 0) {
@@ -104,13 +103,22 @@ public:
 	}
 
 protected:
-	void enterEvent(QEvent *e) final override {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	void enterEvent(QEnterEvent *e) final override {
 		if (auto parent = tparent()) {
 			parent->leaveToChildEvent(e, this);
 		}
 		return enterEventHook(e);
 	}
-	virtual void enterEventHook(QEvent *e) {
+#else // Qt >= 6.0.0
+	void enterEvent(QEvent *e) final override {
+		if (auto parent = tparent()) {
+			parent->leaveToChildEvent(e, this);
+		}
+		return enterEventHook(static_cast<QEnterEvent*>(e));
+	}
+#endif // Qt < 6.0.0
+	virtual void enterEventHook(QEnterEvent *e) {
 		return Base::enterEvent(e);
 	}
 

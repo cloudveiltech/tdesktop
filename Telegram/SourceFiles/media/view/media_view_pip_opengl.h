@@ -11,7 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/gl/gl_image.h"
 #include "ui/gl/gl_primitives.h"
 
-#include <QtGui/QOpenGLBuffer>
+#include <QOpenGLBuffer>
 
 namespace Media::View {
 
@@ -25,7 +25,7 @@ public:
 
 	void deinit(
 		not_null<QOpenGLWidget*> widget,
-		QOpenGLFunctions &f) override;
+		QOpenGLFunctions *f) override;
 
 	void paint(
 		not_null<QOpenGLWidget*> widget,

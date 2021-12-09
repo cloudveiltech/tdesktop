@@ -7,9 +7,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "base/timer.h"
 #include "ui/rp_widget.h"
 #include "ui/effects/animations.h"
+#include "ui/chat/select_scroll_manager.h" // Has base/timer.h.
 #include "ui/widgets/tooltip.h"
 #include "ui/widgets/scroll_area.h"
 #include "history/view/history_view_top_bar_widget.h"
@@ -21,6 +21,7 @@ class CloudImageView;
 
 namespace HistoryView {
 class ElementDelegate;
+class EmojiInteractions;
 struct TextState;
 struct StateRequest;
 enum class CursorState : char;
@@ -34,6 +35,8 @@ class SessionController;
 } // namespace Window
 
 namespace Ui {
+class ChatTheme;
+class ChatStyle;
 class PopupMenu;
 enum class ReportReason;
 class PathShiftGradient;
@@ -55,7 +58,10 @@ public:
 		not_null<Window::SessionController*> controller,
 		not_null<History*> history);
 
-	Main::Session &session() const;
+	[[nodiscard]] Main::Session &session() const;
+	[[nodiscard]] not_null<Ui::ChatTheme*> theme() const {
+		return _theme.get();
+	}
 
 	void messagesReceived(PeerData *peer, const QVector<MTPMessage> &messages);
 	void messagesReceivedDown(PeerData *peer, const QVector<MTPMessage> &messages);
@@ -64,6 +70,8 @@ public:
 
 	void touchScrollUpdated(const QPoint &screenPos);
 
+	void setItemsRevealHeight(int revealHeight);
+	void changeItemsRevealHeight(int revealHeight);
 	void checkHistoryActivation();
 	void recountHistoryGeometry();
 	void updateSize();
@@ -77,7 +85,6 @@ public:
 	HistoryView::TopBarWidget::SelectedState getSelectionState() const;
 	void clearSelected(bool onlyTextSelection = false);
 	MessageIdsList getSelectedItems() const;
-	void selectItem(not_null<HistoryItem*> item);
 	bool inSelectionMode() const;
 	bool elementIntersectsRange(
 		not_null<const Element*> view,
@@ -107,11 +114,12 @@ public:
 	void elementHandleViaClick(not_null<UserData*> bot);
 	bool elementIsChatWide();
 	not_null<Ui::PathShiftGradient*> elementPathShiftGradient();
+	void elementReplyTo(const FullMsgId &to);
+	void elementStartInteraction(not_null<const Element*> view);
 
 	void updateBotInfo(bool recount = true);
 
 	bool wasSelectedText() const;
-	void setFirstLoading(bool loading);
 
 	// updates history->scrollTopItem/scrollTopOffset
 	void visibleAreaUpdated(int top, int bottom);
@@ -141,6 +149,8 @@ public:
 	QPoint tooltipPos() const override;
 	bool tooltipWindowActive() const override;
 
+	void onParentGeometryChanged();
+
 	// HistoryView::ElementDelegate interface.
 	static not_null<HistoryView::ElementDelegate*> ElementDelegate();
 
@@ -156,19 +166,16 @@ protected:
 	void mousePressEvent(QMouseEvent *e) override;
 	void mouseReleaseEvent(QMouseEvent *e) override;
 	void mouseDoubleClickEvent(QMouseEvent *e) override;
-	void enterEventHook(QEvent *e) override;
+	void enterEventHook(QEnterEvent *e) override;
 	void leaveEventHook(QEvent *e) override;
 	void resizeEvent(QResizeEvent *e) override;
 	void keyPressEvent(QKeyEvent *e) override;
 	void contextMenuEvent(QContextMenuEvent *e) override;
 
-public Q_SLOTS:
-	void onParentGeometryChanged();
-
+private:
 	void onTouchSelect();
 	void onTouchScrollTimer();
 
-private:
 	class BotAbout;
 	using SelectedItems = std::map<HistoryItem*, TextSelection, std::less<>>;
 	enum class MouseAction {
@@ -239,7 +246,11 @@ private:
 	std::unique_ptr<QMimeData> prepareDrag();
 	void performDrag();
 
-	void paintEmpty(Painter &p, int width, int height);
+	void paintEmpty(
+		Painter &p,
+		not_null<const Ui::ChatStyle*> st,
+		int width,
+		int height);
 
 	QPoint mapPointToItem(QPoint p, const Element *view) const;
 	QPoint mapPointToItem(QPoint p, const HistoryItem *item) const;
@@ -254,7 +265,7 @@ private:
 	void saveDocumentToFile(
 		FullMsgId contextId,
 		not_null<DocumentData*> document);
-	void copyContextImage(not_null<PhotoData*> photo);
+	void copyContextImage(not_null<PhotoData*> photo, FullMsgId itemId);
 	void showStickerPackInfo(not_null<DocumentData*> document);
 
 	void itemRemoved(not_null<const HistoryItem*> item);
@@ -331,6 +342,13 @@ private:
 	void blockSenderAsGroup(FullMsgId itemId);
 	void copySelectedText();
 
+	void setupSharingDisallowed();
+	[[nodiscard]] bool hasCopyRestriction(HistoryItem *item = nullptr) const;
+	bool showCopyRestriction(HistoryItem *item = nullptr);
+	[[nodiscard]] bool hasCopyRestrictionForSelected() const;
+	bool showCopyRestrictionForSelected();
+	[[nodiscard]] bool hasSelectRestriction() const;
+
 	// Does any of the shown histories has this flag set.
 	bool hasPendingResizedItems() const;
 
@@ -341,10 +359,13 @@ private:
 	const not_null<Window::SessionController*> _controller;
 	const not_null<PeerData*> _peer;
 	const not_null<History*> _history;
+	const std::unique_ptr<HistoryView::EmojiInteractions> _emojiInteractions;
+	std::shared_ptr<Ui::ChatTheme> _theme;
 
 	History *_migrated = nullptr;
 	int _contentWidth = 0;
 	int _historyPaddingTop = 0;
+	int _revealHeight = 0;
 
 	// Save visible area coords for painting / pressing userpics.
 	int _visibleAreaTop = 0;
@@ -360,8 +381,6 @@ private:
 	mutable History *_curHistory = nullptr;
 	mutable int _curBlock = 0;
 	mutable int _curItem = 0;
-
-	bool _firstLoading = false;
 
 	style::cursor _cursor = style::cur_default;
 	SelectedItems _selected;
@@ -386,7 +405,7 @@ private:
 	bool _pressWasInactive = false;
 
 	QPoint _trippleClickPoint;
-	QTimer _trippleClickTimer;
+	base::Timer _trippleClickTimer;
 
 	Element *_dragSelFrom = nullptr;
 	Element *_dragSelTo = nullptr;
@@ -398,7 +417,11 @@ private:
 	bool _touchSelect = false;
 	bool _touchInProgress = false;
 	QPoint _touchStart, _touchPrevPos, _touchPos;
-	QTimer _touchSelectTimer;
+	base::Timer _touchSelectTimer;
+
+	Ui::SelectScrollManager _selectScroll;
+
+	rpl::variable<bool> _sharingDisallowed = false;
 
 	Ui::TouchScrollState _touchScrollState = Ui::TouchScrollState::Manual;
 	bool _touchPrevPosValid = false;
@@ -407,7 +430,7 @@ private:
 	crl::time _touchSpeedTime = 0;
 	crl::time _touchAccelerationTime = 0;
 	crl::time _touchTime = 0;
-	QTimer _touchScrollTimer;
+	base::Timer _touchScrollTimer;
 
 	base::unique_qptr<Ui::PopupMenu> _menu;
 

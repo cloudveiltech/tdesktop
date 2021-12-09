@@ -12,8 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/platform/linux/base_linux_glibmm_helper.h"
 #include "platform/linux/linux_wayland_integration.h"
 #include "storage/localstorage.h"
-#include "base/openssl_help.h"
-#include "base/qt_adapters.h"
+#include "base/random.h"
 
 #include <QtGui/QWindow>
 #include <QtWidgets/QFileDialog>
@@ -176,20 +175,14 @@ public:
 		}
 	}
 
-	bool defaultNameFilterDisables() const;
 	QUrl directory() const;
 	void setDirectory(const QUrl &directory);
 	void selectFile(const QUrl &filename);
 	QList<QUrl> selectedFiles() const;
-	void setFilter();
-	void selectNameFilter(const QString &filter);
-	QString selectedNameFilter() const;
-	void selectMimeTypeFilter(const QString &filter);
-	QString selectedMimeTypeFilter() const;
 
 	int exec() override;
 
-	bool failedToOpen() {
+	bool failedToOpen() const {
 		return _failedToOpen;
 	}
 
@@ -397,7 +390,7 @@ void XDPFileDialog::openPortal() {
 	}
 
 	const auto handleToken = Glib::ustring("tdesktop")
-		+ std::to_string(openssl::RandomValue<uint>());
+		+ std::to_string(base::RandomValue<uint>());
 
 	options["handle_token"] = Glib::Variant<Glib::ustring>::create(
 		handleToken);
@@ -517,10 +510,6 @@ void XDPFileDialog::openPortal() {
 	}
 }
 
-bool XDPFileDialog::defaultNameFilterDisables() const {
-	return false;
-}
-
 void XDPFileDialog::setDirectory(const QUrl &directory) {
 	_directory = directory.path().toStdString();
 }
@@ -542,23 +531,6 @@ QList<QUrl> XDPFileDialog::selectedFiles() const {
 			return QUrl(QString::fromStdString(string));
 		});
 	return files;
-}
-
-void XDPFileDialog::setFilter() {
-}
-
-void XDPFileDialog::selectMimeTypeFilter(const QString &filter) {
-}
-
-QString XDPFileDialog::selectedMimeTypeFilter() const {
-	return QString::fromStdString(_selectedMimeTypeFilter);
-}
-
-void XDPFileDialog::selectNameFilter(const QString &filter) {
-}
-
-QString XDPFileDialog::selectedNameFilter() const {
-	return QString::fromStdString(_selectedNameFilter);
 }
 
 int XDPFileDialog::exec() {

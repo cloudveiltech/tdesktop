@@ -17,38 +17,25 @@ else()
     add_library(desktop-app::external_opus ALIAS external_opus)
 
     if (WIN32)
-        target_include_directories(external_opus
+        target_include_directories(external_opus SYSTEM
         INTERFACE
             ${libs_loc}/opus/include
         )
-        if (build_win64)
-            set(opus_config_folder x64)
-        else()
-            set(opus_config_folder Win32)
-        endif()
-        set(opus_lib_loc ${libs_loc}/opus/win32/VS2015/${opus_config_folder})
+        set(opus_lib_loc ${libs_loc}/opus/out)
         set_target_properties(external_opus PROPERTIES
             IMPORTED_LOCATION "${opus_lib_loc}/Release/opus.lib"
             IMPORTED_LOCATION_DEBUG "${opus_lib_loc}/Debug/opus.lib"
         )
-    elseif (APPLE AND NOT build_osx)
-        target_include_directories(external_opus
-        INTERFACE
-            /usr/local/macos/include/opus
-        )
-        set_target_properties(external_opus PROPERTIES
-            IMPORTED_LOCATION /usr/local/macos/lib/libopus.a
-        )
     elseif (APPLE)
-        target_include_directories(external_opus
+        target_include_directories(external_opus SYSTEM
         INTERFACE
-            /usr/local/include/opus
+            ${libs_loc}/local/include/opus
         )
         set_target_properties(external_opus PROPERTIES
-            IMPORTED_LOCATION /usr/local/lib/libopus.a
+            IMPORTED_LOCATION ${libs_loc}/local/lib/libopus.a
         )
     else()
-        target_include_directories(external_opus
+        target_include_directories(external_opus SYSTEM
         INTERFACE
             /usr/local/include/opus
         )

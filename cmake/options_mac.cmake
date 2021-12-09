@@ -4,22 +4,18 @@
 # For license and copyright information please follow this link:
 # https://github.com/desktop-app/legal/blob/master/LEGAL
 
-if (build_osx)
-    target_compile_definitions(common_options INTERFACE OS_OSX)
-else()
-    if (build_macstore)
-        target_compile_definitions(common_options
-        INTERFACE
-            OS_MAC_STORE
-            MAC_USE_BREAKPAD
-        )
-    endif()
-    if (NOT DESKTOP_APP_USE_PACKAGED)
-        target_include_directories(common_options
-        INTERFACE
-            /usr/local/macos/include
-        )
-    endif()
+if (build_macstore)
+    target_compile_definitions(common_options
+    INTERFACE
+        OS_MAC_STORE
+        MAC_USE_BREAKPAD
+    )
+endif()
+if (NOT DESKTOP_APP_USE_PACKAGED)
+    target_include_directories(common_options SYSTEM
+    INTERFACE
+        ${libs_loc}/local/include
+    )
 endif()
 
 target_compile_options(common_options
@@ -28,6 +24,9 @@ INTERFACE
     -Wall
     -W
     -fPIE
+    $<$<COMPILE_LANGUAGE:OBJC,OBJCXX>:-fobjc-weak>
+    -fvisibility-inlines-hidden
+    -fvisibility=hidden
     -Wno-deprecated-declarations # temp for range-v3
     -Wno-unused-variable
     -Wno-unused-parameter
@@ -38,7 +37,6 @@ INTERFACE
     -Wno-sign-compare
     -Wno-unknown-attributes
     -Wno-pragma-system-header-outside-header
-    -Wno-range-loop-analysis
 )
 
 if (DESKTOP_APP_SPECIAL_TARGET)
@@ -48,6 +46,11 @@ if (DESKTOP_APP_SPECIAL_TARGET)
         -Werror
     )
 endif()
+
+target_link_options(common_options
+INTERFACE
+    -Wl,-no_compact_unwind
+)
 
 target_link_frameworks(common_options
 INTERFACE
@@ -79,12 +82,6 @@ INTERFACE
     IOKit
     GSS
     MediaPlayer
+    IOSurface
+    Metal
 )
-
-if (NOT build_osx)
-    target_link_frameworks(common_options
-    INTERFACE
-        IOSurface
-        Metal
-    )
-endif()

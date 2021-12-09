@@ -297,14 +297,10 @@ QString PlatformString() {
 		return qsl("Windows64Bit");
 	} else if (Platform::IsMacStoreBuild()) {
 		return qsl("MacAppStore");
-	} else if (Platform::IsOSXBuild()) {
-		return qsl("OSX");
 	} else if (Platform::IsMac()) {
 		return qsl("MacOS");
-	} else if (Platform::IsLinux32Bit()) {
-		return qsl("Linux32Bit");
-	} else if (Platform::IsLinux64Bit()) {
-		return qsl("Linux64bit");
+	} else if (Platform::IsLinux()) {
+		return qsl("Linux");
 	}
 	Unexpected("Platform in CrashReports::PlatformString.");
 }
@@ -354,11 +350,12 @@ void StartCatching(not_null<Core::Launcher*> launcher) {
 	if (crashpad_client.StartHandler(
 			base::FilePath(handler),
 			base::FilePath(database),
-			std::string(),
+			{}, // metrics_dir
+			std::string(), // url
 			ProcessAnnotations,
-			std::vector<std::string>(),
-			false)) {
-		crashpad_client.UseHandler();
+			std::vector<std::string>(), // arguments
+			false, // restartable
+			false)) { // asynchronous_start
 	}
 #endif // else for MAC_USE_BREAKPAD
 #elif defined Q_OS_UNIX
@@ -405,7 +402,7 @@ StartResult Start() {
 		fclose(f);
 
 		LOG(("Opened '%1' for reading, the previous "
-			"Telegram Desktop launch was not finished properly :( "
+			"CloudVeil Messenger Desktop launch was not finished properly :( "
 			"Crash log size: %2").arg(ReportPath).arg(lastdump.size()));
 
 		return lastdump;

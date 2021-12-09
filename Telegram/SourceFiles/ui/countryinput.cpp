@@ -12,17 +12,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/multi_select.h"
 #include "ui/effects/ripple_animation.h"
 #include "ui/boxes/country_select_box.h"
-#include "data/data_countries.h"
-#include "base/qt_adapters.h"
+#include "countries/countries_instance.h"
 #include "styles/style_layers.h"
 #include "styles/style_boxes.h"
 #include "styles/style_intro.h"
-
-namespace {
-
-QString LastValidISO;
-
-} // namespace
 
 CountryInput::CountryInput(QWidget *parent, const style::InputField &st)
 : RpWidget(parent)
@@ -35,7 +28,11 @@ CountryInput::CountryInput(QWidget *parent, const style::InputField &st)
 	//auto metrics = QFontMetrics(placeholderFont);
 	auto placeholder = QString();// metrics.elidedText(tr::lng_country_fake_ph(tr::now), Qt::ElideRight, availableWidth);
 	if (!placeholder.isNull()) {
-		_placeholderPath.addText(0, QFontMetrics(placeholderFont).ascent(), placeholderFont, placeholder);
+		_placeholderPath.addText(
+			0,
+			QFontMetrics(placeholderFont).ascent(),
+			placeholderFont,
+			placeholder);
 	}
 }
 
@@ -47,10 +44,21 @@ void CountryInput::paintEvent(QPaintEvent *e) {
 		p.fillRect(r, _st.textBg);
 	}
 	if (_st.border) {
-		p.fillRect(0, height() - _st.border, width(), _st.border, _st.borderFg);
+		p.fillRect(
+			0,
+			height() - _st.border,
+			width(),
+			_st.border,
+			_st.borderFg);
 	}
 
-	st::introCountryIcon.paint(p, width() - st::introCountryIcon.width() - st::introCountryIconPosition.x(), st::introCountryIconPosition.y(), width());
+	st::introCountryIcon.paint(
+		p,
+		width()
+			- st::introCountryIcon.width()
+			- st::introCountryIconPosition.x(),
+		st::introCountryIconPosition.y(),
+		width());
 
 	p.setFont(_st.font);
 	p.setPen(_st.textFg);
@@ -60,15 +68,27 @@ void CountryInput::paintEvent(QPaintEvent *e) {
 		p.save();
 		p.setClipRect(r);
 
-		auto placeholderTop = anim::interpolate(0, _st.placeholderShift, placeholderShiftDegree);
+		const auto placeholderTop = anim::interpolate(
+			0,
+			_st.placeholderShift,
+			placeholderShiftDegree);
 
-		QRect r(rect().marginsRemoved(_st.textMargins + _st.placeholderMargins));
+		auto r = QRect(rect() - (_st.textMargins + _st.placeholderMargins));
 		r.moveTop(r.top() + placeholderTop);
-		if (rtl()) r.moveLeft(width() - r.left() - r.width());
+		if (rtl()) {
+			r.moveLeft(width() - r.left() - r.width());
+		}
 
-		auto placeholderScale = 1. - (1. - _st.placeholderScale) * placeholderShiftDegree;
-		auto placeholderFg = anim::color(_st.placeholderFg, _st.placeholderFgActive, 0.);
-		placeholderFg = anim::color(placeholderFg, _st.placeholderFgError, 0.);
+		const auto placeholderScale = 1.
+			- (1. - _st.placeholderScale) * placeholderShiftDegree;
+		auto placeholderFg = anim::color(
+			_st.placeholderFg,
+			_st.placeholderFgActive,
+			0.);
+		placeholderFg = anim::color(
+			placeholderFg,
+			_st.placeholderFgError,
+			0.);
 
 		PainterHighQualityEnabler hq(p);
 		p.setPen(Qt::NoPen);
@@ -92,15 +112,37 @@ void CountryInput::mouseMoveEvent(QMouseEvent *e) {
 void CountryInput::mousePressEvent(QMouseEvent *e) {
 	mouseMoveEvent(e);
 	if (_active) {
-		auto box = Ui::show(Box<Ui::CountrySelectBox>());
-		box->countryChosen(
-		) | rpl::start_with_next([=](QString iso) {
-			chooseCountry(iso);
+		const auto box = Ui::show(Box<Ui::CountrySelectBox>());
+		box->entryChosen(
+		) | rpl::start_with_next([=](
+				const Ui::CountrySelectBox::Entry &entry) {
+			if (box) {
+				box->closeBox();
+			}
+
+			const auto &list = Countries::Instance().list();
+			const auto infoIt = ranges::find(
+				list,
+				entry.iso2,
+				&Countries::Info::iso2);
+			if (infoIt == end(list)) {
+				return;
+			}
+			const auto info = *infoIt;
+			const auto it = ranges::find(
+				info.codes,
+				entry.code,
+				&Countries::CallingCodeInfo::callingCode);
+			if (it != end(info.codes)) {
+				chooseCountry(
+					&info,
+					std::distance(begin(info.codes), it));
+			}
 		}, lifetime());
 	}
 }
 
-void CountryInput::enterEventHook(QEvent *e) {
+void CountryInput::enterEventHook(QEnterEvent *e) {
 	setMouseTracking(true);
 }
 
@@ -114,12 +156,12 @@ void CountryInput::onChooseCode(const QString &code) {
 	Ui::hideLayer();
 	_chosenIso = QString();
 	if (code.length()) {
-		const auto &byCode = Data::CountriesByCode();
+		const auto &byCode = Countries::Instance().byCode();
 		const auto i = byCode.constFind(code);
 		if (i != byCode.cend()) {
 			const auto info = *i;
-			_chosenIso = LastValidISO = info->iso2;
-			setText(QString::fromUtf8(info->name));
+			_chosenIso = info->iso2;
+			setText(info->name);
 		} else {
 			setText(tr::lng_bad_country_code(tr::now));
 		}
@@ -130,23 +172,33 @@ void CountryInput::onChooseCode(const QString &code) {
 }
 
 bool CountryInput::chooseCountry(const QString &iso) {
-	Ui::hideLayer();
-
-	const auto &byISO2 = Data::CountriesByISO2();
+	const auto &byISO2 = Countries::Instance().byISO2();
 	const auto i = byISO2.constFind(iso);
 	const auto info = (i != byISO2.cend()) ? (*i) : nullptr;
 
 	_chosenIso = QString();
 	if (info) {
-		_chosenIso = LastValidISO = info->iso2;
-		setText(QString::fromUtf8(info->name));
-		codeChanged(info->code);
-		update();
+		chooseCountry(info, 0);
 		return true;
 	}
 	return false;
 }
 
+void CountryInput::chooseCountry(
+		not_null<const Countries::Info*> info,
+		int codeIndex) {
+	_chosenIso = info->iso2;
+	setText(info->name);
+	_codeChanged.fire_copy(info->codes[codeIndex].callingCode);
+	update();
+}
+
+rpl::producer<QString> CountryInput::codeChanged() const {
+	return _codeChanged.events();
+}
+
 void CountryInput::setText(const QString &newText) {
-	_text = _st.font->elided(newText, width() - _st.textMargins.left() - _st.textMargins.right());
+	_text = _st.font->elided(
+		newText,
+		width() - _st.textMargins.left() - _st.textMargins.right());
 }

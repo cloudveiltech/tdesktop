@@ -10,6 +10,7 @@
 #include "ui/text/text_entity.h"
 #include "ui/integration.h"
 #include "base/qthelp_url.h"
+#include "base/qt_adapters.h"
 
 #include <QtCore/QUrl>
 #include <QtCore/QRegularExpression>
@@ -18,7 +19,11 @@
 
 QString TextClickHandler::readable() const {
 	const auto result = url();
-	return result.startsWith(qstr("internal:")) ? QString() : result;
+	return !result.startsWith(qstr("internal:"))
+		? result
+		: result.startsWith(qstr("internal:url:"))
+		? result.mid(qstr("internal:url:").size())
+		: QString();
 }
 
 UrlClickHandler::UrlClickHandler(const QString &url, bool fullDisplayed)
@@ -32,6 +37,13 @@ UrlClickHandler::UrlClickHandler(const QString &url, bool fullDisplayed)
 			? original.toEncoded()
 			: QString());
 		_readable = good.isValid() ? good.toDisplayString() : _originalUrl;
+	} else if (_originalUrl.startsWith(qstr("internal:url:"))) {
+		const auto external = _originalUrl.mid(qstr("internal:url:").size());
+		const auto original = QUrl(external);
+		const auto good = QUrl(original.isValid()
+			? original.toEncoded()
+			: QString());
+		_readable = good.isValid() ? good.toDisplayString() : external;
 	}
 }
 
@@ -80,13 +92,13 @@ bool UrlClickHandler::IsSuspicious(const QString &url) {
 	if (!match1.hasMatch()) {
 		return false;
 	}
-	const auto domain = match1.capturedRef(3);
+	const auto domain = match1.capturedView(3);
 	static const auto Check2 = QRegularExpression("^(.*)\\.[a-zA-Z]+$");
 	const auto match2 = Check2.match(domain);
 	if (!match2.hasMatch()) {
 		return false;
 	}
-	const auto part = match2.capturedRef(1);
+	const auto part = match2.capturedView(1);
 	static const auto Check3 = QRegularExpression("[^a-zA-Z0-9\\.\\-]");
 	return Check3.match(part).hasMatch();
 }
@@ -100,11 +112,11 @@ QString UrlClickHandler::ShowEncoded(const QString &url) {
 		"^(https?://)?([^/#\\:]+)([/#\\:]|$)",
 		QRegularExpression::CaseInsensitiveOption);
 	if (const auto match1 = Check1.match(url); match1.hasMatch()) {
-		const auto domain = match1.captured(1).append(match1.capturedRef(2));
+		const auto domain = match1.captured(1).append(match1.capturedView(2));
 		if (const auto u = QUrl(domain); u.isValid()) {
 			return QString(
 			).append(QString::fromUtf8(u.toEncoded())
-			).append(url.midRef(match1.capturedEnd(2)));
+			).append(base::StringViewMid(url, match1.capturedEnd(2)));
 		}
 	}
 	return url;

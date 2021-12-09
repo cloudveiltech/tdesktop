@@ -58,6 +58,12 @@ void InstanceImpl::setVideoCapture(std::shared_ptr<VideoCaptureInterface> videoC
     });
 }
 
+void InstanceImpl::sendVideoDeviceUpdated() {
+    _manager->perform(RTC_FROM_HERE, [](Manager *manager) {
+        manager->sendVideoDeviceUpdated();
+    });
+}
+
 void InstanceImpl::setRequestedVideoAspect(float aspect) {
     _manager->perform(RTC_FROM_HERE, [aspect](Manager *manager) {
         manager->setRequestedVideoAspect(aspect);
@@ -86,7 +92,7 @@ void InstanceImpl::setMuteMicrophone(bool muteMicrophone) {
 	});
 }
 
-void InstanceImpl::setIncomingVideoOutput(std::shared_ptr<rtc::VideoSinkInterface<webrtc::VideoFrame>> sink) {
+void InstanceImpl::setIncomingVideoOutput(std::weak_ptr<rtc::VideoSinkInterface<webrtc::VideoFrame>> sink) {
 	_manager->perform(RTC_FROM_HERE, [sink](Manager *manager) {
 		manager->setIncomingVideoOutput(sink);
 	});
@@ -124,6 +130,12 @@ void InstanceImpl::setOutputVolume(float level) {
 
 void InstanceImpl::setAudioOutputDuckingEnabled(bool enabled) {
 	// TODO: not implemented
+}
+
+void InstanceImpl::addExternalAudioSamples(std::vector<uint8_t> &&samples) {
+    _manager->perform(RTC_FROM_HERE, [samples = std::move(samples)](Manager *manager) mutable {
+        manager->addExternalAudioSamples(std::move(samples));
+    });
 }
 
 void InstanceImpl::setIsLowBatteryLevel(bool isLowBatteryLevel) {

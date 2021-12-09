@@ -32,14 +32,14 @@ struct GroupCallParticipant {
 	uint64 raisedHandRating = 0;
 	uint32 ssrc = 0;
 	int volume = 0;
-	bool sounding : 1;
-	bool speaking : 1;
-	bool additionalSounding : 1;
-	bool additionalSpeaking : 1;
-	bool muted : 1;
-	bool mutedByMe : 1;
-	bool canSelfUnmute : 1;
-	bool onlyMinLoaded : 1;
+	bool sounding : 1 = false;
+	bool speaking : 1 = false;
+	bool additionalSounding : 1 = false;
+	bool additionalSpeaking : 1 = false;
+	bool muted : 1 = false;
+	bool mutedByMe : 1 = false;
+	bool canSelfUnmute : 1 = false;
+	bool onlyMinLoaded : 1 = false;
 	bool videoJoined = false;
 	bool applyVolumeFromMin = true;
 
@@ -53,12 +53,12 @@ class GroupCall final {
 public:
 	GroupCall(
 		not_null<PeerData*> peer,
-		uint64 id,
-		uint64 accessHash,
+		CallId id,
+		CallId accessHash,
 		TimeId scheduleDate);
 	~GroupCall();
 
-	[[nodiscard]] uint64 id() const;
+	[[nodiscard]] CallId id() const;
 	[[nodiscard]] bool loaded() const;
 	[[nodiscard]] not_null<PeerData*> peer() const;
 	[[nodiscard]] MTPInputGroupCall input() const;
@@ -97,6 +97,9 @@ public:
 	}
 	[[nodiscard]] int unmutedVideoLimit() const {
 		return _unmutedVideoLimit.current();
+	}
+	[[nodiscard]] bool recordVideo() const {
+		return _recordVideo.current();
 	}
 
 	void setPeer(not_null<PeerData*> peer);
@@ -191,8 +194,8 @@ private:
 	void finishParticipantsSliceRequest();
 	[[nodiscard]] Participant *findParticipant(not_null<PeerData*> peer);
 
-	const uint64 _id = 0;
-	const uint64 _accessHash = 0;
+	const CallId _id = 0;
+	const CallId _accessHash = 0;
 
 	not_null<PeerData*> _peer;
 	int _version = 0;
@@ -214,6 +217,7 @@ private:
 	int _serverParticipantsCount = 0;
 	rpl::variable<int> _fullCount = 0;
 	rpl::variable<int> _unmutedVideoLimit = 0;
+	rpl::variable<bool> _recordVideo = 0;
 	rpl::variable<TimeId> _recordStartDate = 0;
 	rpl::variable<TimeId> _scheduleDate = 0;
 	rpl::variable<bool> _scheduleStartSubscribed = false;

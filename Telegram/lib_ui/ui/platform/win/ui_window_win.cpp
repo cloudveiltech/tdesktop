@@ -10,8 +10,10 @@
 #include "ui/platform/win/ui_window_title_win.h"
 #include "base/platform/base_platform_info.h"
 #include "base/platform/win/base_windows_safe_library.h"
+#include "base/integration.h"
 #include "base/debug_log.h"
 #include "styles/palette.h"
+#include "styles/style_widgets.h"
 
 #include <QtCore/QAbstractNativeEventFilter>
 #include <QtGui/QWindow>
@@ -28,7 +30,12 @@ namespace Ui {
 namespace Platform {
 namespace {
 
-bool IsCompositionEnabled() {
+constexpr auto kDWMWCP_ROUND = DWORD(2);
+constexpr auto kDWMWA_WINDOW_CORNER_PREFERENCE = DWORD(33);
+constexpr auto kDWMWA_CAPTION_COLOR = DWORD(35);
+constexpr auto kDWMWA_TEXT_COLOR = DWORD(36);
+
+[[nodiscard]] bool IsCompositionEnabled() {
 	auto result = BOOL(FALSE);
 	const auto success = (DwmIsCompositionEnabled(&result) == S_OK);
 	return success && result;
@@ -84,21 +91,22 @@ bool IsTaskbarAutoHidden(LPRECT rcMon = nullptr, PUINT pEdge = nullptr) {
 	return bAutoHidden;
 }
 
-HRESULT WinApiSetWindowTheme(
-		HWND hWnd,
-		LPCWSTR pszSubAppName,
-		LPCWSTR pszSubIdList) {
-	static const auto method = [&] {
-		using f_SetWindowTheme = HRESULT(FAR STDAPICALLTYPE*)(
-			HWND hWnd,
-			LPCWSTR pszSubAppName,
-			LPCWSTR pszSubIdList);
-		auto result = f_SetWindowTheme();
-		const auto loaded = base::Platform::SafeLoadLibrary(L"uxtheme.dll");
-		base::Platform::LoadMethod(loaded, "SetWindowTheme", result);
-		return result;
-	}();
-	return method ? method(hWnd, pszSubAppName, pszSubIdList) : HRESULT();
+void FixAeroSnap(HWND handle) {
+	SetWindowLongPtr(
+		handle,
+		GWL_STYLE,
+		GetWindowLongPtr(handle, GWL_STYLE) | WS_CAPTION | WS_THICKFRAME);
+}
+
+[[nodiscard]] HWND ResolveWindowHandle(not_null<QWidget*> widget) {
+	if (!::Platform::IsWindows8OrGreater()) {
+		widget->setWindowFlag(Qt::FramelessWindowHint);
+	}
+	const auto result = GetWindowHandle(widget);
+	if (!::Platform::IsWindows8OrGreater()) {
+		FixAeroSnap(result);
+	}
+	return result;
 }
 
 } // namespace
@@ -132,26 +140,29 @@ bool WindowHelper::NativeFilter::nativeEventFilter(
 		const QByteArray &eventType,
 		void *message,
 		long *result) {
+	auto filtered = false;
 	const auto msg = static_cast<MSG*>(message);
 	const auto i = _windowByHandle.find(msg->hwnd);
-	return (i != end(_windowByHandle))
-		? i->second->handleNativeEvent(
-			msg->message,
-			msg->wParam,
-			msg->lParam,
-			reinterpret_cast<LRESULT*>(result))
-		: false;
+	if (i != end(_windowByHandle)) {
+		base::Integration::Instance().enterFromEventLoop([&] {
+			filtered = i->second->handleNativeEvent(
+				msg->message,
+				msg->wParam,
+				msg->lParam,
+				reinterpret_cast<LRESULT*>(result));
+		});
+	}
+	return filtered;
 }
 
 WindowHelper::WindowHelper(not_null<RpWidget*> window)
 : BasicWindowHelper(window)
-, _handle(GetWindowHandle(window))
+, _handle(ResolveWindowHandle(window))
 , _title(Ui::CreateChild<TitleWidget>(window.get()))
 , _body(Ui::CreateChild<RpWidget>(window.get()))
-, _shadow(window, st::windowShadowFg->c) {
+, _shadow(std::in_place, window, st::windowShadowFg->c) {
 	Expects(_handle != nullptr);
 
-	GetNativeFilter()->registerWindow(_handle, this);
 	init();
 }
 
@@ -163,6 +174,12 @@ not_null<RpWidget*> WindowHelper::body() {
 	return _body;
 }
 
+QMargins WindowHelper::frameMargins() {
+	return _title->isHidden()
+		? BasicWindowHelper::nativeFrameMargins()
+		: QMargins{ 0, _title->height(), 0, 0 };
+}
+
 void WindowHelper::setTitle(const QString &title) {
 	_title->setText(title);
 	window()->setWindowTitle(title);
@@ -170,20 +187,62 @@ void WindowHelper::setTitle(const QString &title) {
 
 void WindowHelper::setTitleStyle(const style::WindowTitle &st) {
 	_title->setStyle(st);
+	updateWindowFrameColors();
+}
+
+void WindowHelper::setNativeFrame(bool enabled) {
+	if (!::Platform::IsWindows8OrGreater()) {
+		window()->windowHandle()->setFlag(Qt::FramelessWindowHint, !enabled);
+		if (!enabled) {
+			FixAeroSnap(_handle);
+		}
+	}
+	_title->setVisible(!enabled);
+	if (enabled) {
+		_shadow.reset();
+	} else {
+		_shadow.emplace(window(), st::windowShadowFg->c);
+		_shadow->setResizeEnabled(!fixedSize());
+		initialShadowUpdate();
+	}
+	updateMargins();
+	updateWindowFrameColors();
+	fixMaximizedWindow();
+}
+
+void WindowHelper::initialShadowUpdate() {
+	using Change = WindowShadow::Change;
+	const auto noShadowStates = (Qt::WindowMinimized | Qt::WindowMaximized);
+	if ((window()->windowState() & noShadowStates) || window()->isHidden()) {
+		_shadow->update(Change::Hidden);
+	} else {
+		_shadow->update(Change::Moved | Change::Resized | Change::Shown);
+	}
+
+	if (::Platform::IsWindows11OrGreater()) {
+		auto preference = kDWMWCP_ROUND;
+		DwmSetWindowAttribute(
+			_handle,
+			kDWMWA_WINDOW_CORNER_PREFERENCE,
+			&preference,
+			sizeof(preference));
+	}
 }
 
 void WindowHelper::setMinimumSize(QSize size) {
-	window()->setMinimumSize(size.width(), _title->height() + size.height());
+	window()->setMinimumSize(size.width(), titleHeight() + size.height());
 }
 
 void WindowHelper::setFixedSize(QSize size) {
-	window()->setFixedSize(size.width(), _title->height() + size.height());
+	window()->setFixedSize(size.width(), titleHeight() + size.height());
 	_title->setResizeEnabled(false);
-	_shadow.setResizeEnabled(false);
+	if (_shadow) {
+		_shadow->setResizeEnabled(false);
+	}
 }
 
 void WindowHelper::setGeometry(QRect rect) {
-	window()->setGeometry(rect.marginsAdded({ 0, _title->height(), 0, 0 }));
+	window()->setGeometry(rect.marginsAdded({ 0, titleHeight(), 0, 0 }));
 }
 
 void WindowHelper::showFullScreen() {
@@ -203,29 +262,40 @@ void WindowHelper::showNormal() {
 }
 
 void WindowHelper::init() {
+	_title->show();
+	GetNativeFilter()->registerWindow(_handle, this);
+
 	style::PaletteChanged(
 	) | rpl::start_with_next([=] {
-		_shadow.setColor(st::windowShadowFg->c);
+		if (_shadow) {
+			_shadow->setColor(st::windowShadowFg->c);
+		}
+		updateWindowFrameColors();
 		Ui::ForceFullRepaint(window());
 	}, window()->lifetime());
 
 	rpl::combine(
 		window()->sizeValue(),
-		_title->heightValue()
-	) | rpl::start_with_next([=](QSize size, int titleHeight) {
+		_title->heightValue(),
+		_title->shownValue()
+	) | rpl::start_with_next([=](
+			QSize size,
+			int titleHeight,
+			bool titleShown) {
 		_body->setGeometry(
 			0,
-			titleHeight,
+			titleShown ? titleHeight : 0,
 			size.width(),
-			size.height() - titleHeight);
+			size.height() - (titleShown ? titleHeight : 0));
 	}, _body->lifetime());
 
 	updateMargins();
 
 	if (!::Platform::IsWindows8OrGreater()) {
-		WinApiSetWindowTheme(_handle, L" ", L" ");
+		SetWindowTheme(_handle, L" ", L" ");
 		QApplication::setStyle(QStyleFactory::create("Windows"));
 	}
+	updateWindowFrameColors();
 
 	_menu = GetSystemMenu(_handle, FALSE);
 	updateSystemMenu();
@@ -243,6 +313,8 @@ void WindowHelper::init() {
 		window()->windowHandle(),
 		&QWindow::windowStateChanged,
 		handleStateChanged);
+
+	initialShadowUpdate();
 }
 
 bool WindowHelper::handleNativeEvent(
@@ -256,22 +328,29 @@ bool WindowHelper::handleNativeEvent(
 		if (LOWORD(wParam) == WA_CLICKACTIVE) {
 			Ui::MarkInactivePress(window(), true);
 		}
-		if (LOWORD(wParam) != WA_INACTIVE) {
-			_shadow.update(WindowShadow::Change::Activate);
-		} else {
-			_shadow.update(WindowShadow::Change::Deactivate);
+		const auto active = (LOWORD(wParam) != WA_INACTIVE);
+		if (_shadow) {
+			if (active) {
+				_shadow->update(WindowShadow::Change::Activate);
+			} else {
+				_shadow->update(WindowShadow::Change::Deactivate);
+			}
 		}
+		updateWindowFrameColors(active);
 		window()->update();
 	} return false;
 
 	case WM_NCPAINT: {
-		if (::Platform::IsWindows8OrGreater()) {
+		if (::Platform::IsWindows8OrGreater() || _title->isHidden()) {
 			return false;
 		}
 		if (result) *result = 0;
 	} return true;
 
 	case WM_NCCALCSIZE: {
+		if (_title->isHidden()) {
+			return false;
+		}
 		WINDOWPLACEMENT wp;
 		wp.length = sizeof(WINDOWPLACEMENT);
 		if (GetWindowPlacement(_handle, &wp)
@@ -315,6 +394,9 @@ bool WindowHelper::handleNativeEvent(
 	} return true;
 
 	case WM_NCACTIVATE: {
+		if (_title->isHidden()) {
+			return false;
+		}
 		if (IsCompositionEnabled()) {
 			const auto res = DefWindowProc(_handle, msg, wParam, -1);
 			if (result) *result = res;
@@ -326,16 +408,18 @@ bool WindowHelper::handleNativeEvent(
 
 	case WM_WINDOWPOSCHANGING:
 	case WM_WINDOWPOSCHANGED: {
-		WINDOWPLACEMENT wp;
-		wp.length = sizeof(WINDOWPLACEMENT);
-		if (GetWindowPlacement(_handle, &wp)
-			&& (wp.showCmd == SW_SHOWMAXIMIZED
-				|| wp.showCmd == SW_SHOWMINIMIZED)) {
-			_shadow.update(WindowShadow::Change::Hidden);
-		} else {
-			_shadow.update(
-				WindowShadow::Change::Moved | WindowShadow::Change::Resized,
-				(WINDOWPOS*)lParam);
+		if (_shadow) {
+			WINDOWPLACEMENT wp;
+			wp.length = sizeof(WINDOWPLACEMENT);
+			if (GetWindowPlacement(_handle, &wp)
+				&& (wp.showCmd == SW_SHOWMAXIMIZED
+					|| wp.showCmd == SW_SHOWMINIMIZED)) {
+				_shadow->update(WindowShadow::Change::Hidden);
+			} else {
+				_shadow->update(
+					WindowShadow::Change::Moved | WindowShadow::Change::Resized,
+					(WINDOWPOS*)lParam);
+			}
 		}
 	} return false;
 
@@ -354,30 +438,36 @@ bool WindowHelper::handleNativeEvent(
 				window()->windowHandle()->windowStateChanged(state);
 			}
 			updateMargins();
-			const auto changes = (wParam == SIZE_MINIMIZED
-				|| wParam == SIZE_MAXIMIZED)
-				? WindowShadow::Change::Hidden
-				: (WindowShadow::Change::Resized
-					| WindowShadow::Change::Shown);
-			_shadow.update(changes);
+			if (_shadow) {
+				const auto changes = (wParam == SIZE_MINIMIZED
+					|| wParam == SIZE_MAXIMIZED)
+					? WindowShadow::Change::Hidden
+					: (WindowShadow::Change::Resized
+						| WindowShadow::Change::Shown);
+				_shadow->update(changes);
+			}
 		}
 	} return false;
 
 	case WM_SHOWWINDOW: {
-		const auto style = GetWindowLongPtr(_handle, GWL_STYLE);
-		const auto changes = WindowShadow::Change::Resized
-			| ((wParam && !(style & (WS_MAXIMIZE | WS_MINIMIZE)))
-				? WindowShadow::Change::Shown
-				: WindowShadow::Change::Hidden);
-		_shadow.update(changes);
+		if (_shadow) {
+			const auto style = GetWindowLongPtr(_handle, GWL_STYLE);
+			const auto changes = WindowShadow::Change::Resized
+				| ((wParam && !(style & (WS_MAXIMIZE | WS_MINIMIZE)))
+					? WindowShadow::Change::Shown
+					: WindowShadow::Change::Hidden);
+			_shadow->update(changes);
+		}
 	} return false;
 
 	case WM_MOVE: {
-		_shadow.update(WindowShadow::Change::Moved);
+		if (_shadow) {
+			_shadow->update(WindowShadow::Change::Moved);
+		}
 	} return false;
 
 	case WM_NCHITTEST: {
-		if (!result) {
+		if (!result || _title->isHidden()) {
 			return false;
 		}
 
@@ -389,7 +479,8 @@ bool WindowHelper::handleNativeEvent(
 			p.y - r.top + _marginsDelta.top());
 		if (!window()->rect().contains(mapped)) {
 			*result = HTTRANSPARENT;
-		} else if (!_title->geometry().contains(mapped)) {
+		} else if (_title->isHidden()
+			|| !_title->geometry().contains(mapped)) {
 			*result = HTCLIENT;
 		} else switch (_title->hitTest(_title->pos() + mapped)) {
 		case HitTestResult::Client:
@@ -409,6 +500,9 @@ bool WindowHelper::handleNativeEvent(
 	} return true;
 
 	case WM_NCRBUTTONUP: {
+		if (_title->isHidden()) {
+			return false;
+		}
 		SendMessage(_handle, WM_SYSCOMMAND, SC_MOUSEMENU, lParam);
 	} return true;
 
@@ -457,6 +551,38 @@ bool WindowHelper::handleNativeEvent(
 
 bool WindowHelper::fixedSize() const {
 	return window()->minimumSize() == window()->maximumSize();
+}
+
+int WindowHelper::titleHeight() const {
+	return _title->isHidden() ? 0 : _title->height();
+}
+
+void WindowHelper::updateWindowFrameColors() {
+	updateWindowFrameColors(window()->isActiveWindow());
+}
+
+void WindowHelper::updateWindowFrameColors(bool active) {
+	if (!::Platform::IsWindows11OrGreater()) {
+		return;
+	}
+	const auto bg = active
+		? _title->st()->bgActive->c
+		: _title->st()->bg->c;
+	COLORREF bgRef = RGB(bg.red(), bg.green(), bg.blue());
+	DwmSetWindowAttribute(
+		_handle,
+		kDWMWA_CAPTION_COLOR,
+		&bgRef,
+		sizeof(COLORREF));
+	const auto fg = active
+		? _title->st()->fgActive->c
+		: _title->st()->fg->c;
+	COLORREF fgRef = RGB(fg.red(), fg.green(), fg.blue());
+	DwmSetWindowAttribute(
+		_handle,
+		kDWMWA_TEXT_COLOR,
+		&fgRef,
+		sizeof(COLORREF));
 }
 
 void WindowHelper::updateMargins() {
@@ -519,8 +645,11 @@ void WindowHelper::updateMargins() {
 		_marginsDelta = QMargins();
 	}
 
-	if (_isFullScreen) {
+	if (_isFullScreen || _title->isHidden()) {
 		margins = QMargins();
+		if (_title->isHidden()) {
+			_marginsDelta = QMargins();
+		}
 	}
 	if (const auto native = QGuiApplication::platformNativeInterface()) {
 		native->setWindowProperty(
@@ -573,6 +702,25 @@ void WindowHelper::updateSystemMenu(Qt::WindowState state) {
 	}
 }
 
+void WindowHelper::fixMaximizedWindow() {
+	auto r = RECT();
+	GetClientRect(_handle, &r);
+	const auto style = GetWindowLongPtr(_handle, GWL_STYLE);
+	const auto styleEx = GetWindowLongPtr(_handle, GWL_EXSTYLE);
+	AdjustWindowRectEx(&r, style, false, styleEx);
+	if (style & WS_MAXIMIZE) {
+		auto w = RECT();
+		GetWindowRect(_handle, &w);
+		if (const auto hMonitor = MonitorFromRect(&w, MONITOR_DEFAULTTONEAREST)) {
+			MONITORINFO mi;
+			mi.cbSize = sizeof(mi);
+			GetMonitorInfo(hMonitor, &mi);
+			const auto m = mi.rcWork;
+			SetWindowPos(_handle, 0, 0, 0, m.right - m.left - _marginsDelta.left() - _marginsDelta.right(), m.bottom - m.top - _marginsDelta.top() - _marginsDelta.bottom(), SWP_NOMOVE | SWP_NOSENDCHANGING | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOREPOSITION);
+		}
+	}
+}
+
 not_null<WindowHelper::NativeFilter*> WindowHelper::GetNativeFilter() {
 	Expects(QCoreApplication::instance() != nullptr);
 
@@ -617,6 +765,10 @@ void SendWMPaintForce(not_null<QWindow*> window) {
 std::unique_ptr<BasicWindowHelper> CreateSpecialWindowHelper(
 		not_null<RpWidget*> window) {
 	return std::make_unique<WindowHelper>(window);
+}
+
+bool NativeWindowFrameSupported() {
+	return true;
 }
 
 } // namespace Platform

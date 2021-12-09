@@ -27,7 +27,7 @@ public:
 	bool supportsVideo() override {
 		return true;
 	}
-	void setIncomingVideoOutput(std::shared_ptr<rtc::VideoSinkInterface<webrtc::VideoFrame>> sink) override;
+	void setIncomingVideoOutput(std::weak_ptr<rtc::VideoSinkInterface<webrtc::VideoFrame>> sink) override;
 	void setAudioOutputGainControlEnabled(bool enabled) override;
 	void setEchoCancellationStrength(int strength) override;
 	void setAudioInputDevice(std::string id) override;
@@ -44,6 +44,8 @@ public:
 	TrafficStats getTrafficStats() override;
 	PersistentState getPersistentState() override;
 	void stop(std::function<void(FinalState)> completion) override;
+    void sendVideoDeviceUpdated() override {
+    }
 
 private:
     std::shared_ptr<Threads> _threads;

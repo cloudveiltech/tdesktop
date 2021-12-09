@@ -47,12 +47,15 @@ void DicePack::load() {
 		return;
 	}
 	_requestId = _session->api().request(MTPmessages_GetStickerSet(
-		MTP_inputStickerSetDice(MTP_string(_emoji))
+		MTP_inputStickerSetDice(MTP_string(_emoji)),
+		MTP_int(0) // hash
 	)).done([=](const MTPmessages_StickerSet &result) {
 		result.match([&](const MTPDmessages_stickerSet &data) {
 			applySet(data);
+		}, [](const MTPDmessages_stickerSetNotModified &) {
+			LOG(("API Error: Unexpected messages.stickerSetNotModified."));
 		});
-	}).fail([=](const MTP::Error &error) {
+	}).fail([=] {
 		_requestId = 0;
 	}).send();
 }
@@ -86,7 +89,7 @@ void DicePack::applySet(const MTPDmessages_stickerSet &data) {
 			if (index < 0 || index > 6) {
 				return;
 			}
-			for (const auto id : data.vdocuments().v) {
+			for (const auto &id : data.vdocuments().v) {
 				if (const auto document = documents.take(id.v)) {
 					_map.emplace(index, *document);
 				}

@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/local_url_handlers.h"
 
 #include "api/api_authorizations.h"
+#include "api/api_confirm_phone.h"
 #include "api/api_text_entities.h"
 #include "api/api_chat_invite.h"
 #include "base/qthelp_regex.h"
@@ -17,9 +18,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/update_checker.h"
 #include "core/application.h"
 #include "core/click_handler_types.h"
-#include "boxes/confirm_phone_box.h"
 #include "boxes/background_preview_box.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "boxes/share_box.h"
 #include "boxes/connection_box.h"
 #include "boxes/sticker_set_box.h"
@@ -35,12 +35,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/player/media_player_instance.h"
 #include "window/window_session_controller.h"
 #include "window/window_controller.h"
+#include "window/themes/window_theme_editor_box.h" // GenerateSlug.
 #include "settings/settings_common.h"
 #include "mainwidget.h"
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
+#include "history/history.h"
+#include "base/qt_adapters.h"
 #include "apiwrap.h"
-#include "app.h"
 
 #include <QtGui/QGuiApplication>
 
@@ -99,7 +101,7 @@ bool SetLanguage(
 		Window::SessionController *controller,
 		const Match &match,
 		const QVariant &context) {
-	if (match->capturedRef(1).isEmpty()) {
+	if (match->capturedView(1).isEmpty()) {
 		ShowLanguagesBox();
 	} else {
 		const auto languageId = match->captured(2);
@@ -135,15 +137,18 @@ bool ConfirmPhone(
 	if (!controller) {
 		return false;
 	}
-	auto params = url_parse_params(
+	const auto params = url_parse_params(
 		match->captured(1),
 		qthelp::UrlParamNameTransform::ToLower);
-	auto phone = params.value(qsl("phone"));
-	auto hash = params.value(qsl("hash"));
+	const auto phone = params.value(qsl("phone"));
+	const auto hash = params.value(qsl("hash"));
 	if (phone.isEmpty() || hash.isEmpty()) {
 		return false;
 	}
-	ConfirmPhoneBox::Start(&controller->session(), phone, hash);
+	controller->session().api().confirmPhone().resolve(
+		controller,
+		phone,
+		hash);
 	return true;
 }
 
@@ -232,15 +237,16 @@ bool ShowWallPaper(
 	const auto params = url_parse_params(
 		match->captured(1),
 		qthelp::UrlParamNameTransform::ToLower);
-	if (!params.value("gradient").isEmpty()) {
-		Ui::show(Box<InformBox>(
-			tr::lng_background_gradient_unsupported(tr::now)));
-		return false;
-	}
+	const auto bg = params.value("bg_color");
 	const auto color = params.value("color");
+	const auto gradient = params.value("gradient");
 	return BackgroundPreviewBox::Start(
 		controller,
-		(color.isEmpty() ? params.value(qsl("slug")) : color),
+		(!color.isEmpty()
+			? color
+			: !gradient.isEmpty()
+			? gradient
+			: params.value(qsl("slug"))),
 		params);
 }
 
@@ -307,7 +313,11 @@ bool ResolveUsername(
 			}
 			: Navigation::RepliesByLinkInfo{ v::null },
 		.startToken = startToken,
-		.voicechatHash = (params.contains(u"voicechat"_q)
+		.voicechatHash = (params.contains(u"livestream"_q)
+			? std::make_optional(params.value(u"livestream"_q))
+			: params.contains(u"videochat"_q)
+			? std::make_optional(params.value(u"videochat"_q))
+			: params.contains(u"voicechat"_q)
 			? std::make_optional(params.value(u"voicechat"_q))
 			: std::nullopt),
 		.clickFromMessageId = fromMessageId,
@@ -366,17 +376,16 @@ bool ResolveSettings(
 	if (section.isEmpty()) {
 		controller->window().showSettings();
 		return true;
-	}
-	if (section == qstr("devices")) {
-		controller->session().api().authorizations().reload();
-		controller->show(Box<SessionsBox>(&controller->session()));
-		return true;
 	} else if (section == qstr("language")) {
 		ShowLanguagesBox();
 		return true;
+	} else if (section == qstr("devices")) {
+		controller->session().api().authorizations().reload();
 	}
 	const auto type = (section == qstr("folders"))
 		? ::Settings::Type::Folders
+		: (section == qstr("devices"))
+		? ::Settings::Type::Sessions
 		: ::Settings::Type::Main;
 	controller->showSettings(type);
 	return true;
@@ -402,12 +411,12 @@ bool HandleUnknown(
 				Core::UpdateApplication();
 				close();
 			};
-			controller->show(Box<ConfirmBox>(
+			controller->show(Box<Ui::ConfirmBox>(
 				text,
 				tr::lng_menu_update(tr::now),
 				callback));
 		} else {
-			controller->show(Box<InformBox>(text));
+			controller->show(Box<Ui::InformBox>(text));
 		}
 	});
 	controller->session().api().requestDeepLinkInfo(request, callback);
@@ -461,6 +470,157 @@ bool ShowInviteLink(
 	}
 	QGuiApplication::clipboard()->setText(link);
 	Ui::Toast::Show(tr::lng_group_invite_copied(tr::now));
+	return true;
+}
+
+bool OpenExternalLink(
+		Window::SessionController *controller,
+		const Match &match,
+		const QVariant &context) {
+	return Ui::Integration::Instance().handleUrlClick(
+		match->captured(1),
+		context);
+}
+
+void ExportTestChatTheme(
+		not_null<Main::Session*> session,
+		not_null<const Data::CloudTheme*> theme) {
+	const auto inputSettings = [&](Data::CloudThemeType type)
+	-> std::optional<MTPInputThemeSettings> {
+		const auto i = theme->settings.find(type);
+		if (i == end(theme->settings)) {
+			Ui::Toast::Show("Something went wrong :(");
+			return std::nullopt;
+		}
+		const auto &fields = i->second;
+		if (!fields.paper
+			|| !fields.paper->isPattern()
+			|| fields.paper->backgroundColors().empty()
+			|| !fields.paper->hasShareUrl()) {
+			Ui::Toast::Show("Something went wrong :(");
+			return std::nullopt;
+		}
+		const auto &bg = fields.paper->backgroundColors();
+		const auto url = fields.paper->shareUrl(session);
+		const auto from = url.indexOf("bg/");
+		const auto till = url.indexOf("?");
+		if (from < 0 || till <= from) {
+			Ui::Toast::Show("Bad WallPaper link: " + url);
+			return std::nullopt;
+		}
+
+		using Setting = MTPDinputThemeSettings::Flag;
+		using Paper = MTPDwallPaperSettings::Flag;
+		const auto color = [](const QColor &color) {
+			const auto red = color.red();
+			const auto green = color.green();
+			const auto blue = color.blue();
+			return int(((uint32(red) & 0xFFU) << 16)
+				| ((uint32(green) & 0xFFU) << 8)
+				| (uint32(blue) & 0xFFU));
+		};
+		const auto colors = [&](const std::vector<QColor> &colors) {
+			auto result = QVector<MTPint>();
+			result.reserve(colors.size());
+			for (const auto &single : colors) {
+				result.push_back(MTP_int(color(single)));
+			}
+			return result;
+		};
+		const auto slug = url.mid(from + 3, till - from - 3);
+		const auto settings = Setting::f_wallpaper
+			| Setting::f_wallpaper_settings
+			| (fields.outgoingAccentColor
+				? Setting::f_outbox_accent_color
+				: Setting(0))
+			| (!fields.outgoingMessagesColors.empty()
+				? Setting::f_message_colors
+				: Setting(0));
+		const auto papers = Paper::f_background_color
+			| Paper::f_intensity
+			| (bg.size() > 1
+				? Paper::f_second_background_color
+				: Paper(0))
+			| (bg.size() > 2
+				? Paper::f_third_background_color
+				: Paper(0))
+			| (bg.size() > 3
+				? Paper::f_fourth_background_color
+				: Paper(0));
+		return MTP_inputThemeSettings(
+			MTP_flags(settings),
+			((type == Data::CloudThemeType::Dark)
+				? MTP_baseThemeTinted()
+				: MTP_baseThemeClassic()),
+			MTP_int(color(fields.accentColor)),
+			MTP_int(color(fields.outgoingAccentColor.value_or(
+				Qt::black))),
+			MTP_vector<MTPint>(colors(fields.outgoingMessagesColors)),
+			MTP_inputWallPaperSlug(MTP_string(slug)),
+			MTP_wallPaperSettings(
+				MTP_flags(papers),
+				MTP_int(color(bg[0])),
+				MTP_int(color(bg.size() > 1 ? bg[1] : Qt::black)),
+				MTP_int(color(bg.size() > 2 ? bg[2] : Qt::black)),
+				MTP_int(color(bg.size() > 3 ? bg[3] : Qt::black)),
+				MTP_int(fields.paper->patternIntensity()),
+				MTP_int(0)));
+	};
+	const auto light = inputSettings(Data::CloudThemeType::Light);
+	if (!light) {
+		return;
+	}
+	const auto dark = inputSettings(Data::CloudThemeType::Dark);
+	if (!dark) {
+		return;
+	}
+	session->api().request(MTPaccount_CreateTheme(
+		MTP_flags(MTPaccount_CreateTheme::Flag::f_settings),
+		MTP_string(Window::Theme::GenerateSlug()),
+		MTP_string(theme->title + " Desktop"),
+		MTPInputDocument(),
+		MTP_vector<MTPInputThemeSettings>(QVector<MTPInputThemeSettings>{
+			*light,
+			*dark,
+		})
+	)).done([=](const MTPTheme &result) {
+		const auto slug = Data::CloudTheme::Parse(session, result, true).slug;
+		QGuiApplication::clipboard()->setText(
+			session->createInternalLinkFull("addtheme/" + slug));
+		Ui::Toast::Show(tr::lng_background_link_copied(tr::now));
+	}).fail([=](const MTP::Error &error) {
+		Ui::Toast::Show("Error: " + error.type());
+	}).send();
+}
+
+bool ResolveTestChatTheme(
+		Window::SessionController *controller,
+		const Match &match,
+		const QVariant &context) {
+	if (!controller) {
+		return false;
+	}
+	const auto params = url_parse_params(
+		match->captured(1),
+		qthelp::UrlParamNameTransform::ToLower);
+	if (const auto history = controller->activeChatCurrent().history()) {
+		controller->clearCachedChatThemes();
+		const auto theme = history->owner().cloudThemes().updateThemeFromLink(
+			history->peer->themeEmoji(),
+			params);
+		if (theme) {
+			if (!params["export"].isEmpty()) {
+				ExportTestChatTheme(&controller->session(), &*theme);
+			}
+			const auto recache = [&](Data::CloudThemeType type) {
+				[[maybe_unused]] auto value = theme->settings.contains(type)
+					? controller->cachedChatThemeValue(*theme, type)
+					: nullptr;
+			};
+			recache(Data::CloudThemeType::Dark);
+			recache(Data::CloudThemeType::Light);
+		}
+	}
 	return true;
 }
 
@@ -525,6 +685,10 @@ const std::vector<LocalUrlHandler> &LocalUrlHandlers() {
 			ResolveSettings
 		},
 		{
+			qsl("^test_chat_theme/?\\?(.+)(#|$)"),
+			ResolveTestChatTheme,
+		},
+		{
 			qsl("^([^\\?]+)(\\?|#|$)"),
 			HandleUnknown
 		},
@@ -542,6 +706,10 @@ const std::vector<LocalUrlHandler> &InternalUrlHandlers() {
 			qsl("^show_invite_link/?\\?link=([a-zA-Z0-9_\\+\\/\\=\\-]+)(&|$)"),
 			ShowInviteLink
 		},
+		{
+			qsl("^url:(.+)$"),
+			OpenExternalLink
+		},
 	};
 	return Result;
 }
@@ -555,7 +723,7 @@ QString TryConvertUrlToLocal(QString url) {
 	auto matchOptions = RegExOption::CaseInsensitive;
 	auto telegramMeMatch = regex_match(qsl("^(https?://)?(www\\.)?(telegram\\.(me|dog)|t\\.me)/(.+)$"), url, matchOptions);
 	if (telegramMeMatch) {
-		auto query = telegramMeMatch->capturedRef(5);
+		auto query = telegramMeMatch->capturedView(5);
 		if (auto joinChatMatch = regex_match(qsl("^(joinchat/|\\+|\\%20)([a-zA-Z0-9\\.\\_\\-]+)(\\?|$)"), query, matchOptions)) {
 			return qsl("tg://join?invite=") + url_encode(joinChatMatch->captured(2));
 		} else if (auto stickerSetMatch = regex_match(qsl("^addstickers/([a-zA-Z0-9\\.\\_]+)(\\?|$)"), query, matchOptions)) {
@@ -613,7 +781,7 @@ bool InternalPassportLink(const QString &url) {
 	if (!urlTrimmed.startsWith(qstr("tg://"), Qt::CaseInsensitive)) {
 		return false;
 	}
-	const auto command = urlTrimmed.midRef(qstr("tg://").size());
+	const auto command = base::StringViewMid(urlTrimmed, qstr("tg://").size());
 
 	using namespace qthelp;
 	const auto matchOptions = RegExOption::CaseInsensitive;

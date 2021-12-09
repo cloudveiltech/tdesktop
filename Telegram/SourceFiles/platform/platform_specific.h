@@ -27,19 +27,19 @@ enum class SystemSettingsType {
 	Audio,
 };
 
-void SetWatchingMediaKeys(bool watching);
 void SetApplicationIcon(const QIcon &icon);
 QString SingleInstanceLocalServerName(const QString &hash);
-void RegisterCustomScheme(bool force = false);
 PermissionStatus GetPermissionStatus(PermissionType type);
 void RequestPermission(PermissionType type, Fn<void(PermissionStatus)> resultCallback);
 void OpenSystemSettingsForPermission(PermissionType type);
 bool OpenSystemSettings(SystemSettingsType type);
 void IgnoreApplicationActivationRightNow();
-bool AutostartSupported();
+[[nodiscard]] bool AutostartSupported();
+void AutostartRequestStateFromSystem(Fn<void(bool)> callback);
+void AutostartToggle(bool enabled, Fn<void(bool)> done = nullptr);
+[[nodiscard]] bool AutostartSkip();
 bool TrayIconSupported();
 bool SkipTaskbarSupported();
-[[nodiscard]] QImage GetImageFromClipboard();
 void WriteCrashDumpDetails();
 
 [[nodiscard]] std::optional<bool> IsDarkMode();

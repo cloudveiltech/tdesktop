@@ -10,11 +10,22 @@
 #include "ui/style/style_core.h"
 #include "ui/painter.h"
 #include "base/flat_map.h"
+#include "base/debug_log.h"
+#include "base/bytes.h"
 #include "styles/palette.h"
 #include "styles/style_basic.h"
 
+#include "zlib.h"
+#include <QtCore/QFile>
+#include <QtCore/QBuffer>
+#include <QtGui/QImageReader>
+#include <QtSvg/QSvgRenderer>
+
 namespace Images {
 namespace {
+
+// They should be smaller.
+constexpr auto kMaxGzipFileSize = 5 * 1024 * 1024;
 
 TG_FORCE_INLINE uint64 blurGetColors(const uchar *p) {
 	return (uint64)p[0] + ((uint64)p[1] << 16) + ((uint64)p[2] << 32) + ((uint64)p[3] << 48);
@@ -68,6 +79,210 @@ std::array<QImage, 4> PrepareCornersMask(int radius) {
 	return result;
 }
 
+template <int kBits> // 4 means 16x16, 3 means 8x8
+[[nodiscard]] QImage DitherGeneric(const QImage &image) {
+	static_assert(kBits >= 1 && kBits <= 4);
+
+	constexpr auto kSquareSide = (1 << kBits);
+	constexpr auto kShift = kSquareSide / 2;
+	constexpr auto kMask = (kSquareSide - 1);
+
+	const auto width = image.width();
+	const auto height = image.height();
+	const auto area = width * height;
+	const auto shifts = std::make_unique<uchar[]>(area);
+	bytes::set_random(bytes::make_span(shifts.get(), area));
+
+	// shiftx = int(shift & kMask) - kShift;
+	// shifty = int((shift >> 4) & kMask) - kShift;
+	// Clamp shifts close to edges.
+	for (auto y = 0; y != kShift; ++y) {
+		const auto min = kShift - y;
+		const auto shifted = (min << 4);
+		auto shift = shifts.get() + y * width;
+		for (const auto till = shift + width; shift != till; ++shift) {
+			if (((*shift >> 4) & kMask) < min) {
+				*shift = shifted | (*shift & 0x0F);
+			}
+		}
+	}
+	for (auto y = height - (kShift - 1); y != height; ++y) {
+		const auto max = kShift + (height - y - 1);
+		const auto shifted = (max << 4);
+		auto shift = shifts.get() + y * width;
+		for (const auto till = shift + width; shift != till; ++shift) {
+			if (((*shift >> 4) & kMask) > max) {
+				*shift = shifted | (*shift & 0x0F);
+			}
+		}
+	}
+	for (auto shift = shifts.get(), ytill = shift + area
+		; shift != ytill
+		; shift += width - kShift) {
+		for (const auto till = shift + kShift; shift != till; ++shift) {
+			const auto min = (till - shift);
+			if ((*shift & kMask) < min) {
+				*shift = (*shift & 0xF0) | min;
+			}
+		}
+	}
+	for (auto shift = shifts.get(), ytill = shift + area; shift != ytill;) {
+		shift += width - (kShift - 1);
+		for (const auto till = shift + (kShift - 1); shift != till; ++shift) {
+			const auto max = kShift + (till - shift - 1);
+			if ((*shift & kMask) > max) {
+				*shift = (*shift & 0xF0) | max;
+			}
+		}
+	}
+
+	auto result = image;
+	result.detach();
+
+	const auto src = reinterpret_cast<const uint32*>(image.constBits());
+	const auto dst = reinterpret_cast<uint32*>(result.bits());
+	for (auto index = 0; index != area; ++index) {
+		const auto shift = shifts[index];
+		const auto shiftx = int(shift & kMask) - kShift;
+		const auto shifty = int((shift >> 4) & kMask) - kShift;
+		dst[index] = src[index + (shifty * width) + shiftx];
+	}
+
+	return result;
+}
+
+[[nodiscard]] QImage GenerateSmallComplexGradient(
+		const std::vector<QColor> &colors,
+		int rotation,
+		float progress) {
+	const auto positions = std::vector<std::pair<float, float>>{
+		{ 0.80f, 0.10f },
+		{ 0.60f, 0.20f },
+		{ 0.35f, 0.25f },
+		{ 0.25f, 0.60f },
+		{ 0.20f, 0.90f },
+		{ 0.40f, 0.80f },
+		{ 0.65f, 0.75f },
+		{ 0.75f, 0.40f },
+	};
+	const auto positionsForPhase = [&](int phase) {
+		auto result = std::vector<std::pair<float, float>>(4);
+		for (auto i = 0; i != 4; ++i) {
+			result[i] = positions[(phase + i * 2) % 8];
+			result[i].second = 1.f - result[i].second;
+		}
+		return result;
+	};
+	const auto phase = std::clamp(rotation, 0, 315) / 45;
+	const auto previousPhase = (phase + 1) % 8;
+	const auto previous = positionsForPhase(previousPhase);
+	const auto current = positionsForPhase(phase);
+
+	constexpr auto kWidth = 64;
+	constexpr auto kHeight = 64;
+	static const auto pixelCache = [&] {
+		auto result = std::make_unique<float[]>(kWidth * kHeight * 2);
+		const auto invwidth = 1.f / kWidth;
+		const auto invheight = 1.f / kHeight;
+		auto floats = result.get();
+		for (auto y = 0; y != kHeight; ++y) {
+			const auto directPixelY = y * invheight;
+			const auto centerDistanceY = directPixelY - 0.5f;
+			const auto centerDistanceY2 = centerDistanceY * centerDistanceY;
+			for (auto x = 0; x != kWidth; ++x) {
+				const auto directPixelX = x * invwidth;
+				const auto centerDistanceX = directPixelX - 0.5f;
+				const auto centerDistance = sqrtf(
+					centerDistanceX * centerDistanceX + centerDistanceY2);
+
+				const auto swirlFactor = 0.35f * centerDistance;
+				const auto theta = swirlFactor * swirlFactor * 0.8f * 8.0f;
+				const auto sinTheta = sinf(theta);
+				const auto cosTheta = cosf(theta);
+				*floats++ = std::max(
+					0.0f,
+					std::min(
+						1.0f,
+						(0.5f
+							+ centerDistanceX * cosTheta
+							- centerDistanceY * sinTheta)));
+				*floats++ = std::max(
+					0.0f,
+					std::min(
+						1.0f,
+						(0.5f
+							+ centerDistanceX * sinTheta
+							+ centerDistanceY * cosTheta)));
+			}
+		}
+		return result;
+	}();
+	const auto colorsCount = int(colors.size());
+	auto colorsFloat = std::vector<std::array<float, 3>>(colorsCount);
+	for (auto i = 0; i != colorsCount; ++i) {
+		colorsFloat[i] = {
+			float(colors[i].red()),
+			float(colors[i].green()),
+			float(colors[i].blue()),
+		};
+	}
+	auto result = QImage(
+		kWidth,
+		kHeight,
+		QImage::Format_RGB32);
+	Assert(result.bytesPerLine() == kWidth * 4);
+
+	auto cache = pixelCache.get();
+	auto pixels = reinterpret_cast<uint32*>(result.bits());
+	for (auto y = 0; y != kHeight; ++y) {
+		for (auto x = 0; x != kWidth; ++x) {
+			const auto pixelX = *cache++;
+			const auto pixelY = *cache++;
+
+			auto distanceSum = 0.f;
+			auto r = 0.f;
+			auto g = 0.f;
+			auto b = 0.f;
+			for (auto i = 0; i != colorsCount; ++i) {
+				const auto colorX = previous[i].first
+					+ (current[i].first - previous[i].first) * progress;
+				const auto colorY = previous[i].second
+					+ (current[i].second - previous[i].second) * progress;
+
+				const auto dx = pixelX - colorX;
+				const auto dy = pixelY - colorY;
+				const auto distance = std::max(
+					0.0f,
+					0.9f - sqrtf(dx * dx + dy * dy));
+				const auto square = distance * distance;
+				const auto fourth = square * square;
+				distanceSum += fourth;
+
+				r += fourth * colorsFloat[i][0];
+				g += fourth * colorsFloat[i][1];
+				b += fourth * colorsFloat[i][2];
+			}
+
+			const auto red = uint32(r / distanceSum);
+			const auto green = uint32(g / distanceSum);
+			const auto blue = uint32(b / distanceSum);
+			*pixels++ = 0xFF000000U | (red << 16) | (green << 8) | blue;
+		}
+	}
+	return result;
+}
+
+[[nodiscard]] QImage GenerateComplexGradient(
+		QSize size,
+		const std::vector<QColor> &colors,
+		int rotation,
+		float progress) {
+	auto exact = GenerateSmallComplexGradient(colors, rotation, progress);
+	return (exact.size() == size)
+		? exact
+		: exact.scaled(size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+}
+
 } // namespace
 
 QPixmap PixmapFast(QImage &&image) {
@@ -107,6 +322,134 @@ std::array<QImage, 4> PrepareCorners(
 	auto result = CornersMask(radius);
 	for (auto &image : result) {
 		style::colorizeImage(image, color->c, &image);
+	}
+	return result;
+}
+
+[[nodiscard]] QByteArray UnpackGzip(const QByteArray &bytes) {
+	z_stream stream;
+	stream.zalloc = nullptr;
+	stream.zfree = nullptr;
+	stream.opaque = nullptr;
+	stream.avail_in = 0;
+	stream.next_in = nullptr;
+	int res = inflateInit2(&stream, 16 + MAX_WBITS);
+	if (res != Z_OK) {
+		return bytes;
+	}
+	const auto guard = gsl::finally([&] { inflateEnd(&stream); });
+
+	auto result = QByteArray(kMaxGzipFileSize + 1, char(0));
+	stream.avail_in = bytes.size();
+	stream.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(bytes.data()));
+	stream.avail_out = 0;
+	while (!stream.avail_out) {
+		stream.avail_out = result.size();
+		stream.next_out = reinterpret_cast<Bytef*>(result.data());
+		int res = inflate(&stream, Z_NO_FLUSH);
+		if (res != Z_OK && res != Z_STREAM_END) {
+			return bytes;
+		} else if (!stream.avail_out) {
+			return bytes;
+		}
+	}
+	result.resize(result.size() - stream.avail_out);
+	return result;
+}
+
+[[nodiscard]] ReadResult ReadGzipSvg(const ReadArgs &args) {
+	const auto bytes = UnpackGzip(args.content);
+	if (bytes.isEmpty()) {
+		LOG(("Svg Error: Couldn't unpack gzip-ed content."));
+		return {};
+	}
+	auto renderer = QSvgRenderer(bytes);
+	if (!renderer.isValid()) {
+		LOG(("Svg Error: Invalid data."));
+		return {};
+	}
+	auto size = renderer.defaultSize();
+	if (!args.maxSize.isEmpty()
+		&& (size.width() > args.maxSize.width()
+			|| size.height() > args.maxSize.height())) {
+		size = size.scaled(args.maxSize, Qt::KeepAspectRatio);
+	}
+	if (size.isEmpty()) {
+		LOG(("Svg Error: Bad size %1x%2."
+			).arg(renderer.defaultSize().width()
+			).arg(renderer.defaultSize().height()));
+		return {};
+	}
+	auto result = ReadResult();
+	result.image = QImage(size, QImage::Format_ARGB32_Premultiplied);
+	result.image.fill(Qt::transparent);
+	{
+		QPainter p(&result.image);
+		renderer.render(&p, QRect(QPoint(), size));
+	}
+	result.format = "svg";
+	return result;
+}
+
+[[nodiscard]] ReadResult ReadOther(const ReadArgs &args) {
+	auto bytes = args.content;
+	if (bytes.isEmpty()) {
+		return {};
+	}
+	auto buffer = QBuffer(&bytes);
+	auto reader = QImageReader(&buffer);
+	reader.setAutoTransform(true);
+	if (!reader.canRead()) {
+		return {};
+	}
+	const auto size = reader.size();
+	if (size.width() * size.height() > kReadMaxArea) {
+		return {};
+	}
+	auto result = ReadResult();
+	if (!reader.read(&result.image) || result.image.isNull()) {
+		return {};
+	}
+	result.animated = reader.supportsAnimation()
+		&& (reader.imageCount() > 1);
+	result.format = reader.format().toLower();
+	return result;
+}
+
+ReadResult Read(ReadArgs &&args) {
+	if (args.content.isEmpty()) {
+		if (args.path.isEmpty()) {
+			return {};
+		}
+		auto file = QFile(args.path);
+		if (file.size() > kReadBytesLimit
+			|| !file.open(QIODevice::ReadOnly)) {
+			return {};
+		}
+		args.content = file.readAll();
+	}
+	auto result = args.gzipSvg ? ReadGzipSvg(args) : ReadOther(args);
+	if (result.image.isNull()) {
+		args = ReadArgs();
+		return {};
+	}
+	if (args.returnContent) {
+		result.content = args.content;
+	} else {
+		args.content = QByteArray();
+	}
+	if (!args.maxSize.isEmpty()
+		&& (result.image.width() > args.maxSize.width()
+			|| result.image.height() > args.maxSize.height())) {
+		result.image = result.image.scaled(
+			args.maxSize,
+			Qt::KeepAspectRatio,
+			Qt::SmoothTransformation);
+	}
+	if (args.forceOpaque
+		&& result.format != qstr("jpg")
+		&& result.format != qstr("jpeg")) {
+		result.image = prepareOpaque(std::move(result.image));
 	}
 	return result;
 }
@@ -447,6 +790,141 @@ QImage BlurLargeImage(QImage image, int radius) {
 	return image;
 }
 
+[[nodiscard]] QImage DitherImage(QImage image) {
+	Expects(image.bytesPerLine() == image.width() * 4);
+
+	const auto width = image.width();
+	const auto height = image.height();
+	const auto min = std::min(width, height);
+	const auto max = std::max(width, height);
+	if (max >= 1024 && min >= 512) {
+		return DitherGeneric<4>(image);
+	} else if (max >= 512 && min >= 256) {
+		return DitherGeneric<3>(image);
+	} else if (max >= 256 && min >= 128) {
+		return DitherGeneric<2>(image);
+	} else if (min >= 32) {
+		return DitherGeneric<1>(image);
+	}
+	return image;
+}
+
+[[nodiscard]] QImage GenerateGradient(
+		QSize size,
+		const std::vector<QColor> &colors,
+		int rotation,
+		float progress) {
+	Expects(!colors.empty());
+	Expects(colors.size() <= 4);
+
+	if (size.isEmpty()) {
+		return QImage();
+	} else if (colors.size() > 2) {
+		return GenerateComplexGradient(size, colors, rotation, progress);
+	} else {
+		return GenerateLinearGradient(size, colors, rotation);
+	}
+}
+
+QImage GenerateLinearGradient(
+		QSize size,
+		const std::vector<QColor> &colors,
+		int rotation) {
+	Expects(!colors.empty());
+
+	auto result = QImage(size, QImage::Format_RGB32);
+	if (colors.size() == 1) {
+		result.fill(colors.front());
+		return result;
+	}
+
+	auto p = QPainter(&result);
+	const auto width = size.width();
+	const auto height = size.height();
+	const auto [start, finalStop] = [&]() -> std::pair<QPoint, QPoint> {
+		const auto type = std::clamp(rotation, 0, 315) / 45;
+		switch (type) {
+		case 0: return { { 0, 0 }, { 0, height } };
+		case 1: return { { width, 0 }, { 0, height } };
+		case 2: return { { width, 0 }, { 0, 0 } };
+		case 3: return { { width, height }, { 0, 0 } };
+		case 4: return { { 0, height }, { 0, 0 } };
+		case 5: return { { 0, height }, { width, 0 } };
+		case 6: return { { 0, 0 }, { width, 0 } };
+		case 7: return { { 0, 0 }, { width, height } };
+		}
+		Unexpected("Rotation value in GenerateDitheredGradient.");
+	}();
+	auto gradient = QLinearGradient(start, finalStop);
+
+	if (colors.size() == 2) {
+		gradient.setStops(QGradientStops{
+			{ 0.0, colors[0] },
+			{ 1.0, colors[1] }
+		});
+	} else {
+		auto stops = QGradientStops();
+		const auto step = 1. / (colors.size() - 1);
+		auto point = 0.;
+		for (const auto &color : colors) {
+			stops.append({ point, color });
+			point += step;
+		}
+		gradient.setStops(std::move(stops));
+	}
+	p.fillRect(QRect(QPoint(), size), QBrush(std::move(gradient)));
+	p.end();
+
+	return result;
+}
+
+QImage GenerateShadow(
+		int height,
+		int topAlpha,
+		int bottomAlpha,
+		QColor color) {
+	Expects(topAlpha >= 0 && topAlpha < 256);
+	Expects(bottomAlpha >= 0 && bottomAlpha < 256);
+	Expects(height * style::DevicePixelRatio() < 65536);
+
+	const auto base = (uint32(color.red()) << 16)
+		| (uint32(color.green()) << 8)
+		| uint32(color.blue());
+	const auto premultiplied = (topAlpha == bottomAlpha) || !base;
+	auto result = QImage(
+		QSize(1, height * style::DevicePixelRatio()),
+		(premultiplied
+			? QImage::Format_ARGB32_Premultiplied
+			: QImage::Format_ARGB32));
+	if (topAlpha == bottomAlpha) {
+		color.setAlpha(topAlpha);
+		result.fill(color);
+		return result;
+	}
+	constexpr auto kShift = 16;
+	constexpr auto kMultiply = (1U << kShift);
+	const auto values = std::abs(topAlpha - bottomAlpha);
+	const auto rows = uint32(result.height());
+	const auto step = (values * kMultiply) / (rows - 1);
+	const auto till = rows * uint32(step);
+	Assert(result.bytesPerLine() == sizeof(uint32));
+	auto ints = reinterpret_cast<uint32*>(result.bits());
+	if (topAlpha < bottomAlpha) {
+		for (auto i = uint32(0); i != till; i += step) {
+			*ints++ = base | ((topAlpha + (i >> kShift)) << 24);
+		}
+	} else {
+		for (auto i = uint32(0); i != till; i += step) {
+			*ints++ = base | ((topAlpha - (i >> kShift)) << 24);
+		}
+	}
+	if (!premultiplied) {
+		result = std::move(result).convertToFormat(
+			QImage::Format_ARGB32_Premultiplied);
+	}
+	return result;
+}
+
 void prepareCircle(QImage &img) {
 	Assert(!img.isNull());
 
@@ -462,7 +940,7 @@ void prepareCircle(QImage &img) {
 
 void prepareRound(
 		QImage &image,
-		QImage *cornerMasks,
+		gsl::span<const QImage, 4> cornerMasks,
 		RectParts corners,
 		QRect target) {
 	if (target.isNull()) {
@@ -474,7 +952,7 @@ void prepareRound(
 	auto cornerHeight = cornerMasks[0].height();
 	auto targetWidth = target.width();
 	auto targetHeight = target.height();
-	if (targetWidth < 2 * cornerWidth || targetHeight < 2 * cornerHeight) {
+	if (targetWidth < cornerWidth || targetHeight < cornerHeight) {
 		return;
 	}
 
@@ -539,8 +1017,8 @@ void prepareRound(
 		QImage::Format_ARGB32_Premultiplied);
 	Assert(!image.isNull());
 
-	auto masks = CornersMask(radius);
-	prepareRound(image, masks.data(), corners, target);
+	const auto masks = CornersMask(radius);
+	prepareRound(image, masks, corners, target);
 }
 
 QImage prepareColored(style::color add, QImage image) {

@@ -11,7 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/settings_codes.h"
 #include "settings/settings_chat.h"
 #include "boxes/language_box.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "boxes/about_box.h"
 #include "ui/wrap/vertical_layout.h"
 #include "ui/wrap/slide_wrap.h"
@@ -31,8 +31,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_account.h"
 #include "main/main_app_config.h"
 #include "apiwrap.h"
-#include "api/api_sensitive_content.h"
+#include "api/api_cloud_password.h"
 #include "api/api_global_privacy.h"
+#include "api/api_sensitive_content.h"
 #include "window/window_controller.h"
 #include "window/window_session_controller.h"
 #include "core/click_handler_types.h"
@@ -40,7 +41,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "facades.h"
 #include "app.h"
 #include "styles/style_settings.h"
-#include "mainwidget.h"
+#include "base/platform/base_platform_info.h"
 
 namespace Settings {
 
@@ -237,7 +238,7 @@ void SetupInterfaceScale(
 					button,
 					[=] { repeatSetScale(cConfigScale(), repeatSetScale); });
 			});
-			window->show(Box<ConfirmBox>(
+			window->show(Box<Ui::ConfirmBox>(
 				tr::lng_settings_need_restart(tr::now),
 				tr::lng_settings_restart_now(tr::now),
 				confirmed,
@@ -249,7 +250,11 @@ void SetupInterfaceScale(
 	};
 
 	const auto label = [](int scale) {
-		return QString::number(scale) + '%';
+		if constexpr (Platform::IsMac()) {
+			return QString::number(scale) + '%';
+		} else {
+			return QString::number(scale * cIntRetinaFactor()) + '%';
+		}
 	};
 	const auto scaleByIndex = [](int index) {
 		return *(ScaleValues.begin() + index);
@@ -311,7 +316,7 @@ void SetupHelp(
 	});
 	button->addClickHandler([=] {
 		//CloudVeil start
-		App::main()->controller()->showPeerByLink(Window::SessionNavigation::PeerByLinkInfo{
+		controller->showPeerByLink(Window::SessionNavigation::PeerByLinkInfo{
 		.usernameOrId = "cloudveilbot",
 		.messageId = ShowAtProfileMsgId
 			});
@@ -359,7 +364,7 @@ void Main::setupContent(not_null<Window::SessionController*> controller) {
 	Ui::ResizeFitChild(this, content);
 
 	// If we load this in advance it won't jump when we open its' section.
-	controller->session().api().reloadPasswordState();
+	controller->session().api().cloudPassword().reload();
 	controller->session().api().reloadContactSignupSilent();
 	controller->session().api().sensitiveContent().reload();
 	controller->session().api().globalPrivacy().reload();

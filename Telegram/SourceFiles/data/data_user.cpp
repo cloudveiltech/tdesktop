@@ -25,7 +25,8 @@ using UpdateFlag = Data::PeerUpdate::Flag;
 } // namespace
 
 UserData::UserData(not_null<Data::Session*> owner, PeerId id)
-: PeerData(owner, id) {
+: PeerData(owner, id)
+, _flags((id == owner->session().userPeerId()) ? Flag::Self : Flag(0)) {
 }
 
 bool UserData::canShareThisContact() const {
@@ -173,6 +174,19 @@ void UserData::setAccessHash(uint64 accessHash) {
 	}
 }
 
+void UserData::setFlags(UserDataFlags which) {
+	_flags.set((flags() & UserDataFlag::Self)
+		| (which & ~UserDataFlag::Self));
+}
+
+void UserData::addFlags(UserDataFlags which) {
+	_flags.add(which & ~UserDataFlag::Self);
+}
+
+void UserData::removeFlags(UserDataFlags which) {
+	_flags.remove(which & ~UserDataFlag::Self);
+}
+
 void UserData::setCallsStatus(CallsStatus callsStatus) {
 	if (callsStatus != _callsStatus) {
 		_callsStatus = callsStatus;
@@ -188,7 +202,6 @@ bool UserData::hasCalls() const {
 namespace Data {
 
 void ApplyUserUpdate(not_null<UserData*> user, const MTPDuserFull &update) {
-	user->owner().processUser(update.vuser());
 	if (const auto photo = update.vprofile_photo()) {
 		user->owner().processPhoto(*photo);
 	}
@@ -225,6 +238,7 @@ void ApplyUserUpdate(not_null<UserData*> user, const MTPDuserFull &update) {
 	user->setAbout(qs(update.vabout().value_or_empty()));
 	user->setCommonChatsCount(update.vcommon_chats_count().v);
 	user->checkFolder(update.vfolder_id().value_or_empty());
+	user->setThemeEmoji(qs(update.vtheme_emoticon().value_or_empty()));
 	user->fullUpdated();
 }
 

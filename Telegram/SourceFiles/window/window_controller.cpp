@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "core/click_handler_types.h"
 #include "export/export_manager.h"
+#include "ui/platform/ui_platform_window.h"
 #include "platform/platform_window_title.h"
 #include "main/main_account.h"
 #include "main/main_domain.h"
@@ -28,11 +29,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_session_controller.h"
 #include "window/themes/window_theme.h"
 #include "window/themes/window_theme_editor.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "mainwindow.h"
 #include "apiwrap.h" // ApiWrap::acceptTerms.
 #include "facades.h"
-#include "app.h"
 #include "styles/style_layers.h"
 
 #include <QtGui/QWindow>
@@ -195,7 +195,7 @@ void Controller::showTermsDelete() {
 		}
 	};
 	show(
-		Box<ConfirmBox>(
+		Box<Ui::ConfirmBox>(
 			tr::lng_terms_delete_warning(tr::now),
 			tr::lng_terms_delete_now(tr::now),
 			st::attentionBoxButton,
@@ -238,17 +238,9 @@ void Controller::clearPasscodeLock() {
 }
 
 void Controller::setupIntro() {
-	const auto parent = Core::App().domain().maybeLastOrSomeAuthedAccount();
-	if (!parent) {
-		_widget.setupIntro(Intro::EnterPoint::Start);
-		return;
-	}
-	const auto qrLogin = parent->appConfig().get<QString>(
-		"qr_login_code",
-		"[not-set]");
-	DEBUG_LOG(("qr_login_code in setup: %1").arg(qrLogin));
-	const auto qr = (qrLogin == "primary");
-	_widget.setupIntro(qr ? Intro::EnterPoint::Qr : Intro::EnterPoint::Phone);
+	_widget.setupIntro(Core::App().domain().maybeLastOrSomeAuthedAccount()
+		? Intro::EnterPoint::Qr
+		: Intro::EnterPoint::Start);
 }
 
 void Controller::setupMain() {
@@ -267,7 +259,7 @@ void Controller::showSettings() {
 
 int Controller::verticalShadowTop() const {
 	return (Platform::NativeTitleRequiresShadow()
-		&& Platform::AllowNativeWindowFrameToggle()
+		&& Ui::Platform::NativeWindowFrameSupported()
 		&& Core::App().settings().nativeWindowFrame())
 		? st::lineWidth
 		: 0;
@@ -379,7 +371,7 @@ void Controller::showLogoutConfirmation() {
 			Core::App().logout(account);
 		}
 	};
-	show(Box<ConfirmBox>(
+	show(Box<Ui::ConfirmBox>(
 		tr::lng_sure_logout(tr::now),
 		tr::lng_settings_logout(tr::now),
 		st::attentionBoxButton,

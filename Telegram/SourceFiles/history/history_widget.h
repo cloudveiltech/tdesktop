@@ -8,8 +8,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "history/history_drag_area.h"
+#include "history/history.h"
 #include "ui/widgets/tooltip.h"
 #include "mainwidget.h"
+#include "chat_helpers/bot_command.h"
 #include "chat_helpers/field_autocomplete.h"
 #include "window/section_widget.h"
 #include "ui/widgets/input_fields.h"
@@ -23,6 +25,8 @@ struct FileLoadResult;
 struct SendingAlbum;
 enum class SendMediaType;
 class MessageLinksParser;
+struct InlineBotQuery;
+struct AutocompleteQuery;
 
 namespace MTP {
 class Error;
@@ -38,6 +42,7 @@ enum class Type;
 
 namespace Api {
 struct SendOptions;
+struct SendAction;
 } // namespace Api
 
 namespace InlineBots {
@@ -69,12 +74,16 @@ class LinkButton;
 class RoundButton;
 class PinnedBar;
 class GroupCallBar;
+class RequestsBar;
 struct PreparedList;
 class SendFilesWay;
+class SendAsButton;
 enum class ReportReason;
 namespace Toast {
 class Instance;
 } // namespace Toast
+class ChooseThemeController;
+class ContinuousScroll;
 } // namespace Ui
 
 namespace Window {
@@ -96,7 +105,6 @@ class TopBarWidget;
 class ContactStatus;
 class Element;
 class PinnedTracker;
-class GroupCallTracker;
 namespace Controls {
 class RecordLock;
 class VoiceRecordBar;
@@ -112,8 +120,6 @@ class HistoryInner;
 struct HistoryMessageMarkupButton;
 
 class HistoryWidget final : public Window::AbstractSectionWidget {
-    
-    Q_OBJECT
 public:
 	using FieldHistoryAction = Ui::InputField::HistoryAction;
 	using RecordLock = HistoryView::Controls::RecordLock;
@@ -151,10 +157,8 @@ public:
 	void firstLoadMessages();
 	void delayedShowAt(MsgId showAtMsgId);
 
-	QRect historyRect() const;
-
 	void updateFieldPlaceholder();
-	void updateStickersByEmoji();
+	bool updateStickersByEmoji();
 
 	bool confirmSendingFiles(const QStringList &files);
 	bool confirmSendingFiles(not_null<const QMimeData*> data);
@@ -178,9 +182,6 @@ public:
 	void doneShow();
 
 	QPoint clampMousePosition(QPoint point);
-
-	void checkSelectingScroll(QPoint point);
-	void noSelectingScroll();
 
 	bool touchScroll(const QPoint &delta);
 
@@ -214,11 +215,7 @@ public:
 
 	void escape();
 
-	void sendBotCommand(
-		not_null<PeerData*> peer,
-		UserData *bot,
-		const QString &cmd,
-		MsgId replyTo);
+	void sendBotCommand(const Bot::SendCommandRequest &request);
 	void hideSingleUseKeyboard(PeerData *peer, MsgId replyTo);
 	bool insertBotCommand(const QString &cmd);
 
@@ -227,6 +224,7 @@ public:
 	// With force=true the markup is updated even if it is
 	// already shown for the passed history item.
 	void updateBotKeyboard(History *h = nullptr, bool force = false);
+	void botCallbackSent(not_null<HistoryItem*> item);
 
 	void fastShowAtEnd(not_null<History*> history);
 	void applyDraft(
@@ -239,6 +237,8 @@ public:
 	void clearDelayedShowAtRequest();
 	void clearDelayedShowAt();
 	void saveFieldToHistoryLocalDraft();
+
+	void toggleChooseChatTheme(not_null<PeerData*> peer);
 
 	void applyCloudDraft(History *history);
 
@@ -265,6 +265,7 @@ public:
 	void confirmDeleteSelected();
 	void clearSelected();
 
+	[[nodiscard]] SendMenu::Type sendMenuType() const;
 	bool sendExistingDocument(
 		not_null<DocumentData*> document,
 		Api::SendOptions options);
@@ -286,8 +287,6 @@ public:
 	// Float player interface.
 	bool floatPlayerHandleWheelEvent(QEvent *e) override;
 	QRect floatPlayerAvailableRect() override;
-
-	PeerData *ui_getPeerForMouseAction();
 
 	bool notify_switchInlineBotButtonReceived(const QString &query, UserData *samePeerBot, MsgId samePeerReplyTo);
 
@@ -322,6 +321,10 @@ private:
 		Ui::ReportReason reason = {};
 		Fn<void(MessageIdsList)> callback;
 		bool active = false;
+	};
+	struct ItemRevealAnimation {
+		Ui::Animations::Simple animation;
+		int startHeight = 0;
 	};
 	enum class TextUpdateEvent {
 		SaveDraft = (1 << 0),
@@ -360,7 +363,6 @@ private:
 	void preloadHistoryIfNeeded();
 
 	void handleScroll();
-	void scrollByTimer();
 	void updateHistoryItemsByTimer();
 
 	[[nodiscard]] Dialogs::EntryState computeDialogsEntryState() const;
@@ -369,14 +371,15 @@ private:
 	void requestMessageData(MsgId msgId);
 	void messageDataReceived(ChannelData *channel, MsgId msgId);
 
+	[[nodiscard]] Api::SendAction prepareSendAction(
+		Api::SendOptions options) const;
 	void send(Api::SendOptions options);
 	void sendWithModifiers(Qt::KeyboardModifiers modifiers);
 	void sendSilent();
 	void sendScheduled();
-	[[nodiscard]] SendMenu::Type sendMenuType() const;
 	[[nodiscard]] SendMenu::Type sendButtonMenuType() const;
 	void handlePendingHistoryUpdate();
-	void fullPeerUpdated(PeerData *peer);
+	void fullInfoUpdated();
 	void toggleTabbedSelectorMode();
 	void recountChatWidth();
 	void historyDownClicked();
@@ -416,7 +419,7 @@ private:
 	void historyDownAnimationFinish();
 	void unreadMentionsAnimationFinish();
 	void sendButtonClicked();
-	void unreadMessageAdded(not_null<HistoryItem*> item);
+	void newItemAdded(not_null<HistoryItem*> item);
 
 	bool canSendFiles(not_null<const QMimeData*> data) const;
 	bool confirmSendingFiles(
@@ -454,6 +457,10 @@ private:
 	bool canWriteMessage() const;
 	std::optional<QString> writeRestriction() const;
 	void orderWidgets();
+
+	[[nodiscard]] InlineBotQuery parseInlineBotQuery() const;
+	[[nodiscard]] auto parseMentionHashtagBotCommandQuery() const
+		-> AutocompleteQuery;
 
 	void clearInlineBot();
 	void inlineBotChanged();
@@ -498,7 +505,8 @@ private:
 		int nowScrollTop);
 
 	void checkMessagesTTL();
-	void setupGroupCallTracker();
+	void setupGroupCallBar();
+	void setupRequestsBar();
 
 	void sendInlineResult(InlineBots::ResultSelected result);
 
@@ -532,6 +540,8 @@ private:
 
 	void updateHistoryGeometry(bool initial = false, bool loadedDown = false, const ScrollChange &change = { ScrollChangeNone, 0 });
 	void updateListSize();
+	void startItemRevealAnimations();
+	void revealItemsCallback();
 
 	// Does any of the shown histories has this flag set.
 	bool hasPendingResizedItems() const;
@@ -558,6 +568,11 @@ private:
 		TextUpdateEvents events = 0,
 		FieldHistoryAction fieldHistoryAction = FieldHistoryAction::Clear);
 
+	void unregisterDraftSources();
+	void registerDraftSource();
+	void setHistory(History *history);
+	void setEditMsgId(MsgId msgId);
+
 	HistoryItem *getItemFromHistoryOrMigrated(MsgId genericMsgId) const;
 	void animatedScrollToItem(MsgId msgId);
 	void animatedScrollToY(int scrollTo, HistoryItem *attachTo = nullptr);
@@ -579,21 +594,25 @@ private:
 	void inlineBotResolveDone(const MTPcontacts_ResolvedPeer &result);
 	void inlineBotResolveFail(const MTP::Error &error, const QString &username);
 
-	bool isRecording() const;
+	[[nodiscard]] bool isRecording() const;
 
-	bool isBotStart() const;
-	bool isBlocked() const;
-	bool isJoinChannel() const;
-	bool isMuteUnmute() const;
-	bool isReportMessages() const;
+	[[nodiscard]] bool isBotStart() const;
+	[[nodiscard]] bool isBlocked() const;
+	[[nodiscard]] bool isJoinChannel() const;
+	[[nodiscard]] bool isMuteUnmute() const;
+	[[nodiscard]] bool isReportMessages() const;
 	bool updateCmdStartShown();
 	void updateSendButtonType();
-	bool showRecordButton() const;
-	bool showInlineBotCancel() const;
+	[[nodiscard]] bool showRecordButton() const;
+	[[nodiscard]] bool showInlineBotCancel() const;
 	void refreshSilentToggle();
+
+	[[nodiscard]] bool isChoosingTheme() const;
 
 	void setupScheduledToggle();
 	void refreshScheduledToggle();
+	void setupSendAsToggle();
+	void refreshSendAsToggle();
 
 	bool kbWasHidden() const;
 
@@ -602,7 +621,7 @@ private:
 	Ui::Text::String _replyToName;
 	int _replyToNameVersion = 0;
 
-	HistoryItemsList _toForward;
+	Data::ResolvedForwardDraft _toForward;
 	Ui::Text::String _toForwardFrom, _toForwardText;
 	int _toForwardNameVersion = 0;
 
@@ -620,9 +639,10 @@ private:
 	FullMsgId _pinnedClickedId;
 	std::optional<FullMsgId> _minPinnedId;
 
-	std::unique_ptr<HistoryView::GroupCallTracker> _groupCallTracker;
 	std::unique_ptr<Ui::GroupCallBar> _groupCallBar;
 	int _groupCallBarHeight = 0;
+	std::unique_ptr<Ui::RequestsBar> _requestsBar;
+	int _requestsBarHeight = 0;
 
 	bool _preserveScrollTop = false;
 
@@ -658,7 +678,7 @@ private:
 	int _delayedShowAtRequest = 0; // Not real mtpRequestId.
 
 	object_ptr<HistoryView::TopBarWidget> _topBar;
-	object_ptr<Ui::ScrollArea> _scroll;
+	object_ptr<Ui::ContinuousScroll> _scroll;
 	QPointer<HistoryInner> _list;
 	History *_migrated = nullptr;
 	History *_history = nullptr;
@@ -666,7 +686,6 @@ private:
 	bool _historyInited = false;
 	// If updateListSize() was called without updateHistoryGeometry().
 	bool _updateHistoryGeometryRequired = false;
-	int _addToScroll = 0;
 
 	int _lastScrollTop = 0; // gifs optimization
 	crl::time _lastScrolled = 0;
@@ -684,7 +703,7 @@ private:
 	bool _unreadMentionsIsShown = false;
 	object_ptr<Ui::HistoryDownButton> _unreadMentions;
 
-	object_ptr<FieldAutocomplete> _fieldAutocomplete;
+	const object_ptr<FieldAutocomplete> _fieldAutocomplete;
 	object_ptr<Support::Autocomplete> _supportAutocomplete;
 	std::unique_ptr<MessageLinksParser> _fieldLinksParser;
 
@@ -703,6 +722,7 @@ private:
 	object_ptr<Ui::FlatButton> _muteUnmute;
 	object_ptr<Ui::FlatButton> _reportMessages;
 	object_ptr<Ui::IconButton> _attachToggle;
+	object_ptr<Ui::SendAsButton> _sendAs = { nullptr };
 	object_ptr<Ui::EmojiButton> _tabbedSelectorToggle;
 	object_ptr<Ui::IconButton> _botKeyboardShow;
 	object_ptr<Ui::IconButton> _botKeyboardHide;
@@ -720,6 +740,8 @@ private:
 	HistoryItem *_kbReplyTo = nullptr;
 	object_ptr<Ui::ScrollArea> _kbScroll;
 	const not_null<BotKeyboard*> _keyboard;
+
+	std::unique_ptr<Ui::ChooseThemeController> _chooseTheme;
 
 	object_ptr<Ui::InnerDropdown> _membersDropdown = { nullptr };
 	base::Timer _membersDropdownShowTimer;
@@ -741,9 +763,6 @@ private:
 	Window::SlideDirection _showDirection;
 	QPixmap _cacheUnder, _cacheOver;
 
-	base::Timer _scrollTimer;
-	int32 _scrollDelta = 0;
-
 	MsgId _highlightedMessageId = 0;
 	std::deque<MsgId> _highlightQueue;
 	base::Timer _highlightTimer;
@@ -756,6 +775,12 @@ private:
 
 	base::weak_ptr<Ui::Toast::Instance> _topToast;
 	std::unique_ptr<ChooseMessagesForReport> _chooseForReport;
+
+	base::flat_set<not_null<HistoryItem*>> _itemRevealPending;
+	base::flat_map<
+		not_null<HistoryItem*>,
+		ItemRevealAnimation> _itemRevealAnimations;
+	int _itemsRevealHeight = 0;
 
 	object_ptr<Ui::PlainShadow> _topShadow;
 	bool _inGrab = false;

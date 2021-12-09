@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/add_contact_box.h"
 #include "boxes/peers/edit_peer_info_box.h"
 #include "boxes/peer_list_controllers.h"
+#include "boxes/delete_messages_box.h"
 #include "window/window_adaptive.h"
 #include "window/window_controller.h"
 #include "window/main_window.h"
@@ -18,7 +19,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/info_controller.h"
 #include "history/history.h"
 #include "history/history_item.h"
-#include "history/view/history_view_element.h"
 #include "history/view/history_view_replies_section.h"
 #include "media/player/media_player_instance.h"
 #include "media/view/media_view_open_common.h"
@@ -29,11 +29,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_channel.h"
 #include "data/data_chat.h"
 #include "data/data_user.h"
+#include "data/data_document.h"
+#include "data/data_document_media.h"
+#include "data/data_document_resolver.h"
 #include "data/data_changes.h"
 #include "data/data_group_call.h"
 #include "data/data_chat_filters.h"
 #include "passport/passport_form_controller.h"
 #include "chat_helpers/tabbed_selector.h"
+#include "chat_helpers/emoji_interactions.h"
 #include "core/shortcuts.h"
 #include "core/application.h"
 #include "core/core_settings.h"
@@ -42,12 +46,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/layers/generic_box.h"
 #include "ui/text/text_utilities.h"
 #include "ui/delayed_activation.h"
+#include "ui/chat/message_bubble.h"
+#include "ui/chat/chat_style.h"
+#include "ui/chat/chat_theme.h"
+#include "ui/style/style_palette_colorizer.h"
 #include "ui/toast/toast.h"
 #include "ui/toasts/common_toasts.h"
 #include "calls/calls_instance.h" // Core::App().calls().inCall().
 #include "calls/group/calls_group_call.h"
 #include "ui/boxes/calendar_box.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
 #include "main/main_domain.h"
@@ -59,14 +67,61 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "support/support_helper.h"
 #include "storage/file_upload.h"
 #include "facades.h"
+#include "window/themes/window_theme.h"
 #include "styles/style_window.h"
 #include "styles/style_dialogs.h"
 #include "styles/style_layers.h" // st::boxLabel
+#include "styles/style_chat.h" // st::historyMessageRadius
 
 namespace Window {
 namespace {
 
+constexpr auto kCustomThemesInMemory = 5;
 constexpr auto kMaxChatEntryHistorySize = 50;
+constexpr auto kDayBaseFile = ":/gui/day-custom-base.tdesktop-theme"_cs;
+constexpr auto kNightBaseFile = ":/gui/night-custom-base.tdesktop-theme"_cs;
+
+[[nodiscard]] Fn<void(style::palette&)> PreparePaletteCallback(
+		bool dark,
+		std::optional<QColor> accent) {
+	return [=](style::palette &palette) {
+		using namespace Theme;
+		const auto &embedded = EmbeddedThemes();
+		const auto i = ranges::find(
+			embedded,
+			dark ? EmbeddedType::Night : EmbeddedType::Default,
+			&EmbeddedScheme::type);
+		Assert(i != end(embedded));
+		const auto colorizer = accent
+			? ColorizerFrom(*i, *accent)
+			: style::colorizer();
+
+		auto instance = Instance();
+		const auto loaded = LoadFromFile(
+			(dark ? kNightBaseFile : kDayBaseFile).utf16(),
+			&instance,
+			nullptr,
+			nullptr,
+			colorizer);
+		Assert(loaded);
+		palette.finalize();
+		palette = instance.palette;
+	};
+}
+
+[[nodiscard]] Ui::ChatThemeBubblesData PrepareBubblesData(
+		const Data::CloudTheme &theme,
+		Data::CloudThemeType type) {
+	const auto i = theme.settings.find(type);
+	return {
+		.colors = (i != end(theme.settings)
+			? i->second.outgoingMessagesColors
+			: std::vector<QColor>()),
+		.accent = (i != end(theme.settings)
+			? i->second.outgoingAccentColor
+			: std::optional<QColor>()),
+	};
+}
 
 } // namespace
 
@@ -75,6 +130,14 @@ void ActivateWindow(not_null<SessionController*> controller) {
 	window->raise();
 	window->activateWindow();
 	Ui::ActivateWindowDelayed(window);
+}
+
+bool operator==(const PeerThemeOverride &a, const PeerThemeOverride &b) {
+	return (a.peer == b.peer) && (a.theme == b.theme);
+}
+
+bool operator!=(const PeerThemeOverride &a, const PeerThemeOverride &b) {
+	return !(a == b);
 }
 
 DateClickHandler::DateClickHandler(Dialogs::Key chat, QDate date)
@@ -89,7 +152,7 @@ void DateClickHandler::setDate(QDate date) {
 void DateClickHandler::onClick(ClickContext context) const {
 	const auto my = context.other.value<ClickHandlerContext>();
 	if (const auto window = my.sessionWindow.get()) {
-		window->showJumpToDate(_chat, _date);
+		window->showCalendar(_chat, _date);
 	}
 }
 
@@ -145,7 +208,7 @@ void SessionNavigation::resolveUsername(
 	}).fail([=](const MTP::Error &error) {
 		_resolveRequestId = 0;
 		if (error.code() == 400) {
-			show(Box<InformBox>(
+			show(Box<Ui::InformBox>(
 				tr::lng_username_not_found(tr::now, lt_user, username)));
 		}
 	}).send();
@@ -167,7 +230,7 @@ void SessionNavigation::resolveChannelById(
 	_resolveRequestId = _session->api().request(MTPchannels_GetChannels(
 		MTP_vector<MTPInputChannel>(
 			1,
-			MTP_inputChannel(MTP_int(channelId.bare), MTP_long(0))) // #TODO ids
+			MTP_inputChannel(MTP_long(channelId.bare), MTP_long(0)))
 	)).done([=](const MTPmessages_Chats &result) {
 		result.match([&](const auto &data) {
 			const auto peer = _session->data().processChats(data.vchats());
@@ -177,9 +240,7 @@ void SessionNavigation::resolveChannelById(
 				fail();
 			}
 		});
-	}).fail([=](const MTP::Error &error) {
-		fail();
-	}).send();
+	}).fail(fail).send();
 }
 
 void SessionNavigation::showPeerByLinkResolved(
@@ -225,8 +286,9 @@ void SessionNavigation::showPeerByLinkResolved(
 				return;
 			}
 			const auto id = call->id();
+			const auto limit = 5;
 			_resolveRequestId = _session->api().request(
-				MTPphone_GetGroupCall(call->input())
+				MTPphone_GetGroupCall(call->input(), MTP_int(limit))
 			).done([=](const MTPphone_GroupCall &result) {
 				if (const auto now = peer->groupCall()
 					; now && now->id() == id) {
@@ -237,9 +299,7 @@ void SessionNavigation::showPeerByLinkResolved(
 				} else {
 					bad();
 				}
-			}).fail([=](const MTP::Error &error) {
-				bad();
-			}).send();
+			}).fail(bad).send();
 		}).send();
 		return;
 	}
@@ -362,7 +422,8 @@ void SessionNavigation::showRepliesForMessage(
 					item->setRepliesMaxId(maxId->v);
 				}
 				item->setRepliesInboxReadTill(
-					data.vread_inbox_max_id().value_or_empty());
+					data.vread_inbox_max_id().value_or_empty(),
+					data.vunread_count().v);
 				item->setRepliesOutboxReadTill(
 					data.vread_outbox_max_id().value_or_empty());
 				const auto post = _session->data().message(channelId, rootId);
@@ -372,7 +433,8 @@ void SessionNavigation::showRepliesForMessage(
 						post->setRepliesMaxId(maxId->v);
 					}
 					post->setRepliesInboxReadTill(
-						data.vread_inbox_max_id().value_or_empty());
+						data.vread_inbox_max_id().value_or_empty(),
+						data.vunread_count().v);
 					post->setRepliesOutboxReadTill(
 						data.vread_outbox_max_id().value_or_empty());
 				}
@@ -454,29 +516,52 @@ void SessionNavigation::showPollResults(
 	showSection(std::make_shared<Info::Memento>(poll, contextId), params);
 }
 
+struct SessionController::CachedTheme {
+	std::weak_ptr<Ui::ChatTheme> theme;
+	std::shared_ptr<Data::DocumentMedia> media;
+	Data::WallPaper paper;
+	bool caching = false;
+	rpl::lifetime lifetime;
+};
+
 SessionController::SessionController(
 	not_null<Main::Session*> session,
 	not_null<Controller*> window)
 : SessionNavigation(session)
 , _window(window)
+, _emojiInteractions(
+	std::make_unique<ChatHelpers::EmojiInteractions>(session))
 , _tabbedSelector(
 	std::make_unique<ChatHelpers::TabbedSelector>(
 		_window->widget(),
 		this))
-, _invitePeekTimer([=] { checkInvitePeek(); }) {
+, _invitePeekTimer([=] { checkInvitePeek(); })
+, _defaultChatTheme(std::make_shared<Ui::ChatTheme>())
+, _chatStyle(std::make_unique<Ui::ChatStyle>()) {
 	init();
+
+	_chatStyleTheme = _defaultChatTheme;
+	_chatStyle->apply(_defaultChatTheme.get());
+
+	pushDefaultChatBackground();
+	Theme::Background()->updates(
+	) | rpl::start_with_next([=](const Theme::BackgroundUpdate &update) {
+		if (update.type == Theme::BackgroundUpdate::Type::New
+			|| update.type == Theme::BackgroundUpdate::Type::Changed) {
+			pushDefaultChatBackground();
+		}
+	}, _lifetime);
 
 	if (Media::Player::instance()->pauseGifByRoundVideo()) {
 		enableGifPauseReason(GifPauseReason::RoundPlaying);
 	}
 
-	base::ObservableViewer(
-		session->api().fullPeerUpdated()
-	) | rpl::start_with_next([=](PeerData *peer) {
-		if (peer == _showEditPeer) {
-			_showEditPeer = nullptr;
-			show(Box<EditPeerInfoBox>(this, peer));
-		}
+	session->changes().peerUpdates(
+		Data::PeerUpdate::Flag::FullInfo
+	) | rpl::filter([=](const Data::PeerUpdate &update) {
+		return (update.peer == _showEditPeer);
+	}) | rpl::start_with_next([=] {
+		show(Box<EditPeerInfoBox>(this, base::take(_showEditPeer)));
 	}, lifetime());
 
 	session->data().chatsListChanges(
@@ -991,13 +1076,37 @@ void SessionController::closeThirdSection() {
 	}
 }
 
+void SessionController::showPeer(not_null<PeerData*> peer, MsgId msgId) {
+	const auto currentPeer = activeChatCurrent().peer();
+	if (peer && peer->isChannel() && currentPeer != peer) {
+		const auto clickedChannel = peer->asChannel();
+		if (!clickedChannel->isPublic()
+			&& !clickedChannel->amIn()
+			&& (!currentPeer->isChannel()
+				|| currentPeer->asChannel()->linkedChat()
+					!= clickedChannel)) {
+			Ui::ShowMultilineToast({
+				.text = {
+					.text = peer->isMegagroup()
+						? tr::lng_group_not_accessible(tr::now)
+						: tr::lng_channel_not_accessible(tr::now)
+				},
+			});
+		} else {
+			showPeerHistory(peer->id, SectionShow(), msgId);
+		}
+	} else {
+		showPeerInfo(peer, SectionShow());
+	}
+}
+
 void SessionController::startOrJoinGroupCall(
 		not_null<PeerData*> peer,
 		QString joinHash,
 		GroupCallJoinConfirm confirm) {
 	auto &calls = Core::App().calls();
 	const auto askConfirmation = [&](QString text, QString button) {
-		show(Box<ConfirmBox>(text, button, crl::guard(this, [=] {
+		show(Box<Ui::ConfirmBox>(text, button, crl::guard(this, [=] {
 			Ui::hideLayer();
 			startOrJoinGroupCall(peer, joinHash, GroupCallJoinConfirm::None);
 		})));
@@ -1006,17 +1115,26 @@ void SessionController::startOrJoinGroupCall(
 		// Do you want to leave your active voice chat
 		// to join a voice chat in this group?
 		askConfirmation(
-			tr::lng_call_leave_to_other_sure(tr::now),
+			(peer->isBroadcast()
+				? tr::lng_call_leave_to_other_sure_channel
+				: tr::lng_call_leave_to_other_sure)(tr::now),
 			tr::lng_call_bar_hangup(tr::now));
 	} else if (confirm != GroupCallJoinConfirm::None
 		&& calls.inGroupCall()) {
-		if (calls.currentGroupCall()->peer() == peer) {
+		const auto now = calls.currentGroupCall()->peer();
+		if (now == peer) {
 			calls.activateCurrentCall(joinHash);
 		} else if (calls.currentGroupCall()->scheduleDate()) {
 			calls.startOrJoinGroupCall(peer, joinHash);
 		} else {
 			askConfirmation(
-				tr::lng_group_call_leave_to_other_sure(tr::now),
+				((peer->isBroadcast() && now->isBroadcast())
+					? tr::lng_group_call_leave_channel_to_other_sure_channel
+					: now->isBroadcast()
+					? tr::lng_group_call_leave_channel_to_other_sure
+					: peer->isBroadcast()
+					? tr::lng_group_call_leave_to_other_sure_channel
+					: tr::lng_group_call_leave_to_other_sure)(tr::now),
 				tr::lng_group_call_leave(tr::now));
 		}
 	} else {
@@ -1025,81 +1143,136 @@ void SessionController::startOrJoinGroupCall(
 	}
 }
 
-void SessionController::showJumpToDate(Dialogs::Key chat, QDate requestedDate) {
+void SessionController::showCalendar(Dialogs::Key chat, QDate requestedDate) {
+	const auto history = chat.history();
+	if (!history) {
+		return;
+	}
 	const auto currentPeerDate = [&] {
-		if (const auto history = chat.history()) {
-			if (history->scrollTopItem) {
-				return history->scrollTopItem->dateTime().date();
-			} else if (history->loadedAtTop()
-				&& !history->isEmpty()
-				&& history->peer->migrateFrom()) {
-				if (const auto migrated = history->owner().historyLoaded(history->peer->migrateFrom())) {
-					if (migrated->scrollTopItem) {
-						// We're up in the migrated history.
-						// So current date is the date of first message here.
-						return history->blocks.front()->messages.front()->dateTime().date();
-					}
+		if (history->scrollTopItem) {
+			return history->scrollTopItem->dateTime().date();
+		} else if (history->loadedAtTop()
+			&& !history->isEmpty()
+			&& history->peer->migrateFrom()) {
+			if (const auto migrated = history->owner().historyLoaded(history->peer->migrateFrom())) {
+				if (migrated->scrollTopItem) {
+					// We're up in the migrated history.
+					// So current date is the date of first message here.
+					return history->blocks.front()->messages.front()->dateTime().date();
 				}
-			} else if (history->chatListTimeId() != 0) {
-				return base::unixtime::parse(history->chatListTimeId()).date();
 			}
+		} else if (const auto item = history->lastMessage()) {
+			return base::unixtime::parse(item->date()).date();
 		}
 		return QDate();
 	}();
-	const auto maxPeerDate = [](Dialogs::Key chat) {
-		if (auto history = chat.history()) {
-			if (const auto channel = history->peer->migrateTo()) {
-				history = channel->owner().historyLoaded(channel);
-			}
-			if (history && history->chatListTimeId() != 0) {
-				return base::unixtime::parse(history->chatListTimeId()).date();
-			}
+	const auto maxPeerDate = [&] {
+		const auto check = history->peer->migrateTo()
+			? history->owner().historyLoaded(history->peer->migrateTo())
+			: history;
+		if (const auto item = check ? check->lastMessage() : nullptr) {
+			return base::unixtime::parse(item->date()).date();
 		}
-		return QDate::currentDate();
-	};
-	const auto minPeerDate = [](Dialogs::Key chat) {
+		return QDate();
+	}();
+	const auto minPeerDate = [&] {
 		const auto startDate = [] {
 			// Telegram was launched in August 2013 :)
 			return QDate(2013, 8, 1);
 		};
-		if (const auto history = chat.history()) {
-			if (const auto chat = history->peer->migrateFrom()) {
-				if (const auto history = chat->owner().historyLoaded(chat)) {
-					if (history->loadedAtTop()) {
-						if (!history->isEmpty()) {
-							return history->blocks.front()->messages.front()->dateTime().date();
-						}
-					} else {
-						return startDate();
+		if (const auto chat = history->peer->migrateFrom()) {
+			if (const auto history = chat->owner().historyLoaded(chat)) {
+				if (history->loadedAtTop()) {
+					if (!history->isEmpty()) {
+						return history->blocks.front()->messages.front()->dateTime().date();
 					}
+				} else {
+					return startDate();
 				}
-			}
-			if (history->loadedAtTop()) {
-				if (!history->isEmpty()) {
-					return history->blocks.front()->messages.front()->dateTime().date();
-				}
-				return QDate::currentDate();
 			}
 		}
+		if (history->loadedAtTop()) {
+			if (!history->isEmpty()) {
+				return history->blocks.front()->messages.front()->dateTime().date();
+			}
+			return QDate::currentDate();
+		}
 		return startDate();
-	};
+	}();
 	const auto highlighted = !requestedDate.isNull()
 		? requestedDate
 		: !currentPeerDate.isNull()
 		? currentPeerDate
 		: QDate::currentDate();
-	const auto month = highlighted;
-	auto callback = [=](const QDate &date) {
-		session().api().jumpToDate(chat, date);
+	struct ButtonState {
+		enum class Type {
+			None,
+			Disabled,
+			Active,
+		};
+		Type type = Type::None;
+		style::complex_color disabledFg = style::complex_color([] {
+			auto result = st::attentionBoxButton.textFg->c;
+			result.setAlpha(result.alpha() / 2);
+			return result;
+		});
+		style::RoundButton disabled = st::attentionBoxButton;
 	};
-	auto box = Box<Ui::CalendarBox>(
-		month,
-		highlighted,
-		std::move(callback));
-	box->setMinDate(minPeerDate(chat));
-	box->setMaxDate(maxPeerDate(chat));
-	box->setBeginningButton(true);
-	show(std::move(box));
+	const auto buttonState = std::make_shared<ButtonState>();
+	buttonState->disabled.textFg
+		= buttonState->disabled.textFgOver
+		= buttonState->disabledFg.color();
+	buttonState->disabled.ripple.color
+		= buttonState->disabled.textBgOver
+		= buttonState->disabled.textBg;
+	const auto selectionChanged = [=](
+			not_null<Ui::CalendarBox*> box,
+			std::optional<int> selected) {
+		if (!selected.has_value()) {
+			buttonState->type = ButtonState::Type::None;
+			return;
+		}
+		const auto type = (*selected > 0)
+			? ButtonState::Type::Active
+			: ButtonState::Type::Disabled;
+		if (buttonState->type == type) {
+			return;
+		}
+		buttonState->type = type;
+		box->clearButtons();
+		box->addButton(tr::lng_cancel(), [=] {
+			box->toggleSelectionMode(false);
+		});
+		auto text = tr::lng_profile_clear_history();
+		const auto button = box->addLeftButton(std::move(text), [=] {
+			const auto firstDate = box->selectedFirstDate();
+			const auto lastDate = box->selectedLastDate();
+			if (!firstDate.isNull()) {
+				auto confirm = Box<DeleteMessagesBox>(
+					history->peer,
+					firstDate,
+					lastDate);
+				confirm->setDeleteConfirmedCallback(crl::guard(box, [=] {
+					box->closeBox();
+				}));
+				box->getDelegate()->show(std::move(confirm));
+			}
+		}, (*selected > 0) ? st::attentionBoxButton : buttonState->disabled);
+		if (!*selected) {
+			button->setPointerCursor(false);
+		}
+	};
+	show(Box<Ui::CalendarBox>(Ui::CalendarBoxArgs{
+		.month = highlighted,
+		.highlighted = highlighted,
+		.callback = [=](const QDate &date) {
+			session().api().jumpToDate(chat, date);
+		},
+		.minDate = minPeerDate,
+		.maxDate = maxPeerDate,
+		.allowsSelection = history->peer->isUser(),
+		.selectionChanged = selectionChanged,
+	}));
 }
 
 void SessionController::showPassportForm(const Passport::FormRequest &request) {
@@ -1122,6 +1295,10 @@ void SessionController::showChooseReportMessages(
 
 void SessionController::clearChooseReportMessages() {
 	content()->clearChooseReportMessages();
+}
+
+void SessionController::toggleChooseChatTheme(not_null<PeerData*> peer) {
+	content()->toggleChooseChatTheme(peer);
 }
 
 void SessionController::updateColumnLayout() {
@@ -1173,7 +1350,7 @@ void SessionController::cancelUploadLayer(not_null<HistoryItem*> item) {
 		session().uploader().unpause();
 	};
 
-	show(Box<ConfirmBox>(
+	show(Box<Ui::ConfirmBox>(
 		tr::lng_selected_cancel_sure_this(tr::now),
 		tr::lng_selected_upload_stop(tr::now),
 		tr::lng_continue(tr::now),
@@ -1301,6 +1478,256 @@ void SessionController::openDocument(
 		this,
 		document,
 		session().data().message(contextId));
+}
+
+auto SessionController::cachedChatThemeValue(
+	const Data::CloudTheme &data,
+	Data::CloudThemeType type)
+-> rpl::producer<std::shared_ptr<Ui::ChatTheme>> {
+	const auto key = Ui::ChatThemeKey{
+		data.id,
+		(type == Data::CloudThemeType::Dark),
+	};
+	const auto settings = data.settings.find(type);
+	if (!key
+		|| (settings == end(data.settings))
+		|| !settings->second.paper
+		|| settings->second.paper->backgroundColors().empty()) {
+		return rpl::single(_defaultChatTheme);
+	}
+	const auto i = _customChatThemes.find(key);
+	if (i != end(_customChatThemes)) {
+		if (auto strong = i->second.theme.lock()) {
+			pushLastUsedChatTheme(strong);
+			return rpl::single(std::move(strong));
+		}
+	}
+	if (i == end(_customChatThemes) || !i->second.caching) {
+		cacheChatTheme(data, type);
+	}
+	const auto limit = Data::CloudThemes::TestingColors() ? (1 << 20) : 1;
+	using namespace rpl::mappers;
+	return rpl::single(
+		_defaultChatTheme
+	) | rpl::then(_cachedThemesStream.events(
+	) | rpl::filter([=](const std::shared_ptr<Ui::ChatTheme> &theme) {
+		if (theme->key() != key) {
+			return false;
+		}
+		pushLastUsedChatTheme(theme);
+		return true;
+	}) | rpl::take(limit));
+}
+
+void SessionController::pushLastUsedChatTheme(
+		const std::shared_ptr<Ui::ChatTheme> &theme) {
+	const auto i = ranges::find(_lastUsedCustomChatThemes, theme);
+	if (i == end(_lastUsedCustomChatThemes)) {
+		if (_lastUsedCustomChatThemes.size() >= kCustomThemesInMemory) {
+			_lastUsedCustomChatThemes.pop_back();
+		}
+		_lastUsedCustomChatThemes.push_front(theme);
+	} else if (i != begin(_lastUsedCustomChatThemes)) {
+		std::rotate(begin(_lastUsedCustomChatThemes), i, i + 1);
+	}
+}
+
+void SessionController::setChatStyleTheme(
+		const std::shared_ptr<Ui::ChatTheme> &theme) {
+	if (_chatStyleTheme.lock() == theme) {
+		return;
+	}
+	_chatStyleTheme = theme;
+	_chatStyle->apply(theme.get());
+}
+
+void SessionController::clearCachedChatThemes() {
+	_customChatThemes.clear();
+}
+
+void SessionController::overridePeerTheme(
+		not_null<PeerData*> peer,
+		std::shared_ptr<Ui::ChatTheme> theme) {
+	_peerThemeOverride = PeerThemeOverride{
+		peer,
+		theme ? theme : _defaultChatTheme,
+	};
+}
+
+void SessionController::clearPeerThemeOverride(not_null<PeerData*> peer) {
+	if (_peerThemeOverride.current().peer == peer.get()) {
+		_peerThemeOverride = PeerThemeOverride();
+	}
+}
+
+void SessionController::pushDefaultChatBackground() {
+	const auto background = Theme::Background();
+	const auto &paper = background->paper();
+	_defaultChatTheme->setBackground({
+		.prepared = background->prepared(),
+		.preparedForTiled = background->preparedForTiled(),
+		.gradientForFill = background->gradientForFill(),
+		.colorForFill = background->colorForFill(),
+		.colors = paper.backgroundColors(),
+		.patternOpacity = paper.patternOpacity(),
+		.gradientRotation = paper.gradientRotation(),
+		.isPattern = paper.isPattern(),
+		.tile = background->tile(),
+	});
+}
+
+void SessionController::cacheChatTheme(
+		const Data::CloudTheme &data,
+		Data::CloudThemeType type) {
+	Expects(data.id != 0);
+
+	const auto dark = (type == Data::CloudThemeType::Dark);
+	const auto key = Ui::ChatThemeKey{ data.id, dark };
+	const auto i = data.settings.find(type);
+	Assert(i != end(data.settings));
+	const auto &paper = i->second.paper;
+	Assert(paper.has_value());
+	Assert(!paper->backgroundColors().empty());
+	const auto document = paper->document();
+	const auto media = document ? document->createMediaView() : nullptr;
+	paper->loadDocument();
+	auto &theme = [&]() -> CachedTheme& {
+		const auto i = _customChatThemes.find(key);
+		if (i != end(_customChatThemes)) {
+			i->second.media = media;
+			i->second.paper = *paper;
+			i->second.caching = true;
+			return i->second;
+		}
+		return _customChatThemes.emplace(
+			key,
+			CachedTheme{
+				.media = media,
+				.paper = *paper,
+				.caching = true,
+			}).first->second;
+	}();
+	auto descriptor = Ui::ChatThemeDescriptor{
+		.key = key,
+		.preparePalette = PreparePaletteCallback(
+			dark,
+			i->second.accentColor),
+		.backgroundData = backgroundData(theme),
+		.bubblesData = PrepareBubblesData(data, type),
+		.basedOnDark = dark,
+	};
+	crl::async([
+		this,
+		descriptor = std::move(descriptor),
+		weak = base::make_weak(this)
+	]() mutable {
+		crl::on_main(weak,[
+			this,
+			result = std::make_shared<Ui::ChatTheme>(std::move(descriptor))
+		]() mutable {
+			cacheChatThemeDone(std::move(result));
+		});
+	});
+	if (media && media->loaded(true)) {
+		theme.media = nullptr;
+	}
+}
+
+void SessionController::cacheChatThemeDone(
+		std::shared_ptr<Ui::ChatTheme> result) {
+	Expects(result != nullptr);
+
+	const auto key = result->key();
+	const auto i = _customChatThemes.find(key);
+	if (i == end(_customChatThemes)) {
+		return;
+	}
+	i->second.caching = false;
+	i->second.theme = result;
+	if (i->second.media) {
+		if (i->second.media->loaded(true)) {
+			updateCustomThemeBackground(i->second);
+		} else {
+			session().downloaderTaskFinished(
+			) | rpl::filter([=] {
+				const auto i = _customChatThemes.find(key);
+				Assert(i != end(_customChatThemes));
+				return !i->second.media || i->second.media->loaded(true);
+			}) | rpl::start_with_next([=] {
+				const auto i = _customChatThemes.find(key);
+				Assert(i != end(_customChatThemes));
+				updateCustomThemeBackground(i->second);
+			}, i->second.lifetime);
+		}
+	}
+	_cachedThemesStream.fire(std::move(result));
+}
+
+void SessionController::updateCustomThemeBackground(CachedTheme &theme) {
+	const auto guard = gsl::finally([&] {
+		theme.lifetime.destroy();
+		theme.media = nullptr;
+	});
+	const auto strong = theme.theme.lock();
+	if (!theme.media || !strong || !theme.media->loaded(true)) {
+		return;
+	}
+	const auto key = strong->key();
+	const auto weak = base::make_weak(this);
+	crl::async([=, data = backgroundData(theme, false)] {
+		crl::on_main(weak, [
+			=,
+			result = Ui::PrepareBackgroundImage(data)
+		]() mutable {
+			const auto i = _customChatThemes.find(key);
+			if (i != end(_customChatThemes)) {
+				if (const auto strong = i->second.theme.lock()) {
+					strong->updateBackgroundImageFrom(std::move(result));
+				}
+			}
+		});
+	});
+}
+
+Ui::ChatThemeBackgroundData SessionController::backgroundData(
+		CachedTheme &theme,
+		bool generateGradient) const {
+	const auto &paper = theme.paper;
+	const auto &media = theme.media;
+	const auto paperPath = media ? media->owner()->filepath() : QString();
+	const auto paperBytes = media ? media->bytes() : QByteArray();
+	const auto gzipSvg = media && media->owner()->isPatternWallPaperSVG();
+	const auto &colors = paper.backgroundColors();
+	const auto isPattern = paper.isPattern();
+	const auto patternOpacity = paper.patternOpacity();
+	const auto isBlurred = paper.isBlurred();
+	const auto gradientRotation = paper.gradientRotation();
+	return {
+		.path = paperPath,
+		.bytes = paperBytes,
+		.gzipSvg = gzipSvg,
+		.colors = colors,
+		.isPattern = isPattern,
+		.patternOpacity = patternOpacity,
+		.isBlurred = isBlurred,
+		.generateGradient = generateGradient,
+		.gradientRotation = gradientRotation,
+	};
+}
+
+HistoryView::PaintContext SessionController::preparePaintContext(
+		PaintContextArgs &&args) {
+	const auto visibleAreaTopLocal = content()->mapFromGlobal(
+		QPoint(0, args.visibleAreaTopGlobal)).y();
+	const auto viewport = QRect(
+		0,
+		args.visibleAreaTop - visibleAreaTopLocal,
+		args.visibleAreaWidth,
+		content()->height());
+	return args.theme->preparePaintContext(
+		_chatStyle.get(),
+		viewport,
+		args.clip);
 }
 
 SessionController::~SessionController() {

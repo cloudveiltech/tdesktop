@@ -10,9 +10,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/abstract_box.h"
 #include "styles/style_widgets.h"
 
-namespace Data {
-struct CountryInfo;
-} // namespace Data
+namespace Countries {
+struct Info;
+} // namespace Countries
 
 namespace Ui {
 
@@ -25,11 +25,18 @@ public:
 		Phones,
 		Countries,
 	};
+	struct Entry {
+		QString country;
+		QString iso2;
+		QString code;
+		QString alternativeName;
+	};
 
 	CountrySelectBox(QWidget*);
 	CountrySelectBox(QWidget*, const QString &iso, Type type);
 
 	[[nodiscard]] rpl::producer<QString> countryChosen() const;
+	[[nodiscard]] rpl::producer<Entry> entryChosen() const;
 
 protected:
 	void prepare() override;

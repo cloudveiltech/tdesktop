@@ -12,3 +12,10 @@ nice_target_sources(win_directx_helper ${CMAKE_CURRENT_SOURCE_DIR}
 PRIVATE
     win_directx_helper.cpp
 )
+
+validate_d3d_compiler(win_directx_helper)
+
+target_link_libraries(win_directx_helper
+PUBLIC
+    desktop-app::external_openssl
+)

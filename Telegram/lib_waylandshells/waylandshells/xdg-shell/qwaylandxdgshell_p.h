@@ -58,6 +58,7 @@
 
 #include <QtWaylandClient/qtwaylandclientglobal.h>
 #include <QtWaylandClient/private/qwaylandshellsurface_p.h>
+#include <QtWaylandClient/private/qwaylandwindow_p.h>
 
 #include <QtCore/QSize>
 #include <QtGui/QRegion>
@@ -69,7 +70,6 @@ class QWindow;
 namespace QtWaylandClient {
 
 class QWaylandDisplay;
-class QWaylandWindow;
 class QWaylandInputDevice;
 
 }
@@ -133,6 +133,9 @@ private:
             QSize size = {0, 0};
             Qt::WindowStates states = Qt::WindowNoState;
         }  m_pending, m_applied;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 2, 0)
+        QWaylandWindow::ToplevelWindowTilingStates m_toplevelStates = QWaylandWindow::WindowNoState;
+#endif
         QSize m_normalSize;
 
         QWaylandXdgSurface *m_xdgSurface = nullptr;

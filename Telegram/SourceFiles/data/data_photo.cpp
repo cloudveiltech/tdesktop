@@ -13,13 +13,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_photo_media.h"
 #include "ui/image/image.h"
 #include "main/main_session.h"
+#include "history/history.h"
+#include "history/history_item.h"
 #include "media/streaming/media_streaming_loader_local.h"
 #include "media/streaming/media_streaming_loader_mtproto.h"
 #include "mainwidget.h"
 #include "storage/file_download.h"
 #include "core/application.h"
 #include "facades.h"
-#include "app.h"
 
 namespace {
 
@@ -29,6 +30,15 @@ using Data::PhotoMedia;
 using Data::PhotoSize;
 using Data::PhotoSizeIndex;
 using Data::kPhotoSizeCount;
+
+[[nodiscard]] QImage ValidatePhotoImage(
+		QImage image,
+		const Data::CloudFile &file) {
+	return (v::is<WebFileLocation>(file.location.file().data)
+		&& image.format() == QImage::Format_ARGB32)
+		? Images::prepareOpaque(std::move(image))
+		: image;
+}
 
 } // namespace
 
@@ -198,11 +208,17 @@ bool PhotoData::uploading() const {
 	return (uploadingData != nullptr);
 }
 
-Image *PhotoData::getReplyPreview(Data::FileOrigin origin) {
+Image *PhotoData::getReplyPreview(
+		Data::FileOrigin origin,
+		not_null<PeerData*> context) {
 	if (!_replyPreview) {
 		_replyPreview = std::make_unique<Data::ReplyPreview>(this);
 	}
-	return _replyPreview->image(origin);
+	return _replyPreview->image(origin, context);
+}
+
+Image *PhotoData::getReplyPreview(not_null<HistoryItem*> item) {
+	return getReplyPreview(item->fullId(), item->history()->peer);
 }
 
 bool PhotoData::replyPreviewLoaded() const {
@@ -297,7 +313,10 @@ void PhotoData::load(
 			}
 		}
 		if (const auto active = activeMediaView()) {
-			active->set(validSize, goodFor, std::move(result));
+			active->set(
+				validSize,
+				goodFor,
+				ValidatePhotoImage(std::move(result), _images[valid]));
 		}
 		if (validSize == PhotoSize::Large && goodFor == validSize) {
 			_owner->photoLoadDone(this);
@@ -356,15 +375,21 @@ void PhotoData::updateImages(
 		_inlineThumbnailBytes = inlineThumbnailBytes;
 	}
 	const auto update = [&](PhotoSize size, const ImageWithLocation &data) {
+		const auto index = PhotoSizeIndex(size);
 		Data::UpdateCloudFile(
-			_images[PhotoSizeIndex(size)],
+			_images[index],
 			data,
 			owner().cache(),
 			Data::kImageCacheTag,
 			[=](Data::FileOrigin origin) { load(size, origin); },
 			[=](QImage preloaded) {
 				if (const auto media = activeMediaView()) {
-					media->set(size, size, data.preloaded);
+					media->set(
+						size,
+						size,
+						ValidatePhotoImage(
+							std::move(preloaded),
+							_images[index]));
 				}
 			});
 	};

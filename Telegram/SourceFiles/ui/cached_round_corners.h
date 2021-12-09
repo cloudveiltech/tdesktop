@@ -15,19 +15,14 @@ enum class ImageRoundRadius;
 
 namespace Ui {
 
-enum CachedRoundCorners : int {
-	SmallMaskCorners = 0x00, // for images
-	LargeMaskCorners,
+struct CornersPixmaps {
+	QPixmap p[4];
+};
 
+enum CachedRoundCorners : int {
 	BoxCorners,
 	MenuCorners,
-	BotKbOverCorners,
-	StickerCorners,
-	StickerSelectedCorners,
-	SelectedOverlaySmallCorners,
-	SelectedOverlayLargeCorners,
 	DateCorners,
-	DateSelectedCorners,
 	OverviewVideoCorners,
 	OverviewVideoSelectedCorners,
 	ForwardCorners,
@@ -35,38 +30,43 @@ enum CachedRoundCorners : int {
 	EmojiHoverCorners,
 	StickerHoverCorners,
 	BotKeyboardCorners,
-	PhotoSelectOverlayCorners,
 
 	Doc1Corners,
 	Doc2Corners,
 	Doc3Corners,
 	Doc4Corners,
 
-	InShadowCorners, // for photos without bg
-	InSelectedShadowCorners,
-
-	MessageInCorners, // with shadow
-	MessageInSelectedCorners,
-	MessageOutCorners,
-	MessageOutSelectedCorners,
-
 	RoundCornersCount
 };
 
-void FillComplexOverlayRect(Painter &p, QRect rect, ImageRoundRadius radius, RectParts corners);
-void FillComplexLocationRect(Painter &p, QRect rect, ImageRoundRadius radius, RectParts corners);
-
 void FillRoundRect(Painter &p, int32 x, int32 y, int32 w, int32 h, style::color bg, CachedRoundCorners index, const style::color *shadow = nullptr, RectParts parts = RectPart::Full);
 inline void FillRoundRect(Painter &p, const QRect &rect, style::color bg, CachedRoundCorners index, const style::color *shadow = nullptr, RectParts parts = RectPart::Full) {
-	return FillRoundRect(p, rect.x(), rect.y(), rect.width(), rect.height(), bg, index, shadow, parts);
+	FillRoundRect(p, rect.x(), rect.y(), rect.width(), rect.height(), bg, index, shadow, parts);
 }
 void FillRoundShadow(Painter &p, int32 x, int32 y, int32 w, int32 h, style::color shadow, CachedRoundCorners index, RectParts parts = RectPart::Full);
 inline void FillRoundShadow(Painter &p, const QRect &rect, style::color shadow, CachedRoundCorners index, RectParts parts = RectPart::Full) {
-	return FillRoundShadow(p, rect.x(), rect.y(), rect.width(), rect.height(), shadow, index, parts);
+	FillRoundShadow(p, rect.x(), rect.y(), rect.width(), rect.height(), shadow, index, parts);
 }
 void FillRoundRect(Painter &p, int32 x, int32 y, int32 w, int32 h, style::color bg, ImageRoundRadius radius, RectParts parts = RectPart::Full);
 inline void FillRoundRect(Painter &p, const QRect &rect, style::color bg, ImageRoundRadius radius, RectParts parts = RectPart::Full) {
-	return FillRoundRect(p, rect.x(), rect.y(), rect.width(), rect.height(), bg, radius, parts);
+	FillRoundRect(p, rect.x(), rect.y(), rect.width(), rect.height(), bg, radius, parts);
+}
+
+[[nodiscard]] CornersPixmaps PrepareCornerPixmaps(
+	int32 radius,
+	style::color bg,
+	const style::color *sh);
+[[nodiscard]] CornersPixmaps PrepareCornerPixmaps(
+	ImageRoundRadius radius,
+	style::color bg,
+	const style::color *sh);
+void FillRoundRect(Painter &p, int32 x, int32 y, int32 w, int32 h, style::color bg, const CornersPixmaps &corner, const style::color *shadow = nullptr, RectParts parts = RectPart::Full);
+inline void FillRoundRect(Painter &p, const QRect &rect, style::color bg, const CornersPixmaps &corner, const style::color *shadow = nullptr, RectParts parts = RectPart::Full) {
+	return FillRoundRect(p, rect.x(), rect.y(), rect.width(), rect.height(), bg, corner, shadow, parts);
+}
+void FillRoundShadow(Painter &p, int32 x, int32 y, int32 w, int32 h, style::color shadow, const CornersPixmaps &corner, RectParts parts = RectPart::Full);
+inline void FillRoundShadow(Painter &p, const QRect &rect, style::color shadow, const CornersPixmaps &corner, RectParts parts = RectPart::Full) {
+	FillRoundShadow(p, rect.x(), rect.y(), rect.width(), rect.height(), shadow, corner, parts);
 }
 
 void StartCachedCorners();

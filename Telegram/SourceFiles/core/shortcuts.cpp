@@ -16,7 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/platform_specific.h"
 #include "base/parse_helper.h"
 
-#include <QtWidgets/QShortcut>
+#include <QShortcut>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
@@ -565,7 +565,6 @@ bool HandleEvent(not_null<QShortcutEvent*> event) {
 
 void ToggleMediaShortcuts(bool toggled) {
 	Data.toggleMedia(toggled);
-	Platform::SetWatchingMediaKeys(toggled);
 }
 
 void ToggleSupportShortcuts(bool toggled) {

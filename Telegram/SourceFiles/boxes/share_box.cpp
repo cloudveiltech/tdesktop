@@ -13,7 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwidget.h"
 #include "base/qthelp_url.h"
 #include "storage/storage_account.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "apiwrap.h"
 #include "ui/toast/toast.h"
 #include "ui/widgets/multi_select.h"
@@ -72,7 +72,7 @@ protected:
 		int visibleBottom) override;
 
 	void paintEvent(QPaintEvent *e) override;
-	void enterEventHook(QEvent *e) override;
+	void enterEventHook(QEnterEvent *e) override;
 	void leaveEventHook(QEvent *e) override;
 	void mouseMoveEvent(QMouseEvent *e) override;
 	void mousePressEvent(QMouseEvent *e) override;
@@ -496,9 +496,7 @@ void ShareBox::submit(Api::SendOptions options) {
 }
 
 void ShareBox::submitSilent() {
-	auto options = Api::SendOptions();
-	options.silent = true;
-	submit(options);
+	submit({ .silent = true });
 }
 
 void ShareBox::submitScheduled() {
@@ -560,7 +558,7 @@ ShareBox::Inner::Inner(QWidget *parent, const Descriptor &descriptor)
 		_chatsIndexed->addToEnd(self->owner().history(self));
 	}
 	const auto addList = [&](not_null<Dialogs::IndexedList*> list) {
-		for (const auto row : list->all()) {
+		for (const auto &row : list->all()) {
 			if (const auto history = row->history()) {
 				if (!history->peer->isSelf()
 					&& _descriptor.filterCallback(history->peer)) {
@@ -703,7 +701,7 @@ void ShareBox::Inner::repaintChat(not_null<PeerData*> peer) {
 int ShareBox::Inner::chatIndex(not_null<PeerData*> peer) const {
 	int index = 0;
 	if (_filter.isEmpty()) {
-		for (const auto row : _chatsIndexed->all()) {
+		for (const auto &row : _chatsIndexed->all()) {
 			if (const auto history = row->history()) {
 				if (history->peer == peer) {
 					return index;
@@ -712,7 +710,7 @@ int ShareBox::Inner::chatIndex(not_null<PeerData*> peer) const {
 			++index;
 		}
 	} else {
-		for (const auto row : _filtered) {
+		for (const auto &row : _filtered) {
 			if (const auto history = row->history()) {
 				if (history->peer == peer) {
 					return index;
@@ -906,7 +904,7 @@ void ShareBox::Inner::paintEvent(QPaintEvent *e) {
 	}
 }
 
-void ShareBox::Inner::enterEventHook(QEvent *e) {
+void ShareBox::Inner::enterEventHook(QEnterEvent *e) {
 	setMouseTracking(true);
 }
 
@@ -1113,7 +1111,7 @@ QString AppendShareGameScoreUrl(
 	auto channelAccessHash = uint64(channel ? channel->access : 0);
 	shareHashDataInts[0] = session->userId().bare;
 	shareHashDataInts[1] = fullId.channel.bare;
-	shareHashDataInts[2] = fullId.msg;
+	shareHashDataInts[2] = uint64(fullId.msg.bare);
 	shareHashDataInts[3] = channelAccessHash;
 
 	// Count SHA1() of data.
@@ -1155,7 +1153,8 @@ void ShareGameScoreByHash(
 
 	auto hashEncrypted = QByteArray::fromBase64(hash.toLatin1(), QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals);
 	if (hashEncrypted.size() <= key128Size || (hashEncrypted.size() != key128Size + 0x20)) {
-		Ui::show(Box<InformBox>(tr::lng_confirm_phone_link_invalid(tr::now)));
+		Ui::show(Box<Ui::InformBox>(
+			tr::lng_confirm_phone_link_invalid(tr::now)));
 		return;
 	}
 
@@ -1175,19 +1174,19 @@ void ShareGameScoreByHash(
 	//// Check next 64 bits of SHA1() of data.
 	//auto skipSha1Part = sizeof(channelAccessHash);
 	//if (memcmp(dataSha1 + skipSha1Part, hashEncrypted.constData() + skipSha1Part, key128Size - skipSha1Part) != 0) {
-	//	Ui::show(Box<InformBox>(tr::lng_share_wrong_user(tr::now)));
+	//	Ui::show(Box<Ui::InformBox>(tr::lng_share_wrong_user(tr::now)));
 	//	return;
 	//}
 
 	// Check 128 bits of SHA1() of data.
 	if (memcmp(dataSha1, hashEncrypted.constData(), key128Size) != 0) {
-		Ui::show(Box<InformBox>(tr::lng_share_wrong_user(tr::now)));
+		Ui::show(Box<Ui::InformBox>(tr::lng_share_wrong_user(tr::now)));
 		return;
 	}
 
 	auto hashDataInts = reinterpret_cast<uint64*>(hashData.data());
 	if (hashDataInts[0] != session->userId().bare) {
-		Ui::show(Box<InformBox>(tr::lng_share_wrong_user(tr::now)));
+		Ui::show(Box<Ui::InformBox>(tr::lng_share_wrong_user(tr::now)));
 		return;
 	}
 
@@ -1195,20 +1194,19 @@ void ShareGameScoreByHash(
 	auto channelAccessHash = hashDataInts[3];
 	//auto channelAccessHashInts = reinterpret_cast<int32*>(&channelAccessHash);
 	//if (channelAccessHashInts[0] != hashDataInts[3]) {
-	//	Ui::show(Box<InformBox>(tr::lng_share_wrong_user(tr::now)));
+	//	Ui::show(Box<Ui::InformBox>(tr::lng_share_wrong_user(tr::now)));
 	//	return;
 	//}
 
 	if (((hashDataInts[1] >> 40) != 0)
-		|| ((hashDataInts[2] >> 32) != 0)
 		|| (!hashDataInts[1] && channelAccessHash)) {
 		// If there is no channel id, there should be no channel access_hash.
-		Ui::show(Box<InformBox>(tr::lng_share_wrong_user(tr::now)));
+		Ui::show(Box<Ui::InformBox>(tr::lng_share_wrong_user(tr::now)));
 		return;
 	}
 
 	auto channelId = ChannelId(hashDataInts[1]);
-	auto msgId = MsgId(hashDataInts[2]);
+	auto msgId = MsgId(int64(hashDataInts[2]));
 	if (const auto item = session->data().message(channelId, msgId)) {
 		FastShareMessage(item);
 	} else {
@@ -1219,7 +1217,8 @@ void ShareGameScoreByHash(
 				if (const auto item = session->data().message(channel, msgId)) {
 					FastShareMessage(item);
 				} else {
-					Ui::show(Box<InformBox>(tr::lng_edit_deleted(tr::now)));
+					Ui::show(Box<Ui::InformBox>(
+						tr::lng_edit_deleted(tr::now)));
 				}
 			});
 		};
@@ -1234,7 +1233,7 @@ void ShareGameScoreByHash(
 				MTP_vector<MTPInputChannel>(
 					1,
 					MTP_inputChannel(
-						MTP_int(channelId.bare), // #TODO ids
+						MTP_long(channelId.bare),
 						MTP_long(channelAccessHash)))
 			)).done([=](const MTPmessages_Chats &result) {
 				result.match([&](const auto &data) {

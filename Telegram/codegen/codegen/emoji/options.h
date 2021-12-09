@@ -6,8 +6,8 @@
 //
 #pragma once
 
+#include <vector>
 #include <QtCore/QString>
-#include <QtCore/QStringList>
 
 namespace codegen {
 namespace emoji {
@@ -16,6 +16,7 @@ struct Options {
 	QString outputPath = ".";
 	QString dataPath;
 	QString replacesPath;
+	std::vector<QString> oldDataPaths;
 	QString writeImages;
 };
 

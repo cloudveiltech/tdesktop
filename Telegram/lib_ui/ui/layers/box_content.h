@@ -15,6 +15,9 @@
 #include "ui/text/text_entity.h"
 #include "ui/rp_widget.h"
 
+enum class RectPart;
+using RectParts = base::flags<RectPart>;
+
 namespace style {
 struct RoundButton;
 struct IconButton;
@@ -128,6 +131,7 @@ public:
 
 	virtual void showFinished() {
 	}
+	virtual RectParts customCornersFilling();
 	void clearButtons() {
 		getDelegate()->clearButtons();
 	}
@@ -152,6 +156,15 @@ public:
 			Fn<void()> clickCallback,
 			const style::RoundButton &st) {
 		return getDelegate()->addButton(
+			std::move(text),
+			std::move(clickCallback),
+			st);
+	}
+	QPointer<RoundButton> addLeftButton(
+			rpl::producer<QString> text,
+			Fn<void()> clickCallback,
+			const style::RoundButton& st) {
+		return getDelegate()->addLeftButton(
 			std::move(text),
 			std::move(clickCallback),
 			st);

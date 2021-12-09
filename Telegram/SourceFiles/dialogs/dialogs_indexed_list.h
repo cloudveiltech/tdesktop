@@ -55,7 +55,7 @@ public:
 		_list.resetAll();
 	}
 	//CloudVeil end
-	// 
+	
 	// Part of List interface is duplicated here for all() list.
 	int size() const { return all().size(); }
 	bool empty() const { return all().empty(); }

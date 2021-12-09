@@ -7,10 +7,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "base/openssl_help.h"
 #include "base/variant.h"
 #include "api/api_common.h"
 #include "ui/chat/attach/attach_prepare.h"
+
+namespace Main {
+class Session;
+} // namespace Main
 
 constexpr auto kFileSizeLimit = 2000 * 1024 * 1024; // Load files up to 2000MB
 
@@ -27,44 +30,24 @@ struct SendMediaPrepare {
 		const QString &file,
 		const PeerId &peer,
 		SendMediaType type,
-		MsgId replyTo) : id(openssl::RandomValue<PhotoId>()),
-		file(file),
-		peer(peer),
-		type(type),
-		replyTo(replyTo) {
-	}
+		MsgId replyTo);
 	SendMediaPrepare(
 		const QImage &img,
 		const PeerId &peer,
 		SendMediaType type,
-		MsgId replyTo) : id(openssl::RandomValue<PhotoId>()),
-		img(img),
-		peer(peer),
-		type(type),
-		replyTo(replyTo) {
-	}
+		MsgId replyTo);
 	SendMediaPrepare(
 		const QByteArray &data,
 		const PeerId &peer,
 		SendMediaType type,
-		MsgId replyTo) : id(openssl::RandomValue<PhotoId>()),
-		data(data),
-		peer(peer),
-		type(type),
-		replyTo(replyTo) {
-	}
+		MsgId replyTo);
 	SendMediaPrepare(
 		const QByteArray &data,
 		int duration,
 		const PeerId &peer,
 		SendMediaType type,
-		MsgId replyTo) : id(openssl::RandomValue<PhotoId>()),
-		data(data),
-		peer(peer),
-		type(type),
-		duration(duration),
-		replyTo(replyTo) {
-	}
+		MsgId replyTo);
+
 	PhotoId id;
 	QString file;
 	QImage img;
@@ -114,8 +97,6 @@ struct SendMediaReady {
 	QString caption;
 
 };
-
-SendMediaReady PreparePeerPhoto(MTP::DcId dcId, PeerId peerId, QImage &&image);
 
 using TaskId = void*; // no interface, just id
 
@@ -187,8 +168,7 @@ private:
 
 struct SendingAlbum {
 	struct Item {
-		explicit Item(TaskId taskId) : taskId(taskId) {
-		}
+		explicit Item(TaskId taskId);
 
 		TaskId taskId;
 		uint64 randomId = 0;
@@ -213,7 +193,7 @@ struct SendingAlbum {
 
 struct FileLoadTo {
 	FileLoadTo(
-		const PeerId &peer,
+		PeerId peer,
 		Api::SendOptions options,
 		MsgId replyTo,
 		MsgId replaceMediaOf)

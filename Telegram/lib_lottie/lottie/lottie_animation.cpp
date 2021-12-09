@@ -6,15 +6,17 @@
 //
 #include "lottie/lottie_animation.h"
 
-#include "lottie/lottie_frame_renderer.h"
+#include "lottie/details/lottie_frame_renderer.h"
+#include "lottie/details/lottie_frame_provider_direct.h"
 #include "lottie/lottie_player.h"
+#include "ui/image/image_prepare.h"
 #include "base/algorithm.h"
 #include "base/assertion.h"
 #include "base/variant.h"
-#include "zlib.h"
 
 #ifdef LOTTIE_USE_CACHE
-#include "lottie/lottie_cache.h"
+#include "lottie/details/lottie_frame_provider_cached.h"
+#include "lottie/details/lottie_frame_provider_cached_multi.h"
 #endif // LOTTIE_USE_CACHE
 
 #include <QFile>
@@ -26,44 +28,6 @@ namespace Lottie {
 namespace {
 
 const auto kIdealSize = QSize(512, 512);
-
-[[nodiscard]] QByteArray UnpackGzip(const QByteArray &bytes) {
-	z_stream stream;
-	stream.zalloc = nullptr;
-	stream.zfree = nullptr;
-	stream.opaque = nullptr;
-	stream.avail_in = 0;
-	stream.next_in = nullptr;
-	int res = inflateInit2(&stream, 16 + MAX_WBITS);
-	if (res != Z_OK) {
-		return bytes;
-	}
-	const auto guard = gsl::finally([&] { inflateEnd(&stream); });
-
-	auto result = QByteArray(kMaxFileSize + 1, char(0));
-	stream.avail_in = bytes.size();
-	stream.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(bytes.data()));
-	stream.avail_out = 0;
-	while (!stream.avail_out) {
-		stream.avail_out = result.size();
-		stream.next_out = reinterpret_cast<Bytef*>(result.data());
-		int res = inflate(&stream, Z_NO_FLUSH);
-		if (res != Z_OK && res != Z_STREAM_END) {
-			return bytes;
-		} else if (!stream.avail_out) {
-			return bytes;
-		}
-	}
-	result.resize(result.size() - stream.avail_out);
-	return result;
-}
-
-std::optional<Error> ContentError(const QByteArray &content) {
-	if (content.size() > kMaxFileSize) {
-		return Error::ParseFailed;
-	}
-	return std::nullopt;
-}
 
 details::InitData CheckSharedState(std::unique_ptr<SharedState> state) {
 	Expects(state != nullptr);
@@ -85,13 +49,13 @@ details::InitData Init(
 	if (const auto error = ContentError(content)) {
 		return *error;
 	}
-	auto animation = details::CreateFromContent(content, replacements);
-	return animation
-		? CheckSharedState(std::make_unique<SharedState>(
-			std::move(animation),
-			request.empty() ? FrameRequest{ kIdealSize } : request,
-			quality))
-		: Error::ParseFailed;
+	auto provider = std::make_shared<FrameProviderDirect>(quality);
+	if (!provider->load(content, replacements)) {
+		return Error::ParseFailed;
+	}
+	return CheckSharedState(std::make_unique<SharedState>(
+		std::move(provider),
+		request.empty() ? FrameRequest{ kIdealSize } : request));
 }
 
 #ifdef LOTTIE_USE_CACHE
@@ -107,54 +71,60 @@ details::InitData Init(
 	if (const auto error = ContentError(content)) {
 		return *error;
 	}
-	auto cache = std::make_unique<Cache>(cached, request, std::move(put));
-	const auto prepare = !cache->framesCount()
-		|| (cache->framesReady() < cache->framesCount());
-	auto animation = prepare
-		? details::CreateFromContent(content, replacements)
-		: nullptr;
-	return (!prepare || animation)
+	auto provider = std::make_shared<FrameProviderCached>(
+		content,
+		std::move(put),
+		cached,
+		request,
+		quality,
+		replacements);
+	return provider->valid()
 		? CheckSharedState(std::make_unique<SharedState>(
-			content,
-			replacements,
-			std::move(animation),
-			std::move(cache),
-			request,
-			quality))
+			std::move(provider),
+			request.empty() ? FrameRequest{ kIdealSize } : request))
+		: Error::ParseFailed;
+}
+
+details::InitData Init(
+		const QByteArray &content,
+		FnMut<void(int, QByteArray &&cached)> put,
+		std::vector<QByteArray> caches,
+		const FrameRequest &request,
+		Quality quality,
+		const ColorReplacements *replacements) {
+	Expects(!request.empty());
+
+	if (const auto error = ContentError(content)) {
+		return *error;
+	}
+	auto provider = std::make_shared<FrameProviderCachedMulti>(
+		content,
+		std::move(put),
+		std::move(caches),
+		request,
+		quality,
+		replacements);
+	return provider->valid()
+		? CheckSharedState(std::make_unique<SharedState>(
+			std::move(provider),
+			request.empty() ? FrameRequest{ kIdealSize } : request))
 		: Error::ParseFailed;
 }
 #endif // LOTTIE_USE_CACHE
 
-} // namespace
+details::InitData Init(
+		std::shared_ptr<FrameProvider> provider,
+		const FrameRequest &request) {
+	Expects(!request.empty());
 
-namespace details {
-
-std::unique_ptr<rlottie::Animation> CreateFromContent(
-		const QByteArray &content,
-		const ColorReplacements *replacements) {
-	const auto string = ReadUtf8(UnpackGzip(content));
-	Assert(string.size() <= kMaxFileSize);
-
-#ifndef DESKTOP_APP_USE_PACKAGED_RLOTTIE
-	auto result = rlottie::Animation::loadFromData(
-		string,
-		std::string(),
-		std::string(),
-		false,
-		(replacements
-			? replacements->replacements
-			: std::vector<std::pair<std::uint32_t, std::uint32_t>>()));
-#else
-	auto result = rlottie::Animation::loadFromData(
-		string,
-		std::string(),
-		std::string(),
-		false);
-#endif
-	return result;
+	return provider->valid()
+		? CheckSharedState(std::make_unique<SharedState>(
+			std::move(provider),
+			request.empty() ? FrameRequest{ kIdealSize } : request))
+		: Error::ParseFailed;
 }
 
-} // namespace details
+} // namespace
 
 std::shared_ptr<FrameRenderer> MakeFrameRenderer() {
 	return FrameRenderer::CreateIndependent();
@@ -219,6 +189,66 @@ Animation::Animation(
 #endif // LOTTIE_USE_CACHE
 }
 
+Animation::Animation(
+	not_null<Player*> player,
+	int keysCount,
+	FnMut<void(int, FnMut<void(QByteArray &&)>)> get,
+	FnMut<void(int, QByteArray &&cached)> put,
+	const QByteArray &content,
+	const FrameRequest &request,
+	Quality quality,
+	const ColorReplacements *replacements)
+#ifdef LOTTIE_USE_CACHE
+: _player(player) {
+	const auto weak = base::make_weak(this);
+	struct State {
+		std::atomic<int> left = 0;
+		std::vector<QByteArray> caches;
+		FnMut<void(int, QByteArray &&cached)> put;
+	};
+	const auto state = std::make_shared<State>();
+	state->left = keysCount;
+	state->put = std::move(put);
+	state->caches.resize(keysCount);
+	for (auto i = 0; i != keysCount; ++i) {
+		get(i, [=](QByteArray &&cached) {
+			state->caches[i] = std::move(cached);
+			if (--state->left) {
+				return;
+			}
+			crl::async([=] {
+				auto result = Init(
+					content,
+					std::move(state->put),
+					std::move(state->caches),
+					request,
+					quality,
+					replacements);
+				crl::on_main(weak, [=, data = std::move(result)]() mutable {
+					initDone(std::move(data));
+				});
+			});
+		});
+	}
+#else // LOTTIE_USE_CACHE
+: Animation(player, content, request, quality, replacements) {
+#endif // LOTTIE_USE_CACHE
+}
+
+Animation::Animation(
+	not_null<Player*> player,
+	std::shared_ptr<FrameProvider> provider,
+	const FrameRequest &request)
+: _player(player) {
+	const auto weak = base::make_weak(this);
+	crl::async([=, provider = std::move(provider)]() mutable {
+		auto result = Init(std::move(provider), request);
+		crl::on_main(weak, [=, data = std::move(result)]() mutable {
+			initDone(std::move(data));
+		});
+	});
+}
+
 bool Animation::ready() const {
 	return (_state != nullptr);
 }
@@ -279,6 +309,13 @@ Information Animation::information() const {
 	Expects(_state != nullptr);
 
 	return _state->information();
+}
+
+std::optional<Error> ContentError(const QByteArray &content) {
+	if (content.size() > kMaxFileSize) {
+		return Error::ParseFailed;
+	}
+	return std::nullopt;
 }
 
 } // namespace Lottie

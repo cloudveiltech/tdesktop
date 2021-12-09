@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "core/crash_reports.h"
 #include "core/update_checker.h"
+#include "base/base_file_utilities.h"
 #include "base/platform/base_platform_file_utilities.h"
 #include "base/platform/mac/base_utilities_mac.h"
 
@@ -23,10 +24,10 @@ Launcher::Launcher(int argc, char *argv[])
 }
 
 void Launcher::initHook() {
-#ifndef OS_MAC_OLD
 	// macOS Retina display support is working fine, others are not.
 	QCoreApplication::setAttribute(Qt::AA_DisableHighDpiScaling, false);
-#endif // OS_MAC_OLD
+
+	base::RegisterBundledResources(u"Telegram.rcc"_q);
 }
 
 bool Launcher::launchUpdater(UpdaterLaunch action) {
@@ -63,9 +64,6 @@ bool Launcher::launchUpdater(UpdaterLaunch action) {
 		if (Logs::DebugEnabled()) [args addObject:@"-debug"];
 		if (cStartInTray()) [args addObject:@"-startintray"];
 		if (cUseFreeType()) [args addObject:@"-freetype"];
-#ifndef TDESKTOP_DISABLE_AUTOUPDATE
-		if (Core::UpdaterDisabled()) [args addObject:@"-externalupdater"];
-#endif // !TDESKTOP_DISABLE_AUTOUPDATE
 		if (cDataFile() != qsl("data")) {
 			[args addObject:@"-key"];
 			[args addObject:Q2NSString(cDataFile())];

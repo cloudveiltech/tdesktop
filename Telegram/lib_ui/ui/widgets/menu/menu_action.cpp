@@ -18,7 +18,7 @@ namespace {
 	auto result = TextWithEntities();
 	result.text.reserve(text.size());
 	auto afterAmpersand = false;
-	for (const auto ch : text) {
+	for (const auto &ch : text) {
 		if (afterAmpersand) {
 			afterAmpersand = false;
 			if (ch == '&') {
@@ -26,7 +26,7 @@ namespace {
 			} else {
 				result.entities.append(EntityInText{
 					EntityType::Underline,
-					result.text.size(),
+					int(result.text.size()),
 					1 });
 				result.text.append(ch);
 			}
@@ -84,13 +84,13 @@ bool Action::hasSubmenu() const {
 }
 
 void Action::paint(Painter &p) {
-	const auto enabled = _action->isEnabled();
+	const auto enabled = isEnabled();
 	const auto selected = isSelected();
 	if (selected && _st.itemBgOver->c.alpha() < 255) {
 		p.fillRect(0, 0, width(), _height, _st.itemBg);
 	}
 	p.fillRect(0, 0, width(), _height, selected ? _st.itemBgOver : _st.itemBg);
-	if (isEnabled()) {
+	if (enabled) {
 		paintRipple(p, 0, 0);
 	}
 	if (const auto icon = (selected ? _iconOver : _icon)) {
@@ -124,6 +124,7 @@ void Action::paint(Painter &p) {
 }
 
 void Action::processAction() {
+	setPointerCursor(isEnabled());
 	if (_action->text().isEmpty()) {
 		_shortcut = QString();
 		_text.clear();
@@ -189,12 +190,14 @@ void Action::handleKeyPress(not_null<QKeyEvent*> e) {
 		setClicked(TriggeredSource::Keyboard);
 		return;
 	}
-	if (key == (style::RightToLeft() ? Qt::Key_Left : Qt::Key_Right)) {
-		if (hasSubmenu()) {
-			setClicked(TriggeredSource::Keyboard);
-			return;
-		}
-	}
+}
+
+void Action::setIcon(
+		const style::icon *icon,
+		const style::icon *iconOver) {
+	_icon = icon;
+	_iconOver = iconOver ? iconOver : icon;
+	update();
 }
 
 } // namespace Ui::Menu

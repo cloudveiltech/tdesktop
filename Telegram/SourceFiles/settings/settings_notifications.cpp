@@ -26,6 +26,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "main/main_account.h"
 #include "main/main_domain.h"
+#include "api/api_authorizations.h"
 #include "apiwrap.h"
 #include "facades.h"
 #include "styles/style_settings.h"
@@ -98,7 +99,7 @@ private:
 
 	int _oldCount;
 
-	QVector<SampleWidget*> _cornerSamples[4];
+	std::vector<SampleWidget*> _cornerSamples[4];
 
 };
 
@@ -258,7 +259,7 @@ void NotificationsCount::prepareNotificationSampleSmall() {
 void NotificationsCount::prepareNotificationSampleUserpic() {
 	if (_notificationSampleUserpic.isNull()) {
 		_notificationSampleUserpic = Ui::PixmapFromImage(
-			Core::App().logoNoMargin().scaled(
+			Window::LogoNoMargin().scaled(
 				st::notifyPhotoSize * cIntRetinaFactor(),
 				st::notifyPhotoSize * cIntRetinaFactor(),
 				Qt::IgnoreAspectRatio,
@@ -297,7 +298,7 @@ void NotificationsCount::prepareNotificationSampleLarge() {
 		p.setPen(st::dialogsNameFg);
 		p.setFont(st::msgNameFont);
 
-		auto notifyTitle = st::msgNameFont->elided(qsl("Telegram Desktop"), rectForName.width());
+		auto notifyTitle = st::msgNameFont->elided(qsl("CloudVeil Messenger Desktop"), rectForName.width());
 		p.drawText(rectForName.left(), rectForName.top() + st::msgNameFont->ascent, notifyTitle);
 
 		st::notifyClose.icon.paint(p, w - st::notifyClosePos.x() - st::notifyClose.width + st::notifyClose.iconPosition.x(), st::notifyClosePos.y() + st::notifyClose.iconPosition.y(), w);
@@ -350,7 +351,8 @@ void NotificationsCount::setOverCorner(ScreenCorner corner) {
 		if (corner == _overCorner) {
 			return;
 		}
-		for_const (auto widget, _cornerSamples[static_cast<int>(_overCorner)]) {
+		const auto index = static_cast<int>(_overCorner);
+		for (const auto widget : _cornerSamples[index]) {
 			widget->hideFast();
 		}
 	} else {
@@ -362,7 +364,7 @@ void NotificationsCount::setOverCorner(ScreenCorner corner) {
 	_overCorner = corner;
 
 	auto &samples = _cornerSamples[static_cast<int>(_overCorner)];
-	auto samplesAlready = samples.size();
+	auto samplesAlready = int(samples.size());
 	auto samplesNeeded = _oldCount;
 	auto samplesLeave = qMin(samplesAlready, samplesNeeded);
 	for (int i = 0; i != samplesLeave; ++i) {
@@ -394,8 +396,8 @@ void NotificationsCount::clearOverCorner() {
 		Core::App().notifications().notifySettingsChanged(
 			ChangeType::DemoIsHidden);
 
-		for_const (const auto &samples, _cornerSamples) {
-			for_const (const auto widget, samples) {
+		for (const auto &samples : _cornerSamples) {
+			for (const auto widget : samples) {
 				widget->hideFast();
 			}
 		}
@@ -426,8 +428,8 @@ void NotificationsCount::mouseReleaseEvent(QMouseEvent *e) {
 }
 
 NotificationsCount::~NotificationsCount() {
-	for_const (auto &samples, _cornerSamples) {
-		for_const (auto widget, samples) {
+	for (const auto &samples : _cornerSamples) {
+		for (const auto widget : samples) {
 			widget->detach();
 		}
 	}
@@ -669,15 +671,19 @@ void SetupNotificationsContent(
 	AddSubsectionTitle(
 		container,
 		tr::lng_settings_notifications_calls_title());
-	addCheckbox(
+	const auto authorizations = &session->api().authorizations();
+	const auto acceptCalls = addCheckbox(
 		tr::lng_settings_call_accept_calls(tr::now),
-		!settings.disableCalls()
-	)->checkedChanges(
-	) | rpl::filter([&settings](bool value) {
-		return (settings.disableCalls() == value);
-	}) | rpl::start_with_next([=](bool value) {
-		Core::App().settings().setDisableCalls(!value);
-		Core::App().saveSettingsDelayed();
+		!authorizations->callsDisabledHere());
+	session->api().authorizations().callsDisabledHereChanges(
+	) | rpl::start_with_next([=](bool disabled) {
+		acceptCalls->setChecked(
+			!disabled,
+			Ui::Checkbox::NotifyAboutChange::DontNotify);
+	}, acceptCalls->lifetime());
+	acceptCalls->checkedChanges(
+	) | rpl::start_with_next([=](bool value) {
+		authorizations->toggleCallsDisabledHere(!value);
 	}, container->lifetime());
 
 	AddSkip(container, st::settingsCheckboxesSkip);

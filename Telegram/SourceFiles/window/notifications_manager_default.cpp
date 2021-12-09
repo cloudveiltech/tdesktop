@@ -18,7 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/emoji_config.h"
 #include "ui/empty_userpic.h"
 #include "ui/ui_utility.h"
-#include "dialogs/dialogs_layout.h"
+#include "dialogs/ui/dialogs_layout.h"
 #include "window/window_controller.h"
 #include "storage/file_download.h"
 #include "main/main_session.h"
@@ -87,7 +87,7 @@ Manager::QueuedNotification::QueuedNotification(
 QPixmap Manager::hiddenUserpicPlaceholder() const {
 	if (_hiddenUserpicPlaceholder.isNull()) {
 		_hiddenUserpicPlaceholder = Ui::PixmapFromImage(
-			Core::App().logoNoMargin().scaled(
+			LogoNoMargin().scaled(
 				st::notifyPhotoSize,
 				st::notifyPhotoSize,
 				Qt::IgnoreAspectRatio,
@@ -98,7 +98,7 @@ QPixmap Manager::hiddenUserpicPlaceholder() const {
 }
 
 bool Manager::hasReplyingNotification() const {
-	for_const (auto &notification, _notifications) {
+	for (const auto &notification : _notifications) {
 		if (notification->isReplying()) {
 			return true;
 		}
@@ -110,7 +110,7 @@ void Manager::settingsChanged(ChangeType change) {
 	if (change == ChangeType::Corner) {
 		auto startPosition = notificationStartPosition();
 		auto shiftDirection = notificationShiftDirection();
-		for_const (auto &notification, _notifications) {
+		for (const auto &notification : _notifications) {
 			notification->updatePosition(startPosition, shiftDirection);
 		}
 		if (_hideAll) {
@@ -142,7 +142,7 @@ void Manager::settingsChanged(ChangeType change) {
 }
 
 void Manager::demoMasterOpacityCallback() {
-	for_const (auto &notification, _notifications) {
+	for (const auto &notification : _notifications) {
 		notification->updateOpacity();
 	}
 	if (_hideAll) {
@@ -173,7 +173,7 @@ void Manager::checkLastInput() {
 void Manager::startAllHiding() {
 	if (!hasReplyingNotification()) {
 		int notHidingCount = 0;
-		for_const (auto &notification, _notifications) {
+		for (const auto &notification : _notifications) {
 			if (notification->isShowing()) {
 				++notHidingCount;
 			} else {
@@ -188,7 +188,7 @@ void Manager::startAllHiding() {
 }
 
 void Manager::stopAllHiding() {
-	for_const (auto &notification, _notifications) {
+	for (const auto &notification : _notifications) {
 		notification->stopHiding();
 	}
 	if (_hideAll) {
@@ -222,7 +222,6 @@ void Manager::showNextFromQueue() {
 		_queuedNotifications.pop_front();
 
 		subscribeToSession(&queued.history->session());
-
 		//CloudVeil start
 		if (!GlobalSecuritySettings::getSettings().isDialogAllowed(queued.peer)) {
 			_notifications.push_back(std::make_unique<Notification>(
@@ -405,7 +404,7 @@ void Manager::doClearFromItem(not_null<HistoryItem*> item) {
 	}), _queuedNotifications.cend());
 
 	auto showNext = false;
-	for_const (auto &notification, _notifications) {
+	for (const auto &notification : _notifications) {
 		if (notification->unlinkItem(item)) {
 			showNext = true;
 		}
@@ -429,7 +428,7 @@ bool Manager::doSkipFlashBounce() const {
 }
 
 void Manager::doUpdateAll() {
-	for_const (auto &notification, _notifications) {
+	for (const auto &notification : _notifications) {
 		notification->updateNotifyDisplay();
 	}
 }
@@ -793,7 +792,7 @@ void Notification::updateNotifyDisplay() {
 				Ui::Emoji::Draw(p, emoji, Ui::Emoji::GetSizeNormal(), rectForName.left(), top);
 				rectForName.setLeft(rectForName.left() + size + st::msgNameFont->spacew);
 			}
-			if (const auto chatTypeIcon = Dialogs::Layout::ChatTypeIcon(_history->peer, false, false)) {
+			if (const auto chatTypeIcon = Dialogs::Ui::ChatTypeIcon(_history->peer, false, false)) {
 				chatTypeIcon->paint(p, rectForName.topLeft(), w);
 				rectForName.setLeft(rectForName.left() + st::dialogsChatTypeSkip);
 			}
@@ -810,9 +809,10 @@ void Notification::updateNotifyDisplay() {
 			p.setPen(st::dialogsTextFg);
 			p.setFont(st::dialogsTextFont);
 			const auto text = _item
-				? _item->inDialogsText(reminder
-					? HistoryItem::DrawInDialog::WithoutSender
-					: HistoryItem::DrawInDialog::Normal)
+				? _item->toPreview({
+					.hideSender = reminder,
+					.generateImages = false,
+				}).text
 				: ((!_author.isEmpty()
 					? textcmdLink(1, _author)
 					: QString())
@@ -851,7 +851,7 @@ void Notification::updateNotifyDisplay() {
 		p.setPen(st::dialogsNameFg);
 		Ui::Text::String titleText;
 		const auto title = options.hideNameAndPhoto
-			? qsl("CloudVeil Messenger")
+			? qsl("CloudVeil Messenger Desktop")
 			: reminder
 			? tr::lng_notification_reminder(tr::now)
 			: _history->peer->nameText().toString();
@@ -1019,7 +1019,7 @@ bool Notification::unlinkSession(not_null<Main::Session*> session) {
 	return unlink;
 }
 
-void Notification::enterEventHook(QEvent *e) {
+void Notification::enterEventHook(QEnterEvent *e) {
 	if (!_history) return;
 	manager()->stopAllHiding();
 	if (!_replyArea && canReply()) {
@@ -1100,7 +1100,7 @@ void HideAllButton::stopHiding() {
 	hideStop();
 }
 
-void HideAllButton::enterEventHook(QEvent *e) {
+void HideAllButton::enterEventHook(QEnterEvent *e) {
 	_mouseOver = true;
 	update();
 }

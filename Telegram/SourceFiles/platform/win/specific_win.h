@@ -16,14 +16,7 @@ class LocationPoint;
 
 namespace Platform {
 
-inline void SetWatchingMediaKeys(bool watching) {
-}
-
 inline void IgnoreApplicationActivationRightNow() {
-}
-
-inline QImage GetImageFromClipboard() {
-	return {};
 }
 
 inline bool TrayIconSupported() {
@@ -50,7 +43,6 @@ inline void psCheckLocalSocket(const QString &) {
 void psActivateProcess(uint64 pid = 0);
 QString psAppDataPath();
 QString psAppDataPathOld();
-void psAutoStart(bool start, bool silent = false);
 void psSendToMenu(bool send, bool silent = false);
 
 int psCleanup();

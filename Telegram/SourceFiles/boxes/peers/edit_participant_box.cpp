@@ -24,7 +24,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/special_buttons.h"
 #include "chat_helpers/emoji_suggestions_widget.h"
 #include "settings/settings_privacy_security.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "boxes/passcode_box.h"
 #include "boxes/peers/edit_peer_permissions_box.h"
 #include "boxes/peers/edit_peer_info_box.h"
@@ -34,8 +34,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_user.h"
 #include "core/core_cloud_password.h"
 #include "base/unixtime.h"
-#include "base/qt_adapters.h"
 #include "apiwrap.h"
+#include "api/api_cloud_password.h"
 #include "main/main_session.h"
 #include "styles/style_layers.h"
 #include "styles/style_boxes.h"
@@ -444,15 +444,19 @@ void EditAdminBox::transferOwnership() {
 		? peer()->asChannel()->inputChannel
 		: MTP_inputChannelEmpty();
 	const auto api = &peer()->session().api();
-	api->reloadPasswordState();
+	api->cloudPassword().reload();
 	_checkTransferRequestId = api->request(MTPchannels_EditCreator(
 		channel,
 		MTP_inputUserEmpty(),
 		MTP_inputCheckPasswordEmpty()
 	)).fail([=](const MTP::Error &error) {
 		_checkTransferRequestId = 0;
-		if (!handleTransferPasswordError(error)) {
-			getDelegate()->show(Box<ConfirmBox>(
+		if (!handleTransferPasswordError(error.type())) {
+			const auto callback = crl::guard(this, [=](Fn<void()> &&close) {
+				transferOwnershipChecked();
+				close();
+			});
+			getDelegate()->show(Box<Ui::ConfirmBox>(
 				tr::lng_rights_transfer_about(
 					tr::now,
 					lt_group,
@@ -461,12 +465,12 @@ void EditAdminBox::transferOwnership() {
 					Ui::Text::Bold(user()->shortName()),
 					Ui::Text::RichLangValue),
 				tr::lng_rights_transfer_sure(tr::now),
-				crl::guard(this, [=] { transferOwnershipChecked(); })));
+				callback));
 		}
 	}).send();
 }
 
-bool EditAdminBox::handleTransferPasswordError(const MTP::Error &error) {
+bool EditAdminBox::handleTransferPasswordError(const QString &error) {
 	const auto session = &user()->session();
 	auto about = tr::lng_rights_transfer_check_about(
 		tr::now,
@@ -495,7 +499,7 @@ void EditAdminBox::transferOwnershipChecked() {
 }
 
 void EditAdminBox::requestTransferPassword(not_null<ChannelData*> channel) {
-	peer()->session().api().passwordState(
+	peer()->session().api().cloudPassword().state(
 	) | rpl::take(
 		1
 	) | rpl::start_with_next([=](const Core::CloudPasswordState &state) {
@@ -569,7 +573,7 @@ void EditAdminBox::sendTransferRequestFrom(
 				|| (type == qstr("SESSION_TOO_FRESH_XXX"));
 		}();
 		const auto weak = Ui::MakeWeak(this);
-		getDelegate()->show(Box<InformBox>(problem));
+		getDelegate()->show(Box<Ui::InformBox>(problem));
 		if (box) {
 			box->closeBox();
 		}
@@ -697,20 +701,22 @@ void EditRestrictedBox::showRestrictUntil() {
 		: base::unixtime::parse(getRealUntilValue()).date();
 	auto month = highlighted;
 	_restrictUntilBox = Ui::show(
-		Box<Ui::CalendarBox>(
-			month,
-			highlighted,
-			[this](const QDate &date) {
+		Box<Ui::CalendarBox>(Ui::CalendarBoxArgs{
+			.month = month,
+			.highlighted = highlighted,
+			.callback = [=](const QDate &date) {
 				setRestrictUntil(
-					static_cast<int>(base::QDateToDateTime(date).toTime_t()));
-			}),
+					static_cast<int>(date.startOfDay().toSecsSinceEpoch()));
+			},
+			.finalize = [=](not_null<Ui::CalendarBox*> box) {
+				box->addLeftButton(
+					tr::lng_rights_chat_banned_forever(),
+					[=] { setRestrictUntil(0); });
+			},
+			.minDate = tomorrow,
+			.maxDate = QDate::currentDate().addDays(kMaxRestrictDelayDays),
+		}),
 		Ui::LayerOption::KeepOther);
-	_restrictUntilBox->setMaxDate(
-		QDate::currentDate().addDays(kMaxRestrictDelayDays));
-	_restrictUntilBox->setMinDate(tomorrow);
-	_restrictUntilBox->addLeftButton(
-		tr::lng_rights_chat_banned_forever(),
-		[=] { setRestrictUntil(0); });
 }
 
 void EditRestrictedBox::setRestrictUntil(TimeId until) {

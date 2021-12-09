@@ -25,19 +25,21 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history.h"
 #include "calls/calls_instance.h"
 #include "base/unixtime.h"
+#include "ui/chat/chat_theme.h"
+#include "ui/chat/chat_style.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/wrap/padding_wrap.h"
 #include "ui/wrap/vertical_layout.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/image/image_prepare.h"
 #include "ui/cached_round_corners.h"
+#include "ui/text/format_values.h" // Ui::FormatPhone
 #include "window/section_widget.h"
 #include "window/window_session_controller.h"
 #include "boxes/peer_list_controllers.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "settings/settings_privacy_security.h"
 #include "facades.h"
-#include "app.h"
 #include "styles/style_chat.h"
 #include "styles/style_boxes.h"
 #include "styles/style_settings.h"
@@ -45,7 +47,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Settings {
 namespace {
 
-constexpr auto kBlockedPerPage = 40;
+using UserPrivacy = Api::UserPrivacy;
+using PrivacyRule = Api::UserPrivacy::Rule;
 
 class BlockPeerBoxController final : public ChatsListBoxController {
 public:
@@ -130,17 +133,14 @@ AdminLog::OwnedItem GenerateForwardedItem(
 	Expects(history->peer->isUser());
 
 	using Flag = MTPDmessage::Flag;
-	using FwdFlag = MTPDmessageFwdHeader::Flag;
-	// #TODO common global incrementable id for fake items, like clientMsgId.
-	static auto id = ServerMaxMsgId + (ServerMaxMsgId / 6);
 	const auto flags = Flag::f_from_id | Flag::f_fwd_from;
 	const auto item = MTP_message(
 		MTP_flags(flags),
-		MTP_int(++id),
+		MTP_int(0), // Not used (would've been trimmed to 32 bits).
 		peerToMTP(history->peer->id),
 		peerToMTP(history->peer->id),
 		MTP_messageFwdHeader(
-			MTP_flags(FwdFlag::f_from_id),
+			MTP_flags(MTPDmessageFwdHeader::Flag::f_from_id),
 			peerToMTP(history->session().userPeerId()),
 			MTPstring(), // from_name
 			MTP_int(base::unixtime::now()),
@@ -149,7 +149,7 @@ AdminLog::OwnedItem GenerateForwardedItem(
 			MTPPeer(), // saved_from_peer
 			MTPint(), // saved_from_msg_id
 			MTPstring()), // psa_type
-		MTPint(), // via_bot_id
+		MTPlong(), // via_bot_id
 		MTPMessageReplyHeader(),
 		MTP_int(base::unixtime::now()), // date
 		MTP_string(text),
@@ -167,8 +167,9 @@ AdminLog::OwnedItem GenerateForwardedItem(
 		MTPint() // ttl_period
 	).match([&](const MTPDmessage &data) {
 		return history->makeMessage(
+			history->nextNonHistoryEntryId(),
 			data,
-			MTPDmessage_ClientFlag::f_fake_history_item);
+			MessageFlag::FakeHistoryItem);
 	}, [](auto &&) -> not_null<HistoryMessage*> {
 		Unexpected("Type in GenerateForwardedItem.");
 	});
@@ -180,8 +181,7 @@ AdminLog::OwnedItem GenerateForwardedItem(
 
 BlockedBoxController::BlockedBoxController(
 	not_null<Window::SessionController*> window)
-: _window(window)
-, _api(&_window->session().mtp()) {
+: _window(window) {
 }
 
 Main::Session &BlockedBoxController::session() const {
@@ -199,52 +199,26 @@ void BlockedBoxController::prepare() {
 		handleBlockedEvent(update.peer);
 	}, lifetime());
 
-	_loadRequestId = -1;
-	_window->session().api().blockedPeersSlice(
+	session().api().blockedPeers().slice(
 	) | rpl::take(
 		1
-	) | rpl::start_with_next([=](const ApiWrap::BlockedPeersSlice &result) {
+	) | rpl::start_with_next([=](const Api::BlockedPeers::Slice &result) {
 		setDescriptionText(tr::lng_blocked_list_about(tr::now));
-		_loadRequestId = 0;
-		_offset = result.list.size();
-		_allLoaded = (_offset >= result.total);
-		for (const auto item : result.list) {
-			appendRow(item.peer);
-		};
-		delegate()->peerListRefreshRows();
+		applySlice(result);
 		loadMoreRows();
 	}, lifetime());
 }
 
 void BlockedBoxController::loadMoreRows() {
-	if (_loadRequestId || _allLoaded) {
+	if (_allLoaded) {
 		return;
 	}
 
-	_loadRequestId = _api.request(MTPcontacts_GetBlocked(
-		MTP_int(_offset),
-		MTP_int(kBlockedPerPage)
-	)).done([=](const MTPcontacts_Blocked &result) {
-		_loadRequestId = 0;
-
-		auto handleContactsBlocked = [&](auto &list) {
-			_window->session().data().processUsers(list.vusers());
-			_window->session().data().processChats(list.vchats());
-			return list.vblocked().v;
-		};
-		switch (result.type()) {
-		case mtpc_contacts_blockedSlice: {
-			receivedPeers(handleContactsBlocked(result.c_contacts_blockedSlice()));
-		} break;
-		case mtpc_contacts_blocked: {
-			_allLoaded = true;
-			receivedPeers(handleContactsBlocked(result.c_contacts_blocked()));
-		} break;
-		default: Unexpected("Bad type() in MTPcontacts_GetBlocked() result.");
-		}
-	}).fail([this](const MTP::Error &error) {
-		_loadRequestId = 0;
-	}).send();
+	session().api().blockedPeers().request(
+		_offset,
+		crl::guard(&_guard, [=](const Api::BlockedPeers::Slice &slice) {
+			applySlice(slice);
+		}));
 }
 
 void BlockedBoxController::rowClicked(not_null<PeerListRow*> row) {
@@ -254,24 +228,24 @@ void BlockedBoxController::rowClicked(not_null<PeerListRow*> row) {
 	});
 }
 
-void BlockedBoxController::rowActionClicked(not_null<PeerListRow*> row) {
-	_window->session().api().unblockPeer(row->peer());
+void BlockedBoxController::rowRightActionClicked(not_null<PeerListRow*> row) {
+	session().api().blockedPeers().unblock(row->peer());
 }
 
-void BlockedBoxController::receivedPeers(
-		const QVector<MTPPeerBlocked> &result) {
-	if (result.empty()) {
+void BlockedBoxController::applySlice(const Api::BlockedPeers::Slice &slice) {
+	if (slice.list.empty()) {
 		_allLoaded = true;
 	}
 
-	_offset += result.size();
-	for (const auto &item : result) {
-		item.match([&](const MTPDpeerBlocked &data) {
-			if (const auto peer = _window->session().data().peerLoaded(peerFromMTP(data.vpeer_id()))) {
-				appendRow(peer);
-				peer->setIsBlocked(true);
-			}
-		});
+	_offset += slice.list.size();
+	for (const auto &item : slice.list) {
+		if (const auto peer = session().data().peerLoaded(item.id)) {
+			appendRow(peer);
+			peer->setIsBlocked(true);
+		}
+	}
+	if (_offset >= slice.total) {
+		_allLoaded = true;
 	}
 	delegate()->peerListRefreshRows();
 }
@@ -295,7 +269,7 @@ void BlockedBoxController::BlockNewPeer(
 	auto initBox = [=, controller = controller.get()](
 			not_null<PeerListBox*> box) {
 		controller->setBlockPeerCallback([=](not_null<PeerData*> peer) {
-			window->session().api().blockPeer(peer);
+			window->session().api().blockedPeers().block(peer);
 			box->closeBox();
 		});
 		box->addButton(tr::lng_cancel(), [box] { box->closeBox(); });
@@ -330,7 +304,7 @@ std::unique_ptr<PeerListRow> BlockedBoxController::createRow(
 		if (!user) {
 			return tr::lng_group_status(tr::now);
 		} else if (!user->phone().isEmpty()) {
-			return App::formatPhone(user->phone());
+			return Ui::FormatPhone(user->phone());
 		} else if (!user->username.isEmpty()) {
 			return '@' + user->username;
 		} else if (user->isBot()) {
@@ -342,12 +316,8 @@ std::unique_ptr<PeerListRow> BlockedBoxController::createRow(
 	return row;
 }
 
-ApiWrap::Privacy::Key PhoneNumberPrivacyController::key() {
+UserPrivacy::Key PhoneNumberPrivacyController::key() {
 	return Key::PhoneNumber;
-}
-
-MTPInputPrivacyKey PhoneNumberPrivacyController::apiKey() {
-	return MTP_inputPrivacyKeyPhoneNumber();
 }
 
 rpl::producer<QString> PhoneNumberPrivacyController::title() {
@@ -399,8 +369,8 @@ object_ptr<Ui::RpWidget> PhoneNumberPrivacyController::setupMiddleWidget(
 		not_null<Window::SessionController*> controller,
 		not_null<QWidget*> parent,
 		rpl::producer<Option> optionValue) {
-	const auto key = ApiWrap::Privacy::Key::AddedByPhone;
-	controller->session().api().reloadPrivacy(key);
+	const auto key = UserPrivacy::Key::AddedByPhone;
+	controller->session().api().userPrivacy().reload(key);
 
 	_phoneNumberOption = std::move(optionValue);
 
@@ -416,11 +386,11 @@ object_ptr<Ui::RpWidget> PhoneNumberPrivacyController::setupMiddleWidget(
 	group->setChangedCallback([=](Option value) {
 		_addedByPhone = value;
 	});
-	controller->session().api().privacyValue(
+	controller->session().api().userPrivacy().value(
 		key
 	) | rpl::take(
 		1
-	) | rpl::start_with_next([=](const ApiWrap::Privacy &value) {
+	) | rpl::start_with_next([=](const PrivacyRule &value) {
 		group->setValue(value.option);
 	}, widget->lifetime());
 
@@ -438,15 +408,9 @@ object_ptr<Ui::RpWidget> PhoneNumberPrivacyController::setupMiddleWidget(
 	));
 
 	_saveAdditional = [=] {
-		const auto value = [&] {
-			switch (group->value()) {
-			case Option::Everyone: return MTP_inputPrivacyValueAllowAll();
-			default: return MTP_inputPrivacyValueAllowContacts();
-			}
-		}();
-		controller->session().api().savePrivacy(
-			MTP_inputPrivacyKeyAddedByPhone(),
-			QVector<MTPInputPrivacyRule>(1, value));
+		controller->session().api().userPrivacy().save(
+			Api::UserPrivacy::Key::AddedByPhone,
+			Api::UserPrivacy::Rule{ .option = group->value() });
 	};
 
 	return widget;
@@ -463,12 +427,8 @@ LastSeenPrivacyController::LastSeenPrivacyController(
 : _session(session) {
 }
 
-ApiWrap::Privacy::Key LastSeenPrivacyController::key() {
+UserPrivacy::Key LastSeenPrivacyController::key() {
 	return Key::LastSeen;
-}
-
-MTPInputPrivacyKey LastSeenPrivacyController::apiKey() {
-	return MTP_inputPrivacyKeyStatusTimestamp();
 }
 
 rpl::producer<QString> LastSeenPrivacyController::title() {
@@ -520,7 +480,7 @@ void LastSeenPrivacyController::confirmSave(
 			Core::App().settings().setLastSeenWarningSeen(true);
 			Core::App().saveSettingsDelayed();
 		};
-		auto box = Box<ConfirmBox>(
+		auto box = Box<Ui::ConfirmBox>(
 			tr::lng_edit_privacy_lastseen_warning(tr::now),
 			tr::lng_continue(tr::now),
 			tr::lng_cancel(tr::now),
@@ -531,12 +491,8 @@ void LastSeenPrivacyController::confirmSave(
 	}
 }
 
-ApiWrap::Privacy::Key GroupsInvitePrivacyController::key() {
+UserPrivacy::Key GroupsInvitePrivacyController::key() {
 	return Key::Invites;
-}
-
-MTPInputPrivacyKey GroupsInvitePrivacyController::apiKey() {
-	return MTP_inputPrivacyKeyChatInvite();
 }
 
 rpl::producer<QString> GroupsInvitePrivacyController::title() {
@@ -574,12 +530,8 @@ auto GroupsInvitePrivacyController::exceptionsDescription()
 	return tr::lng_edit_privacy_groups_exceptions();
 }
 
-ApiWrap::Privacy::Key CallsPrivacyController::key() {
+UserPrivacy::Key CallsPrivacyController::key() {
 	return Key::Calls;
-}
-
-MTPInputPrivacyKey CallsPrivacyController::apiKey() {
-	return MTP_inputPrivacyKeyPhoneCall();
 }
 
 rpl::producer<QString> CallsPrivacyController::title() {
@@ -625,19 +577,15 @@ object_ptr<Ui::RpWidget> CallsPrivacyController::setupBelowWidget(
 		controller,
 		content,
 		tr::lng_settings_calls_peer_to_peer_button(),
-		ApiWrap::Privacy::Key::CallsPeer2Peer,
+		UserPrivacy::Key::CallsPeer2Peer,
 		[] { return std::make_unique<CallsPeer2PeerPrivacyController>(); });
 	AddSkip(content);
 
 	return result;
 }
 
-ApiWrap::Privacy::Key CallsPeer2PeerPrivacyController::key() {
+UserPrivacy::Key CallsPeer2PeerPrivacyController::key() {
 	return Key::CallsPeer2Peer;
-}
-
-MTPInputPrivacyKey CallsPeer2PeerPrivacyController::apiKey() {
-	return MTP_inputPrivacyKeyPhoneP2P();
 }
 
 rpl::producer<QString> CallsPeer2PeerPrivacyController::title() {
@@ -687,15 +635,13 @@ rpl::producer<QString> CallsPeer2PeerPrivacyController::exceptionsDescription() 
 ForwardsPrivacyController::ForwardsPrivacyController(
 	not_null<Window::SessionController*> controller)
 : SimpleElementDelegate(controller, [] {})
-, _controller(controller) {
+, _controller(controller)
+, _chatStyle(std::make_unique<Ui::ChatStyle>()) {
+	_chatStyle->apply(controller->defaultChatTheme().get());
 }
 
-ApiWrap::Privacy::Key ForwardsPrivacyController::key() {
+UserPrivacy::Key ForwardsPrivacyController::key() {
 	return Key::Forwards;
-}
-
-MTPInputPrivacyKey ForwardsPrivacyController::apiKey() {
-	return MTP_inputPrivacyKeyForwards();
 }
 
 rpl::producer<QString> ForwardsPrivacyController::title() {
@@ -765,11 +711,22 @@ object_ptr<Ui::RpWidget> ForwardsPrivacyController::setupAboveWidget(
 
 	widget->paintRequest(
 	) | rpl::start_with_next([=](QRect rect) {
-		Window::SectionWidget::PaintBackground(_controller, widget, rect);
+		// #TODO themes
+		Window::SectionWidget::PaintBackground(
+			_controller,
+			_controller->defaultChatTheme().get(), // #TODO themes
+			widget,
+			rect);
 
 		Painter p(widget);
+		const auto theme = _controller->defaultChatTheme().get();
+		auto context = theme->preparePaintContext(
+			_chatStyle.get(),
+			widget->rect(),
+			widget->rect());
 		p.translate(0, padding + view->marginBottom());
-		view->draw(p, widget->rect(), TextSelection(), crl::now());
+		context.outbg = view->hasOutLayout();
+		view->draw(p, context);
 
 		PaintForwardedTooltip(p, view, *option);
 	}, widget->lifetime());
@@ -885,12 +842,8 @@ HistoryView::Context ForwardsPrivacyController::elementContext() {
 	return HistoryView::Context::ContactPreview;
 }
 
-ApiWrap::Privacy::Key ProfilePhotoPrivacyController::key() {
+UserPrivacy::Key ProfilePhotoPrivacyController::key() {
 	return Key::ProfilePhoto;
-}
-
-MTPInputPrivacyKey ProfilePhotoPrivacyController::apiKey() {
-	return MTP_inputPrivacyKeyProfilePhoto();
 }
 
 rpl::producer<QString> ProfilePhotoPrivacyController::title() {

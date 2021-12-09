@@ -25,8 +25,6 @@ public:
 
 	bool psFilterNativeEvent(void *event);
 
-	virtual QImage iconWithCounter(int size, int count, style::color bg, style::color fg, bool smallIcon) = 0;
-
 	int getCustomTitleHeight() const {
 		return _customTitleHeight;
 	}
@@ -62,7 +60,6 @@ protected:
 	void handleActiveChangedHook() override;
 	void stateChangedHook(Qt::WindowState state) override;
 	void initHook() override;
-	void titleVisibilityChangedHook() override;
 	void unreadCounterChangedHook() override;
 
 	bool hasTrayIcon() const override {
@@ -78,11 +75,7 @@ protected:
 
 	void psTrayMenuUpdated();
 	void psSetupTrayIcon();
-	virtual void placeSmallCounter(QImage &img, int size, int count, style::color bg, const QPoint &shift, style::color color) = 0;
 
-	QTimer psUpdatedPositionTimer;
-
-	void initShadows() override;
 	void closeWithoutDestroy() override;
 	void createGlobalMenu() override;
 
@@ -90,7 +83,6 @@ private:
 	friend class Private;
 
 	void hideAndDeactivate();
-	void updateTitleCounter();
 	void updateIconCounters();
 	[[nodiscard]] QIcon generateIconForTray(int counter, bool muted) const;
 

@@ -153,10 +153,11 @@ void Account::createSession(
 	const auto flags = MTPDuser::Flag::f_self | (phone.isEmpty()
 		? MTPDuser::Flag()
 		: MTPDuser::Flag::f_phone);
+
 	createSession(
 		MTP_user(
 			MTP_flags(flags),
-			MTP_int(base::take(_sessionUserId).bare), // #TODO ids
+			MTP_long(base::take(_sessionUserId).bare),
 			MTPlong(), // access_hash
 			MTPstring(), // first_name
 			MTPstring(), // last_name
@@ -233,6 +234,12 @@ rpl::producer<not_null<MTP::Instance*>> Account::mtpValue() const {
 	return _mtpValue.value() | rpl::map([](MTP::Instance *instance) {
 		return not_null{ instance };
 	});
+}
+
+rpl::producer<not_null<MTP::Instance*>> Account::mtpMainSessionValue() const {
+	return mtpValue() | rpl::map([=](not_null<MTP::Instance*> instance) {
+		return instance->mainDcIdValue() | rpl::map_to(instance);
+	}) | rpl::flatten_latest();
 }
 
 rpl::producer<MTPUpdates> Account::mtpUpdates() const {

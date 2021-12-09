@@ -14,7 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/file_utilities.h"
 #include "core/mime_type.h"
 #include "base/unixtime.h"
-#include "base/qt_adapters.h"
+#include "base/random.h"
 #include "editor/scene/scene.h" // Editor::Scene::attachedStickers
 #include "media/audio/media_audio.h"
 #include "media/clip/media_clip_reader.h"
@@ -23,7 +23,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history.h"
 #include "history/history_item.h"
 #include "boxes/send_files_box.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "lang/lang_keys.h"
 #include "storage/file_download.h"
 #include "storage/storage_media_prepare.h"
@@ -31,10 +31,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwidget.h"
 #include "mainwindow.h"
 #include "main/main_session.h"
-#include "app.h"
 
 #include <QtCore/QBuffer>
 #include <QtGui/QImageWriter>
+#include <QtGui/QColorSpace>
 
 namespace {
 
@@ -59,16 +59,16 @@ PreparedFileThumbnail PrepareFileThumbnail(QImage &&original) {
 		return {};
 	}
 	auto result = PreparedFileThumbnail();
-	result.id = openssl::RandomValue<uint64>();
+	result.id = base::RandomValue<uint64>();
 	const auto scaled = (width > kThumbnailSize || height > kThumbnailSize);
 	const auto scaledWidth = [&] {
 		return (width > height)
 			? kThumbnailSize
-			: int(std::round(kThumbnailSize * width / float64(height)));
+			: int(base::SafeRound(kThumbnailSize * width / float64(height)));
 	};
 	const auto scaledHeight = [&] {
 		return (width > height)
-			? int(std::round(kThumbnailSize * height / float64(width)))
+			? int(base::SafeRound(kThumbnailSize * height / float64(width)))
 			: kThumbnailSize;
 	};
 	result.image = scaled
@@ -151,6 +151,56 @@ MTPInputSingleMedia PrepareAlbumItemMedia(
 
 } // namespace
 
+SendMediaPrepare::SendMediaPrepare(
+	const QString &file,
+	const PeerId &peer,
+	SendMediaType type,
+	MsgId replyTo)
+: id(base::RandomValue<PhotoId>())
+, file(file)
+, peer(peer)
+, type(type)
+, replyTo(replyTo) {
+}
+
+SendMediaPrepare::SendMediaPrepare(
+	const QImage &img,
+	const PeerId &peer,
+	SendMediaType type,
+	MsgId replyTo)
+: id(base::RandomValue<PhotoId>())
+, img(img)
+, peer(peer)
+, type(type)
+, replyTo(replyTo) {
+}
+
+SendMediaPrepare::SendMediaPrepare(
+	const QByteArray &data,
+	const PeerId &peer,
+	SendMediaType type,
+	MsgId replyTo)
+: id(base::RandomValue<PhotoId>())
+, data(data)
+, peer(peer)
+, type(type)
+, replyTo(replyTo) {
+}
+
+SendMediaPrepare::SendMediaPrepare(
+	const QByteArray &data,
+	int duration,
+	const PeerId &peer,
+	SendMediaType type,
+	MsgId replyTo)
+: id(base::RandomValue<PhotoId>())
+, data(data)
+, peer(peer)
+, type(type)
+, duration(duration)
+, replyTo(replyTo) {
+}
+
 SendMediaReady::SendMediaReady(
 	SendMediaType type,
 	const QString &file,
@@ -187,70 +237,6 @@ SendMediaReady::SendMediaReady(
 		jpeg_md5.resize(32);
 		hashMd5Hex(jpeg.constData(), jpeg.size(), jpeg_md5.data());
 	}
-}
-
-SendMediaReady PreparePeerPhoto(MTP::DcId dcId, PeerId peerId, QImage &&image) {
-	PreparedPhotoThumbs photoThumbs;
-	QVector<MTPPhotoSize> photoSizes;
-
-	QByteArray jpeg;
-	QBuffer jpegBuffer(&jpeg);
-	image.save(&jpegBuffer, "JPG", 87);
-
-	const auto scaled = [&](int size) {
-		return image.scaled(
-			size,
-			size,
-			Qt::KeepAspectRatio,
-			Qt::SmoothTransformation);
-	};
-	const auto push = [&](
-			const char *type,
-			QImage &&image,
-			QByteArray bytes = QByteArray()) {
-		photoSizes.push_back(MTP_photoSize(
-			MTP_string(type),
-			MTP_int(image.width()),
-			MTP_int(image.height()), MTP_int(0)));
-		photoThumbs.emplace(type[0], PreparedPhotoThumb{
-			.image = std::move(image),
-			.bytes = std::move(bytes)
-		});
-	};
-	push("a", scaled(160));
-	push("b", scaled(320));
-	push("c", std::move(image), jpeg);
-
-	const auto id = openssl::RandomValue<PhotoId>();
-	const auto photo = MTP_photo(
-		MTP_flags(0),
-		MTP_long(id),
-		MTP_long(0),
-		MTP_bytes(),
-		MTP_int(base::unixtime::now()),
-		MTP_vector<MTPPhotoSize>(photoSizes),
-		MTPVector<MTPVideoSize>(),
-		MTP_int(dcId));
-
-	QString file, filename;
-	int32 filesize = 0;
-	QByteArray data;
-
-	return SendMediaReady(
-		SendMediaType::Photo,
-		file,
-		filename,
-		filesize,
-		data,
-		id,
-		id,
-		qsl("jpg"),
-		peerId,
-		photo,
-		photoThumbs,
-		MTP_documentEmpty(MTP_long(0)),
-		jpeg,
-		0);
 }
 
 TaskQueue::TaskQueue(crl::time stopTimeoutMs) {
@@ -401,7 +387,7 @@ void TaskQueueWorker::onTaskAdded() {
 	_inTaskAdded = false;
 }
 
-SendingAlbum::SendingAlbum() : groupId(openssl::RandomValue<uint64>()) {
+SendingAlbum::SendingAlbum() : groupId(base::RandomValue<uint64>()) {
 }
 
 void SendingAlbum::fillMedia(
@@ -444,6 +430,10 @@ void SendingAlbum::removeItem(not_null<HistoryItem*> item) {
 			refreshMediaCaption(first);
 		}
 	}
+}
+
+SendingAlbum::Item::Item(TaskId taskId)
+: taskId(taskId) {
 }
 
 FileLoadResult::FileLoadResult(
@@ -494,7 +484,7 @@ FileLoadTask::FileLoadTask(
 	const FileLoadTo &to,
 	const TextWithTags &caption,
 	std::shared_ptr<SendingAlbum> album)
-: _id(openssl::RandomValue<uint64>())
+: _id(base::RandomValue<uint64>())
 , _session(session)
 , _dcId(session->mainDcId())
 , _to(to)
@@ -505,7 +495,8 @@ FileLoadTask::FileLoadTask(
 , _type(type)
 , _caption(caption) {
 	Expects(to.options.scheduled
-		|| (to.replaceMediaOf == 0 || IsServerMsgId(to.replaceMediaOf)));
+		|| !to.replaceMediaOf
+		|| IsServerMsgId(to.replaceMediaOf));
 }
 
 FileLoadTask::FileLoadTask(
@@ -515,7 +506,7 @@ FileLoadTask::FileLoadTask(
 	const VoiceWaveform &waveform,
 	const FileLoadTo &to,
 	const TextWithTags &caption)
-: _id(openssl::RandomValue<uint64>())
+: _id(base::RandomValue<uint64>())
 , _session(session)
 , _dcId(session->mainDcId())
 , _to(to)
@@ -642,25 +633,25 @@ bool FileLoadTask::CheckForImage(
 		const QString &filepath,
 		const QByteArray &content,
 		std::unique_ptr<Ui::PreparedFileInformation> &result) {
-	auto animated = false;
-	auto image = [&] {
+	auto read = [&] {
 		if (filepath.endsWith(qstr(".tgs"), Qt::CaseInsensitive)) {
 			auto image = Lottie::ReadThumbnail(
 				Lottie::ReadContent(content, filepath));
-			if (!image.isNull()) {
-				animated = true;
+			const auto success = !image.isNull();
+			if (success) {
 				result->filemime = qstr("application/x-tgsticker");
 			}
-			return image;
+			return Images::ReadResult{
+				.image = std::move(image),
+				.animated = success,
+			};
 		}
-		if (!content.isEmpty()) {
-			return App::readImage(content, nullptr, false, &animated);
-		} else if (!filepath.isEmpty()) {
-			return App::readImage(filepath, nullptr, false, &animated);
-		}
-		return QImage();
+		return Images::Read({
+			.path = filepath,
+			.content = content,
+		});
 	}();
-	return FillImageInformation(std::move(image), animated, result);
+	return FillImageInformation(std::move(read.image), read.animated, result);
 }
 
 bool FileLoadTask::FillImageInformation(
@@ -878,7 +869,7 @@ void FileLoadTask::process(Args &&args) {
 					// We have an example of dark .png image that when being sent without
 					// removing its color space is displayed fine on tdesktop, but with
 					// a light gray background on mobile apps.
-					base::QClearColorSpace(full);
+					full.setColorSpace(QColorSpace());
 					QBuffer buffer(&filedata);
 					QImageWriter writer(&buffer, "JPEG");
 					writer.setQuality(87);
@@ -957,8 +948,11 @@ void FileLoadTask::process(Args &&args) {
 		if (auto image = std::get_if<Ui::PreparedFileInformation::Image>(
 				&_information->media)) {
 			if (image->modifications.paint) {
-				_result->attachedStickers =
-					image->modifications.paint->attachedStickers();
+				const auto documents
+					= image->modifications.paint->attachedStickers();
+				_result->attachedStickers = documents
+					| ranges::view::transform(&DocumentData::mtpInput)
+					| ranges::to_vector;
 			}
 		}
 	}
@@ -987,13 +981,13 @@ void FileLoadTask::process(Args &&args) {
 void FileLoadTask::finish() {
 	if (!_result || !_result->filesize || _result->filesize < 0) {
 		Ui::show(
-			Box<InformBox>(
+			Box<Ui::InformBox>(
 				tr::lng_send_image_empty(tr::now, lt_name, _filepath)),
 			Ui::LayerOption::KeepOther);
 		removeFromAlbum();
 	} else if (_result->filesize > kFileSizeLimit) {
 		Ui::show(
-			Box<InformBox>(
+			Box<Ui::InformBox>(
 				tr::lng_send_image_too_large(tr::now, lt_name, _filepath)),
 			Ui::LayerOption::KeepOther);
 		removeFromAlbum();

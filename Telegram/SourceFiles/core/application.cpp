@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "core/application.h"
 
+#include "data/data_abstract_structure.h"
 #include "data/data_photo.h"
 #include "data/data_document.h"
 #include "data/data_session.h"
@@ -24,6 +25,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/ui_integration.h"
 #include "chat_helpers/emoji_keywords.h"
 #include "chat_helpers/stickers_emoji_image_loader.h"
+#include "base/qt_adapters.h"
+#include "base/platform/base_platform_url_scheme.h"
 #include "base/platform/base_platform_last_input.h"
 #include "base/platform/base_platform_info.h"
 #include "platform/platform_specific.h"
@@ -33,6 +36,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 #include "api/api_updates.h"
 #include "calls/calls_instance.h"
+#include "countries/countries_manager.h"
 #include "lang/lang_file_parser.h"
 #include "lang/lang_translator.h"
 #include "lang/lang_cloud_manager.h"
@@ -40,6 +44,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_instance.h"
 #include "mainwidget.h"
 #include "core/file_utilities.h"
+#include "core/crash_reports.h"
 #include "main/main_account.h"
 #include "main/main_domain.h"
 #include "main/main_session.h"
@@ -63,6 +68,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/text_options.h"
 #include "ui/emoji_config.h"
 #include "ui/effects/animations.h"
+#include "ui/cached_round_corners.h"
 #include "storage/serialize_common.h"
 #include "storage/storage_domain.h"
 #include "storage/storage_databases.h"
@@ -74,12 +80,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/qthelp_regex.h"
 #include "base/qthelp_url.h"
 #include "boxes/connection_box.h"
-#include "boxes/confirm_phone_box.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "boxes/share_box.h"
 #include "app.h"
 
-#include <QtWidgets/QDesktopWidget>
 #include <QtCore/QMimeDatabase>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QScreen>
@@ -90,6 +94,27 @@ namespace {
 constexpr auto kQuitPreventTimeoutMs = crl::time(1500);
 constexpr auto kAutoLockTimeoutLateMs = crl::time(3000);
 constexpr auto kClearEmojiImageSourceTimeout = 10 * crl::time(1000);
+
+void SetCrashAnnotationsGL() {
+#ifdef Q_OS_WIN
+	CrashReports::SetAnnotation("OpenGL ANGLE", [] {
+		if (Core::App().settings().disableOpenGL()) {
+			return "Disabled";
+		} else switch (Ui::GL::CurrentANGLE()) {
+		case Ui::GL::ANGLE::Auto: return "Auto";
+		case Ui::GL::ANGLE::D3D11: return "Direct3D 11";
+		case Ui::GL::ANGLE::D3D9: return "Direct3D 9";
+		case Ui::GL::ANGLE::D3D11on12: return "D3D11on12";
+		case Ui::GL::ANGLE::OpenGL: return "OpenGL";
+		}
+		Unexpected("Ui::GL::CurrentANGLE value in SetupANGLE.");
+	}());
+#else // Q_OS_WIN
+	CrashReports::SetAnnotation(
+		"OpenGL",
+		Core::App().settings().disableOpenGL() ? "Disabled" : "Enabled");
+#endif // Q_OS_WIN
+}
 
 } // namespace
 
@@ -116,12 +141,7 @@ Application::Application(not_null<Launcher*> launcher)
 , _langpack(std::make_unique<Lang::Instance>())
 , _langCloudManager(std::make_unique<Lang::CloudManager>(langpack()))
 , _emojiKeywords(std::make_unique<ChatHelpers::EmojiKeywords>())
-, _logo(Window::LoadLogo())
-, _logoNoMargin(Window::LoadLogoNoMargin())
 , _autoLockTimer([=] { checkAutoLock(); }) {
-	Expects(!_logo.isNull());
-	Expects(!_logoNoMargin.isNull());
-
 	Ui::Integration::Set(&_private->uiIntegration);
 
 	passcodeLockChanges(
@@ -171,7 +191,8 @@ Application::~Application() {
 	Ui::Emoji::Clear();
 	Media::Clip::Finish();
 
-	App::deinitMedia();
+	Ui::FinishCachedCorners();
+	Data::clearGlobalStructures();
 
 	Window::Theme::Uninitialize();
 
@@ -187,7 +208,6 @@ void Application::run() {
 	style::internal::StartFonts();
 
 	ThirdParty::start();
-	refreshGlobalProxy(); // Depends on Core::IsAppLaunched().
 
 	// Depends on OpenSSL on macOS, so on ThirdParty::start().
 	// Depends on notifications settings.
@@ -196,7 +216,10 @@ void Application::run() {
 	startLocalStorage();
 	ValidateScale();
 
+	refreshGlobalProxy(); // Depends on app settings being read.
+
 	if (Local::oldSettingsVersion() < AppVersion) {
+		RegisterUrlScheme();
 		psNewVersion();
 	}
 
@@ -204,8 +227,8 @@ void Application::run() {
 		cSetAutoStart(false);
 	}
 
-	if (cLaunchMode() == LaunchModeAutoStart && !cAutoStart()) {
-		psAutoStart(false, true);
+	if (cLaunchMode() == LaunchModeAutoStart && Platform::AutostartSkip()) {
+		Platform::AutostartToggle(false);
 		App::quit();
 		return;
 	}
@@ -215,6 +238,7 @@ void Application::run() {
 
 	style::startManager(cScale());
 	Ui::InitTextOptions();
+	Ui::StartCachedCorners();
 	Ui::Emoji::Init();
 	startEmojiImageLoader();
 	startSystemDarkModeViewer();
@@ -231,6 +255,7 @@ void Application::run() {
 
 	DEBUG_LOG(("Application Info: inited..."));
 
+	cChangeDateFormat(QLocale::system().dateFormat(QLocale::ShortFormat));
 	cChangeTimeFormat(QLocale::system().timeFormat(QLocale::ShortFormat));
 
 	DEBUG_LOG(("Application Info: starting app..."));
@@ -260,14 +285,13 @@ void Application::run() {
 
 	// Depend on activeWindow() for now :(
 	startShortcuts();
-	App::initMedia();
 	startDomain();
 
 	_window->widget()->show();
 
 	const auto currentGeometry = _window->widget()->geometry();
 	_mediaView = std::make_unique<Media::View::OverlayWidget>();
-	_window->widget()->setGeometry(currentGeometry);
+	_window->widget()->Ui::RpWidget::setGeometry(currentGeometry);
 
 	DEBUG_LOG(("Application Info: showing."));
 	_window->finishFirstShow();
@@ -282,6 +306,7 @@ void Application::run() {
 		LOG(("Shortcuts Error: %1").arg(error));
 	}
 
+	SetCrashAnnotationsGL();
 	if (!Platform::IsMac() && Ui::GL::LastCrashCheckFailed()) {
 		showOpenGLCrashNotification();
 	}
@@ -292,6 +317,14 @@ void Application::run() {
 			_mediaView->show(std::move(request));
 		}
 	}, _window->lifetime());
+
+	{
+		const auto countries = std::make_shared<Countries::Manager>(
+			_domain.get());
+		countries->lifetime().add([=] {
+			[[maybe_unused]] const auto countriesCopy = countries;
+		});
+	}
 }
 
 void Application::showOpenGLCrashNotification() {
@@ -308,7 +341,7 @@ void Application::showOpenGLCrashNotification() {
 		Core::App().settings().setDisableOpenGL(true);
 		Local::writeSettings();
 	};
-	_window->show(Box<ConfirmBox>(
+	_window->show(Box<Ui::ConfirmBox>(
 		"There may be a problem with your graphics drivers and OpenGL. "
 		"Try updating your drivers.\n\n"
 		"OpenGL has been disabled. You can try to enable it again "
@@ -388,15 +421,6 @@ bool Application::hideMediaView() {
 		return true;
 	}
 	return false;
-}
-
-PeerData *Application::ui_getPeerForMouseAction() {
-	if (_mediaView && !_mediaView->isHidden()) {
-		return _mediaView->ui_getPeerForMouseAction();
-	} else if (const auto m = App::main()) { // multi good
-		return m->ui_getPeerForMouseAction();
-	}
-	return nullptr;
 }
 
 bool Application::eventFilter(QObject *object, QEvent *e) {
@@ -509,7 +533,7 @@ void Application::badMtprotoConfigurationError() {
 				_settings.proxy().selected(),
 				MTP::ProxyData::Settings::System);
 		};
-		_badProxyDisableBox = Ui::show(Box<InformBox>(
+		_badProxyDisableBox = Ui::show(Box<Ui::InformBox>(
 			Lang::Hard::ProxyConfigError(),
 			disableCallback));
 	}
@@ -608,7 +632,7 @@ void Application::logout(Main::Account *account) {
 void Application::forceLogOut(
 		not_null<Main::Account*> account,
 		const TextWithEntities &explanation) {
-	const auto box = Ui::show(Box<InformBox>(
+	const auto box = Ui::show(Box<Ui::InformBox>(
 		explanation,
 		tr::lng_passcode_logout(tr::now)));
 	box->setCloseByEscape(false);
@@ -802,7 +826,7 @@ bool Application::openCustomUrl(
 		|| passcodeLocked()) {
 		return false;
 	}
-	const auto command = urlTrimmed.midRef(protocol.size(), 8192);
+	const auto command = base::StringViewMid(urlTrimmed, protocol.size(), 8192);
 	const auto controller = _window ? _window->sessionController() : nullptr;
 
 	using namespace qthelp;
@@ -1004,7 +1028,7 @@ void Application::registerLeaveSubscription(not_null<QWidget*> widget) {
 			const auto check = [=](not_null<QEvent*> e) {
 				if (e->type() == QEvent::Leave) {
 					if (const auto taken = _leaveFilters.take(window)) {
-						for (const auto weak : taken->registered) {
+						for (const auto &weak : taken->registered) {
 							if (const auto widget = weak.data()) {
 								QEvent ev(QEvent::Leave);
 								QCoreApplication::sendEvent(widget, &ev);
@@ -1056,7 +1080,7 @@ void Application::QuitAttempt() {
 	if (!IsAppLaunched()
 		|| Sandbox::Instance().isSavingSession()
 		|| App().readyToQuit()) {
-		QApplication::quit();
+		Sandbox::QuitWhenStarted();
 	}
 }
 
@@ -1092,7 +1116,7 @@ void Application::quitPreventFinished() {
 
 void Application::quitDelayed() {
 	if (!_private->quitTimer.isActive()) {
-		_private->quitTimer.setCallback([] { QApplication::quit(); });
+		_private->quitTimer.setCallback([] { Sandbox::QuitWhenStarted(); });
 		_private->quitTimer.callOnce(kQuitPreventTimeoutMs);
 	}
 }
@@ -1128,6 +1152,19 @@ void Application::startShortcuts() {
 			return closeActiveWindow();
 		});
 	}, _lifetime);
+}
+
+void Application::RegisterUrlScheme() {
+	base::Platform::RegisterUrlScheme(base::Platform::UrlSchemeDescriptor{
+		.executable = cExeDir() + cExeName(),
+		.arguments = qsl("-workdir \"%1\"").arg(cWorkingDir()),
+		.protocol = qsl("tg"),
+		.protocolName = qsl("Telegram Link"),
+		.shortAppName = qsl("tdesktop"),
+		.longAppName = QCoreApplication::applicationName(),
+		.displayAppName = AppName.utf16(),
+		.displayAppDescription = AppName.utf16(),
+	});
 }
 
 bool IsAppLaunched() {

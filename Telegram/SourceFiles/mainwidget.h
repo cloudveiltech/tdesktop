@@ -7,8 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "base/timer.h"
 #include "base/weak_ptr.h"
+#include "chat_helpers/bot_command.h"
 #include "ui/rp_widget.h"
 #include "ui/effects/animations.h"
 #include "media/player/media_player_float.h"
@@ -24,7 +24,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 struct HistoryMessageMarkupButton;
 class MainWindow;
-class ConfirmBox;
 class HistoryWidget;
 class StackItem;
 struct FileLoadResult;
@@ -37,7 +36,12 @@ class Error;
 
 namespace Api {
 struct SendAction;
+struct SendOptions;
 } // namespace Api
+
+namespace SendMenu {
+enum class Type;
+} // namespace SendMenu
 
 namespace Main {
 class Session;
@@ -45,6 +49,7 @@ class Session;
 
 namespace Data {
 class WallPaper;
+struct ForwardDraft;
 } // namespace Data
 
 namespace Dialogs {
@@ -57,7 +62,6 @@ class Widget;
 namespace Media {
 namespace Player {
 class Widget;
-class VolumeWidget;
 class Panel;
 struct TrackState;
 } // namespace Player
@@ -72,6 +76,7 @@ struct Content;
 } // namespace Export
 
 namespace Ui {
+class ConfirmBox;
 class ResizeArea;
 class PlainShadow;
 class DropdownMenu;
@@ -158,11 +163,14 @@ public:
 	void showBackFromStack(
 		const SectionShow &params);
 	void orderWidgets();
-	QRect historyRect() const;
 	QPixmap grabForShowAnimation(const Window::SectionSlideParams &params);
 	void checkMainSectionToLayer();
 
-	bool sendExistingDocument(not_null<DocumentData*> sticker);
+	[[nodiscard]] SendMenu::Type sendMenuType() const;
+	bool sendExistingDocument(not_null<DocumentData*> document);
+	bool sendExistingDocument(
+		not_null<DocumentData*> document,
+		Api::SendOptions options);
 
 	bool isActive() const;
 	[[nodiscard]] bool doWeMarkAsRead() const;
@@ -171,38 +179,26 @@ public:
 
 	int32 dlgsWidth() const;
 
-	void showForwardLayer(MessageIdsList &&items);
+	void showForwardLayer(Data::ForwardDraft &&draft);
 	void showSendPathsLayer();
 	void shareUrlLayer(const QString &url, const QString &text);
 	void inlineSwitchLayer(const QString &botAndQuery);
 	void hiderLayer(base::unique_qptr<Window::HistoryHider> h);
-	bool setForwardDraft(PeerId peer, MessageIdsList &&items);
+	bool setForwardDraft(PeerId peer, Data::ForwardDraft &&draft);
 	bool shareUrl(
 		PeerId peerId,
 		const QString &url,
 		const QString &text);
-	void replyToItem(not_null<HistoryItem*> item);
 	bool inlineSwitchChosen(PeerId peerId, const QString &botAndQuery);
 	bool sendPaths(PeerId peerId);
 	void onFilesOrForwardDrop(const PeerId &peer, const QMimeData *data);
 	bool selectingPeer() const;
 
-	void deletePhotoLayer(PhotoData *photo);
-
-	// While HistoryInner is not HistoryView::ListWidget.
-	crl::time highlightStartTime(not_null<const HistoryItem*> item) const;
-
-	void sendBotCommand(
-		not_null<PeerData*> peer,
-		UserData *bot,
-		const QString &cmd,
-		MsgId replyTo);
+	void sendBotCommand(Bot::SendCommandRequest request);
 	void hideSingleUseKeyboard(PeerData *peer, MsgId replyTo);
 	bool insertBotCommand(const QString &cmd);
 
 	void searchMessages(const QString &query, Dialogs::Key inChat);
-
-	QPixmap cachedBackground(const QRect &forRect, int &x, int &y);
 
 	void setChatBackground(
 		const Data::WallPaper &background,
@@ -219,8 +215,6 @@ public:
 	void ctrlEnterSubmitUpdated();
 	void setInnerFocus();
 
-	void scheduleViewIncrement(HistoryItem *item);
-
 	bool contentOverlapped(const QRect &globalRect);
 
 	void searchInChat(Dialogs::Key chat);
@@ -231,11 +225,12 @@ public:
 		Fn<void(MessageIdsList)> done);
 	void clearChooseReportMessages();
 
+	void toggleChooseChatTheme(not_null<PeerData*> peer);
+
 	void ui_showPeerHistory(
 		PeerId peer,
 		const SectionShow &params,
 		MsgId msgId);
-	PeerData *ui_getPeerForMouseAction();
 
 	bool notify_switchInlineBotButtonReceived(const QString &query, UserData *samePeerBot, MsgId samePeerReplyTo);
 
@@ -254,28 +249,25 @@ public Q_SLOTS:
 	void inlineResultLoadFailed(FileLoader *loader, bool started);
 
 	void dialogsCancelled();
+
 	//CloudVeil start
 	void requestCloudVeil();
 	void simpleUpdateReceived(UpdateResponse* response);
-        
+
 Q_SIGNALS:
-    void dialogsUpdated();
-    //CloudVeil end
-        
+	void dialogsUpdated();
+	//CloudVeil end
+
 protected:
 	void paintEvent(QPaintEvent *e) override;
 	void resizeEvent(QResizeEvent *e) override;
-	void keyPressEvent(QKeyEvent *e) override;
 	bool eventFilter(QObject *o, QEvent *e) override;
 
 private:
-	void viewsIncrement();
-
 	void animationCallback();
 	void handleAdaptiveLayoutUpdate();
 	void updateWindowAdaptiveLayout();
 	void handleAudioUpdate(const Media::Player::TrackState &state);
-	void updateMediaPlayerPosition();
 	void updateMediaPlaylistPosition(int x);
 	void updateControlsGeometry();
 	void updateDialogsWidthAnimated();
@@ -324,9 +316,6 @@ private:
 	void showAll();
 	void clearHider(not_null<Window::HistoryHider*> instance);
 
-	void cacheBackground();
-	void clearCachedBackground();
-
 	[[nodiscard]] auto floatPlayerDelegate()
 		-> not_null<Media::Player::FloatDelegate*>;
 	not_null<Ui::RpWidget*> floatPlayerWidget() override;
@@ -339,12 +328,6 @@ private:
 	void floatPlayerClosed(FullMsgId itemId);
 	void floatPlayerDoubleClickEvent(
 		not_null<const HistoryItem*> item) override;
-
-	void viewsIncrementDone(
-		QVector<MTPint> ids,
-		const MTPmessages_MessageViews &result,
-		mtpRequestId requestId);
-	void viewsIncrementFail(const MTP::Error &error, mtpRequestId requestId);
 
 	void refreshResizeAreas();
 	template <typename MoveCallback, typename FinishCallback>
@@ -369,7 +352,6 @@ private:
 	bool isThreeColumn() const;
 
 	const not_null<Window::SessionController*> _controller;
-	MTP::Sender _api;
 
 	Ui::Animations::Simple _a_show;
 	bool _showBack = false;
@@ -402,7 +384,6 @@ private:
 
 	object_ptr<Window::TopBarWrapWidget<Media::Player::Widget>> _player
 		= { nullptr };
-	object_ptr<Media::Player::VolumeWidget> _playerVolume = { nullptr };
 	object_ptr<Media::Player::Panel> _playerPlaylist;
 	bool _playerUsingPanel = false;
 
@@ -414,19 +395,7 @@ private:
 	int _exportTopBarHeight = 0;
 	int _contentScrollAddToY = 0;
 
-	QPixmap _cachedBackground;
-	QRect _cachedFor, _willCacheFor;
-	int _cachedX = 0;
-	int _cachedY = 0;
-	base::Timer _cacheBackgroundTimer;
-
 	PhotoData *_deletingPhoto = nullptr;
-
-	base::flat_map<not_null<PeerData*>, base::flat_set<MsgId>> _viewsIncremented;
-	base::flat_map<not_null<PeerData*>, base::flat_set<MsgId>> _viewsToIncrement;
-	base::flat_map<not_null<PeerData*>, mtpRequestId> _viewsIncrementRequests;
-	base::flat_map<mtpRequestId, not_null<PeerData*>> _viewsIncrementByRequest;
-	base::Timer _viewsIncrementTimer;
 
 	struct SettingBackground;
 	std::unique_ptr<SettingBackground> _background;

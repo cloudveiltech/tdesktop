@@ -51,7 +51,7 @@ struct HistoryServiceSelfDestruct
 
 struct HistoryServiceOngoingCall
 : public RuntimeComponent<HistoryServiceOngoingCall, HistoryItem> {
-	uint64 id = 0;
+	CallId id = 0;
 	ClickHandlerPtr link;
 	rpl::lifetime lifetime;
 };
@@ -69,19 +69,20 @@ public:
 
 	HistoryService(
 		not_null<History*> history,
+		MsgId id,
 		const MTPDmessage &data,
-		MTPDmessage_ClientFlags clientFlags);
-	HistoryService(
-		not_null<History*> history,
-		const MTPDmessageService &data,
-		MTPDmessage_ClientFlags clientFlags);
+		MessageFlags localFlags);
 	HistoryService(
 		not_null<History*> history,
 		MsgId id,
-		MTPDmessage_ClientFlags clientFlags,
+		const MTPDmessageService &data,
+		MessageFlags localFlags);
+	HistoryService(
+		not_null<History*> history,
+		MsgId id,
+		MessageFlags flags,
 		TimeId date,
 		const PreparedText &message,
-		MTPDmessage::Flags flags = 0,
 		PeerId from = 0,
 		PhotoData *photo = nullptr);
 
@@ -107,10 +108,10 @@ public:
 	void dependencyItemRemoved(HistoryItem *dependency) override;
 
 	bool needCheck() const override;
-	bool serviceMsg() const override {
+	bool isService() const override {
 		return true;
 	}
-	QString inDialogsText(DrawInDialog way) const override;
+	ItemPreview toPreview(ToPreviewOptions options) const override;
 	QString inReplyText() const override;
 
 	std::unique_ptr<HistoryView::Element> createView(
@@ -162,8 +163,8 @@ private:
 	PreparedText prepareGameScoreText();
 	PreparedText preparePaymentSentText();
 	PreparedText prepareInvitedToCallText(
-		const QVector<MTPint> &users,
-		uint64 linkCallId);
+		const QVector<MTPlong> &users,
+		CallId linkCallId);
 	PreparedText prepareCallScheduledText(
 		TimeId scheduleDate);
 
@@ -175,7 +176,7 @@ private:
 	not_null<History*> history,
 	TimeId inviteDate,
 	not_null<UserData*> inviter,
-	MTPDmessage::Flags flags);
+	bool viaRequest);
 [[nodiscard]] std::optional<bool> PeerHasThisCall(
 	not_null<PeerData*> peer,
-	uint64 id);
+	CallId id);

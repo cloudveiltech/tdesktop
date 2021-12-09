@@ -8,9 +8,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "ui/rp_widget.h"
+#include "chat_helpers/bot_command.h"
 #include "dialogs/dialogs_key.h"
 #include "media/player/media_player_float.h" // FloatSectionDelegate
 #include "base/object_ptr.h"
+#include "window/window_section_common.h"
+
+class PeerData;
 
 namespace Main {
 class Session;
@@ -18,6 +22,7 @@ class Session;
 
 namespace Ui {
 class LayerWidget;
+class ChatTheme;
 } // namespace Ui
 
 namespace Window {
@@ -40,10 +45,8 @@ class AbstractSectionWidget
 public:
 	AbstractSectionWidget(
 		QWidget *parent,
-		not_null<SessionController*> controller)
-	: RpWidget(parent)
-	, _controller(controller) {
-	}
+		not_null<SessionController*> controller,
+		rpl::producer<PeerData*> peerForBackground);
 
 	[[nodiscard]] Main::Session &session() const;
 	[[nodiscard]] not_null<SessionController*> controller() const {
@@ -82,7 +85,12 @@ class SectionWidget : public AbstractSectionWidget {
 public:
 	SectionWidget(
 		QWidget *parent,
-		not_null<SessionController*> controller);
+		not_null<SessionController*> controller,
+		rpl::producer<PeerData*> peerForBackground = nullptr);
+	SectionWidget(
+		QWidget *parent,
+		not_null<SessionController*> controller,
+		not_null<PeerData*> peerForBackground);
 
 	virtual Dialogs::RowDescriptor activeChat() const {
 		return {};
@@ -125,12 +133,14 @@ public:
 		return false;
 	}
 
-	virtual bool replyToMessage(not_null<HistoryItem*> item) {
+	virtual bool preventsClose(Fn<void()> &&continueCallback) const {
 		return false;
 	}
 
-	virtual bool preventsClose(Fn<void()> &&continueCallback) const {
-		return false;
+	// Send bot command from peer info or media viewer.
+	virtual SectionActionResult sendBotCommand(
+			Bot::SendCommandRequest request) {
+		return SectionActionResult::Ignore;
 	}
 
 	// Create a memento of that section to store it in the history stack.
@@ -151,6 +161,7 @@ public:
 
 	static void PaintBackground(
 		not_null<SessionController*> controller,
+		not_null<Ui::ChatTheme*> theme,
 		not_null<QWidget*> widget,
 		QRect clip);
 
@@ -191,5 +202,10 @@ private:
 	int _topDelta = 0;
 
 };
+
+[[nodiscard]] auto ChatThemeValueFromPeer(
+	not_null<SessionController*> controller,
+	not_null<PeerData*> peer)
+-> rpl::producer<std::shared_ptr<Ui::ChatTheme>>;
 
 } // namespace Window

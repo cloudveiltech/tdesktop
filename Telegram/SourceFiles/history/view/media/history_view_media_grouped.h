@@ -31,12 +31,11 @@ public:
 
 	void refreshParentId(not_null<HistoryItem*> realParent) override;
 
-	void drawHighlight(Painter &p, int top) const override;
-	void draw(
+	void drawHighlight(
 		Painter &p,
-		const QRect &clip,
-		TextSelection selection,
-		crl::time ms) const override;
+		const PaintContext &context,
+		int top) const override;
+	void draw(Painter &p, const PaintContext &context) const override;
 	PointState pointState(QPoint point) const override;
 	TextState textState(
 		QPoint point,
@@ -57,7 +56,7 @@ public:
 
 	TextForMimeData selectedText(TextSelection selection) const override;
 
-	std::vector<BubbleSelectionInterval> getBubbleSelectionIntervals(
+	std::vector<Ui::BubbleSelectionInterval> getBubbleSelectionIntervals(
 		TextSelection selection) const override;
 
 	void clickHandlerActiveChanged(
@@ -91,7 +90,6 @@ public:
 	bool customHighlight() const override {
 		return true;
 	}
-	bool hideForwardedFrom() const override;
 
 	void stopAnimation() override;
 	void checkAnimation() override;
@@ -143,6 +141,7 @@ private:
 	[[nodiscard]] QMargins groupedPadding() const;
 
 	Ui::Text::String _caption;
+	HistoryItem *_captionItem = nullptr;
 	std::vector<Part> _parts;
 	Mode _mode = Mode::Grid;
 	bool _needBubble = false;

@@ -6,16 +6,23 @@
 
 set(DESKTOP_APP_SPECIAL_TARGET "" CACHE STRING "Use special platform target, like 'macstore' for Mac App Store.")
 
+set(default_to_qt6 1)
+if (WIN32)
+    set(default_to_qt6 0)
+endif()
+option(DESKTOP_APP_QT6 "Build with Qt 6" ${default_to_qt6})
+
 function(report_bad_special_target)
     if (NOT DESKTOP_APP_SPECIAL_TARGET STREQUAL "")
         message(FATAL_ERROR "Bad special target '${DESKTOP_APP_SPECIAL_TARGET}'")
     endif()
 endfunction()
 
-if (NOT DESKTOP_APP_SPECIAL_TARGET STREQUAL "osx")
-    set(CMAKE_OSX_DEPLOYMENT_TARGET 10.12 CACHE STRING "Minimum OS X deployment version" FORCE)
+set(CMAKE_OSX_DEPLOYMENT_TARGET 10.12 CACHE STRING "Minimum macOS deployment version" FORCE)
+if (DESKTOP_APP_QT6)
+    set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64" CACHE STRING "Target macOS architectures" FORCE)
 else()
-    set(CMAKE_OSX_DEPLOYMENT_TARGET 10.10 CACHE STRING "Minimum OS X deployment version" FORCE)
+    set(CMAKE_OSX_ARCHITECTURES "x86_64" CACHE STRING "Target macOS architectures" FORCE)
 endif()
 
 if (WIN32)
@@ -26,15 +33,13 @@ if (WIN32)
         report_bad_special_target()
     endif()
 elseif (APPLE)
-    if (NOT DESKTOP_APP_SPECIAL_TARGET STREQUAL "osx"
-        AND NOT DESKTOP_APP_SPECIAL_TARGET STREQUAL "macstore"
+    if (NOT DESKTOP_APP_SPECIAL_TARGET STREQUAL "macstore"
         AND NOT DESKTOP_APP_SPECIAL_TARGET STREQUAL "mac")
         report_bad_special_target()
     endif()
 else()
     set(LINUX 1)
-    if (NOT DESKTOP_APP_SPECIAL_TARGET STREQUAL "linux"
-        AND NOT DESKTOP_APP_SPECIAL_TARGET STREQUAL "linux32")
+    if (NOT DESKTOP_APP_SPECIAL_TARGET STREQUAL "linux")
         report_bad_special_target()
     endif()
 endif()

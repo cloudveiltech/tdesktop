@@ -14,6 +14,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 struct WebPageData;
 class VoiceSeekClickHandler;
 
+namespace Ui {
+struct ChatPaintContext;
+class ChatStyle;
+} // namespace Ui
+
 namespace Data {
 class Session;
 } // namespace Data
@@ -49,6 +54,7 @@ struct HistoryMessageViews : public RuntimeComponent<HistoryMessageViews, Histor
 	MsgId repliesInboxReadTillId = 0;
 	MsgId repliesOutboxReadTillId = 0;
 	MsgId repliesMaxId = 0;
+	int repliesUnreadCount = -1; // unknown
 	ChannelId commentsMegagroupId = 0;
 	MsgId commentsRootId = 0;
 };
@@ -68,6 +74,15 @@ struct HistoryMessageEdited : public RuntimeComponent<HistoryMessageEdited, Hist
 	int maxWidth() const;
 
 	TimeId date = 0;
+	Ui::Text::String text;
+};
+
+struct HistoryMessageSponsored : public RuntimeComponent<
+		HistoryMessageSponsored,
+		HistoryItem> {
+	HistoryMessageSponsored();
+	int maxWidth() const;
+
 	Ui::Text::String text;
 };
 
@@ -115,6 +130,7 @@ struct HistoryMessageReply : public RuntimeComponent<HistoryMessageReply, Histor
 		replyToMsgId = other.replyToMsgId;
 		replyToMsgTop = other.replyToMsgTop;
 		replyToDocumentId = other.replyToDocumentId;
+		replyToWebPageId = other.replyToWebPageId;
 		std::swap(replyToMsg, other.replyToMsg);
 		replyToLnk = std::move(other.replyToLnk);
 		replyToName = std::move(other.replyToName);
@@ -140,19 +156,14 @@ struct HistoryMessageReply : public RuntimeComponent<HistoryMessageReply, Histor
 	void resize(int width) const;
 	void itemRemoved(HistoryMessage *holder, HistoryItem *removed);
 
-	enum class PaintFlag {
-		InBubble = (1 << 0),
-		Selected = (1 << 1),
-	};
-	using PaintFlags = base::flags<PaintFlag>;
-	friend inline constexpr auto is_flag_type(PaintFlag) { return true; };
 	void paint(
 		Painter &p,
 		not_null<const HistoryView::Element*> holder,
+		const Ui::ChatPaintContext &context,
 		int x,
 		int y,
 		int w,
-		PaintFlags flags) const;
+		bool inBubble) const;
 
 	[[nodiscard]] PeerId replyToPeer() const {
 		return replyToPeerId;
@@ -172,13 +183,14 @@ struct HistoryMessageReply : public RuntimeComponent<HistoryMessageReply, Histor
 	void setReplyToLinkFrom(
 		not_null<HistoryMessage*> holder);
 
-	void refreshReplyToDocument();
+	void refreshReplyToMedia();
 
 	PeerId replyToPeerId = 0;
 	MsgId replyToMsgId = 0;
 	MsgId replyToMsgTop = 0;
 	HistoryItem *replyToMsg = nullptr;
 	DocumentId replyToDocumentId = 0;
+	WebPageId replyToWebPageId = 0;
 	ClickHandlerPtr replyToLnk;
 	mutable Ui::Text::String replyToName, replyToText;
 	mutable int replyToVersion = 0;
@@ -188,65 +200,19 @@ struct HistoryMessageReply : public RuntimeComponent<HistoryMessageReply, Histor
 
 };
 
-struct HistoryMessageMarkupButton {
-	enum class Type {
-		Default,
-		Url,
-		Callback,
-		CallbackWithPassword,
-		RequestPhone,
-		RequestLocation,
-		RequestPoll,
-		SwitchInline,
-		SwitchInlineSame,
-		Game,
-		Buy,
-		Auth,
-	};
-
-	HistoryMessageMarkupButton(
-		Type type,
-		const QString &text,
-		const QByteArray &data = QByteArray(),
-		const QString &forwardText = QString(),
-		int32 buttonId = 0);
-
-	static HistoryMessageMarkupButton *Get(
-		not_null<Data::Session*> owner,
-		FullMsgId itemId,
-		int row,
-		int column);
-
-	Type type;
-	QString text, forwardText;
-	QByteArray data;
-	int32 buttonId = 0;
-	mutable mtpRequestId requestId = 0;
-
-};
-
-struct HistoryMessageReplyMarkup : public RuntimeComponent<HistoryMessageReplyMarkup, HistoryItem> {
+struct HistoryMessageReplyMarkup
+	: public RuntimeComponent<HistoryMessageReplyMarkup, HistoryItem> {
 	using Button = HistoryMessageMarkupButton;
 
-	HistoryMessageReplyMarkup() = default;
-	HistoryMessageReplyMarkup(MTPDreplyKeyboardMarkup::Flags f) : flags(f) {
-	}
+	void createForwarded(const HistoryMessageReplyMarkup &original);
+	void updateData(HistoryMessageMarkupData &&markup);
 
-	void create(const MTPReplyMarkup &markup);
-	void create(const HistoryMessageReplyMarkup &markup);
-
-	std::vector<std::vector<Button>> rows;
-	MTPDreplyKeyboardMarkup::Flags flags = 0;
-	QString placeholder;
-
+	HistoryMessageMarkupData data;
 	std::unique_ptr<ReplyKeyboard> inlineKeyboard;
-
-private:
-	void createFromButtonRows(const QVector<MTPKeyboardButtonRow> &v);
 
 };
 
-class ReplyMarkupClickHandler : public LeftButtonClickHandler {
+class ReplyMarkupClickHandler : public ClickHandler {
 public:
 	ReplyMarkupClickHandler(
 		not_null<Data::Session*> owner,
@@ -278,8 +244,7 @@ public:
 		_itemId = msgId;
 	}
 
-protected:
-	void onClickImpl() const override;
+	void onClick(ClickContext context) const override;
 
 private:
 	const not_null<Data::Session*> _owner;
@@ -303,7 +268,9 @@ public:
 		Style(const style::BotKeyboardButton &st) : _st(&st) {
 		}
 
-		virtual void startPaint(Painter &p) const = 0;
+		virtual void startPaint(
+			Painter &p,
+			const Ui::ChatStyle *st) const = 0;
 		virtual const style::TextStyle &textStyle() const = 0;
 
 		int buttonSkip() const;
@@ -318,15 +285,18 @@ public:
 	protected:
 		virtual void paintButtonBg(
 			Painter &p,
+			const Ui::ChatStyle *st,
 			const QRect &rect,
 			float64 howMuchOver) const = 0;
 		virtual void paintButtonIcon(
 			Painter &p,
+			const Ui::ChatStyle *st,
 			const QRect &rect,
 			int outerWidth,
 			HistoryMessageMarkupButton::Type type) const = 0;
 		virtual void paintButtonLoading(
 			Painter &p,
+			const Ui::ChatStyle *st,
 			const QRect &rect) const = 0;
 		virtual int minButtonWidth(
 			HistoryMessageMarkupButton::Type type) const = 0;
@@ -334,7 +304,11 @@ public:
 	private:
 		const style::BotKeyboardButton *_st;
 
-		void paintButton(Painter &p, int outerWidth, const ReplyKeyboard::Button &button) const;
+		void paintButton(
+			Painter &p,
+			const Ui::ChatStyle *st,
+			int outerWidth,
+			const ReplyKeyboard::Button &button) const;
 		friend class ReplyKeyboard;
 
 	};
@@ -353,7 +327,11 @@ public:
 	int naturalWidth() const;
 	int naturalHeight() const;
 
-	void paint(Painter &p, int outerWidth, const QRect &clip) const;
+	void paint(
+		Painter &p,
+		const Ui::ChatStyle *st,
+		int outerWidth,
+		const QRect &clip) const;
 	ClickHandlerPtr getLink(QPoint point) const;
 
 	void clickHandlerActiveChanged(const ClickHandlerPtr &p, bool active);

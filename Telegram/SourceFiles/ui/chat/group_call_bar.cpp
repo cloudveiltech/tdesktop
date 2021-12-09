@@ -63,7 +63,7 @@ rpl::producer<bool> GroupCallScheduledLeft::late() const {
 void GroupCallScheduledLeft::update() {
 	const auto now = crl::now();
 	const auto duration = (_datePrecise - now);
-	const auto left = crl::time(std::round(std::abs(duration) / 1000.));
+	const auto left = crl::time(base::SafeRound(std::abs(duration) / 1000.));
 	const auto late = (duration < 0) && (left > 0);
 	_late = late;
 	constexpr auto kDay = 24 * 60 * 60;
@@ -275,9 +275,13 @@ void GroupCallBar::paint(Painter &p) {
 		titleTop,
 		width,
 		(!_content.scheduleDate
-			? tr::lng_group_call_title(tr::now)
+			? (_content.livestream
+				? tr::lng_group_call_title_channel
+				: tr::lng_group_call_title)(tr::now)
 			: _content.title.isEmpty()
-			? tr::lng_group_call_scheduled_title(tr::now)
+			? (_content.livestream
+				? tr::lng_group_call_scheduled_title_channel
+				: tr::lng_group_call_scheduled_title)(tr::now)
 			: (titleWidth > available)
 			? font->elided(_content.title, available)
 			: _content.title));
@@ -315,6 +319,8 @@ void GroupCallBar::paint(Painter &p) {
 		(_content.scheduleDate
 			? (_content.title.isEmpty()
 				? tr::lng_group_call_starts_short
+				: _content.livestream
+				? tr::lng_group_call_starts_channel
 				: tr::lng_group_call_starts)(tr::now, lt_when, when)
 			: _content.count > 0
 			? tr::lng_group_call_members(tr::now, lt_count, _content.count)

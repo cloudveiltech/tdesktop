@@ -15,8 +15,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "webrtc/webrtc_video_track.h"
 #include "styles/style_calls.h"
 
-#include <QtGui/QOpenGLShader>
-#include <QtGui/QOpenGLBuffer>
+#include <QOpenGLShader>
+#include <QOpenGLBuffer>
 
 namespace Calls {
 namespace {
@@ -51,7 +51,7 @@ public:
 
 	void deinit(
 		not_null<QOpenGLWidget*> widget,
-		QOpenGLFunctions &f) override;
+		QOpenGLFunctions *f) override;
 
 	void paint(
 		not_null<QOpenGLWidget*> widget,
@@ -168,7 +168,7 @@ void Panel::Incoming::RendererGL::init(
 
 void Panel::Incoming::RendererGL::deinit(
 		not_null<QOpenGLWidget*> widget,
-		QOpenGLFunctions &f) {
+		QOpenGLFunctions *f) {
 	_textures.destroy(f);
 	_imageProgram = std::nullopt;
 	_texturedVertexShader = nullptr;

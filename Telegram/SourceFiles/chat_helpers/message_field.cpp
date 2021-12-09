@@ -30,6 +30,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_layers.h"
 #include "styles/style_boxes.h"
 #include "styles/style_chat.h"
+#include "base/qt_adapters.h"
 
 #include <QtCore/QMimeData>
 #include <QtCore/QStack>
@@ -94,7 +95,7 @@ QString FieldTagMimeProcessor::tagFromMimeTag(const QString &mimeTag) {
 		const auto userId = _controller->session().userId();
 		auto match = QRegularExpression(":(\\d+)$").match(mimeTag);
 		if (!match.hasMatch()
-			|| match.capturedRef(1).toULongLong() != userId.bare) {
+			|| match.capturedView(1).toULongLong() != userId.bare) {
 			return QString();
 		}
 		return mimeTag.mid(0, mimeTag.size() - match.capturedLength());
@@ -332,7 +333,7 @@ void InitSpellchecker(
 
 bool HasSendText(not_null<const Ui::InputField*> field) {
 	const auto &text = field->getTextWithTags().text;
-	for (const auto ch : text) {
+	for (const auto &ch : text) {
 		const auto code = ch.unicode();
 		if (code != ' '
 			&& code != '\n'
@@ -381,7 +382,7 @@ InlineBotQuery ParseInlineBotQuery(
 					< inlineUsernameStart + inlineUsernameLength)) {
 				return InlineBotQuery();
 			}
-			auto username = text.midRef(inlineUsernameStart, inlineUsernameLength);
+			auto username = base::StringViewMid(text, inlineUsernameStart, inlineUsernameLength);
 			if (username != result.username) {
 				result.username = username.toString();
 				if (const auto peer = session->data().peerByUsername(result.username)) {
@@ -407,7 +408,7 @@ InlineBotQuery ParseInlineBotQuery(
 				result.query = inlineUsernameEqualsText
 					? QString()
 					: text.mid(inlineUsernameEnd + 1);
-				
+
 				//CloudVeil start
 				if (!GlobalSecuritySettings::getSettings().isDialogAllowed(result.bot)) {
 					GlobalSecuritySettings::getInstance()->addAdditionalDataToRequest(result.bot);
@@ -674,7 +675,7 @@ void MessageLinksParser::parse() {
 			}
 		}
 		const auto range = LinkRange {
-			domainOffset,
+			int(domainOffset),
 			static_cast<int>(p - start - domainOffset),
 			QString()
 		};
@@ -698,8 +699,8 @@ void MessageLinksParser::apply(
 	const auto current = _list.current();
 	const auto computeLink = [&](const LinkRange &range) {
 		return range.custom.isEmpty()
-			? text.midRef(range.start, range.length)
-			: range.custom.midRef(0);
+			? base::StringViewMid(text, range.start, range.length)
+			: QStringView(range.custom);
 	};
 	const auto changed = [&] {
 		if (current.size() != count) {

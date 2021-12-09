@@ -16,7 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_peer.h"
 #include "styles/style_calls.h"
 
-#include <QtGui/QOpenGLShader>
+#include <QOpenGLShader>
 
 namespace Calls::Group {
 namespace {
@@ -242,7 +242,7 @@ vec4 background() {
 		QSize outer,
 		float factor) {
 	factor *= kBlurTextureSizeFactor;
-	const auto area = outer / int(std::round(factor * cScale() / 100));
+	const auto area = outer / int(base::SafeRound(factor * cScale() / 100));
 	const auto scaled = unscaled.scaled(area, Qt::KeepAspectRatio);
 	return (scaled.width() > unscaled.width()
 		|| scaled.height() > unscaled.height())
@@ -398,7 +398,7 @@ void Viewport::RendererGL::ensureARGB32Program() {
 
 void Viewport::RendererGL::deinit(
 		not_null<QOpenGLWidget*> widget,
-		QOpenGLFunctions &f) {
+		QOpenGLFunctions *f) {
 	_frameBuffer = std::nullopt;
 	_frameVertexShader = nullptr;
 	_imageProgram = std::nullopt;
@@ -462,19 +462,11 @@ void Viewport::RendererGL::validateUserpicFrame(
 	} else if (!tileData.userpicFrame.isNull()) {
 		return;
 	}
-	tileData.userpicFrame = QImage(
-		tile->trackOrUserpicSize(),
-		QImage::Format_ARGB32_Premultiplied);
-	tileData.userpicFrame.fill(Qt::black);
-	{
-		auto p = Painter(&tileData.userpicFrame);
-		tile->row()->peer()->paintUserpicSquare(
-			p,
-			tile->row()->ensureUserpicView(),
-			0,
-			0,
-			tileData.userpicFrame.width());
-	}
+	const auto size = tile->trackOrUserpicSize();
+	tileData.userpicFrame = tile->row()->peer()->generateUserpicImage(
+		tile->row()->ensureUserpicView(),
+		size.width(),
+		ImageRoundRadius::None);
 }
 
 void Viewport::RendererGL::paintTile(

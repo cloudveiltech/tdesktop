@@ -31,6 +31,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QtGui/QSessionManager>
 #include <QtGui/QScreen>
+#include <qpa/qplatformscreen.h>
 
 namespace Core {
 namespace {
@@ -76,6 +77,8 @@ QString _escapeFrom7bit(const QString &str) {
 }
 
 } // namespace
+
+bool Sandbox::QuitOnStartRequested = false;
 
 Sandbox::Sandbox(
 	not_null<Core::Launcher*> launcher,
@@ -154,7 +157,20 @@ int Sandbox::start() {
 		_localSocket.connectToServer(_localServerName);
 	}
 
+	if (QuitOnStartRequested) {
+		closeApplication();
+		return 0;
+	}
+	_started = true;
 	return exec();
+}
+
+void Sandbox::QuitWhenStarted() {
+	if (!QApplication::instance() || !Instance()._started) {
+		QuitOnStartRequested = true;
+	} else {
+		quit();
+	}
 }
 
 void Sandbox::launchApplication() {
@@ -183,7 +199,11 @@ void Sandbox::launchApplication() {
 }
 
 void Sandbox::setupScreenScale() {
-	const auto dpi = Sandbox::primaryScreen()->logicalDotsPerInch();
+	const auto processDpi = [](const QDpi &dpi) {
+		return (dpi.first + dpi.second) * qreal(0.5);
+	};
+	const auto dpi = processDpi(
+		Sandbox::primaryScreen()->handle()->logicalDpi());
 	LOG(("Primary screen DPI: %1").arg(dpi));
 	if (dpi <= 108) {
 		cSetScreenScale(100); // 100%:  96 DPI (0-108)
@@ -237,6 +257,8 @@ void Sandbox::socketConnected() {
 	}
 	if (!cStartUrl().isEmpty()) {
 		commands += qsl("OPEN:") + _escapeTo7bit(cStartUrl()) + ';';
+	} else if (cQuit()) {
+		commands += qsl("CMD:quit;");
 	} else {
 		commands += qsl("CMD:show;");
 	}
@@ -263,7 +285,10 @@ void Sandbox::socketReading() {
 	}
 	_localSocketReadData.append(_localSocket.readAll());
 	if (QRegularExpression("RES:(\\d+);").match(_localSocketReadData).hasMatch()) {
-		uint64 pid = _localSocketReadData.midRef(4, _localSocketReadData.length() - 5).toULongLong();
+		uint64 pid = base::StringViewMid(
+			_localSocketReadData,
+			4,
+			_localSocketReadData.length() - 5).toULongLong();
 		if (pid != kEmptyPidForCommandResponse) {
 			psActivateProcess(pid);
 		}
@@ -302,6 +327,10 @@ void Sandbox::socketError(QLocalSocket::LocalSocketError e) {
 		&& Core::checkReadyUpdate()) {
 		cSetRestartingUpdate(true);
 		DEBUG_LOG(("Sandbox Info: installing update instead of starting app..."));
+		return App::quit();
+	}
+
+	if (cQuit()) {
 		return App::quit();
 	}
 
@@ -382,7 +411,7 @@ void Sandbox::readClients() {
 			QString cmds(QString::fromLatin1(i->second));
 			int32 from = 0, l = cmds.length();
 			for (int32 to = cmds.indexOf(QChar(';'), from); to >= from; to = (from < l) ? cmds.indexOf(QChar(';'), from) : -1) {
-				QStringRef cmd(&cmds, from, to - from);
+				auto cmd = base::StringViewMid(cmds, from, to - from);
 				if (cmd.startsWith(qsl("CMD:"))) {
 					execExternal(cmds.mid(from + 4, to - from - 4));
 					const auto response = qsl("RES:%1;").arg(QApplication::applicationPid()).toLatin1();
@@ -403,7 +432,7 @@ void Sandbox::readClients() {
 					const auto response = qsl("RES:%1;").arg(responsePid).toLatin1();
 					i->first->write(response.data(), response.size());
 				} else {
-					LOG(("Sandbox Error: unknown command %1 passed in local socket").arg(QString(cmd.constData(), cmd.length())));
+					LOG(("Sandbox Error: unknown command %1 passed in local socket").arg(cmd.toString()));
 				}
 				from = to + 1;
 			}
@@ -565,7 +594,7 @@ void Sandbox::processPostponedCalls(int level) {
 bool Sandbox::nativeEventFilter(
 		const QByteArray &eventType,
 		void *message,
-		long *result) {
+		base::NativeEventResult *result) {
 	registerEnterFromEventLoop();
 	return false;
 }
@@ -605,6 +634,8 @@ void Sandbox::execExternal(const QString &cmd) {
 		} else if (PreLaunchWindow::instance()) {
 			PreLaunchWindow::instance()->activate();
 		}
+	} else if (cmd == "quit") {
+		App::quit();
 	}
 }
 
@@ -617,11 +648,3 @@ rpl::producer<> on_main_update_requests() {
 }
 
 } // namespace crl
-
-namespace base {
-
-void EnterFromEventLoop(FnMut<void()> &&method) {
-	Core::Sandbox::Instance().customEnterFromEventLoop(std::move(method));
-}
-
-} // namespace base

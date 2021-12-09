@@ -12,6 +12,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/text_options.h"
 #include "ui/image/image_prepare.h"
 #include "ui/emoji_config.h"
+#include "ui/chat/chat_theme.h"
+#include "ui/image/image_prepare.h"
 #include "styles/style_widgets.h"
 #include "styles/style_window.h"
 #include "styles/style_media_view.h"
@@ -31,7 +33,7 @@ QString fillLetters(const QString &name) {
 	auto ch = name.constData(), end = ch + name.size();
 	while (ch != end) {
 		auto emojiLength = 0;
-		if (auto emoji = Ui::Emoji::Find(ch, end, &emojiLength)) {
+		if (Ui::Emoji::Find(ch, end, &emojiLength)) {
 			ch += emojiLength;
 		} else if (ch->isHighSurrogate()) {
 			++ch;
@@ -243,10 +245,8 @@ void Generator::addAudioBubble(QVector<int> waveform, int waveactive, QString wa
 	auto skipBlock = computeSkipBlock(status, date);
 
 	auto width = st::msgFileMinWidth;
-	auto tleft = 0, tright = 0;
 	const auto &st = st::msgFileLayout;
-	tleft = st.padding.left() + st.thumbSize + st.padding.right();
-	tright = st.padding.left();
+	auto tleft = st.padding.left() + st.thumbSize + st.padding.right();
 	accumulate_max(width, tleft + st::normalFont->width(wavestatus) + skipBlock.width() + st::msgPadding.right());
 	accumulate_min(width, st::msgMaxWidth);
 
@@ -311,7 +311,7 @@ void Generator::addPhotoBubble(QString image, QString caption, QString date, Sta
 
 void Generator::generateData() {
 	_rows.reserve(9);
-	addRow("Eva Summer", 0, "11:00", "Reminds me of a Chinese proverb: the best time to plant a tree was 20 years ago.");
+	addRow("Eva Summer", 0, "11:00", "We are too smart for this world. " + QString::fromUtf8("\xf0\x9f\xa4\xa3\xf0\x9f\x98\x82"));
 	_rows.back().active = true;
 	_rows.back().pinned = true;
 	addRow("Alexandra Smith", 7, "10:00", "This is amazing!");
@@ -333,7 +333,7 @@ void Generator::generateData() {
 	_topBarStatus = "online";
 	_topBarStatusActive = true;
 
-	addPhotoBubble(":/gui/art/sunrise.jpg", "Nearly missed this sunrise", "7:00", Status::None);
+	addPhotoBubble(":/gui/art/themeimage.jpg", "To reach a port, we must sail. " + QString::fromUtf8("\xf0\x9f\xa5\xb8"), "7:00", Status::None);
 	int wavedata[] = { 0, 0, 0, 0, 27, 31, 4, 1, 0, 0, 23, 30, 18, 9, 7, 19, 4, 2, 2, 2, 0, 0, 15, 15, 15, 15, 3, 15, 19, 3, 2, 0, 0, 0, 0, 0, 3, 12, 16, 6, 4, 6, 14, 12, 2, 12, 12, 11, 3, 0, 7, 5, 7, 4, 7, 5, 2, 4, 0, 9, 5, 7, 6, 2, 2, 0, 0 };
 	auto waveform = QVector<int>(base::array_size(wavedata));
 	memcpy(waveform.data(), wavedata, sizeof(wavedata));
@@ -341,16 +341,16 @@ void Generator::generateData() {
 	_bubbles.back().outbg = true;
 	_bubbles.back().status = Status::Received;
 	addDateBubble("December 26");
-	addTextBubble("Twenty years from now you will be more disappointed by the things that you didn't do than by the ones you did do, so throw off the bowlines, sail away from safe harbor, catch the trade winds in your sails.", "10:00", Status::Received);
+	addTextBubble("Twenty years from now you will be more disappointed by the things that you didn't do than by the ones you did do. " + QString::fromUtf8("\xf0\x9f\xa7\x90"), "10:00", Status::Received);
 	_bubbles.back().tail = false;
 	_bubbles.back().outbg = true;
-	addTextBubble("Mark Twain said that " + QString() + QChar(9757) + QChar(55356) + QChar(57339), "10:00", Status::Received);
+	addTextBubble("Mark Twain said that " + QString::fromUtf8("\xe2\x98\x9d\xef\xb8\x8f"), "10:00", Status::Received);
 	_bubbles.back().outbg = true;
 	_bubbles.back().attached = true;
 	_bubbles.back().tail = true;
-	addTextBubble("Reminds me of a Chinese proverb: the best time to plant a tree was 20 years ago. The second best time is now.", "11:00", Status::None);
+	addTextBubble("We are too smart for this world. " + QString::fromUtf8("\xf0\x9f\xa4\xa3\xf0\x9f\x98\x82"), "11:00", Status::None);
 	_bubbles.back().replyName.setText(st::msgNameStyle, "Alex Cassio", Ui::NameTextOptions());
-	_bubbles.back().replyText.setText(st::messageTextStyle, "Mark Twain said that " + QString() + QChar(9757) + QChar(55356) + QChar(57339), Ui::DialogTextOptions());
+	_bubbles.back().replyText.setText(st::messageTextStyle, "Mark Twain said that " + QString::fromUtf8("\xe2\x98\x9d\xef\xb8\x8f"), Ui::DialogTextOptions());
 }
 
 Generator::Generator(
@@ -418,7 +418,16 @@ void Generator::paintHistoryBackground() {
 	if (background.isNull()) {
 		const auto fakePaper = Data::WallPaper(_current.backgroundId);
 		if (Data::IsThemeWallPaper(fakePaper)) {
-			background.load(qsl(":/gui/art/bg.jpg"));
+			background = Ui::ReadBackgroundImage(
+				u":/gui/art/background.tgv"_q,
+				QByteArray(),
+				true);
+			const auto paper = Data::DefaultWallPaper();
+			background = Ui::PreparePatternImage(
+				std::move(background),
+				paper.backgroundColors(),
+				paper.gradientRotation(),
+				paper.patternOpacity());
 			tiled = false;
 		} else {
 			background = std::move(_current.backgroundImage);
@@ -457,12 +466,14 @@ void Generator::paintHistoryBackground() {
 	} else {
 		PainterHighQualityEnabler hq(*_p);
 
-		auto fill = QRect(_topBar.x(), _topBar.y(), _topBar.width(), _body.height());
-		QRect to, from;
-		ComputeBackgroundRects(fill, background.size(), to, from);
+		auto fill = QSize(_topBar.width(), _body.height());
+		const auto rects = Ui::ComputeChatBackgroundRects(
+			fill,
+			background.size());
+		auto to = rects.to;
 		to.moveTop(to.top() + fromy);
 		to.moveTopLeft(to.topLeft() + _history.topLeft());
-		_p->drawImage(to, background, from);
+		_p->drawImage(to, background, rects.from);
 	}
 	_p->setClipping(false);
 }
@@ -494,7 +505,13 @@ void Generator::paintComposeArea() {
 	_p->fillRect(_composeArea, st::historyReplyBg[_palette]);
 
 	auto controlsTop = _composeArea.y() + _composeArea.height() - st::historySendSize.height();
-	st::historyAttach.icon[_palette].paint(*_p, _composeArea.x() + st::historyAttach.iconPosition.x(), controlsTop + st::historyAttach.iconPosition.y(), _rect.width());
+	const auto attachIconLeft = (st::historyAttach.iconPosition.x() < 0)
+		? ((st::historyAttach.width - st::historyAttach.icon.width()) / 2)
+		: st::historyAttach.iconPosition.x();
+	const auto attachIconTop = (st::historyAttach.iconPosition.y() < 0)
+		? ((st::historyAttach.height - st::historyAttach.icon.height()) / 2)
+		: st::historyAttach.iconPosition.y();
+	st::historyAttach.icon[_palette].paint(*_p, _composeArea.x() + attachIconLeft, controlsTop + attachIconTop, _rect.width());
 	auto right = st::historySendRight + st::historySendSize.width();
 	st::historyRecordVoice[_palette].paintInCenter(*_p, QRect(_composeArea.x() + _composeArea.width() - right, controlsTop, st::historySendSize.width(), st::historySendSize.height()));
 
@@ -552,7 +569,13 @@ void Generator::paintComposeArea() {
 void Generator::paintDialogs() {
 	_p->fillRect(_dialogs, st::dialogsBg[_palette]);
 
-	st::dialogsMenuToggle.icon[_palette].paint(*_p, _dialogs.x() + st::dialogsFilterPadding.x() + st::dialogsMenuToggle.iconPosition.x(), _dialogs.y() + st::dialogsFilterPadding.y() + st::dialogsMenuToggle.iconPosition.y(), _rect.width());
+	const auto iconLeft = (st::dialogsMenuToggle.iconPosition.x() < 0)
+		? (st::dialogsMenuToggle.width - st::dialogsMenuToggle.icon.width()) / 2
+		: st::dialogsMenuToggle.iconPosition.x();
+	const auto iconTop = (st::dialogsMenuToggle.iconPosition.y() < 0)
+		? (st::dialogsMenuToggle.height - st::dialogsMenuToggle.icon.height()) / 2
+		: st::dialogsMenuToggle.iconPosition.y();
+	st::dialogsMenuToggle.icon[_palette].paint(*_p, _dialogs.x() + st::dialogsFilterPadding.x() + iconLeft, _dialogs.y() + st::dialogsFilterPadding.y() + iconTop, _rect.width());
 
 	auto filterLeft = _dialogs.x() + st::dialogsFilterPadding.x() + st::dialogsMenuToggle.width + st::dialogsFilterPadding.x();
 	auto filterRight = st::dialogsFilterSkip + st::dialogsFilterPadding.x();

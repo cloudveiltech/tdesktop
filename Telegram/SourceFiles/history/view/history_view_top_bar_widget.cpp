@@ -12,7 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history.h"
 #include "history/view/history_view_send_action.h"
 #include "boxes/add_contact_box.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "info/info_memento.h"
 #include "info/info_controller.h"
 #include "storage/storage_shared_media.h"
@@ -29,6 +29,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/radial_animation.h"
 #include "ui/toasts/common_toasts.h"
 #include "ui/boxes/report_box.h" // Ui::ReportReason
+#include "ui/text/text.h"
+#include "ui/text/text_options.h"
 #include "ui/special_buttons.h"
 #include "ui/unread_badge.h"
 #include "ui/ui_utility.h"
@@ -44,15 +46,30 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_chat.h"
 #include "data/data_user.h"
 #include "data/data_changes.h"
+#include "data/data_send_action.h"
+#include "chat_helpers/emoji_interactions.h"
 #include "base/unixtime.h"
 #include "support/support_helper.h"
 #include "apiwrap.h"
+#include "api/api_chat_participants.h"
 #include "styles/style_window.h"
 #include "styles/style_dialogs.h"
 #include "styles/style_chat.h"
 #include "styles/style_info.h"
 
 namespace HistoryView {
+namespace {
+
+constexpr auto kEmojiInteractionSeenDuration = 3 * crl::time(1000);
+
+} // namespace
+
+struct TopBarWidget::EmojiInteractionSeenAnimation {
+	Ui::SendActionAnimation animation;
+	Ui::Animations::Basic scheduler;
+	Ui::Text::String text = { st::dialogsTextWidthMin };
+	crl::time till = 0;
+};
 
 TopBarWidget::TopBarWidget(
 	QWidget *parent,
@@ -124,8 +141,8 @@ TopBarWidget::TopBarWidget(
 
 	refreshUnreadBadge();
 	{
-		using AnimationUpdate = Data::Session::SendActionAnimationUpdate;
-		session().data().sendActionAnimationUpdated(
+		using AnimationUpdate = Data::SendActionManager::AnimationUpdate;
+		session().data().sendActionManager().animationUpdated(
 		) | rpl::filter([=](const AnimationUpdate &update) {
 			return (update.history == _activeChat.key.history());
 		}) | rpl::start_with_next([=] {
@@ -250,11 +267,11 @@ void TopBarWidget::setChooseForReportReason(
 	updateControlsVisibility();
 	updateControlsGeometry();
 	update();
-	if (wasNoReason != nowNoReason && _selectedCount > 0) {
+	if (wasNoReason != nowNoReason && showSelectedState()) {
 		toggleSelectedControls(false);
 		finishAnimating();
 	}
-	setCursor((nowNoReason && !_selectedCount)
+	setCursor((nowNoReason && !showSelectedState())
 		? style::cur_pointer
 		: style::cur_default);
 }
@@ -401,6 +418,7 @@ void TopBarWidget::paintTopBar(Painter &p) {
 		return;
 	}
 
+	const auto now = crl::now();
 	const auto history = _activeChat.key.history();
 	const auto folder = _activeChat.key.folder();
 	if (folder
@@ -441,14 +459,14 @@ void TopBarWidget::paintTopBar(Painter &p) {
 
 		p.setFont(st::dialogsTextFont);
 		if (!paintConnectingState(p, nameleft, statustop, width())
-			&& !_sendAction->paint(
+			&& !paintSendAction(
 				p,
 				nameleft,
 				statustop,
 				availableWidth,
 				width(),
 				st::historyStatusFgTyping,
-				crl::now())) {
+				now)) {
 			p.setPen(st::historyStatusFg);
 			p.drawTextLeft(nameleft, statustop, width(), _customTitleText);
 		}
@@ -480,17 +498,46 @@ void TopBarWidget::paintTopBar(Painter &p) {
 
 		p.setFont(st::dialogsTextFont);
 		if (!paintConnectingState(p, nameleft, statustop, width())
-			&& !_sendAction->paint(
+			&& !paintSendAction(
 				p,
 				nameleft,
 				statustop,
 				availableWidth,
 				width(),
 				st::historyStatusFgTyping,
-				crl::now())) {
+				now)) {
 			paintStatus(p, nameleft, statustop, availableWidth, width());
 		}
 	}
+}
+
+bool TopBarWidget::paintSendAction(
+		Painter &p,
+		int x,
+		int y,
+		int availableWidth,
+		int outerWidth,
+		style::color fg,
+		crl::time now) {
+	const auto seen = _emojiInteractionSeen.get();
+	if (!seen || seen->till <= now) {
+		return _sendAction->paint(p, x, y, availableWidth, outerWidth, fg, now);
+	}
+	const auto animationWidth = seen->animation.width();
+	const auto extraAnimationWidth = animationWidth * 2;
+	seen->animation.paint(
+		p,
+		fg,
+		x,
+		y + st::normalFont->ascent,
+		outerWidth,
+		now);
+
+	x += animationWidth;
+	availableWidth -= extraAnimationWidth;
+	p.setPen(fg);
+	seen->text.drawElided(p, x, y, availableWidth);
+	return true;
 }
 
 bool TopBarWidget::paintConnectingState(
@@ -538,9 +585,9 @@ QRect TopBarWidget::getMembersShowAreaGeometry() const {
 }
 
 void TopBarWidget::mousePressEvent(QMouseEvent *e) {
-	auto handleClick = (e->button() == Qt::LeftButton)
+	const auto handleClick = (e->button() == Qt::LeftButton)
 		&& (e->pos().y() < st::topBarHeight)
-		&& !_selectedCount
+		&& !showSelectedState()
 		&& !_chooseForReportReason;
 	if (handleClick) {
 		if (_animatingMode && _back->rect().contains(e->pos())) {
@@ -596,6 +643,7 @@ void TopBarWidget::setActiveChat(
 	update();
 
 	if (peerChanged) {
+		_emojiInteractionSeen = nullptr;
 		_activeChatLifetime.destroy();
 		if (const auto history = _activeChat.key.history()) {
 			session().changes().peerFlagsValue(
@@ -614,6 +662,14 @@ void TopBarWidget::setActiveChat(
 				updateControlsVisibility();
 				updateControlsGeometry();
 			}, _activeChatLifetime);
+
+			using InteractionSeen = ChatHelpers::EmojiInteractionSeen;
+			_controller->emojiInteractions().seen(
+			) | rpl::filter([=](const InteractionSeen &seen) {
+				return (seen.peer == history->peer);
+			}) | rpl::start_with_next([=](const InteractionSeen &seen) {
+				handleEmojiInteractionSeen(seen.emoticon);
+			}, lifetime());
 		}
 	}
 	updateUnreadBadge();
@@ -625,6 +681,41 @@ void TopBarWidget::setActiveChat(
 	updateOnlineDisplay();
 	updateControlsVisibility();
 	refreshUnreadBadge();
+}
+
+void TopBarWidget::handleEmojiInteractionSeen(const QString &emoticon) {
+	auto seen = _emojiInteractionSeen.get();
+	if (!seen) {
+		_emojiInteractionSeen
+			= std::make_unique<EmojiInteractionSeenAnimation>();
+		seen = _emojiInteractionSeen.get();
+		seen->animation.start(Ui::SendActionAnimation::Type::ChooseSticker);
+		seen->scheduler.init([=] {
+			if (seen->till <= crl::now()) {
+				crl::on_main(this, [=] {
+					if (_emojiInteractionSeen
+						&& _emojiInteractionSeen->till <= crl::now()) {
+						_emojiInteractionSeen = nullptr;
+						update();
+					}
+				});
+			} else {
+				const auto skip = st::topBarArrowPadding.bottom();
+				update(
+					_leftTaken,
+					st::topBarHeight - skip - st::dialogsTextFont->height,
+					seen->animation.width(),
+					st::dialogsTextFont->height);
+			}
+		});
+		seen->scheduler.start();
+	}
+	seen->till = crl::now() + kEmojiInteractionSeenDuration;
+	seen->text.setText(
+		st::dialogsTextStyle,
+		tr::lng_user_action_watching_animations(tr::now, lt_emoji, emoticon),
+		Ui::NameTextOptions());
+	update();
 }
 
 void TopBarWidget::setCustomTitle(const QString &title) {
@@ -834,7 +925,7 @@ void TopBarWidget::updateControlsVisibility() {
 void TopBarWidget::updateMembersShowArea() {
 	const auto membersShowAreaNeeded = [&] {
 		const auto peer = _activeChat.key.peer();
-		if ((_selectedCount > 0) || !peer) {
+		if (showSelectedState() || !peer) {
 			return false;
 		} else if (const auto chat = peer->asChat()) {
 			return chat->amIn();
@@ -859,44 +950,58 @@ void TopBarWidget::updateMembersShowArea() {
 	_membersShowArea->setGeometry(getMembersShowAreaGeometry());
 }
 
+bool TopBarWidget::showSelectedState() const {
+	return (_selectedCount > 0)
+		&& (_canDelete || _canForward || _canSendNow);
+}
+
 void TopBarWidget::showSelected(SelectedState state) {
 	auto canDelete = (state.count > 0 && state.count == state.canDeleteCount);
 	auto canForward = (state.count > 0 && state.count == state.canForwardCount);
 	auto canSendNow = (state.count > 0 && state.count == state.canSendNowCount);
-	if (_selectedCount == state.count && _canDelete == canDelete && _canForward == canForward && _canSendNow == canSendNow) {
+	auto count = (!canDelete && !canForward && !canSendNow) ? 0 : state.count;
+	if (_selectedCount == count
+		&& _canDelete == canDelete
+		&& _canForward == canForward
+		&& _canSendNow == canSendNow) {
 		return;
 	}
-	if (state.count == 0) {
+	if (count == 0) {
 		// Don't change the visible buttons if the selection is cancelled.
 		canDelete = _canDelete;
 		canForward = _canForward;
 		canSendNow = _canSendNow;
 	}
 
-	auto wasSelected = (_selectedCount > 0);
-	_selectedCount = state.count;
-	if (_selectedCount > 0) {
+	const auto wasSelectedState = showSelectedState();
+	const auto visibilityChanged = (_canDelete != canDelete)
+		|| (_canForward != canForward)
+		|| (_canSendNow != canSendNow);
+	_selectedCount = count;
+	_canDelete = canDelete;
+	_canForward = canForward;
+	_canSendNow = canSendNow;
+	const auto nowSelectedState = showSelectedState();
+	if (nowSelectedState) {
 		_forward->setNumbersText(_selectedCount);
 		_sendNow->setNumbersText(_selectedCount);
 		_delete->setNumbersText(_selectedCount);
-		if (!wasSelected) {
+		if (!wasSelectedState) {
 			_forward->finishNumbersAnimation();
 			_sendNow->finishNumbersAnimation();
 			_delete->finishNumbersAnimation();
 		}
 	}
-	auto hasSelected = (_selectedCount > 0);
-	if (_canDelete != canDelete || _canForward != canForward || _canSendNow != canSendNow) {
-		_canDelete = canDelete;
-		_canForward = canForward;
-		_canSendNow = canSendNow;
+	if (visibilityChanged) {
 		updateControlsVisibility();
 	}
-	if (wasSelected != hasSelected && !_chooseForReportReason) {
-		setCursor(hasSelected ? style::cur_default : style::cur_pointer);
+	if (wasSelectedState != nowSelectedState && !_chooseForReportReason) {
+		setCursor(nowSelectedState
+			? style::cur_default
+			: style::cur_pointer);
 
 		updateMembersShowArea();
-		toggleSelectedControls(hasSelected);
+		toggleSelectedControls(nowSelectedState);
 	} else {
 		updateControlsGeometry();
 	}
@@ -912,7 +1017,7 @@ void TopBarWidget::toggleSelectedControls(bool shown) {
 }
 
 bool TopBarWidget::showSelectedActions() const {
-	return (_selectedCount > 0) && !_chooseForReportReason;
+	return showSelectedState() && !_chooseForReportReason;
 }
 
 void TopBarWidget::selectedShowCallback() {
@@ -1017,7 +1122,7 @@ void TopBarWidget::updateOnlineDisplay() {
 			const auto self = session().user();
 			auto online = 0;
 			auto onlyMe = true;
-			for (const auto user : chat->participants) {
+			for (const auto &user : chat->participants) {
 				if (user->onlineTill > now) {
 					++online;
 					if (onlyMe && user != self) onlyMe = false;
@@ -1039,7 +1144,7 @@ void TopBarWidget::updateOnlineDisplay() {
 			&& (channel->membersCount()
 				<= channel->session().serverConfig().chatSizeMax)) {
 			if (channel->lastParticipantsRequestNeeded()) {
-				session().api().requestLastParticipants(channel);
+				session().api().chatParticipants().requestLast(channel);
 			}
 			const auto self = session().user();
 			auto online = 0;
@@ -1094,7 +1199,7 @@ void TopBarWidget::updateOnlineDisplayTimer() {
 	if (const auto user = peer->asUser()) {
 		handleUser(user);
 	} else if (const auto chat = peer->asChat()) {
-		for (const auto user : chat->participants) {
+		for (const auto &user : chat->participants) {
 			handleUser(user);
 		}
 	} else if (peer->isChannel()) {

@@ -7,12 +7,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_types.h"
 
-#include "data/data_document.h"
-#include "data/data_session.h"
 #include "ui/widgets/input_fields.h"
 #include "storage/cache/storage_cache_types.h"
 #include "base/openssl_help.h"
-#include "main/main_session.h"
 
 namespace Data {
 namespace {
@@ -83,36 +80,13 @@ Storage::Cache::Key GeoPointCacheKey(const GeoPointLocation &location) {
 		| (uint32(location.height) & 0xFFFFU);
 	return Storage::Cache::Key{
 		Data::kGeoPointCacheTag | (uint64(zoomscale) << 32) | widthheight,
-		(uint64(std::round(std::abs(location.lat + 360.) * 1000000)) << 32)
-		| uint64(std::round(std::abs(location.lon + 360.) * 1000000))
+		(uint64(base::SafeRound(
+			std::abs(location.lat + 360.) * 1000000)) << 32)
+		| uint64(base::SafeRound(std::abs(location.lon + 360.) * 1000000))
 	};
 }
 
 } // namespace Data
-
-uint32 AudioMsgId::CreateExternalPlayId() {
-	static auto Result = uint32(0);
-	return ++Result ? Result : ++Result;
-}
-
-AudioMsgId AudioMsgId::ForVideo() {
-	auto result = AudioMsgId();
-	result._externalPlayId = CreateExternalPlayId();
-	result._type = Type::Video;
-	return result;
-}
-
-void AudioMsgId::setTypeFromAudio() {
-	if (_audio->isVoiceMessage() || _audio->isVideoMessage()) {
-		_type = Type::Voice;
-	} else if (_audio->isVideoFile()) {
-		_type = Type::Video;
-	} else if (_audio->isAudioFile()) {
-		_type = Type::Song;
-	} else {
-		_type = Type::Unknown;
-	}
-}
 
 void MessageCursor::fillFrom(not_null<const Ui::InputField*> field) {
 	const auto cursor = field->textCursor();

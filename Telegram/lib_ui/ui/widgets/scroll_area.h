@@ -9,10 +9,10 @@
 #include "ui/rp_widget.h"
 #include "ui/effects/animations.h"
 #include "base/object_ptr.h"
+#include "base/timer.h"
 #include "styles/style_widgets.h"
 
 #include <QtWidgets/QScrollArea>
-#include <QtCore/QTimer>
 #include <QtGui/QtEvents>
 
 namespace Ui {
@@ -48,15 +48,15 @@ struct ScrollToRequest {
 
 };
 
-class ScrollShadow : public QWidget {
-	Q_OBJECT
-
+class ScrollShadow final : public QWidget {
 public:
+	enum class Type {
+		Top,
+		Bottom,
+	};
 	ScrollShadow(ScrollArea *parent, const style::ScrollArea *st);
 
 	void paintEvent(QPaintEvent *e);
-
-public Q_SLOTS:
 	void changeVisibility(bool shown);
 
 private:
@@ -65,9 +65,11 @@ private:
 };
 
 class ScrollBar : public TWidget {
-	Q_OBJECT
-
 public:
+	struct ShadowVisibility {
+		ScrollShadow::Type type;
+		bool visible = false;
+	};
 	ScrollBar(ScrollArea *parent, bool vertical, const style::ScrollArea *st);
 
 	void recountSize();
@@ -75,18 +77,12 @@ public:
 
 	void hideTimeout(crl::time dt);
 
-private Q_SLOTS:
-	void onValueChanged();
-	void onRangeChanged();
-	void onHideTimer();
-
-Q_SIGNALS:
-	void topShadowVisibility(bool);
-	void bottomShadowVisibility(bool);
+	[[nodiscard]] auto shadowVisibilityChanged() const
+		-> rpl::producer<ShadowVisibility>;
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
-	void enterEventHook(QEvent *e) override;
+	void enterEventHook(QEnterEvent *e) override;
 	void leaveEventHook(QEvent *e) override;
 	void mouseMoveEvent(QMouseEvent *e) override;
 	void mousePressEvent(QMouseEvent *e) override;
@@ -99,6 +95,8 @@ private:
 	void setOver(bool over);
 	void setOverBar(bool overbar);
 	void setMoving(bool moving);
+
+	void hideTimer();
 
 	const style::ScrollArea *_st;
 
@@ -116,20 +114,20 @@ private:
 	int32 _startFrom, _scrollMax;
 
 	crl::time _hideIn = 0;
-	QTimer _hideTimer;
+	base::Timer _hideTimer;
 
 	Animations::Simple _a_over;
 	Animations::Simple _a_barOver;
 	Animations::Simple _a_opacity;
 
 	QRect _bar;
+
+	rpl::event_stream<ShadowVisibility> _shadowVisibilityChanged;
 };
 
 class ScrollArea : public RpWidgetBase<QScrollArea> {
-	Q_OBJECT
-
-	using Parent = RpWidgetBase<QScrollArea>;
 public:
+	using Parent = RpWidgetBase<QScrollArea>;
 	ScrollArea(QWidget *parent, const style::ScrollArea &st = st::defaultScrollArea, bool handleTouch = true);
 
 	int scrollWidth() const;
@@ -171,6 +169,15 @@ public:
 	void scrollTo(ScrollToRequest request);
 	void scrollToWidget(not_null<QWidget*> widget);
 
+	void scrollToY(int toTop, int toBottom = -1);
+	void disableScroll(bool dis);
+	void scrolled();
+	void innerResized();
+
+	[[nodiscard]] rpl::producer<> scrolls() const;
+	[[nodiscard]] rpl::producer<> innerResizes() const;
+	[[nodiscard]] rpl::producer<> geometryChanged() const;
+
 protected:
 	bool eventFilter(QObject *obj, QEvent *e) override;
 
@@ -178,24 +185,8 @@ protected:
 	void moveEvent(QMoveEvent *e) override;
 	void touchEvent(QTouchEvent *e);
 
-	void enterEventHook(QEvent *e) override;
+	void enterEventHook(QEnterEvent *e) override;
 	void leaveEventHook(QEvent *e) override;
-
-public Q_SLOTS:
-	void scrollToY(int toTop, int toBottom = -1);
-	void disableScroll(bool dis);
-	void onScrolled();
-	void onInnerResized();
-
-	void onTouchTimer();
-	void onTouchScrollTimer();
-
-Q_SIGNALS:
-	void scrolled();
-	void innerResized();
-	void scrollStarted();
-	void scrollFinished();
-	void geometryChanged();
 
 protected:
 	void scrollContentsBy(int dx, int dy) override;
@@ -206,8 +197,8 @@ private:
 
 	void setWidget(QWidget *widget);
 
+	void touchScrollTimer();
 	bool touchScroll(const QPoint &delta);
-
 	void touchScrollUpdated(const QPoint &screenPos);
 
 	void touchResetSpeed();
@@ -223,7 +214,7 @@ private:
 	int _horizontalValue, _verticalValue;
 
 	bool _touchEnabled;
-	QTimer _touchTimer;
+	base::Timer _touchTimer;
 	bool _touchScroll = false;
 	bool _touchPress = false;
 	bool _touchRightButton = false;
@@ -236,13 +227,16 @@ private:
 	crl::time _touchSpeedTime = 0;
 	crl::time _touchAccelerationTime = 0;
 	crl::time _touchTime = 0;
-	QTimer _touchScrollTimer;
+	base::Timer _touchScrollTimer;
 
 	bool _widgetAcceptsTouch = false;
 
 	object_ptr<QWidget> _widget = { nullptr };
 
 	rpl::event_stream<int> _scrollTopUpdated;
+	rpl::event_stream<> _scrolls;
+	rpl::event_stream<> _innerResizes;
+	rpl::event_stream<> _geometryChanged;
 
 };
 

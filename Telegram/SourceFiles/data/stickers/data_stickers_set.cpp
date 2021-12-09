@@ -12,7 +12,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_file_origin.h"
 #include "storage/file_download.h"
 #include "ui/image/image.h"
-#include "app.h"
 
 namespace Data {
 
@@ -28,7 +27,7 @@ not_null<StickersSet*> StickersSetThumbnailView::owner() const {
 void StickersSetThumbnailView::set(
 		not_null<Main::Session*> session,
 		QByteArray content) {
-	auto image = App::readImage(content, nullptr, false);
+	auto image = Images::Read({ .content = content }).image;
 	if (image.isNull()) {
 		_content = std::move(content);
 	} else {
@@ -56,19 +55,19 @@ StickersSetFlags ParseStickersSetFlags(const MTPDstickerSet &data) {
 StickersSet::StickersSet(
 	not_null<Data::Session*> owner,
 	uint64 id,
-	uint64 access,
+	uint64 accessHash,
+	uint64 hash,
 	const QString &title,
 	const QString &shortName,
 	int count,
-	int32 hash,
 	StickersSetFlags flags,
 	TimeId installDate)
 : id(id)
-, access(access)
+, accessHash(accessHash)
+, hash(hash)
 , title(title)
 , shortName(shortName)
 , count(count)
-, hash(hash)
 , flags(flags)
 , installDate(installDate)
 , _owner(owner) {
@@ -83,15 +82,15 @@ Main::Session &StickersSet::session() const {
 }
 
 MTPInputStickerSet StickersSet::mtpInput() const {
-	return (id && access)
-		? MTP_inputStickerSetID(MTP_long(id), MTP_long(access))
+	return (id && accessHash)
+		? MTP_inputStickerSetID(MTP_long(id), MTP_long(accessHash))
 		: MTP_inputStickerSetShortName(MTP_string(shortName));
 }
 
 StickerSetIdentifier StickersSet::identifier() const {
 	return StickerSetIdentifier{
 		.id = id,
-		.accessHash = access,
+		.accessHash = accessHash,
 	};
 }
 
@@ -140,7 +139,7 @@ void StickersSet::loadThumbnail() {
 	Data::LoadCloudFile(
 		&_owner->session(),
 		_thumbnail,
-		Data::FileOriginStickerSet(id, access),
+		Data::FileOriginStickerSet(id, accessHash),
 		LoadFromCloudOrLocal,
 		autoLoading,
 		Data::kImageCacheTag,
@@ -150,6 +149,14 @@ void StickersSet::loadThumbnail() {
 
 const ImageLocation &StickersSet::thumbnailLocation() const {
 	return _thumbnail.location;
+}
+
+Storage::Cache::Key StickersSet::thumbnailBigFileBaseCacheKey() const {
+	const auto &location = _thumbnail.location.file().data;
+	if (const auto storage = std::get_if<StorageFileLocation>(&location)) {
+		return storage->bigFileBaseCacheKey();
+	}
+	return {};
 }
 
 int StickersSet::thumbnailByteSize() const {

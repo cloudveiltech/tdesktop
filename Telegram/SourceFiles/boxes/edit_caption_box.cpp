@@ -67,10 +67,7 @@ auto ListFromMimeData(not_null<const QMimeData*> data) {
 	if (result.error == Error::None) {
 		return result;
 	} else if (data->hasImage()) {
-		auto image = Platform::GetImageFromClipboard();
-		if (image.isNull()) {
-			image = qvariant_cast<QImage>(data->imageData());
-		}
+		auto image = qvariant_cast<QImage>(data->imageData());
 		if (!image.isNull()) {
 			return Storage::PrepareMediaFromImage(
 				std::move(image),
@@ -99,6 +96,11 @@ Ui::AlbumType ComputeAlbumType(not_null<HistoryItem*> item) {
 		}
 	}
 	return Ui::AlbumType();
+}
+
+bool CanBeCompressed(Ui::AlbumType type) {
+	return (type == Ui::AlbumType::None)
+		|| (type == Ui::AlbumType::PhotoVideo);
 }
 
 } // namespace
@@ -170,7 +172,7 @@ void EditCaptionBox::rebuildPreview() {
 		const auto photo = media->photo();
 		const auto document = media->document();
 		if (photo || document->isVideoFile() || document->isAnimation()) {
-			_isPhoto = true;
+			_isPhoto = (photo != nullptr);
 			const auto media = Ui::CreateChild<Ui::ItemSingleMediaPreview>(
 				this,
 				gifPaused,
@@ -229,6 +231,8 @@ void EditCaptionBox::rebuildPreview() {
 
 	_scroll->setOwnedWidget(
 		object_ptr<Ui::RpWidget>::fromRaw(_content.get()));
+
+	_previewRebuilds.fire({});
 
 	captionResized();
 }
@@ -302,10 +306,11 @@ void EditCaptionBox::setupShadows() {
 }
 
 void EditCaptionBox::setupControls() {
-	auto hintLabelToggleOn = _isPhoto.value(
-	) | rpl::map([=](bool value) {
+	auto hintLabelToggleOn = _previewRebuilds.events_starting_with(
+		rpl::empty_value()
+	) | rpl::map([=] {
 		return _controller->session().settings().photoEditorHintShown()
-			? value
+			? _isPhoto
 			: false;
 	});
 
@@ -327,9 +332,12 @@ void EditCaptionBox::setupControls() {
 			st::defaultBoxCheckbox),
 		st::editMediaCheckboxMargins)
 	)->toggleOn(
-		_isPhoto.value(
-		) | rpl::map([=](bool value) {
-			return value && (_albumType == Ui::AlbumType::None);
+		_previewRebuilds.events_starting_with(
+			rpl::empty_value()
+		) | rpl::map([=] {
+			return _isPhoto
+				&& CanBeCompressed(_albumType)
+				&& !_preparedList.files.empty();
 		}),
 		anim::type::instant
 	)->entity()->checkedChanges(
@@ -391,10 +399,20 @@ void EditCaptionBox::setupEditEventHandler() {
 }
 
 void EditCaptionBox::setupPhotoEditorEventHandler() {
+	const auto openedOnce = lifetime().make_state<bool>(false);
 	_photoEditorOpens.events(
 	) | rpl::start_with_next([=, controller = _controller] {
+		const auto increment = [=] {
+			if (*openedOnce) {
+				return;
+			}
+			*openedOnce = true;
+			controller->session().settings().incrementPhotoEditorHintShown();
+			controller->session().saveSettings();
+		};
 		const auto previewWidth = st::sendMediaPreviewSize;
 		if (!_preparedList.files.empty()) {
+			increment();
 			Editor::OpenWithPreparedFile(
 				this,
 				controller,
@@ -406,6 +424,7 @@ void EditCaptionBox::setupPhotoEditorEventHandler() {
 			if (!large) {
 				return;
 			}
+			increment();
 			auto callback = [=](const Editor::PhotoModifications &mods) {
 				if (!mods || !_photoMedia) {
 					return;
@@ -610,6 +629,7 @@ void EditCaptionBox::resizeEvent(QResizeEvent *e) {
 	_emojiToggle->update();
 
 	if (!_controls->isHidden()) {
+		_controls->resizeToWidth(width());
 		_controls->moveToLeft(
 			st::boxPhotoPadding.left(),
 			bottom - _controls->heightNoMargins());
@@ -650,18 +670,14 @@ void EditCaptionBox::save() {
 	options.scheduled = item->isScheduled() ? item->date() : 0;
 
 	if (!_preparedList.files.empty()) {
-		auto action = Api::SendAction(item->history());
-		action.options = options;
+		auto action = Api::SendAction(item->history(), options);
 		action.replaceMediaOf = item->fullId().msg;
 
-		if (Storage::ApplyModifications(_preparedList)) {
-			_controller->session().settings().incrementPhotoEditorHintShown();
-			_controller->session().saveSettings();
-		}
+		Storage::ApplyModifications(_preparedList);
 
 		_controller->session().api().editMedia(
 			std::move(_preparedList),
-			(!_asFile && _isPhoto.current())
+			(!_asFile && _isPhoto && CanBeCompressed(_albumType))
 				? SendMediaType::Photo
 				: SendMediaType::File,
 			_field->getTextWithAppliedMarkdown(),

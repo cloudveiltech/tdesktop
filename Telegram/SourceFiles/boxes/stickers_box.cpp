@@ -17,11 +17,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "boxes/sticker_set_box.h"
 #include "apiwrap.h"
 #include "storage/storage_account.h"
-#include "dialogs/dialogs_layout.h"
+#include "dialogs/ui/dialogs_layout.h"
 #include "lottie/lottie_single_player.h"
 #include "chat_helpers/stickers_lottie.h"
 #include "ui/widgets/buttons.h"
@@ -65,7 +65,7 @@ private:
 	void setCounter(int counter);
 
 	QString _text;
-	Dialogs::Layout::UnreadBadgeStyle _st;
+	Dialogs::Ui::UnreadBadgeStyle _st;
 
 };
 
@@ -304,7 +304,7 @@ StickersBox::CounterWidget::CounterWidget(
 : RpWidget(parent) {
 	setAttribute(Qt::WA_TransparentForMouseEvents);
 
-	_st.sizeId = Dialogs::Layout::UnreadBadgeInStickersBox;
+	_st.sizeId = Dialogs::Ui::UnreadBadgeInStickersBox;
 	_st.textTop = st::stickersFeaturedBadgeTextTop;
 	_st.size = st::stickersFeaturedBadgeSize;
 	_st.padding = st::stickersFeaturedBadgePadding;
@@ -324,7 +324,7 @@ void StickersBox::CounterWidget::setCounter(int counter) {
 	Painter p(&dummy);
 
 	auto newWidth = 0;
-	Dialogs::Layout::paintUnreadCount(p, _text, 0, 0, _st, &newWidth);
+	Dialogs::Ui::paintUnreadCount(p, _text, 0, 0, _st, &newWidth);
 
 	resize(newWidth, st::stickersFeaturedBadgeSize);
 }
@@ -335,7 +335,7 @@ void StickersBox::CounterWidget::paintEvent(QPaintEvent *e) {
 	if (!_text.isEmpty()) {
 		auto unreadRight = rtl() ? 0 : width();
 		auto unreadTop = 0;
-		Dialogs::Layout::paintUnreadCount(p, _text, unreadRight, unreadTop, _st);
+		Dialogs::Ui::paintUnreadCount(p, _text, unreadRight, unreadTop, _st);
 	}
 }
 
@@ -435,7 +435,7 @@ void StickersBox::showAttachedStickers() {
 					|| (set->flags & SetFlag::NotLoaded)) {
 					session().api().scheduleStickerSetRequest(
 						set->id,
-						set->access);
+						set->accessHash);
 				}
 			}
 		}
@@ -471,7 +471,7 @@ void StickersBox::getArchivedDone(
 
 	auto addedSet = false;
 	auto changedSets = false;
-	for_const (const auto &stickerSet, stickers.vsets().v) {
+	for (const auto &stickerSet : stickers.vsets().v) {
 		const MTPDstickerSet *setData = nullptr;
 		switch (stickerSet.type()) {
 		case mtpc_stickerSetCovered: {
@@ -493,7 +493,7 @@ void StickersBox::getArchivedDone(
 			const auto index = archived.indexOf(set->id);
 			if (archived.isEmpty() || index != archived.size() - 1) {
 				changedSets = true;
-				if (index < archived.size() - 1) {
+				if (index >= 0 && index < archived.size() - 1) {
 					archived.removeAt(index);
 				}
 				archived.push_back(set->id);
@@ -504,7 +504,7 @@ void StickersBox::getArchivedDone(
 					|| (set->flags & SetFlag::NotLoaded)) {
 					session().api().scheduleStickerSetRequest(
 						set->id,
-						set->access);
+						set->accessHash);
 				}
 			}
 		}
@@ -906,7 +906,9 @@ void StickersBox::requestArchivedSets() {
 			const auto set = it->second.get();
 			if (set->stickers.isEmpty()
 				&& (set->flags & SetFlag::NotLoaded)) {
-				session().api().scheduleStickerSetRequest(setId, set->access);
+				session().api().scheduleStickerSetRequest(
+					setId,
+					set->accessHash);
 			}
 		}
 	}
@@ -1324,7 +1326,7 @@ void StickersBox::Inner::paintRowThumbnail(
 		int left) {
 	const auto origin = Data::FileOriginStickerSet(
 		row->set->id,
-		row->set->access);
+		row->set->accessHash);
 	if (row->set->hasThumbnail()) {
 		if (!row->thumbnailMedia) {
 			row->thumbnailMedia = row->set->createThumbnailView();
@@ -1886,12 +1888,17 @@ void StickersBox::Inner::handleMegagroupSetAddressChange() {
 		}
 	} else if (!_megagroupSetRequestId) {
 		_megagroupSetRequestId = _api.request(MTPmessages_GetStickerSet(
-			MTP_inputStickerSetShortName(MTP_string(text))
+			MTP_inputStickerSetShortName(MTP_string(text)),
+			MTP_int(0) // hash
 		)).done([=](const MTPmessages_StickerSet &result) {
 			_megagroupSetRequestId = 0;
-			auto set = session().data().stickers().feedSetFull(result);
-			setMegagroupSelectedSet(set->identifier());
-		}).fail([=](const MTP::Error &error) {
+			result.match([&](const MTPDmessages_stickerSet &data) {
+				const auto set = session().data().stickers().feedSetFull(data);
+				setMegagroupSelectedSet(set->identifier());
+			}, [](const MTPDmessages_stickerSetNotModified &) {
+				LOG(("API Error: Unexpected messages.stickerSetNotModified."));
+			});
+		}).fail([=] {
 			_megagroupSetRequestId = 0;
 			setMegagroupSelectedSet({});
 		}).send();
@@ -1903,14 +1910,17 @@ void StickersBox::Inner::handleMegagroupSetAddressChange() {
 void StickersBox::Inner::rebuildMegagroupSet() {
 	Expects(_megagroupSet != nullptr);
 
-	if (!_megagroupSetInput.id) {
+	const auto clearCurrent = [&] {
 		if (_megagroupSelectedSet) {
 			_megagroupSetField->setText(QString());
 			_megagroupSetField->finishAnimating();
 		}
-		_megagroupSelectedSet.reset();
+		_megagroupSelectedSet = nullptr;
 		_megagroupSelectedRemove.destroy();
 		_megagroupSelectedShadow.destroy();
+	};
+	if (!_megagroupSetInput.id) {
+		clearCurrent();
 		return;
 	}
 	auto setId = _megagroupSetInput.id;
@@ -1924,6 +1934,10 @@ void StickersBox::Inner::rebuildMegagroupSet() {
 	auto it = sets.find(setId);
 	if (it == sets.cend()
 		|| (it->second->flags & SetFlag::NotLoaded)) {
+		// It may have been in sets and stored in _megagroupSelectedSet
+		// already, but then removed from sets. We need to clear the stored
+		// pointer, otherwise we may crash in paint event while loading.
+		clearCurrent();
 		session().api().scheduleStickerSetRequest(
 			_megagroupSetInput.id,
 			_megagroupSetInput.accessHash);
@@ -2022,24 +2036,21 @@ void StickersBox::Inner::rebuild(bool masks) {
 		}
 
 		const auto set = it->second.get();
-		//CloudVeil start
-		if (!GlobalSecuritySettings::getSettings().isStickerSetAllowed(setId)) {
-			continue;
-		}
-		//CloudVeil end
-
 		rebuildAppendSet(set, maxNameWidth);
 
 		if (set->stickers.isEmpty()
 			|| (set->flags & SetFlag::NotLoaded)) {
-			session().api().scheduleStickerSetRequest(set->id, set->access);
+			session().api().scheduleStickerSetRequest(
+				set->id,
+				set->accessHash);
 		}
 	}
 	session().api().requestStickerSets();
 	updateSize();
 }
 
-void StickersBox::Inner::setMegagroupSelectedSet(const StickerSetIdentifier &set) {
+void StickersBox::Inner::setMegagroupSelectedSet(
+		const StickerSetIdentifier &set) {
 	_megagroupSetInput = set;
 	rebuild(false);
 	_scrollsToY.fire(0);
@@ -2135,6 +2146,7 @@ void StickersBox::Inner::rebuildAppendSet(
 		return;
 	}
 	//CloudVeil end
+
 	bool installed = true, official = true, unread = false, archived = false, removed = false;
 	if (set->id != Data::Stickers::CloudRecentSetId) {
 		fillSetFlags(set, &installed, &official, &unread, &archived);
@@ -2302,7 +2314,7 @@ int StickersBox::Inner::getRowIndex(uint64 setId) const {
 }
 
 void StickersBox::Inner::setFullOrder(const StickersSetsOrder &order) {
-	for_const (auto setId, order) {
+	for (const auto setId : order) {
 		auto index = getRowIndex(setId);
 		if (index >= 0) {
 			auto row = std::move(_rows[index]);

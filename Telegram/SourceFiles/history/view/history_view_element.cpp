@@ -19,17 +19,19 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/unixtime.h"
 #include "core/application.h"
 #include "core/core_settings.h"
+#include "core/click_handler_types.h"
 #include "main/main_session.h"
+#include "main/main_domain.h"
 #include "chat_helpers/stickers_emoji_pack.h"
 #include "window/window_session_controller.h"
 #include "ui/effects/path_shift_gradient.h"
+#include "ui/chat/chat_style.h"
 #include "ui/toast/toast.h"
 #include "ui/toasts/common_toasts.h"
 #include "data/data_session.h"
 #include "data/data_groups.h"
 #include "data/data_media_types.h"
 #include "lang/lang_keys.h"
-#include "layout.h"
 #include "app.h"
 #include "styles/style_chat.h"
 
@@ -62,18 +64,23 @@ bool IsAttachedToPreviousInSavedMessages(
 } // namespace
 
 std::unique_ptr<Ui::PathShiftGradient> MakePathShiftGradient(
+		not_null<const Ui::ChatStyle*> st,
 		Fn<void()> update) {
 	return std::make_unique<Ui::PathShiftGradient>(
-		st::msgServiceBg,
-		st::msgServiceBgSelected,
-		std::move(update));
+		st->msgServiceBg(),
+		st->msgServiceBgSelected(),
+		std::move(update),
+		st->paletteChanged());
 }
 
 SimpleElementDelegate::SimpleElementDelegate(
 	not_null<Window::SessionController*> controller,
 	Fn<void()> update)
 : _controller(controller)
-, _pathGradient(MakePathShiftGradient(std::move(update))) {
+, _pathGradient(
+	MakePathShiftGradient(
+		controller->chatStyle(),
+		std::move(update))) {
 }
 
 SimpleElementDelegate::~SimpleElementDelegate() = default;
@@ -169,6 +176,14 @@ auto SimpleElementDelegate::elementPathShiftGradient()
 	return _pathGradient.get();
 }
 
+void SimpleElementDelegate::elementReplyTo(const FullMsgId &to) {
+}
+
+
+void SimpleElementDelegate::elementStartInteraction(
+	not_null<const Element*> view) {
+}
+
 TextSelection UnshiftItemSelection(
 		TextSelection selection,
 		uint16 byLength) {
@@ -211,24 +226,6 @@ QString DateTooltipText(not_null<Element*> view) {
 			tr::now,
 			lt_date,
 			base::unixtime::parse(forwarded->originalDate).toString(format));
-		if (const auto media = view->media()) {
-			if (media->hidesForwardedInfo()) {
-				const auto from = forwarded->originalSender
-					? forwarded->originalSender->shortName()
-					: forwarded->hiddenSenderInfo->firstName;
-				if (forwarded->imported) {
-					dateText += '\n' + tr::lng_signed_author(
-						tr::now,
-						lt_user,
-						from);
-				} else {
-					dateText += '\n' + tr::lng_forwarded(
-						tr::now,
-						lt_user,
-						from);
-				}
-			}
-		}
 		if (forwarded->imported) {
 			dateText = tr::lng_forwarded_imported(tr::now)
 				+ "\n\n" + dateText;
@@ -256,7 +253,13 @@ int UnreadBar::marginTop() {
 	return st::lineWidth + st::historyUnreadBarMargin;
 }
 
-void UnreadBar::paint(Painter &p, int y, int w, bool chatWide) const {
+void UnreadBar::paint(
+		Painter &p,
+		const PaintContext &context,
+		int y,
+		int w,
+		bool chatWide) const {
+	const auto st = context.st;
 	const auto bottom = y + height();
 	y += marginTop();
 	p.fillRect(
@@ -264,15 +267,15 @@ void UnreadBar::paint(Painter &p, int y, int w, bool chatWide) const {
 		y,
 		w,
 		height() - marginTop() - st::lineWidth,
-		st::historyUnreadBarBg);
+		st->historyUnreadBarBg());
 	p.fillRect(
 		0,
 		bottom - st::lineWidth,
 		w,
 		st::lineWidth,
-		st::historyUnreadBarBorder);
+		st->historyUnreadBarBorder());
 	p.setFont(st::historyUnreadBarFont);
-	p.setPen(st::historyUnreadBarFg);
+	p.setPen(st->historyUnreadBarFg());
 
 	int maxwidth = w;
 	if (chatWide) {
@@ -307,8 +310,13 @@ int DateBadge::height() const {
 		+ st::msgServiceMargin.bottom();
 }
 
-void DateBadge::paint(Painter &p, int y, int w, bool chatWide) const {
-	ServiceMessagePainter::paintDate(p, text, width, y, w, chatWide);
+void DateBadge::paint(
+		Painter &p,
+		not_null<const Ui::ChatStyle*> st,
+		int y,
+		int w,
+		bool chatWide) const {
+	ServiceMessagePainter::PaintDate(p, st, text, width, y, w, chatWide);
 }
 
 Element::Element(
@@ -364,6 +372,7 @@ void Element::refreshDataIdHook() {
 
 void Element::paintHighlight(
 		Painter &p,
+		const PaintContext &context,
 		int geometryHeight) const {
 	const auto top = marginTop();
 	const auto bottom = marginBottom();
@@ -371,7 +380,7 @@ void Element::paintHighlight(
 	const auto skiptop = top - fill;
 	const auto fillheight = fill + geometryHeight + fill;
 
-	paintCustomHighlight(p, skiptop, fillheight, data());
+	paintCustomHighlight(p, context, skiptop, fillheight, data());
 }
 
 float64 Element::highlightOpacity(not_null<const HistoryItem*> item) const {
@@ -389,6 +398,7 @@ float64 Element::highlightOpacity(not_null<const HistoryItem*> item) const {
 
 void Element::paintCustomHighlight(
 		Painter &p,
+		const PaintContext &context,
 		int y,
 		int height,
 		not_null<const HistoryItem*> item) const {
@@ -403,7 +413,7 @@ void Element::paintCustomHighlight(
 		y,
 		width(),
 		height,
-		st::defaultTextPalette.selectOverlay);
+		context.st->msgSelectOverlay());
 	p.setOpacity(o);
 }
 
@@ -527,11 +537,13 @@ void Element::refreshDataId() {
 }
 
 bool Element::computeIsAttachToPrevious(not_null<Element*> previous) {
-	const auto mayBeAttached = [](not_null<HistoryItem*> item) {
-		return !item->serviceMsg()
+	const auto mayBeAttached = [](not_null<Element*> view) {
+		const auto item = view->data();
+		return !item->isService()
 			&& !item->isEmpty()
 			&& !item->isPost()
-			&& (item->from() != item->history()->peer
+			&& (!item->history()->peer->isMegagroup()
+				|| !view->hasOutLayout()
 				|| !item->from()->isChannel());
 	};
 	const auto item = data();
@@ -539,8 +551,8 @@ bool Element::computeIsAttachToPrevious(not_null<Element*> previous) {
 		const auto prev = previous->data();
 		const auto possible = (std::abs(prev->date() - item->date())
 				< kAttachMessageToPreviousSecondsDelta)
-			&& mayBeAttached(item)
-			&& mayBeAttached(prev);
+			&& mayBeAttached(this)
+			&& mayBeAttached(previous);
 		if (possible) {
 			const auto forwarded = item->Get<HistoryMessageForwarded>();
 			const auto prevForwarded = prev->Get<HistoryMessageForwarded>();
@@ -562,10 +574,37 @@ bool Element::computeIsAttachToPrevious(not_null<Element*> previous) {
 }
 
 ClickHandlerPtr Element::fromLink() const {
+	if (_fromLink) {
+		return _fromLink;
+	}
 	const auto item = data();
-	const auto from = item->displayFrom();
-	if (from) {
-		return from->openLink();
+	if (const auto from = item->displayFrom()) {
+		_fromLink = std::make_shared<LambdaClickHandler>([=](
+				ClickContext context) {
+			if (context.button != Qt::LeftButton) {
+				return;
+			}
+			const auto my = context.other.value<ClickHandlerContext>();
+			const auto window = [&]() -> Window::SessionController* {
+				if (const auto controller = my.sessionWindow.get()) {
+					return controller;
+				}
+				const auto session = &from->session();
+				const auto &windows = session->windows();
+				if (windows.empty()) {
+					session->domain().activate(&session->account());
+					if (windows.empty()) {
+						return nullptr;
+					}
+				}
+				return windows.front();
+			}();
+			if (window) {
+				window->showPeerInfo(from);
+			}
+		});
+		_fromLink->setProperty(kPeerLinkPeerIdProperty, from->id.value);
+		return _fromLink;
 	}
 	if (const auto forwarded = item->Get<HistoryMessageForwarded>()) {
 		if (forwarded->imported) {
@@ -580,7 +619,8 @@ ClickHandlerPtr Element::fromLink() const {
 	static const auto hidden = std::make_shared<LambdaClickHandler>([] {
 		Ui::Toast::Show(tr::lng_forwarded_hidden(tr::now));
 	});
-	return hidden;
+	_fromLink = hidden;
+	return _fromLink;
 }
 
 void Element::createUnreadBar(rpl::producer<QString> text) {
@@ -648,6 +688,9 @@ void Element::recountDisplayDateInBlocks() {
 	setDisplayDate([&] {
 		const auto item = data();
 		if (isHidden() || item->isEmpty()) {
+			return false;
+		}
+		if (item->isSponsored()) {
 			return false;
 		}
 
@@ -750,6 +793,7 @@ std::optional<QSize> Element::rightActionSize() const {
 
 void Element::drawRightAction(
 	Painter &p,
+	const PaintContext &context,
 	int left,
 	int top,
 	int outerWidth) const {
@@ -894,10 +938,10 @@ Element *Element::nextDisplayedInBlocks() const {
 
 void Element::drawInfo(
 	Painter &p,
+	const PaintContext &context,
 	int right,
 	int bottom,
 	int width,
-	bool selected,
 	InfoDisplayType type) const {
 }
 

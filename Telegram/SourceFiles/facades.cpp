@@ -23,7 +23,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 #include "main/main_session.h"
 #include "main/main_domain.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "boxes/url_auth_box.h"
 #include "ui/layers/layer_widget.h"
 #include "lang/lang_keys.h"
@@ -58,15 +58,6 @@ namespace {
 
 namespace App {
 
-void sendBotCommand(
-		not_null<PeerData*> peer,
-		UserData *bot,
-		const QString &cmd, MsgId replyTo) {
-	if (const auto m = CheckMainWidget(&peer->session())) {
-		m->sendBotCommand(peer, bot, cmd, replyTo);
-	}
-}
-
 void hideSingleUseKeyboard(not_null<const HistoryItem*> message) {
 	if (const auto m = CheckMainWidget(&message->history()->session())) {
 		m->hideSingleUseKeyboard(message->history()->peer, message->id);
@@ -81,6 +72,7 @@ bool insertBotCommand(const QString &cmd) {
 }
 
 void activateBotCommand(
+		Window::SessionController *sessionController,
 		not_null<const HistoryItem*> msg,
 		int row,
 		int column) {
@@ -98,12 +90,15 @@ void activateBotCommand(
 	case ButtonType::Default: {
 		// Copy string before passing it to the sending method
 		// because the original button can be destroyed inside.
-		MsgId replyTo = (msg->id > 0) ? msg->id : 0;
-		sendBotCommand(
-			msg->history()->peer,
-			msg->fromOriginal()->asUser(),
-			QString(button->text),
-			replyTo);
+		if (sessionController) {
+			MsgId replyTo = msg->isRegular() ? msg->id : 0;
+			sessionController->content()->sendBotCommand({
+				.peer = msg->history()->peer,
+				.command = QString(button->text),
+				.context = msg->fullId(),
+				.replyTo = replyTo,
+			});
+		}
 	} break;
 
 	case ButtonType::Callback:
@@ -123,7 +118,7 @@ void activateBotCommand(
 
 	case ButtonType::Buy: {
 		//CloudVeil start
-		Ui::show(Box<InformBox>(tr::lng_blocked_for_protection(tr::now)));
+		Ui::show(Box<Ui::InformBox>(tr::lng_blocked_for_protection(tr::now)));
 		//CloudVeil end
 	} break;
 
@@ -144,7 +139,7 @@ void activateBotCommand(
 
 	case ButtonType::RequestLocation: {
 		hideSingleUseKeyboard(msg);
-		Ui::show(Box<InformBox>(
+		Ui::show(Box<Ui::InformBox>(
 			tr::lng_bot_share_location_unavailable(tr::now)));
 	} break;
 
@@ -152,15 +147,18 @@ void activateBotCommand(
 		hideSingleUseKeyboard(msg);
 		const auto msgId = msg->id;
 		const auto history = msg->history();
-		Ui::show(Box<ConfirmBox>(tr::lng_bot_share_phone(tr::now), tr::lng_bot_share_phone_confirm(tr::now), [=] {
-			Ui::showPeerHistory(history, ShowAtTheEndMsgId);
-			auto action = Api::SendAction(history);
-			action.clearDraft = false;
-			action.replyTo = msgId;
-			history->session().api().shareContact(
-				history->session().user(),
-				action);
-		}));
+		Ui::show(Box<Ui::ConfirmBox>(
+			tr::lng_bot_share_phone(tr::now),
+			tr::lng_bot_share_phone_confirm(tr::now),
+			[=] {
+				Ui::showPeerHistory(history, ShowAtTheEndMsgId);
+				auto action = Api::SendAction(history);
+				action.clearDraft = false;
+				action.replyTo = msgId;
+				history->session().api().shareContact(
+					history->session().user(),
+					action);
+			}));
 	} break;
 
 	case ButtonType::RequestPoll: {
@@ -211,24 +209,17 @@ void activateBotCommand(
 	case ButtonType::Auth:
 		UrlAuthBox::Activate(msg, row, column);
 		break;
-	}
-}
 
-void searchByHashtag(const QString &tag, PeerData *inPeer) {
-	const auto m = inPeer
-		? CheckMainWidget(&inPeer->session())
-		: App::main(); // multi good
-	if (m) {
-		if (m->controller()->openedFolder().current()) {
-			m->controller()->closeFolder();
+	case ButtonType::UserProfile: {
+		const auto session = &msg->history()->session();
+		const auto userId = UserId(button->data.toULongLong());
+		if (const auto user = session->data().userLoaded(userId)) {
+			const auto &windows = session->windows();
+			if (!windows.empty()) {
+				windows.front()->showPeerInfo(user);
+			}
 		}
-		Ui::hideSettingsAndLayer();
-		Core::App().hideMediaView();
-		m->searchMessages(
-			tag + ' ',
-			(inPeer && !inPeer->isUser())
-			? inPeer->owner().history(inPeer).get()
-			: Dialogs::Key());
+	} break;
 	}
 }
 
@@ -279,10 +270,6 @@ void showPeerHistory(not_null<const PeerData*> peer, MsgId msgId) {
 			::Window::SectionShow::Way::ClearStack,
 			msgId);
 	}
-}
-
-PeerData *getPeerForMouseAction() {
-	return Core::App().ui_getPeerForMouseAction();
 }
 
 bool skipPaintEvent(QWidget *widget, QPaintEvent *event) {

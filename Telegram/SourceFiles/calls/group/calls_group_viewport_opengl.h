@@ -15,8 +15,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gl_image.h"
 
-#include <QtGui/QOpenGLBuffer>
-#include <QtGui/QOpenGLShaderProgram>
+#include <QOpenGLBuffer>
+#include <QOpenGLShaderProgram>
 
 namespace Webrtc {
 struct FrameWithInfo;
@@ -34,7 +34,7 @@ public:
 
 	void deinit(
 		not_null<QOpenGLWidget*> widget,
-		QOpenGLFunctions &f) override;
+		QOpenGLFunctions *f) override;
 
 	void paint(
 		not_null<QOpenGLWidget*> widget,

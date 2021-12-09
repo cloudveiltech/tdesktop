@@ -16,11 +16,13 @@
  */
 
 #include "hime.h"
+
 #include "hime-im-client.h"
 
-void send_hime_message(Display *dpy, char *s)
-{
-  HIME_client_handle *handle = hime_im_client_open(dpy);
-  hime_im_client_message(handle, s);
-  hime_im_client_close(handle);
+void send_hime_message (Display *display, const char *message) {
+    if (display) {
+        HIME_client_handle *handle = hime_im_client_open (display);
+        hime_im_client_send_message (handle, message);
+        hime_im_client_close (handle);
+    }
 }

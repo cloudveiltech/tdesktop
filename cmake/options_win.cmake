@@ -25,6 +25,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
         /w14834 # [[nodiscard]]
         /w15038 # wrong initialization order
         /w14265 # class has virtual functions, but destructor is not virtual
+        /w14101 # 'identifier' : unreferenced local variable
         /wd4068 # Disable "warning C4068: unknown pragma"
         /wd4267 # 'initializing': conversion from 'size_t' to 'int', possible loss of data.
         /wd4244 # '=': conversion from 'size_t' to 'int', possible loss of data.
@@ -44,9 +45,13 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
             /bigobj # scheme.cpp has too many sections.
         )
     else()
+        # target_compile_options(common_options
+        # INTERFACE
+        #     /fp:except # Crash-report fp exceptions in 32 bit build.
+        # )
         target_link_options(common_options
         INTERFACE
-            /LARGEADDRESSAWARE # Allow more than 2 GB in 32 bit application.ß
+            /LARGEADDRESSAWARE # Allow more than 2 GB in 32 bit application.
         )
     endif()
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
@@ -100,8 +105,10 @@ INTERFACE
     Userenv
     Version
     Dwmapi
+    UxTheme
     Wtsapi32
     Crypt32
+    Propsys
 )
 
 if (build_winstore)

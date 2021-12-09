@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/themes/window_theme.h"
 #include "window/window_peer_menu.h"
 #include "window/window_session_controller.h"
+#include "ui/chat/chat_theme.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/menu/menu.h"
@@ -20,10 +21,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/shadow.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/wrap/vertical_layout.h"
+#include "ui/text/format_values.h" // Ui::FormatPhone
 #include "ui/text/text_utilities.h"
 #include "ui/special_buttons.h"
 #include "ui/empty_userpic.h"
-#include "dialogs/dialogs_layout.h"
+#include "dialogs/ui/dialogs_layout.h"
 #include "base/call_delayed.h"
 #include "mainwindow.h"
 #include "storage/localstorage.h"
@@ -32,7 +34,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/settings_common.h"
 #include "base/qt_signal_producer.h"
 #include "boxes/about_box.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "boxes/peer_list_controllers.h"
 #include "calls/calls_box_controller.h"
 #include "lang/lang_keys.h"
@@ -88,7 +90,7 @@ constexpr auto kMinDiffIntensity = 0.25;
 	const auto background = Window::Theme::Background();
 	return background->tile()
 		|| background->colorForFill().has_value()
-		|| background->isMonoColorImage()
+		|| !background->gradientForFill().isNull()
 		|| background->paper().isPattern()
 		|| Data::IsLegacy1DefaultWallPaper(background->paper());
 }
@@ -154,7 +156,7 @@ private:
 	QImage _userpicCache;
 	base::unique_qptr<Ui::PopupMenu> _menu;
 
-	Dialogs::Layout::UnreadBadgeStyle _unreadSt;
+	Dialogs::Ui::UnreadBadgeStyle _unreadSt;
 	int _unreadBadge = 0;
 	bool _unreadBadgeMuted = true;
 
@@ -292,7 +294,7 @@ void MainMenu::AccountButton::paintEvent(QPaintEvent *e) {
 			- st::mainMenu.itemToggleShift;
 		const auto unreadRight = width() - skip;
 		const auto unreadTop = (height() - _unreadSt.size) / 2;
-		Dialogs::Layout::paintUnreadCount(
+		Dialogs::Ui::paintUnreadCount(
 			p,
 			string,
 			unreadRight,
@@ -337,7 +339,7 @@ void MainMenu::AccountButton::contextMenuEvent(QContextMenuEvent *e) {
 			close();
 			Core::App().logout(&session->account());
 		};
-		Ui::show(Box<ConfirmBox>(
+		Ui::show(Box<Ui::ConfirmBox>(
 			tr::lng_sure_logout(tr::now),
 			tr::lng_settings_logout(tr::now),
 			st::attentionBoxButton,
@@ -433,7 +435,7 @@ void MainMenu::ToggleAccountsButton::paintUnreadBadge(QPainter &p) {
 	if (_unreadBadge.isEmpty()) {
 		return;
 	}
-	Dialogs::Layout::UnreadBadgeStyle st;
+	Dialogs::Ui::UnreadBadgeStyle st;
 
 	const auto right = width() - st::mainMenuTogglePosition.x() - st::mainMenuToggleSize * 2;
 	const auto top = height() - st::mainMenuTogglePosition.y() - st::mainMenuToggleSize;
@@ -471,7 +473,7 @@ void MainMenu::ToggleAccountsButton::validateUnreadBadge() {
 	}
 	_unreadBadge = computeUnreadBadge();
 
-	Dialogs::Layout::UnreadBadgeStyle st;
+	Dialogs::Ui::UnreadBadgeStyle st;
 	_unreadBadgeWidth = st.font->width(_unreadBadge);
 	const auto rectHeight = st.size;
 	const auto rectWidth = std::max(
@@ -607,8 +609,8 @@ MainMenu::MainMenu(
 	refreshBackground();
 
 	_telegram->setMarkedText(Ui::Text::Link(
-		qsl("CloudVeil Messenger"),
-		qsl("https://desktop.telegram.org")));
+		qsl("CloudVeil Messenger Desktop"),
+		qsl("https://github.com/cloudveiltech/tdesktop")));
 	_telegram->setLinksTrusted();
 	_version->setRichText(textcmdLink(1, tr::lng_settings_current_version(tr::now, lt_version, currentVersionText())) + QChar(' ') + QChar(8211) + QChar(' ') + textcmdLink(2, tr::lng_menu_about(tr::now)));
 	_version->setLink(1, std::make_shared<UrlClickHandler>(Core::App().changelogLink()));
@@ -939,7 +941,7 @@ void MainMenu::refreshMenu() {
 
 	auto nightCallback = [=] {
 		if (Window::Theme::Background()->editingTheme()) {
-			controller->show(Box<InformBox>(
+			controller->show(Box<Ui::InformBox>(
 				tr::lng_theme_editor_cant_change_theme(tr::now)));
 			return;
 		}
@@ -983,11 +985,20 @@ void MainMenu::refreshMenu() {
 }
 
 void MainMenu::refreshBackground() {
-	const auto fill = QRect(0, 0, width(), st::mainMenuCoverHeight);
+	if (IsFilledCover()) {
+		return;
+	}
+	const auto fill = QSize(st::mainMenuWidth, st::mainMenuCoverHeight);
 	const auto intensityText = IntensityOfColor(st::mainMenuCoverFg->c);
-	QImage backgroundImage(
-		st::mainMenuWidth * cIntRetinaFactor(),
-		st::mainMenuCoverHeight * cIntRetinaFactor(),
+	const auto background = Window::Theme::Background();
+	const auto &prepared = background->prepared();
+
+	const auto rects = Ui::ComputeChatBackgroundRects(
+		fill,
+		prepared.size());
+
+	auto backgroundImage = QImage(
+		fill * cIntRetinaFactor(),
 		QImage::Format_ARGB32_Premultiplied);
 	QPainter p(&backgroundImage);
 
@@ -1002,21 +1013,8 @@ void MainMenu::refreshBackground() {
 				: Qt::black);
 	};
 
-	// Solid color.
-	if (const auto color = Window::Theme::Background()->colorForFill()) {
-		const auto intensity = IntensityOfColor(*color);
-		p.fillRect(fill, *color);
-		if (std::abs(intensity - intensityText) < kMinDiffIntensity) {
-			drawShadow(p);
-		}
-		_background = backgroundImage;
-		return;
-	}
-
 	// Background image.
-	const auto &pixmap = Window::Theme::Background()->pixmap();
-	QRect to, from;
-	Window::Theme::ComputeBackgroundRects(fill, pixmap.size(), to, from);
+	p.drawImage(rects.to, prepared, rects.from);
 
 	// Cut off the part of the background that is under text.
 	const QRect underText(
@@ -1027,8 +1025,6 @@ void MainMenu::refreshBackground() {
 				_controller->session().user()->nameText().toString()),
 			st::normalFont->width(_phoneText)),
 		st::semiboldFont->height * 2);
-
-	p.drawPixmap(to, pixmap, from);
 	if (IsShadowShown(backgroundImage, underText, intensityText)) {
 		drawShadow(p);
 	}
@@ -1084,7 +1080,7 @@ void MainMenu::updateInnerControlsGeometry() {
 }
 
 void MainMenu::updatePhone() {
-	_phoneText = App::formatPhone(_controller->session().user()->phone());
+	_phoneText = Ui::FormatPhone(_controller->session().user()->phone());
 	update();
 }
 
@@ -1167,11 +1163,7 @@ void MainMenu::initResetScaleButton() {
 		return rpl::single(
 			screen->availableGeometry()
 		) | rpl::then(
-#ifdef OS_MAC_OLD
-			base::qt_signal_producer(screen, &QScreen::virtualGeometryChanged)
-#else // OS_MAC_OLD
 			base::qt_signal_producer(screen, &QScreen::availableGeometryChanged)
-#endif // OS_MAC_OLD
 		);
 	}) | rpl::flatten_latest(
 	) | rpl::map([](QRect available) {

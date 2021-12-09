@@ -21,14 +21,16 @@ class Message;
 struct HistoryMessageEdited;
 struct HistoryMessageReply;
 struct HistoryMessageViews;
+struct HistoryMessageMarkupData;
 
-[[nodiscard]] Fn<void(ChannelData*, MsgId)> HistoryDependentItemCallback(
-	not_null<HistoryItem*> item);
-[[nodiscard]] MTPDmessage::Flags NewMessageFlags(not_null<PeerData*> peer);
+void RequestDependentMessageData(
+	not_null<HistoryItem*> item,
+	PeerId peerId,
+	MsgId msgId);
+[[nodiscard]] MessageFlags NewMessageFlags(not_null<PeerData*> peer);
 [[nodiscard]] bool ShouldSendSilent(
 	not_null<PeerData*> peer,
 	const Api::SendOptions &options);
-[[nodiscard]] MTPDmessage_ClientFlags NewMessageClientFlags();
 [[nodiscard]] MsgId LookupReplyToTop(
 	not_null<History*> history,
 	MsgId replyToId);
@@ -49,37 +51,39 @@ class HistoryMessage final : public HistoryItem {
 public:
 	HistoryMessage(
 		not_null<History*> history,
+		MsgId id,
 		const MTPDmessage &data,
-		MTPDmessage_ClientFlags clientFlags);
-	HistoryMessage(
-		not_null<History*> history,
-		const MTPDmessageService &data,
-		MTPDmessage_ClientFlags clientFlags);
+		MessageFlags localFlags);
 	HistoryMessage(
 		not_null<History*> history,
 		MsgId id,
-		MTPDmessage::Flags flags,
-		MTPDmessage_ClientFlags clientFlags,
+		const MTPDmessageService &data,
+		MessageFlags localFlags);
+	HistoryMessage(
+		not_null<History*> history,
+		MsgId id,
+		MessageFlags flags,
 		TimeId date,
 		PeerId from,
 		const QString &postAuthor,
-		not_null<HistoryMessage*> original); // local forwarded
+		not_null<HistoryItem*> original); // local forwarded
 	HistoryMessage(
 		not_null<History*> history,
 		MsgId id,
-		MTPDmessage::Flags flags,
-		MTPDmessage_ClientFlags clientFlags,
+		MessageFlags flags,
 		MsgId replyTo,
 		UserId viaBotId,
 		TimeId date,
 		PeerId from,
 		const QString &postAuthor,
-		const TextWithEntities &textWithEntities); // local message
+		const TextWithEntities &textWithEntities,
+		const MTPMessageMedia &media,
+		HistoryMessageMarkupData &&markup,
+		uint64 groupedId); // local message
 	HistoryMessage(
 		not_null<History*> history,
 		MsgId id,
-		MTPDmessage::Flags flags,
-		MTPDmessage_ClientFlags clientFlags,
+		MessageFlags flags,
 		MsgId replyTo,
 		UserId viaBotId,
 		TimeId date,
@@ -87,12 +91,11 @@ public:
 		const QString &postAuthor,
 		not_null<DocumentData*> document,
 		const TextWithEntities &caption,
-		const MTPReplyMarkup &markup); // local document
+		HistoryMessageMarkupData &&markup); // local document
 	HistoryMessage(
 		not_null<History*> history,
 		MsgId id,
-		MTPDmessage::Flags flags,
-		MTPDmessage_ClientFlags clientFlags,
+		MessageFlags flags,
 		MsgId replyTo,
 		UserId viaBotId,
 		TimeId date,
@@ -100,19 +103,18 @@ public:
 		const QString &postAuthor,
 		not_null<PhotoData*> photo,
 		const TextWithEntities &caption,
-		const MTPReplyMarkup &markup); // local photo
+		HistoryMessageMarkupData &&markup); // local photo
 	HistoryMessage(
 		not_null<History*> history,
 		MsgId id,
-		MTPDmessage::Flags flags,
-		MTPDmessage_ClientFlags clientFlags,
+		MessageFlags flags,
 		MsgId replyTo,
 		UserId viaBotId,
 		TimeId date,
 		PeerId from,
 		const QString &postAuthor,
 		not_null<GameData*> game,
-		const MTPReplyMarkup &markup); // local game
+		HistoryMessageMarkupData &&markup); // local game
 
 	void refreshMedia(const MTPMessageMedia *media);
 	void refreshSentMedia(const MTPMessageMedia *media);
@@ -126,17 +128,15 @@ public:
 	[[nodiscard]] bool allowsForward() const override;
 	[[nodiscard]] bool allowsSendNow() const override;
 	[[nodiscard]] bool allowsEdit(TimeId now) const override;
-	[[nodiscard]] bool uploading() const;
-
-	[[nodiscard]] bool hideEditedBadge() const {
-		return (_flags & MTPDmessage::Flag::f_edit_hide);
-	}
 
 	void setViewsCount(int count) override;
 	void setForwardsCount(int count) override;
-	void setReplies(const MTPMessageReplies &data) override;
+	void setReplies(HistoryMessageRepliesData &&data) override;
 	void clearReplies() override;
-	void changeRepliesCount(int delta, PeerId replier) override;
+	void changeRepliesCount(
+		int delta,
+		PeerId replier,
+		std::optional<bool> unread) override;
 	void setReplyToTop(MsgId replyToTop) override;
 	void setPostAuthor(const QString &author) override;
 	void setRealId(MsgId newId) override;
@@ -146,14 +146,23 @@ public:
 
 	[[nodiscard]] QString notificationHeader() const override;
 
-	void applyEdition(const MTPDmessage &message) override;
+	// Looks on:
+	//   f_edit_hide
+	//   f_edit_date
+	//   f_entities
+	//   f_reply_markup
+	//   f_media
+	//   f_views
+	//   f_forwards
+	//   f_replies
+	//   f_ttl_period
+	void applyEdition(HistoryMessageEdition &&edition) override;
+
 	void applyEdition(const MTPDmessageService &message) override;
 	void updateSentContent(
 		const TextWithEntities &textWithEntities,
 		const MTPMessageMedia *media) override;
-	void updateReplyMarkup(const MTPReplyMarkup *markup) override {
-		setReplyMarkup(markup);
-	}
+	void updateReplyMarkup(HistoryMessageMarkupData &&markup) override;
 	void updateForwardedInfo(const MTPMessageFwdHeader *fwd) override;
 	void contributeToSlowmode(TimeId realDate = 0) override;
 
@@ -164,6 +173,8 @@ public:
 	void setText(const TextWithEntities &textWithEntities) override;
 	[[nodiscard]] Ui::Text::IsolatedEmoji isolatedEmoji() const override;
 	[[nodiscard]] TextWithEntities originalText() const override;
+	[[nodiscard]] auto originalTextWithLocalEntities() const
+		-> TextWithEntities override;
 	[[nodiscard]] TextForMimeData clipboardText() const override;
 	[[nodiscard]] bool textHasLinks() const override;
 
@@ -173,7 +184,9 @@ public:
 	[[nodiscard]] bool externalReply() const override;
 
 	[[nodiscard]] MsgId repliesInboxReadTill() const override;
-	void setRepliesInboxReadTill(MsgId readTillId) override;
+	void setRepliesInboxReadTill(
+		MsgId readTillId,
+		std::optional<int> unreadCount) override;
 	[[nodiscard]] MsgId computeRepliesInboxReadTillFull() const override;
 	[[nodiscard]] MsgId repliesOutboxReadTill() const override;
 	void setRepliesOutboxReadTill(MsgId readTillId) override;
@@ -195,14 +208,6 @@ public:
 		const MTPDupdateShortSentMessage &data,
 		bool wasAlready) override;
 
-	// dynamic_cast optimization.
-	[[nodiscard]] HistoryMessage *toHistoryMessage() override {
-		return this;
-	}
-	[[nodiscard]] const HistoryMessage *toHistoryMessage() const override {
-		return this;
-	}
-
 	[[nodiscard]] std::unique_ptr<HistoryView::Element> createView(
 		not_null<HistoryView::ElementDelegate*> delegate,
 		HistoryView::Element *replacing = nullptr) override;
@@ -213,7 +218,7 @@ private:
 	void setEmptyText();
 	[[nodiscard]] bool isTooOldForEdit(TimeId now) const;
 	[[nodiscard]] bool isLegacyMessage() const {
-		return _flags & MTPDmessage::Flag::f_legacy;
+		return _flags & MessageFlag::Legacy;
 	}
 
 	[[nodiscard]] bool checkCommentsLinkedChat(ChannelId id) const;
@@ -225,11 +230,16 @@ private:
 	// It should show the receipt for the payed invoice. Still let mobile apps do that.
 	void replaceBuyWithReceiptInMarkup();
 
-	void setReplyMarkup(const MTPReplyMarkup *markup);
+	void setReplyMarkup(HistoryMessageMarkupData &&markup);
 
 	struct CreateConfig;
-	void createComponentsHelper(MTPDmessage::Flags flags, MsgId replyTo, UserId viaBotId, const QString &postAuthor, const MTPReplyMarkup &markup);
-	void createComponents(const CreateConfig &config);
+	void createComponentsHelper(
+		MessageFlags flags,
+		MsgId replyTo,
+		UserId viaBotId,
+		const QString &postAuthor,
+		HistoryMessageMarkupData &&markup);
+	void createComponents(CreateConfig &&config);
 	void setupForwardedComponent(const CreateConfig &config);
 	void changeReplyToTopCounter(
 		not_null<HistoryMessageReply*> reply,
@@ -237,6 +247,9 @@ private:
 	void refreshRepliesText(
 		not_null<HistoryMessageViews*> views,
 		bool forceResize = false);
+	void setUnreadRepliesCount(
+		not_null<HistoryMessageViews*> views,
+		int count);
 
 	static void FillForwardedInfo(
 		CreateConfig &config,
@@ -247,7 +260,8 @@ private:
 		const TextWithEntities &textWithEntities) const;
 	void reapplyText();
 
-	[[nodiscard]] bool checkRepliesPts(const MTPMessageReplies &data) const;
+	[[nodiscard]] bool checkRepliesPts(
+		const HistoryMessageRepliesData &data) const;
 
 	QString _timeText;
 	int _timeWidth = 0;

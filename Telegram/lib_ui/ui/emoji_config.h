@@ -8,6 +8,7 @@
 
 #include "base/basic_types.h"
 #include "base/binary_guard.h"
+#include "base/qt_adapters.h"
 #include "emoji.h"
 
 #include <QtGui/QPainter>
@@ -40,7 +41,7 @@ void ClearNeedSwitchToId();
 
 [[nodiscard]] int GetSizeNormal();
 [[nodiscard]] int GetSizeLarge();
-#if defined Q_OS_MAC && !defined OS_MAC_OLD
+#ifdef Q_OS_MAC
 [[nodiscard]] int GetSizeTouchbar();
 #endif
 
@@ -118,7 +119,7 @@ private:
 [[nodiscard]] inline EmojiPtr FromUrl(const QString &url) {
 	auto start = qstr("emoji://e.");
 	if (url.startsWith(start)) {
-		return internal::ByIndex(url.midRef(start.size()).toInt()); // skip emoji://e.
+		return internal::ByIndex(base::StringViewMid(url, start.size()).toInt()); // skip emoji://e.
 	}
 	return nullptr;
 }

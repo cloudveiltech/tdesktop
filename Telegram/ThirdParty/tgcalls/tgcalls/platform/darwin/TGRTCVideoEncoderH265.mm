@@ -26,7 +26,9 @@
 #import "helpers/UIDevice+RTCDevice.h"
 #endif
 
-#include "common_video/h264/profile_level_id.h"
+#include "media/base/h264_profile_level_id.h"
+#include "api/video_codecs/h264_profile_level_id.h"
+
 #include "common_video/h265/h265_bitstream_parser.h"
 #include "common_video/include/bitrate_adjuster.h"
 #include "libyuv/convert_from.h"
@@ -350,6 +352,18 @@ void compressionOutputCallback(void* encoder,
   _bitrateAdjuster->SetTargetBitrateBps(_targetBitrateBps);
   [self setBitrateBps:_bitrateAdjuster->GetAdjustedBitrateBps()];
   return WEBRTC_VIDEO_CODEC_OK;
+}
+
+- (NSInteger)resolutionAlignment {
+  return 1;
+}
+
+- (BOOL)applyAlignmentToAllSimulcastLayers {
+  return NO;
+}
+
+- (BOOL)supportsNativeHandle {
+  return YES;
 }
 
 #pragma mark - Private

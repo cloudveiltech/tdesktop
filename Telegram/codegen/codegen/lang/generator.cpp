@@ -15,82 +15,6 @@
 
 namespace codegen {
 namespace lang {
-namespace {
-
-char hexChar(uchar ch) {
-	if (ch < 10) {
-		return '0' + ch;
-	} else if (ch < 16) {
-		return 'a' + (ch - 10);
-	}
-	return '0';
-}
-
-char hexSecondChar(char ch) {
-	return hexChar((*reinterpret_cast<uchar*>(&ch)) & 0x0F);
-}
-
-char hexFirstChar(char ch) {
-	return hexChar((*reinterpret_cast<uchar*>(&ch)) >> 4);
-}
-
-QString stringToEncodedString(const QString &str) {
-	QString result, lineBreak = "\\\n";
-	result.reserve(str.size() * 8);
-	bool writingHexEscapedCharacters = false, startOnNewLine = false;
-	int lastCutSize = 0;
-	auto utf = str.toUtf8();
-	for (auto ch : utf) {
-		if (result.size() - lastCutSize > 80) {
-			startOnNewLine = true;
-			result.append(lineBreak);
-			lastCutSize = result.size();
-		}
-		if (ch == '\n') {
-			writingHexEscapedCharacters = false;
-			result.append("\\n");
-		} else if (ch == '\t') {
-			writingHexEscapedCharacters = false;
-			result.append("\\t");
-		} else if (ch == '"' || ch == '\\') {
-			writingHexEscapedCharacters = false;
-			result.append('\\').append(ch);
-		} else if (ch < 32 || static_cast<uchar>(ch) > 127) {
-			writingHexEscapedCharacters = true;
-			result.append("\\x").append(hexFirstChar(ch)).append(hexSecondChar(ch));
-		} else {
-			if (writingHexEscapedCharacters) {
-				writingHexEscapedCharacters = false;
-				result.append("\"\"");
-			}
-			result.append(ch);
-		}
-	}
-	return '"' + (startOnNewLine ? lineBreak : QString()) + result + '"';
-}
-
-QString stringToEncodedString(const std::string &str) {
-	return stringToEncodedString(QString::fromStdString(str));
-}
-
-QString stringToBinaryArray(const std::string &str) {
-	QStringList rows, chars;
-	chars.reserve(13);
-	rows.reserve(1 + (str.size() / 13));
-	for (uchar ch : str) {
-		if (chars.size() > 12) {
-			rows.push_back(chars.join(", "));
-			chars.clear();
-		}
-		chars.push_back(QString("0x") + hexFirstChar(ch) + hexSecondChar(ch));
-	}
-	if (!chars.isEmpty()) {
-		rows.push_back(chars.join(", "));
-	}
-	return QString("{") + ((rows.size() > 1) ? '\n' : ' ') + rows.join(",\n") + " }";
-}
-
-} // namespace
 
 Generator::Generator(const LangPack &langpack, const QString &destBasePath, const common::ProjectInfo &project)
 : langpack_(langpack)
@@ -211,7 +135,6 @@ struct phrase;\n\
 	std::set<QString> producersDeclared;
 	for (auto &entry : langpack_.entries) {
 		const auto isPlural = !entry.keyBase.isEmpty();
-		const auto &key = entry.key;
 		auto tags = QStringList();
 		auto producerArgs = QStringList();
 		auto currentArgs = QStringList();
@@ -457,7 +380,7 @@ void Generator::writeSetSearch(const std::set<QString, std::greater<>> &set, Com
 	// Returns true if at least one check was finished.
 	auto finishChecksTillKey = [this, &chars, &checkTypes, &checkLengthHistory, &tabsUsed, tabs](const QString &key) {
 		auto result = false;
-		while (!chars.isEmpty() && key.midRef(0, chars.size()) != chars) {
+		while (!chars.isEmpty() && !key.startsWith(chars)) {
 			result = true;
 
 			auto wasType = checkTypes.back();
@@ -468,7 +391,7 @@ void Generator::writeSetSearch(const std::set<QString, std::greater<>> &set, Com
 				if (wasType == UsedCheckType::Switch) {
 					source_->stream() << tabs(tabsUsed) << "break;\n";
 				}
-				if ((!chars.isEmpty() && key.midRef(0, chars.size()) != chars) || key == chars) {
+				if ((!chars.isEmpty() && !key.startsWith(chars)) || key == chars) {
 					source_->stream() << tabs(tabsUsed) << "}\n";
 					checkLengthHistory.pop_back();
 				}

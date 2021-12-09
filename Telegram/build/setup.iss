@@ -2,13 +2,12 @@
 #define MyAppName "CloudVeil Messenger Desktop"
 #define MyAppPublisher "CloudVeil"
 #define MyAppURL "https://github.com/cloudveiltech"
-#define MyAppExeName "Telegram.exe"
 #define MyAppExeName "CloudVeilMessenger.exe"
-#define MyAppId "7BF3C861-C022-41EC-8C16-87EBECBDCE4B"     
-#define MyAppVersion "2.8.11"
-#define MyAppVersionFull "2.8.11"
+#define MyAppId "7BF3C861-C022-41EC-8C16-87EBECBDCE4B"   
+#define MyAppVersion "3.3.0"
+#define MyAppVersionFull "3.3.0"
 #define ReleasePath "..\..\out\Release"
-#define MyBuildTarget "win64"
+#define MyBuildTarget "win64"  
 
 [Setup]
 ; NOTE: The value of AppId uniquely identifies this application.
@@ -26,6 +25,7 @@ DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir={#ReleasePath}
 SetupIconFile={#SourcePath}..\Resources\art\icon256.ico
+UninstallDisplayName={#MyAppName}
 UninstallDisplayIcon={app}\CloudVeilMessenger.exe
 Compression=lzma
 SolidCompression=yes
@@ -40,9 +40,13 @@ DisableProgramGroupPage=no
 ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 OutputBaseFilename=cloudveil_messenger_setup-x64.{#MyAppVersionFull}
+#define ArchModulesFolder "x64"
 #else
 OutputBaseFilename=cloudveil_messenger_setup.{#MyAppVersionFull}
+#define ArchModulesFolder "x86"
 #endif
+
+#define ModulesFolder "modules\" + ArchModulesFolder
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -60,8 +64,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; OnlyBelowVersion: 0,6.1
 
 [Files]
-Source: "{#ReleasePath}\CloudVeilMessenger.exe"; DestDir: "{app}"; Flags: ignoreversion
-;Source: "{#ReleasePath}\Updater.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ReleasePath}\CloudVeilMessenger.exe"; DestDir: "{app}"; Flags: ignoreversion          
+Source: "{#ReleasePath}\{#ModulesFolder}\d3d\d3dcompiler_47.dll"; DestDir: "{app}\{#ModulesFolder}\d3d"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]
@@ -82,6 +86,7 @@ Type: filesandordirs; Name: "{app}\tupdates"
 Type: filesandordirs; Name: "{app}\tdata"
 Type: filesandordirs; Name: "{app}\tcache"
 Type: filesandordirs; Name: "{app}\tdumps"
+Type: filesandordirs; Name: "{app}\modules"
 Type: dirifempty; Name: "{app}"
 Type: files; Name: "{userappdata}\{#MyAppName}\data"
 Type: files; Name: "{userappdata}\{#MyAppName}\data_config"
@@ -91,6 +96,7 @@ Type: filesandordirs; Name: "{userappdata}\{#MyAppName}\tupdates"
 Type: filesandordirs; Name: "{userappdata}\{#MyAppName}\tdata"
 Type: filesandordirs; Name: "{userappdata}\{#MyAppName}\tcache"
 Type: filesandordirs; Name: "{userappdata}\{#MyAppName}\tdumps"
+Type: filesandordirs; Name: "{userappdata}\{#MyAppName}\modules"
 Type: dirifempty; Name: "{userappdata}\{#MyAppName}"
 
 [Code]

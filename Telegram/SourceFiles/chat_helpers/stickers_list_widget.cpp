@@ -31,10 +31,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_account.h"
 #include "lang/lang_keys.h"
 #include "mainwindow.h"
-#include "dialogs/dialogs_layout.h"
+#include "dialogs/ui/dialogs_layout.h"
 #include "boxes/sticker_set_box.h"
 #include "boxes/stickers_box.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "window/window_session_controller.h" // GifPauseReason.
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
@@ -972,6 +972,11 @@ StickersListWidget::StickersListWidget(
 		}
 		refreshRecent();
 	}, lifetime());
+
+	positionValue(
+	) | rpl::skip(1) | rpl::map_to(
+		TabbedSelector::Action::Update
+	) | rpl::start_to_stream(_choosingUpdated, lifetime());
 }
 
 Main::Session &StickersListWidget::session() const {
@@ -988,6 +993,11 @@ rpl::producer<> StickersListWidget::scrollUpdated() const {
 
 rpl::producer<> StickersListWidget::checkForHide() const {
 	return _checkForHide.events();
+}
+
+auto StickersListWidget::choosingUpdated() const
+-> rpl::producer<TabbedSelector::Action> {
+	return _choosingUpdated.events();
 }
 
 object_ptr<TabbedSelector::InnerFooter> StickersListWidget::createFooter() {
@@ -1053,7 +1063,7 @@ void StickersListWidget::preloadMoreOfficial() {
 	_officialRequestId = _api.request(MTPmessages_GetOldFeaturedStickers(
 		MTP_int(_officialOffset),
 		MTP_int(kOfficialLoadLimit),
-		MTP_int(0)
+		MTP_long(0) // hash
 	)).done([=](const MTPmessages_FeaturedStickers &result) {
 		_officialRequestId = 0;
 		result.match([&](const MTPDmessages_featuredStickersNotModified &d) {
@@ -1087,18 +1097,22 @@ void StickersListWidget::preloadMoreOfficial() {
 					if (set->stickers.empty() && set->covers.empty()) {
 						continue;
 					}
-					const auto externalLayout = true;
-					appendSet(
-						_officialSets,
-						set->id,
-						externalLayout,
-						AppendSkip::Installed);
+
+					//CloudVeil start
+					if (GlobalSecuritySettings::getSettings().isStickerSetAllowed(set->id)) {
+						const auto externalLayout = true;
+						appendSet(
+							_officialSets,
+							set->id,
+							externalLayout,
+							AppendSkip::Installed);
+					}
+					//CloudVeil end
 				}
 			}
 		});
 		resizeToWidth(width());
 		update();
-	}).fail([=](const MTP::Error &error) {
 	}).send();
 }
 
@@ -1261,14 +1275,14 @@ void StickersListWidget::sendSearchRequest() {
 	}
 
 	_footer->setLoading(true);
-	const auto hash = int32(0);
+	const auto hash = uint64(0);
 	_searchRequestId = _api.request(MTPmessages_SearchStickerSets(
 		MTP_flags(0),
 		MTP_string(_searchQuery),
-		MTP_int(hash)
+		MTP_long(hash)
 	)).done([=](const MTPmessages_FoundStickerSets &result) {
 		searchResultsDone(result);
-	}).fail([this](const MTP::Error &error) {
+	}).fail([=] {
 		// show error?
 		_footer->setLoading(false);
 		_searchRequestId = 0;
@@ -1545,11 +1559,7 @@ void StickersListWidget::searchResultsDone(
 			if (set->stickers.empty() && set->covers.empty()) {
 				continue;
 			}
-			//CloudVeil start
-			if (GlobalSecuritySettings::getSettings().isStickerSetAllowed(set->id)) {
-				it->second.push_back(set->id);
-			}
-			//CloudVeil end
+			it->second.push_back(set->id);
 		}
 	}
 	showSearchResults();
@@ -1886,7 +1896,6 @@ void StickersListWidget::ensureLottiePlayer(Set &set) {
 
 void StickersListWidget::setupLottie(Set &set, int section, int index) {
 	auto &sticker = set.stickers[index];
-	const auto document = sticker.document;
 	ensureLottiePlayer(set);
 
 	// Document should be loaded already for the animation to be set up.
@@ -2368,6 +2377,7 @@ TabbedSelector::InnerFooter *StickersListWidget::getFooter() const {
 }
 
 void StickersListWidget::processHideFinished() {
+	_choosingUpdated.fire(TabbedSelector::Action::Cancel);
 	clearSelection();
 	clearHeavyData();
 	if (_footer) {
@@ -2430,7 +2440,7 @@ void StickersListWidget::refreshMySets() {
 	refreshFavedStickers();
 	refreshRecentStickers(false);
 	refreshMegagroupStickers(GroupStickersPlace::Visible);
-	for (const auto setId : defaultSetsOrder()) {	
+	for (const auto setId : defaultSetsOrder()) {
 		//CloudVeil start
 		if (GlobalSecuritySettings::getInstance()->getSettings().isStickerSetAllowed(setId)) {
 			const auto externalLayout = false;
@@ -2473,7 +2483,6 @@ void StickersListWidget::refreshFeaturedSets() {
 				continue;
 			}
 			set.flags = it->second->flags;
-
 			_officialSets.push_back(std::move(set));
 		}
 	}
@@ -2491,12 +2500,14 @@ void StickersListWidget::refreshSearchSets() {
 				entry.lottiePlayer = nullptr;
 				entry.stickers = PrepareStickers(set->stickers);
 			}
-			//CloudVeil start
-			if (!SetInMyList(entry.flags) || !GlobalSecuritySettings::getInstance()->getSettings().isStickerSetAllowed(entry.id)) {
-				_installedLocallySets.remove(entry.id);
-				entry.externalLayout = true;
+			if (!SetInMyList(entry.flags)) {
+				//CloudVeil start
+				if (!SetInMyList(entry.flags) || !GlobalSecuritySettings::getInstance()->getSettings().isStickerSetAllowed(entry.id)) {
+					_installedLocallySets.remove(entry.id);
+					entry.externalLayout = true;
+				}
+				//CloudVeil end
 			}
-			//CloudVeil end
 		}
 	}
 }
@@ -2699,7 +2710,6 @@ void StickersListWidget::refreshFavedStickers() {
 	//CloudVeil start
 	auto& sets = session().data().stickers().stickerSetsFiltered();
 	//CloudVeil end
-
 	const auto it = sets.find(Data::Stickers::FavedSetId);
 	if (it == sets.cend() || it->second->stickers.isEmpty()) {
 		return;
@@ -2793,16 +2803,21 @@ void StickersListWidget::refreshMegagroupStickers(GroupStickersPlace place) {
 	}
 	_megagroupSetIdRequested = set.id;
 	_api.request(MTPmessages_GetStickerSet(
-		Data::InputStickerSet(set)
+		Data::InputStickerSet(set),
+		MTP_int(0) // hash
 	)).done([=](const MTPmessages_StickerSet &result) {
-		if (const auto set = session().data().stickers().feedSetFull(result)) {
-			refreshStickers();
-			if (set->id == _megagroupSetIdRequested) {
-				_megagroupSetIdRequested = 0;
-			} else {
-				LOG(("API Error: Got different set."));
+		result.match([&](const MTPDmessages_stickerSet &data) {
+			if (const auto set = session().data().stickers().feedSetFull(data)) {
+				refreshStickers();
+				if (set->id == _megagroupSetIdRequested) {
+					_megagroupSetIdRequested = 0;
+				} else {
+					LOG(("API Error: Got different set."));
+				}
 			}
-		}
+		}, [](const MTPDmessages_stickerSetNotModified &) {
+			LOG(("API Error: Unexpected messages.stickerSetNotModified."));
+		});
 	}).send();
 }
 
@@ -3132,9 +3147,14 @@ void StickersListWidget::installSet(uint64 setId) {
 		const auto input = set->mtpInput();
 		if ((set->flags & SetFlag::NotLoaded) || set->stickers.empty()) {
 			_api.request(MTPmessages_GetStickerSet(
-				input
+				input,
+				MTP_int(0) // hash
 			)).done([=](const MTPmessages_StickerSet &result) {
-				session().data().stickers().feedSetFull(result);
+				result.match([&](const MTPDmessages_stickerSet &data) {
+					session().data().stickers().feedSetFull(data);
+				}, [](const MTPDmessages_stickerSetNotModified &) {
+					LOG(("API Error: Unexpected messages.stickerSetNotModified."));
+				});
 				sendInstallRequest(setId, input);
 			}).send();
 		} else {
@@ -3154,7 +3174,7 @@ void StickersListWidget::sendInstallRequest(
 			session().data().stickers().applyArchivedResult(
 				result.c_messages_stickerSetInstallResultArchive());
 		}
-	}).fail([=](const MTP::Error &error) {
+	}).fail([=] {
 		notInstalledLocally(setId);
 		session().data().stickers().undoInstallLocally(setId);
 	}).send();
@@ -3171,19 +3191,21 @@ void StickersListWidget::removeMegagroupSet(bool locally) {
 		return;
 	}
 	_removingSetId = Data::Stickers::MegagroupSetId;
-	controller()->show(Box<ConfirmBox>(tr::lng_stickers_remove_group_set(tr::now), crl::guard(this, [this, group = _megagroupSet] {
-		Expects(group->mgInfo != nullptr);
+	controller()->show(Box<Ui::ConfirmBox>(
+		tr::lng_stickers_remove_group_set(tr::now),
+		crl::guard(this, [this, group = _megagroupSet] {
+			Expects(group->mgInfo != nullptr);
 
-		if (group->mgInfo->stickerSet) {
-			session().api().setGroupStickerSet(group, {});
-		}
-		Ui::hideLayer();
-		_removingSetId = 0;
-		_checkForHide.fire({});
-	}), crl::guard(this, [this] {
-		_removingSetId = 0;
-		_checkForHide.fire({});
-	})));
+			if (group->mgInfo->stickerSet) {
+				session().api().setGroupStickerSet(group, {});
+			}
+			Ui::hideLayer();
+			_removingSetId = 0;
+			_checkForHide.fire({});
+		}), crl::guard(this, [this] {
+			_removingSetId = 0;
+			_checkForHide.fire({});
+		})));
 }
 
 void StickersListWidget::removeSet(uint64 setId) {
@@ -3199,18 +3221,18 @@ void StickersListWidget::removeSet(uint64 setId) {
 		lt_sticker_pack,
 		set->title);
 	const auto confirm = tr::lng_stickers_remove_pack_confirm(tr::now);
-	controller()->show(Box<ConfirmBox>(text, confirm, crl::guard(this, [=](
+	controller()->show(Box<Ui::ConfirmBox>(text, confirm, crl::guard(this, [=](
 			Fn<void()> &&close) {
 		close();
 		const auto &sets = session().data().stickers().sets();
 		const auto it = sets.find(_removingSetId);
 		if (it != sets.cend()) {
 			const auto set = it->second.get();
-			if (set->id && set->access) {
+			if (set->id && set->accessHash) {
 				_api.request(MTPmessages_UninstallStickerSet(
 					MTP_inputStickerSetID(
 						MTP_long(set->id),
-						MTP_long(set->access)))
+						MTP_long(set->accessHash)))
 				).send();
 			} else if (!set->shortName.isEmpty()) {
 				_api.request(MTPmessages_UninstallStickerSet(

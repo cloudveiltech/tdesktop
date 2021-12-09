@@ -15,13 +15,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_account.h"
 #include "mainwindow.h"
 #include "storage/localstorage.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/shadow.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/multi_select.h"
 #include "ui/widgets/dropdown_menu.h"
 #include "ui/toast/toast.h"
+#include "ui/style/style_palette_colorizer.h"
+#include "ui/image/image_prepare.h"
 #include "ui/ui_utility.h"
 #include "base/parse_helper.h"
 #include "base/zlib_help.h"
@@ -31,7 +33,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/edit_color_box.h"
 #include "lang/lang_keys.h"
 #include "facades.h"
-#include "app.h"
 #include "styles/style_window.h"
 #include "styles/style_dialogs.h"
 #include "styles/style_layers.h"
@@ -156,7 +157,7 @@ bool isValidColorValue(QLatin1String value) {
 
 [[nodiscard]] QByteArray ColorizeInContent(
 		QByteArray content,
-		const Colorizer &colorizer) {
+		const style::colorizer &colorizer) {
 	auto validNames = OrderedSet<QLatin1String>();
 	content.detach();
 	auto start = content.constBegin(), data = start, end = data + content.size();
@@ -164,6 +165,7 @@ bool isValidColorValue(QLatin1String value) {
 		skipWhitespacesAndComments(data, end);
 		if (data == end) break;
 
+		[[maybe_unused]] auto foundName = base::parse::readName(data, end);
 		skipWhitespacesAndComments(data, end);
 		if (data == end || *data != ':') {
 			return "error";
@@ -175,7 +177,7 @@ bool isValidColorValue(QLatin1String value) {
 			return "error";
 		}
 		if (isValidColorValue(value)) {
-			const auto colorized = Colorize(value, colorizer);
+			const auto colorized = style::colorize(value, colorizer);
 			Assert(colorized.size() == value.size());
 			memcpy(
 				content.data() + (data - start) - value.size(),
@@ -420,7 +422,7 @@ Editor::Inner::Inner(QWidget *parent, const QString &path)
 		if (update.type == BackgroundUpdate::Type::TestingTheme) {
 			Revert();
 			base::call_delayed(st::slideDuration, this, [] {
-				Ui::show(Box<InformBox>(
+				Ui::show(Box<Ui::InformBox>(
 					tr::lng_theme_editor_cant_change_theme(tr::now)));
 			});
 		}
@@ -665,7 +667,7 @@ Editor::Editor(
 		[=] { save(); }));
 
 	_inner->setErrorCallback([=] {
-		window->show(Box<InformBox>(tr::lng_theme_editor_error(tr::now)));
+		window->show(Box<Ui::InformBox>(tr::lng_theme_editor_error(tr::now)));
 
 		// This could be from inner->_context observable notification.
 		// We should not destroy it while iterating in subscribers.
@@ -748,13 +750,13 @@ void Editor::exportTheme() {
 		if (!f.open(QIODevice::WriteOnly)) {
 			LOG(("Theme Error: could not open zip-ed theme file '%1' for writing").arg(path));
 			_window->show(
-				Box<InformBox>(tr::lng_theme_editor_error(tr::now)));
+				Box<Ui::InformBox>(tr::lng_theme_editor_error(tr::now)));
 			return;
 		}
 		if (f.write(result) != result.size()) {
 			LOG(("Theme Error: could not write zip-ed theme to file '%1'").arg(path));
 			_window->show(
-				Box<InformBox>(tr::lng_theme_editor_error(tr::now)));
+				Box<Ui::InformBox>(tr::lng_theme_editor_error(tr::now)));
 			return;
 		}
 		Ui::Toast::Show(tr::lng_theme_editor_done(tr::now));
@@ -789,7 +791,10 @@ void Editor::importTheme() {
 		_inner->applyNewPalette(parsed.palette);
 		_inner->recreateRows();
 		updateControlsGeometry();
-		auto image = App::readImage(parsed.background);
+		auto image = Images::Read({
+			.content = parsed.background,
+			.forceOpaque = true,
+		}).image;
 		if (!image.isNull() && !image.size().isEmpty()) {
 			Background()->set(Data::CustomWallPaper(), std::move(image));
 			Background()->setTile(parsed.tiled);
@@ -805,7 +810,7 @@ void Editor::importTheme() {
 
 QByteArray Editor::ColorizeInContent(
 		QByteArray content,
-		const Colorizer &colorizer) {
+		const style::colorizer &colorizer) {
 	return Window::Theme::ColorizeInContent(content, colorizer);
 }
 
@@ -898,7 +903,7 @@ void Editor::closeWithConfirmation() {
 		closeEditor();
 		close();
 	});
-	_window->show(Box<ConfirmBox>(
+	_window->show(Box<Ui::ConfirmBox>(
 		tr::lng_theme_editor_sure_close(tr::now),
 		tr::lng_close(tr::now),
 		close));

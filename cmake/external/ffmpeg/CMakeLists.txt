@@ -17,7 +17,7 @@ if (DESKTOP_APP_USE_PACKAGED)
     pkg_check_modules(SWRESAMPLE REQUIRED IMPORTED_TARGET libswresample)
 
     if (DESKTOP_APP_USE_PACKAGED_FFMPEG_STATIC)
-        target_include_directories(external_ffmpeg
+        target_include_directories(external_ffmpeg SYSTEM
         INTERFACE
             ${AVCODEC_STATIC_INCLUDE_DIRS}
             ${AVFORMAT_STATIC_INCLUDE_DIRS}
@@ -64,6 +64,7 @@ else()
     if (LINUX)
         target_link_static_libraries(external_ffmpeg
         INTERFACE
+            lzma
             va-x11
             va-drm
             va
@@ -71,11 +72,11 @@ else()
             Xv
             Xext
             Xfixes
+            drm
         )
         target_link_libraries(external_ffmpeg
         INTERFACE
             X11
-            drm
             pthread
         )
     endif()

@@ -28,14 +28,6 @@ NeverFreedPointer<DocumentItems> documentItemsMap;
 
 } // namespace
 
-void ItemBase::setPosition(int32 position) {
-	_position = position;
-}
-
-int32 ItemBase::position() const {
-	return _position;
-}
-
 Result *ItemBase::getResult() const {
 	return _result;
 }
@@ -198,7 +190,7 @@ ClickHandlerPtr ItemBase::getResultPreviewHandler() const {
 			_result->_content_url,
 			false);
 	} else if (const auto document = _result->_document
-		&& _result->_document->createMediaView()->canBePlayed()) {
+		; document && document->createMediaView()->canBePlayed(nullptr)) {
 		return std::make_shared<OpenFileClickHandler>();
 	} else if (_result->_photo) {
 		return std::make_shared<OpenFileClickHandler>();
@@ -207,11 +199,7 @@ ClickHandlerPtr ItemBase::getResultPreviewHandler() const {
 }
 
 QString ItemBase::getResultThumbLetter() const {
-#ifndef OS_MAC_OLD
-	auto parts = _result->_url.splitRef('/');
-#else // OS_MAC_OLD
-	auto parts = _result->_url.split('/');
-#endif // OS_MAC_OLD
+	auto parts = QStringView(_result->_url).split('/');
 	if (!parts.isEmpty()) {
 		auto domain = parts.at(0);
 		if (parts.size() > 2 && domain.endsWith(':') && parts.at(1).isEmpty()) { // http:// and others

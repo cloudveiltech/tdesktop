@@ -10,7 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
 #include "ui/text/text_utilities.h"
@@ -93,13 +93,9 @@ void AboutBox::showVersionHistory() {
 			url += qsl("win/%1.zip");
 		} else if (Platform::IsWindows64Bit()) {
 			url += qsl("win64/%1.zip");
-		} else if (Platform::IsOSXBuild()) {
-			url += qsl("osx/%1.zip");
 		} else if (Platform::IsMac()) {
 			url += qsl("mac/%1.zip");
-		} else if (Platform::IsLinux32Bit()) {
-			url += qsl("linux32/%1.tar.xz");
-		} else if (Platform::IsLinux64Bit()) {
+		} else if (Platform::IsLinux()) {
 			url += qsl("linux/%1.tar.xz");
 		} else {
 			Unexpected("Platform value.");
@@ -108,7 +104,8 @@ void AboutBox::showVersionHistory() {
 
 		QGuiApplication::clipboard()->setText(url);
 
-		Ui::show(Box<InformBox>("The link to the current private alpha version of Telegram Desktop was copied to the clipboard."));
+		Ui::show(Box<Ui::InformBox>("The link to the current private alpha "
+			"version of Telegram Desktop was copied to the clipboard."));
 	} else {
 		UrlClickHandler::Open(Core::App().changelogLink());
 	}

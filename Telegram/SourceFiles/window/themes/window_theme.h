@@ -9,6 +9,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "data/data_wall_paper.h"
 #include "data/data_cloud_themes.h"
+#include "ui/style/style_core_palette.h"
+
+namespace style {
+struct colorizer;
+} // namespace style
 
 namespace Main {
 class Session;
@@ -17,6 +22,10 @@ class Session;
 namespace Window {
 class Controller;
 } // namespace Window
+
+namespace Ui {
+struct ChatThemeBackground;
+} // namespace Ui
 
 namespace Window {
 namespace Theme {
@@ -78,6 +87,7 @@ void KeepFromEditor(
 QString NightThemePath();
 [[nodiscard]] bool IsNightMode();
 void SetNightModeValue(bool nightMode);
+[[nodiscard]] rpl::producer<bool> IsNightModeValue();
 void ToggleNightMode();
 void ToggleNightMode(const QString &themePath);
 void ToggleNightModeWithConfirmation(
@@ -87,20 +97,26 @@ void ResetToSomeDefault();
 [[nodiscard]] bool IsNonDefaultBackground();
 void Revert();
 
+[[nodiscard]] rpl::producer<bool> IsThemeDarkValue();
+
 [[nodiscard]] QString EditingPalettePath();
 
+// NB! This method looks to Core::App().settings() to get colorizer by 'file'.
 bool LoadFromFile(
-	const QString &file,
+	const QString &path,
 	not_null<Instance*> out,
 	Cached *outCache,
-	not_null<QByteArray*> outContent);
+	QByteArray *outContent);
+bool LoadFromFile(
+	const QString &path,
+	not_null<Instance*> out,
+	Cached *outCache,
+	QByteArray *outContent,
+	const style::colorizer &colorizer);
 bool LoadFromContent(
 	const QByteArray &content,
 	not_null<Instance*> out,
 	Cached *outCache);
-QColor CountAverageColor(const QImage &image);
-QColor AdjustedColor(QColor original, QColor background);
-QImage ProcessBackgroundImage(QImage image);
 
 struct BackgroundUpdate {
 	enum class Type {
@@ -164,24 +180,26 @@ public:
 	void appliedEditedPalette();
 	void downloadingStarted(bool tile);
 
-	[[nodiscard]] Data::WallPaper paper() const {
+	[[nodiscard]] const Data::WallPaper &paper() const {
 		return _paper;
 	}
 	[[nodiscard]] WallPaperId id() const {
 		return _paper.id();
 	}
-	[[nodiscard]] const QPixmap &pixmap() const {
-		return _pixmap;
+	[[nodiscard]] const QImage &prepared() const {
+		return _prepared;
 	}
-	[[nodiscard]] const QPixmap &pixmapForTiled() const {
-		return _pixmapForTiled;
+	[[nodiscard]] const QImage &preparedForTiled() const {
+		return _preparedForTiled;
 	}
 	[[nodiscard]] std::optional<QColor> colorForFill() const;
+	[[nodiscard]] QImage gradientForFill() const;
+	void recacheGradientForFill(QImage gradient);
 	[[nodiscard]] QImage createCurrentImage() const;
 	[[nodiscard]] bool tile() const;
 	[[nodiscard]] bool tileDay() const;
 	[[nodiscard]] bool tileNight() const;
-	[[nodiscard]] bool isMonoColorImage() const;
+	[[nodiscard]] std::optional<QColor> imageMonoColor() const;
 	[[nodiscard]] bool nightModeChangeAllowed() const;
 
 private:
@@ -195,13 +213,15 @@ private:
 	[[nodiscard]] bool started() const;
 	void initialRead();
 	void saveForRevert();
-	void setPreparedImage(QImage original, QImage prepared);
-	void preparePixmaps(QImage image);
+	void setPreparedAfterPaper(QImage image);
+	void setPrepared(QImage original, QImage prepared, QImage gradient);
+	void prepareImageForTiled();
 	void writeNewBackgroundSettings();
 	void setPaper(const Data::WallPaper &paper);
 
 	[[nodiscard]] bool adjustPaletteRequired();
 	void adjustPaletteUsingBackground(const QImage &image);
+	void adjustPaletteUsingColors(const std::vector<QColor> &colors);
 	void adjustPaletteUsingColor(QColor color);
 	void restoreAdjustableColors();
 
@@ -215,6 +235,7 @@ private:
 	[[nodiscard]] bool isNonDefaultThemeOrBackground();
 	[[nodiscard]] bool isNonDefaultBackground();
 	void checkUploadWallPaper();
+	[[nodiscard]] QImage postprocessBackgroundImage(QImage image);
 
 	friend bool IsNightMode();
 	friend void SetNightModeValue(bool nightMode);
@@ -235,16 +256,17 @@ private:
 	rpl::event_stream<BackgroundUpdate> _updates;
 	Data::WallPaper _paper = Data::details::UninitializedWallPaper();
 	std::optional<QColor> _paperColor;
+	QImage _gradient;
 	QImage _original;
-	QPixmap _pixmap;
-	QPixmap _pixmapForTiled;
+	QImage _prepared;
+	QImage _preparedForTiled;
 	bool _nightMode = false;
 	bool _tileDayValue = false;
 	bool _tileNightValue = true;
 	std::optional<bool> _localStoredTileDayValue;
 	std::optional<bool> _localStoredTileNightValue;
 
-	bool _isMonoColorImage = false;
+	std::optional<QColor> _imageMonoColor;
 
 	Object _themeObject;
 	QImage _themeImage;
@@ -267,9 +289,9 @@ private:
 
 [[nodiscard]] ChatBackground *Background();
 
-void ComputeBackgroundRects(QRect wholeFill, QSize imageSize, QRect &to, QRect &from);
-
-bool ReadPaletteValues(const QByteArray &content, Fn<bool(QLatin1String name, QLatin1String value)> callback);
+bool ReadPaletteValues(
+	const QByteArray &content,
+	Fn<bool(QLatin1String name, QLatin1String value)> callback);
 
 } // namespace Theme
 } // namespace Window

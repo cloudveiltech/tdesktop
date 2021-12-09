@@ -11,19 +11,50 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "core/local_url_handlers.h"
 #include "mainwidget.h"
+#include "mainwindow.h"
 #include "main/main_session.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "base/qthelp_regex.h"
 #include "storage/storage_account.h"
+#include "history/history.h"
 #include "history/view/history_view_element.h"
 #include "history/history_item.h"
 #include "data/data_user.h"
 #include "data/data_session.h"
 #include "window/window_session_controller.h"
 #include "facades.h"
-#include "app.h"
 
 #include <QtGui/QGuiApplication>
+
+namespace {
+
+void SearchByHashtag(ClickContext context, const QString &tag) {
+	const auto my = context.other.value<ClickHandlerContext>();
+	const auto controller = my.sessionWindow.get();
+	if (!controller) {
+		return;
+	}
+	if (controller->openedFolder().current()) {
+		controller->closeFolder();
+	}
+
+	controller->widget()->ui_hideSettingsAndLayer(anim::type::normal);
+	Core::App().hideMediaView();
+
+	auto &data = controller->session().data();
+	const auto inPeer = my.peer
+		? my.peer
+		: my.itemId
+		? data.message(my.itemId)->history()->peer.get()
+		: nullptr;
+	controller->content()->searchMessages(
+		tag + ' ',
+		(inPeer && !inPeer->isUser())
+			? data.history(inPeer).get()
+			: Dialogs::Key());
+}
+
+} // namespace
 
 bool UrlRequiresConfirmation(const QUrl &url) {
 	using namespace qthelp;
@@ -32,6 +63,26 @@ bool UrlRequiresConfirmation(const QUrl &url) {
 		"(^|\\.)(telegram\\.(org|me|dog)|t\\.me|telegra\\.ph|telesco\\.pe)$",
 		url.host(),
 		RegExOption::CaseInsensitive);
+}
+
+QString HiddenUrlClickHandler::copyToClipboardText() const {
+	return url().startsWith(qstr("internal:url:"))
+		? url().mid(qstr("internal:url:").size())
+		: url();
+}
+
+QString HiddenUrlClickHandler::copyToClipboardContextItemText() const {
+	return url().isEmpty()
+		? QString()
+		: !url().startsWith(qstr("internal:"))
+		? UrlClickHandler::copyToClipboardContextItemText()
+		: url().startsWith(qstr("internal:url:"))
+		? UrlClickHandler::copyToClipboardContextItemText()
+		: QString();
+}
+
+QString HiddenUrlClickHandler::dragText() const {
+	return HiddenUrlClickHandler::copyToClipboardText();
 }
 
 void HiddenUrlClickHandler::Open(QString url, QVariant context) {
@@ -60,7 +111,7 @@ void HiddenUrlClickHandler::Open(QString url, QVariant context) {
 				? QString::fromUtf8(parsedUrl.toEncoded())
 				: ShowEncoded(displayed);
 			Ui::show(
-				Box<ConfirmBox>(
+				Box<Ui::ConfirmBox>(
 					(tr::lng_open_this_link(tr::now)
 						+ qsl("\n\n")
 						+ displayUrl),
@@ -94,7 +145,7 @@ void BotGameUrlClickHandler::onClick(ClickContext context) const {
 			bot->session().local().markBotTrustedOpenGame(bot->id);
 			open();
 		};
-		Ui::show(Box<ConfirmBox>(
+		Ui::show(Box<Ui::ConfirmBox>(
 			tr::lng_allow_bot_pass(tr::now, lt_bot_name, _bot->name),
 			tr::lng_allow_bot(tr::now),
 			callback));
@@ -159,7 +210,7 @@ QString HashtagClickHandler::copyToClipboardContextItemText() const {
 void HashtagClickHandler::onClick(ClickContext context) const {
 	const auto button = context.button;
 	if (button == Qt::LeftButton || button == Qt::MiddleButton) {
-		App::searchByHashtag(_tag, Ui::getPeerForMouseAction());
+		SearchByHashtag(context, _tag);
 	}
 }
 
@@ -174,7 +225,7 @@ QString CashtagClickHandler::copyToClipboardContextItemText() const {
 void CashtagClickHandler::onClick(ClickContext context) const {
 	const auto button = context.button;
 	if (button == Qt::LeftButton || button == Qt::MiddleButton) {
-		App::searchByHashtag(_tag, Ui::getPeerForMouseAction());
+		SearchByHashtag(context, _tag);
 	}
 }
 
@@ -184,24 +235,31 @@ auto CashtagClickHandler::getTextEntity() const -> TextEntity {
 
 void BotCommandClickHandler::onClick(ClickContext context) const {
 	const auto button = context.button;
-	if (button == Qt::LeftButton || button == Qt::MiddleButton) {
-		const auto my = context.other.value<ClickHandlerContext>();
-		if (const auto delegate = my.elementDelegate ? my.elementDelegate() : nullptr) {
-			delegate->elementSendBotCommand(_cmd, my.itemId);
+	if (button != Qt::LeftButton && button != Qt::MiddleButton) {
+		return;
+	}
+	const auto my = context.other.value<ClickHandlerContext>();
+	if (const auto delegate = my.elementDelegate ? my.elementDelegate() : nullptr) {
+		delegate->elementSendBotCommand(_cmd, my.itemId);
+	} else if (const auto controller = my.sessionWindow.get()) {
+		auto &data = controller->session().data();
+		const auto peer = my.peer
+			? my.peer
+			: my.itemId
+			? data.message(my.itemId)->history()->peer.get()
+			: nullptr;
+		// Can't find context.
+		if (!peer) {
 			return;
-		} else if (auto peer = Ui::getPeerForMouseAction()) { // old way
-			auto bot = peer->isUser() ? peer->asUser() : nullptr;
-			if (!bot) {
-				if (const auto view = App::hoveredLinkItem()) {
-					// may return nullptr
-					bot = view->data()->fromOriginal()->asUser();
-				}
-			}
-			Ui::showPeerHistory(peer, ShowAtTheEndMsgId);
-			App::sendBotCommand(peer, bot, _cmd);
-		} else {
-			App::insertBotCommand(_cmd);
 		}
+		controller->widget()->ui_hideSettingsAndLayer(anim::type::normal);
+		Core::App().hideMediaView();
+		controller->content()->sendBotCommand({
+			.peer = peer,
+			.command = _cmd,
+			.context = my.itemId,
+			.replyTo = 0,
+		});
 	}
 }
 

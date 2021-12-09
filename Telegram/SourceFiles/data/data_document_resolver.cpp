@@ -7,10 +7,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_document_resolver.h"
 
-#include "app.h"
 #include "facades.h"
 #include "base/platform/base_platform_info.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "core/mime_type.h"
@@ -24,6 +23,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item.h"
 #include "media/player/media_player_instance.h"
 #include "platform/platform_file_utilities.h"
+#include "ui/chat/chat_theme.h"
 #include "ui/text/text_utilities.h"
 #include "window/window_session_controller.h"
 
@@ -80,7 +80,7 @@ void LaunchWithWarning(
 			rpl::single(Ui::Text::Bold(extension)),
 			Ui::Text::WithEntities)
 		: tr::lng_launch_svg_warning(Ui::Text::WithEntities);
-	Ui::show(Box<ConfirmDontWarnBox>(
+	Ui::show(Box<Ui::ConfirmDontWarnBox>(
 		std::move(text),
 		tr::lng_launch_exe_dont_ask(tr::now),
 		(isExecutable ? tr::lng_launch_exe_sure : tr::lng_continue)(),
@@ -98,25 +98,27 @@ QString FileExtension(const QString &filepath) {
 	return QString(last.base(), last - reversed.begin());
 }
 
-// bool IsValidMediaFile(const QString &filepath) {
-// 	static const auto kExtensions = [] {
-// 		const auto list = qsl("\
-// 16svx 2sf 3g2 3gp 8svx aac aaf aif aifc aiff amr amv ape asf ast au aup \
-// avchd avi brstm bwf cam cdda cust dat divx drc dsh dsf dts dtshd dtsma \
-// dvr-ms dwd evo f4a f4b f4p f4v fla flac flr flv gif gifv gsf gsm gym iff \
-// ifo it jam la ly m1v m2p m2ts m2v m4a m4p m4v mcf mid mk3d mka mks mkv mng \
-// mov mp1 mp2 mp3 mp4 minipsf mod mpc mpe mpeg mpg mpv mscz mt2 mus mxf mxl \
-// niff nsf nsv off ofr ofs ogg ogv opus ots pac ps psf psf2 psflib ptb qsf \
-// qt ra raw rka rm rmj rmvb roq s3m shn sib sid smi smp sol spc spx ssf svi \
-// swa swf tak ts tta txm usf vgm vob voc vox vqf wav webm wma wmv wrap wtv \
-// wv xm xml ym yuv").split(' ');
-// 		return base::flat_set<QString>(list.begin(), list.end());
-// 	}();
+#if 0
+bool IsValidMediaFile(const QString &filepath) {
+	static const auto kExtensions = [] {
+		const auto list = qsl("\
+16svx 2sf 3g2 3gp 8svx aac aaf aif aifc aiff amr amv ape asf ast au aup \
+avchd avi brstm bwf cam cdda cust dat divx drc dsh dsf dts dtshd dtsma \
+dvr-ms dwd evo f4a f4b f4p f4v fla flac flr flv gif gifv gsf gsm gym iff \
+ifo it jam la ly m1v m2p m2ts m2v m4a m4p m4v mcf mid mk3d mka mks mkv mng \
+mov mp1 mp2 mp3 mp4 minipsf mod mpc mpe mpeg mpg mpv mscz mt2 mus mxf mxl \
+niff nsf nsv off ofr ofs ogg ogv opus ots pac ps psf psf2 psflib ptb qsf \
+qt ra raw rka rm rmj rmvb roq s3m shn sib sid smi smp sol spc spx ssf svi \
+swa swf tak ts tta txm usf vgm vob voc vox vqf wav webm wma wmv wrap wtv \
+wv xm xml ym yuv").split(' ');
+		return base::flat_set<QString>(list.begin(), list.end());
+	}();
 
-// 	return ranges::binary_search(
-// 		kExtensions,
-// 		FileExtension(filepath).toLower());
-// }
+	return ranges::binary_search(
+		kExtensions,
+		FileExtension(filepath).toLower());
+}
+#endif
 
 bool IsExecutableName(const QString &filepath) {
 	static const auto kExtensions = [] {
@@ -172,29 +174,21 @@ bool IsIpRevealingName(const QString &filepath) {
 	);
 }
 
-base::binary_guard ReadImageAsync(
+base::binary_guard ReadBackgroundImageAsync(
 		not_null<Data::DocumentMedia*> media,
 		FnMut<QImage(QImage)> postprocess,
 		FnMut<void(QImage&&)> done) {
 	auto result = base::binary_guard();
+	const auto gzipSvg = media->owner()->isPatternWallPaperSVG();
 	crl::async([
+		gzipSvg,
 		bytes = media->bytes(),
 		path = media->owner()->filepath(),
 		postprocess = std::move(postprocess),
 		guard = result.make_guard(),
 		callback = std::move(done)
 	]() mutable {
-		auto format = QByteArray();
-		if (bytes.isEmpty()) {
-			QFile f(path);
-			if (f.size() <= App::kImageSizeLimit
-				&& f.open(QIODevice::ReadOnly)) {
-				bytes = f.readAll();
-			}
-		}
-		auto image = bytes.isEmpty()
-			? QImage()
-			: App::readImage(bytes, &format, false, nullptr);
+		auto image = Ui::ReadBackgroundImage(path, bytes, gzipSvg);
 		if (postprocess) {
 			image = postprocess(std::move(image));
 		}
@@ -212,7 +206,7 @@ void ResolveDocument(
 		Window::SessionController *controller,
 		not_null<DocumentData*> document,
 		HistoryItem *item) {
-	if (!document->date) {
+	if (document->isNull()) {
 		return;
 	}
 	const auto msgId = item ? item->fullId() : FullMsgId();
@@ -229,7 +223,7 @@ void ResolveDocument(
 
 	const auto media = document->createMediaView();
 	const auto openImageInApp = [&] {
-		if (document->size >= App::kImageSizeLimit) {
+		if (document->size >= Images::kReadBytesLimit) {
 			return false;
 		}
 		const auto &location = document->location(true);
@@ -238,7 +232,7 @@ void ResolveDocument(
 				location.accessDisable();
 			});
 			const auto path = location.name();
-			if (Core::MimeTypeForFile(path).name().startsWith("image/")
+			if (Core::MimeTypeForFile(QFileInfo(path)).name().startsWith("image/")
 				&& QImageReader(path).canRead()) {
 				showDocument();
 				return true;
@@ -258,7 +252,7 @@ void ResolveDocument(
 	if (document->isTheme() && media->loaded(true)) {
 		showDocument();
 		location.accessDisable();
-	} else if (media->canBePlayed()) {
+	} else if (media->canBePlayed(item)) {
 		if (document->isAudioFile()
 			|| document->isVoiceMessage()
 			|| document->isVideoMessage()) {

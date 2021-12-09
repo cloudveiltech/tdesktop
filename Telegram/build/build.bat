@@ -95,12 +95,12 @@ if %Build64% neq 0 (
   set "UpdateFile=tx64upd%AppVersion%"
   set "SetupFile=tsetup-x64.%AppVersionStrFull%.exe"
   set "PortableFile=tportable-x64.%AppVersionStrFull%.zip"
-  set "DumpSymsPath=%SolutionPath%\..\..\Libraries\win64\breakpad\src\tools\windows\dump_syms\Release\dump_syms.exe"
+  set "DumpSymsPath=%SolutionPath%\..\..\Libraries\win64\breakpad\src\out\Release_x64\dump_syms.exe"
 ) else (
   set "UpdateFile=tupdate%AppVersion%"
   set "SetupFile=tsetup.%AppVersionStrFull%.exe"
   set "PortableFile=tportable.%AppVersionStrFull%.zip"
-  set "DumpSymsPath=%SolutionPath%\..\..\Libraries\breakpad\src\tools\windows\dump_syms\Release\dump_syms.exe"
+  set "DumpSymsPath=%SolutionPath%\..\..\Libraries\breakpad\src\out\Release\dump_syms.exe"
 )
 set "ReleasePath=%SolutionPath%\Release"
 set "DeployPath=%ReleasePath%\deploy\%AppVersionStrMajor%\%AppVersionStrFull%"
@@ -206,7 +206,7 @@ if %BuildUWP% equ 0 (
     )
   )
 
-  call Packer.exe -version %VersionForPacker% -path %BinaryName%.exe -path Updater.exe -target %BuildTarget% %AlphaBetaParam%
+  call Packer.exe -version %VersionForPacker% -path %BinaryName%.exe -path Updater.exe -path "modules\%Platform%\d3d\d3dcompiler_47.dll" -target %BuildTarget% %AlphaBetaParam%
   if %errorlevel% neq 0 goto error
 
   if %AlphaVersion% neq 0 (
@@ -222,6 +222,13 @@ if %BuildUWP% equ 0 (
   if %AlphaVersion% neq 0 (
     set "UpdateFile=!UpdateFile!_!AlphaSignature!"
     set "PortableFile=talpha!AlphaVersion!_!AlphaSignature!.zip"
+  )
+) else (
+:sign2
+  call "%SignPath%" "StartupTask.exe"
+  if %errorlevel% neq 0 (
+    timeout /t 3
+    goto sign2
   )
 )
 
@@ -243,24 +250,18 @@ echo Done!
 if %BuildUWP% neq 0 (
   cd "%HomePath%"
 
-  mkdir "%ReleasePath%\AppX"
+  mkdir "%ReleasePath%\AppX\modules\%Platform%\d3d"
   xcopy "Resources\uwp\AppX\*" "%ReleasePath%\AppX\" /E
   set "ResourcePath=%ReleasePath%\AppX\AppxManifest.xml"
-  if %Build64% equ 0 (
-    call :repl "Argument= (ProcessorArchitecture=)&quot;ARCHITECTURE&quot;/ $1&quot;x86&quot;" "Filename=!ResourcePath!" || goto error
-  ) else (
-    call :repl "Argument= (ProcessorArchitecture=)&quot;ARCHITECTURE&quot;/ $1&quot;x64&quot;" "Filename=!ResourcePath!" || goto error
-  )
+  call :repl "Argument= (ProcessorArchitecture=)&quot;ARCHITECTURE&quot;/ $1&quot;%Platform%&quot;" "Filename=!ResourcePath!" || goto error
   makepri new /pr Resources\uwp\AppX\ /cf Resources\uwp\priconfig.xml /mn %ReleasePath%\AppX\AppxManifest.xml /of %ReleasePath%\AppX\resources.pri
   if %errorlevel% neq 0 goto error
 
   xcopy "%ReleasePath%\%BinaryName%.exe" "%ReleasePath%\AppX\"
+  xcopy "%ReleasePath%\StartupTask.exe" "%ReleasePath%\AppX\"
+  xcopy "%ReleasePath%\modules\%Platform%\d3d\d3dcompiler_47.dll" "%ReleasePath%\AppX\modules\%Platform%\d3d\"
 
-  if %Build64% equ 0 (
-    MakeAppx.exe pack /d "%ReleasePath%\AppX" /l /p ..\out\Release\%BinaryName%.x86.appx
-  ) else (
-    MakeAppx.exe pack /d "%ReleasePath%\AppX" /l /p ..\out\Release\%BinaryName%.x64.appx
-  )
+  MakeAppx.exe pack /d "%ReleasePath%\AppX" /l /p ..\out\Release\%BinaryName%.%Platform%.appx
   if %errorlevel% neq 0 goto error
 
   if not exist "%ReleasePath%\deploy" mkdir "%ReleasePath%\deploy"
@@ -268,11 +269,7 @@ if %BuildUWP% neq 0 (
   mkdir "%DeployPath%"
 
   move "%ReleasePath%\%BinaryName%.pdb" "%DeployPath%\"
-  if %Build64% equ 0 (
-    move "%ReleasePath%\%BinaryName%.x86.appx" "%DeployPath%\"
-  ) else (
-    move "%ReleasePath%\%BinaryName%.x64.appx" "%DeployPath%\"
-  )
+  move "%ReleasePath%\%BinaryName%.%Platform%.appx" "%DeployPath%\"
   move "%ReleasePath%\%BinaryName%.exe" "%DeployPath%\"
 
   if "%AlphaBetaParam%" equ "" (
@@ -283,11 +280,11 @@ if %BuildUWP% neq 0 (
 ) else (
   if not exist "%ReleasePath%\deploy" mkdir "%ReleasePath%\deploy"
   if not exist "%ReleasePath%\deploy\%AppVersionStrMajor%" mkdir "%ReleasePath%\deploy\%AppVersionStrMajor%"
-  mkdir "%DeployPath%"
-  mkdir "%DeployPath%\%BinaryName%"
+  mkdir "%DeployPath%\%BinaryName%\modules\%Platform%\d3d"
   if %errorlevel% neq 0 goto error
 
   move "%ReleasePath%\%BinaryName%.exe" "%DeployPath%\%BinaryName%\"
+  xcopy "%ReleasePath%\modules\%Platform%\d3d\d3dcompiler_47.dll" "%DeployPath%\%BinaryName%\modules\%Platform%\d3d\"
   move "%ReleasePath%\Updater.exe" "%DeployPath%\"
   move "%ReleasePath%\%BinaryName%.pdb" "%DeployPath%\"
   move "%ReleasePath%\Updater.pdb" "%DeployPath%\"

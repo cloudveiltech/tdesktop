@@ -5,14 +5,7 @@
 # https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 add_library(lib_tgcalls STATIC)
-
-if (WIN32)
-    init_target(lib_tgcalls cxx_std_17) # Small amount of patches required here.
-elseif (LINUX)
-    init_target(lib_tgcalls) # All C++20 on Linux, because otherwise ODR violation.
-else()
-    init_target(lib_tgcalls cxx_std_14) # Can't use std::optional::value on macOS.
-endif()
+init_target(lib_tgcalls) # Can't use std::optional::value on macOS.
 
 add_library(tdesktop::lib_tgcalls ALIAS lib_tgcalls)
 
@@ -62,6 +55,15 @@ PRIVATE
     VideoCaptureInterfaceImpl.h
     VideoCapturerInterface.h
 
+    v2/InstanceV2Impl.cpp
+    v2/InstanceV2Impl.h
+    v2/NativeNetworkingImpl.cpp
+    v2/NativeNetworkingImpl.h
+    v2/Signaling.cpp
+    v2/Signaling.h
+    v2/SignalingEncryption.cpp
+    v2/SignalingEncryption.h
+
     # Desktop capturer
     desktop_capturer/DesktopCaptureSource.h
     desktop_capturer/DesktopCaptureSource.cpp
@@ -71,6 +73,8 @@ PRIVATE
     desktop_capturer/DesktopCaptureSourceManager.cpp
 
     # Group calls
+    group/AudioStreamingPart.cpp
+    group/AudioStreamingPart.h
     group/GroupInstanceCustomImpl.cpp
     group/GroupInstanceCustomImpl.h
     group/GroupInstanceImpl.h
@@ -79,8 +83,10 @@ PRIVATE
     group/GroupJoinPayload.h
     group/GroupNetworkManager.cpp
     group/GroupNetworkManager.h
-    group/StreamingPart.cpp
-    group/StreamingPart.h
+    group/StreamingMediaContext.cpp
+    group/StreamingMediaContext.h
+    group/VideoStreamingPart.cpp
+    group/VideoStreamingPart.h
 
     platform/PlatformInterface.h
 
@@ -99,8 +105,6 @@ PRIVATE
     platform/darwin/DarwinInterface.mm
     platform/darwin/DarwinVideoSource.h
     platform/darwin/DarwinVideoSource.mm
-    platform/darwin/DesktopCaptureSourceView.h
-    platform/darwin/DesktopCaptureSourceView.mm
     platform/darwin/DesktopSharingCapturer.h
     platform/darwin/DesktopSharingCapturer.mm
     platform/darwin/GLVideoView.h
@@ -109,6 +113,8 @@ PRIVATE
     platform/darwin/GLVideoViewMac.mm
     platform/darwin/objc_video_encoder_factory.h
     platform/darwin/objc_video_encoder_factory.mm
+    platform/darwin/objc_video_decoder_factory.h
+    platform/darwin/objc_video_decoder_factory.mm
     platform/darwin/TGCMIOCapturer.h
     platform/darwin/TGCMIOCapturer.m
     platform/darwin/TGCMIODevice.h
@@ -139,7 +145,7 @@ PRIVATE
     platform/darwin/VideoMetalView.mm
     platform/darwin/VideoMetalViewMac.h
     platform/darwin/VideoMetalViewMac.mm
-    
+
     # POSIX
 
     # Teleram Desktop
@@ -151,10 +157,6 @@ PRIVATE
     platform/tdesktop/VideoCapturerTrackSource.h
     platform/tdesktop/VideoCameraCapturer.cpp
     platform/tdesktop/VideoCameraCapturer.h
-
-    # All
-    reference/InstanceImplReference.cpp
-    reference/InstanceImplReference.h
 
     # third-party
     third-party/json11.cpp
@@ -177,22 +179,12 @@ PRIVATE
 )
 
 if (WIN32)
-    target_compile_definitions(lib_tgcalls
-    PRIVATE
-        WEBRTC_WIN
-    )
 elseif (APPLE)
     target_compile_options(lib_tgcalls
     PRIVATE
         -fobjc-arc
     )
-    target_compile_definitions(lib_tgcalls
-    PRIVATE
-        WEBRTC_MAC
-    )
     remove_target_sources(lib_tgcalls ${tgcalls_loc}
-        platform/darwin/DesktopCaptureSourceView.h
-        platform/darwin/DesktopCaptureSourceView.mm
         platform/darwin/GLVideoView.h
         platform/darwin/GLVideoView.mm
         platform/darwin/GLVideoViewMac.h
@@ -211,11 +203,6 @@ elseif (APPLE)
         platform/tdesktop/VideoCapturerTrackSource.h
         platform/tdesktop/VideoCameraCapturer.cpp
         platform/tdesktop/VideoCameraCapturer.h
-    )
-elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_compile_definitions(lib_tgcalls
-    PRIVATE
-        WEBRTC_LINUX
     )
 endif()
 
@@ -248,14 +235,7 @@ PRIVATE
 )
 
 add_library(lib_tgcalls_legacy STATIC)
-
-if (WIN32)
-    init_target(lib_tgcalls_legacy cxx_std_17) # Small amount of patches required here.
-elseif (LINUX)
-    init_target(lib_tgcalls_legacy) # All C++20 on Linux, because otherwise ODR violation.
-else()
-    init_target(lib_tgcalls_legacy cxx_std_14) # Can't use std::optional::value on macOS.
-endif()
+init_target(lib_tgcalls_legacy)
 
 add_library(tdesktop::lib_tgcalls_legacy ALIAS lib_tgcalls_legacy)
 

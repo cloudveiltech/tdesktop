@@ -23,10 +23,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_changes.h"
 #include "data/data_media_types.h"
 #include "data/data_user.h"
-#include "boxes/confirm_box.h"
+#include "boxes/delete_messages_box.h"
 #include "base/unixtime.h"
 #include "api/api_updates.h"
-#include "app.h"
 #include "apiwrap.h"
 #include "styles/style_layers.h" // st::boxLabel.
 #include "styles/style_calls.h"
@@ -103,23 +102,25 @@ public:
 		int availableWidth,
 		int outerWidth,
 		bool selected) override;
-	void addActionRipple(QPoint point, Fn<void()> updateCallback) override;
-	void stopLastActionRipple() override;
+	void rightActionAddRipple(
+		QPoint point,
+		Fn<void()> updateCallback) override;
+	void rightActionStopLastRipple() override;
 
 	int nameIconWidth() const override {
 		return 0;
 	}
-	QSize actionSize() const override {
+	QSize rightActionSize() const override {
 		return peer()->isUser() ? QSize(_st->width, _st->height) : QSize();
 	}
-	QMargins actionMargins() const override {
+	QMargins rightActionMargins() const override {
 		return QMargins(
 			0,
 			0,
 			st::defaultPeerListItem.photoPosition.x(),
 			0);
 	}
-	void paintAction(
+	void rightActionPaint(
 		Painter &p,
 		int x,
 		int y,
@@ -142,7 +143,7 @@ private:
 };
 
 BoxController::Row::Row(not_null<HistoryItem*> item)
-: PeerListRow(item->history()->peer, item->id)
+: PeerListRow(item->history()->peer, item->id.bare)
 , _items(1, item)
 , _date(ItemDateTime(item).date())
 , _type(ComputeType(item))
@@ -169,14 +170,14 @@ void BoxController::Row::paintStatusText(Painter &p, const style::PeerListItem &
 	PeerListRow::paintStatusText(p, st, x, y, availableWidth, outerWidth, selected);
 }
 
-void BoxController::Row::paintAction(
+void BoxController::Row::rightActionPaint(
 		Painter &p,
 		int x,
 		int y,
 		int outerWidth,
 		bool selected,
 		bool actionSelected) {
-	auto size = actionSize();
+	auto size = rightActionSize();
 	if (_actionRipple) {
 		_actionRipple->paint(
 			p,
@@ -244,7 +245,7 @@ BoxController::Row::CallType BoxController::Row::ComputeCallType(
 	return CallType::Voice;
 }
 
-void BoxController::Row::addActionRipple(QPoint point, Fn<void()> updateCallback) {
+void BoxController::Row::rightActionAddRipple(QPoint point, Fn<void()> updateCallback) {
 	if (!_actionRipple) {
 		auto mask = Ui::RippleAnimation::ellipseMask(
 			QSize(_st->rippleAreaSize, _st->rippleAreaSize));
@@ -256,7 +257,7 @@ void BoxController::Row::addActionRipple(QPoint point, Fn<void()> updateCallback
 	_actionRipple->add(point - _st->rippleAreaPosition);
 }
 
-void BoxController::Row::stopLastActionRipple() {
+void BoxController::Row::rightActionStopLastRipple() {
 	if (_actionRipple) {
 		_actionRipple->lastStop();
 	}
@@ -310,18 +311,18 @@ void BoxController::loadMoreRows() {
 	_loadRequestId = _api.request(MTPmessages_Search(
 		MTP_flags(0),
 		MTP_inputPeerEmpty(),
-		MTP_string(),
+		MTP_string(), // q
 		MTP_inputPeerEmpty(),
 		MTPint(), // top_msg_id
 		MTP_inputMessagesFilterPhoneCalls(MTP_flags(0)),
-		MTP_int(0),
-		MTP_int(0),
+		MTP_int(0), // min_date
+		MTP_int(0), // max_date
 		MTP_int(_offsetId),
-		MTP_int(0),
+		MTP_int(0), // add_offset
 		MTP_int(_offsetId ? kFirstPageCount : kPerPageCount),
-		MTP_int(0),
-		MTP_int(0),
-		MTP_int(0)
+		MTP_int(0), // max_id
+		MTP_int(0), // min_id
+		MTP_long(0) // hash
 	)).done([this](const MTPmessages_Messages &result) {
 		_loadRequestId = 0;
 
@@ -343,7 +344,7 @@ void BoxController::loadMoreRows() {
 		} break;
 		default: Unexpected("Type of messages.Messages (Calls::BoxController::preloadRows)");
 		}
-	}).fail([this](const MTP::Error &error) {
+	}).fail([this] {
 		_loadRequestId = 0;
 	}).send();
 }
@@ -380,7 +381,7 @@ void BoxController::rowClicked(not_null<PeerListRow*> row) {
 	});
 }
 
-void BoxController::rowActionClicked(not_null<PeerListRow*> row) {
+void BoxController::rowRightActionClicked(not_null<PeerListRow*> row) {
 	auto user = row->peer()->asUser();
 	Assert(user != nullptr);
 
@@ -398,7 +399,7 @@ void BoxController::receivedCalls(const QVector<MTPMessage> &result) {
 		if (const auto peer = session().data().peerLoaded(peerId)) {
 			const auto item = session().data().addNewMessage(
 				message,
-				MTPDmessage_ClientFlags(),
+				MessageFlags(),
 				NewMessageType::Existing);
 			insertRow(item, InsertWay::Append);
 		} else {

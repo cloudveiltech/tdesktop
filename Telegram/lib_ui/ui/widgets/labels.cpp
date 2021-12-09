@@ -13,6 +13,7 @@
 #include "ui/widgets/box_content_divider.h"
 #include "ui/basic_click_handlers.h" // UrlClickHandler
 #include "ui/inactive_press.h"
+#include "base/qt_adapters.h"
 
 #include <QtWidgets/QApplication>
 #include <QtGui/QClipboard>
@@ -444,11 +445,15 @@ Text::StateResult FlatLabel::dragActionFinish(const QPoint &p, Qt::MouseButton b
 	_selectionType = TextSelectType::Letters;
 
 	if (activated) {
-		const auto guard = window();
-		if (!_clickHandlerFilter
-			|| _clickHandlerFilter(activated, button)) {
-			ActivateClickHandler(guard, activated, button);
-		}
+		// _clickHandlerFilter may delete `this`. In that case we don't want
+		// to try to show a context menu or smth like that.
+		crl::on_main(this, [=] {
+			const auto guard = window();
+			if (!_clickHandlerFilter
+				|| _clickHandlerFilter(activated, button)) {
+				ActivateClickHandler(guard, activated, button);
+			}
+		});
 	}
 
 	if (QGuiApplication::clipboard()->supportsSelection()
@@ -487,7 +492,7 @@ void FlatLabel::mouseDoubleClickEvent(QMouseEvent *e) {
 	}
 }
 
-void FlatLabel::enterEventHook(QEvent *e) {
+void FlatLabel::enterEventHook(QEnterEvent *e) {
 	_lastMousePos = QCursor::pos();
 	dragActionUpdate();
 }
@@ -542,7 +547,7 @@ void FlatLabel::contextMenuEvent(QContextMenuEvent *e) {
 bool FlatLabel::eventHook(QEvent *e) {
 	if (e->type() == QEvent::TouchBegin || e->type() == QEvent::TouchUpdate || e->type() == QEvent::TouchEnd || e->type() == QEvent::TouchCancel) {
 		QTouchEvent *ev = static_cast<QTouchEvent*>(e);
-		if (ev->device()->type() == QTouchDevice::TouchScreen) {
+		if (ev->device()->type() == base::TouchDevice::TouchScreen) {
 			touchEvent(ev);
 			return true;
 		}

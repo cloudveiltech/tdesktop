@@ -12,10 +12,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwidget.h"
 #include "mainwindow.h"
 #include "data/data_session.h"
+#include "data/data_cloud_themes.h"
 #include "main/main_session.h"
 #include "main/main_account.h"
 #include "main/main_domain.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "lang/lang_cloud_manager.h"
 #include "lang/lang_instance.h"
 #include "core/application.h"
@@ -29,11 +30,45 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/audio/media_audio_track.h"
 #include "settings/settings_common.h"
 #include "api/api_updates.h"
+#include "base/qt_adapters.h"
+
+#include "zlib.h"
 
 namespace Settings {
 namespace {
 
 using SessionController = Window::SessionController;
+
+[[nodiscard]] QByteArray UnpackRawGzip(const QByteArray &bytes) {
+	z_stream stream;
+	stream.zalloc = nullptr;
+	stream.zfree = nullptr;
+	stream.opaque = nullptr;
+	stream.avail_in = 0;
+	stream.next_in = nullptr;
+	int res = inflateInit2(&stream, -MAX_WBITS);
+	if (res != Z_OK) {
+		return QByteArray();
+	}
+	const auto guard = gsl::finally([&] { inflateEnd(&stream); });
+
+	auto result = QByteArray(1024 * 1024, char(0));
+	stream.avail_in = bytes.size();
+	stream.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(bytes.data()));
+	stream.avail_out = 0;
+	while (!stream.avail_out) {
+		stream.avail_out = result.size();
+		stream.next_out = reinterpret_cast<Bytef*>(result.data());
+		int res = inflate(&stream, Z_NO_FLUSH);
+		if (res != Z_OK && res != Z_STREAM_END) {
+			return QByteArray();
+		} else if (!stream.avail_out) {
+			return QByteArray();
+		}
+	}
+	result.resize(result.size() - stream.avail_out);
+	return result;
+}
 
 auto GenerateCodes() {
 	auto codes = std::map<QString, Fn<void(SessionController*)>>();
@@ -42,7 +77,7 @@ auto GenerateCodes() {
 			? qsl("Do you want to disable DEBUG logs?")
 			: qsl("Do you want to enable DEBUG logs?\n\n"
 				"All network events will be logged.");
-		Ui::show(Box<ConfirmBox>(text, [] {
+		Ui::show(Box<Ui::ConfirmBox>(text, [] {
 			Core::App().switchDebugMode();
 		}));
 	});
@@ -62,7 +97,7 @@ auto GenerateCodes() {
 	});
 	codes.emplace(qsl("moderate"), [](SessionController *window) {
 		auto text = Core::App().settings().moderateModeEnabled() ? qsl("Disable moderate mode?") : qsl("Enable moderate mode?");
-		Ui::show(Box<ConfirmBox>(text, [=] {
+		Ui::show(Box<Ui::ConfirmBox>(text, [=] {
 			Core::App().settings().setModerateModeEnabled(!Core::App().settings().moderateModeEnabled());
 			Core::App().saveSettingsDelayed();
 			Ui::hideLayer();
@@ -85,7 +120,7 @@ auto GenerateCodes() {
 			return;
 		}
 		auto text = cUseExternalVideoPlayer() ? qsl("Use internal video player?") : qsl("Use external video player?");
-		Ui::show(Box<ConfirmBox>(text, [=] {
+		Ui::show(Box<Ui::ConfirmBox>(text, [=] {
 			cSetUseExternalVideoPlayer(!cUseExternalVideoPlayer());
 			window->session().saveSettingsDelayed();
 			Ui::hideLayer();
@@ -102,7 +137,8 @@ auto GenerateCodes() {
 			if (!result.paths.isEmpty()) {
 				const auto loadFor = [&](not_null<Main::Account*> account) {
 					if (!account->mtp().dcOptions().loadFromFile(result.paths.front())) {
-						Ui::show(Box<InformBox>("Could not load endpoints :( Errors in 'log.txt'."));
+						Ui::show(Box<Ui::InformBox>("Could not load endpoints"
+							" :( Errors in 'log.txt'."));
 					}
 				};
 				if (const auto strong = weak.get()) {
@@ -137,7 +173,7 @@ auto GenerateCodes() {
 		}
 	});
 	codes.emplace(qsl("registertg"), [](SessionController *window) {
-		Platform::RegisterCustomScheme(true);
+		Core::Application::RegisterUrlScheme();
 		Ui::Toast::Show("Forced custom scheme register.");
 	});
 
@@ -151,7 +187,7 @@ auto GenerateCodes() {
 #endif // !Q_OS_WIN
 			: qsl("Switch font engine to FreeType?");
 
-		Ui::show(Box<ConfirmBox>(text, [] {
+		Ui::show(Box<Ui::ConfirmBox>(text, [] {
 			Core::App().switchFreeType();
 		}));
 	});
@@ -180,7 +216,7 @@ auto GenerateCodes() {
 					auto track = Media::Audio::Current().createTrack();
 					track->fillFromFile(result.paths.front());
 					if (track->failed()) {
-						Ui::show(Box<InformBox>(
+						Ui::show(Box<Ui::InformBox>(
 							"Could not audio :( Errors in 'log.txt'."));
 					} else {
 						Core::App().settings().setSoundOverride(
@@ -195,7 +231,56 @@ auto GenerateCodes() {
 	codes.emplace(qsl("sounds_reset"), [](SessionController *window) {
 		Core::App().settings().clearSoundOverrides();
 		Core::App().saveSettingsDelayed();
-		Ui::show(Box<InformBox>("All sound overrides were reset."));
+		Ui::show(Box<Ui::InformBox>("All sound overrides were reset."));
+	});
+	codes.emplace(qsl("unpacklog"), [](SessionController *window) {
+		FileDialog::GetOpenPath(Core::App().getFileDialogParent(), "Open crash log file", "Crash dump (*.txt)", [=](const FileDialog::OpenResult &result) {
+			if (result.paths.isEmpty()) {
+				return;
+			}
+			auto f = QFile(result.paths.front());
+			if (!f.open(QIODevice::ReadOnly)) {
+				Ui::Toast::Show("Could not open log :(");
+				return;
+			}
+			const auto all = f.readAll();
+			const auto log = all.indexOf("Log: ");
+			if (log < 0) {
+				Ui::Toast::Show("Could not find log :(");
+				return;
+			}
+			const auto base = all.mid(log + 5);
+			const auto end = base.indexOf('\n');
+			if (end <= 0) {
+				Ui::Toast::Show("Could not find log end :(");
+				return;
+			}
+			const auto based = QByteArray::fromBase64(base.mid(0, end));
+			const auto uncompressed = UnpackRawGzip(based);
+			if (uncompressed.isEmpty()) {
+				Ui::Toast::Show("Could not unpack log :(");
+				return;
+			}
+			FileDialog::GetWritePath(Core::App().getFileDialogParent(), "Save detailed log", "Crash dump (*.txt)", QString(), [=](QString &&result) {
+				if (result.isEmpty()) {
+					return;
+				}
+				auto f = QFile(result);
+				if (!f.open(QIODevice::WriteOnly)) {
+					Ui::Toast::Show("Could not open details :(");
+				} else if (f.write(uncompressed) != uncompressed.size()) {
+					Ui::Toast::Show("Could not write details :(");
+				} else {
+					f.close();
+					Ui::Toast::Show("Done!");
+				}
+			});
+		});
+	});
+	codes.emplace(qsl("testchatcolors"), [](SessionController *window) {
+		const auto now = !Data::CloudThemes::TestingColors();
+		Data::CloudThemes::SetTestingColors(now);
+		Ui::Toast::Show(now ? "Testing chat theme colors!" : "Not testing..");
 	});
 
 	return codes;
@@ -210,7 +295,7 @@ void CodesFeedString(SessionController *window, const QString &text) {
 	secret += text.toLower();
 	int size = secret.size(), from = 0;
 	while (size > from) {
-		auto piece = secret.midRef(from);
+		auto piece = base::StringViewMid(secret,from);
 		auto found = false;
 		for (const auto &[key, method] : codes) {
 			if (piece == key) {

@@ -16,8 +16,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/mtproto_dc_options.h"
 #include "mtproto/connection_abstract.h"
 #include "platform/platform_specific.h"
-#include "base/openssl_help.h"
+#include "base/random.h"
 #include "base/qthelp_url.h"
+#include "base/openssl_help.h"
 #include "base/unixtime.h"
 #include "base/platform/base_platform_info.h"
 #include "zlib.h"
@@ -73,12 +74,18 @@ using namespace details;
 }
 
 [[nodiscard]] QString ComputeAppVersion() {
-	return QString::fromLatin1(AppVersionStr) + ([] {
+#if defined Q_OS_WIN && defined Q_PROCESSOR_X86_64
+	const auto arch = u" x64"_q;
+#elif (defined Q_OS_WIN && defined Q_PROCESSOR_X86_32) || defined Q_PROCESSOR_X86_64
+	const auto arch = QString();
+#else
+	const auto arch = ' ' + QSysInfo::buildCpuArchitecture();
+#endif
+	return QString::fromLatin1(AppVersionStr) + arch + ([] {
 #if defined OS_MAC_STORE
 		return u" Mac App Store"_q;
 #elif defined OS_WIN_STORE // OS_MAC_STORE
-		return (Platform::IsWindows64Bit() ? u" x64"_q : QString())
-			+ u" Microsoft Store"_q;
+		return u" Microsoft Store"_q;
 #elif defined Q_OS_UNIX && !defined Q_OS_MAC // OS_MAC_STORE || OS_WIN_STORE
 		return Platform::InFlatpak()
 			? u" Flatpak"_q
@@ -86,7 +93,7 @@ using namespace details;
 			? u" Snap"_q
 			: QString();
 #else // OS_MAC_STORE || OS_WIN_STORE || (defined Q_OS_UNIX && !defined Q_OS_MAC)
-		return Platform::IsWindows64Bit() ? u" x64"_q : QString();
+		return QString();
 #endif // OS_MAC_STORE || OS_WIN_STORE || (defined Q_OS_UNIX && !defined Q_OS_MAC)
 	})();
 }
@@ -398,7 +405,7 @@ void SessionPrivate::resetSession() {
 void SessionPrivate::changeSessionId() {
 	auto sessionId = _sessionId;
 	do {
-		sessionId = openssl::RandomValue<uint64>();
+		sessionId = base::RandomValue<uint64>();
 	} while (_sessionId == sessionId);
 
 	DEBUG_LOG(("MTP Info: setting server_session: %1").arg(sessionId));
@@ -534,7 +541,7 @@ MTPVector<MTPJSONObjectValue> SessionPrivate::prepareInitParams() {
 	const auto local = QDateTime::currentDateTime();
 	const auto utc = QDateTime(local.date(), local.time(), Qt::UTC);
 	const auto shift = base::unixtime::now() - (TimeId)::time(nullptr);
-	const auto delta = int(utc.toTime_t()) - int(local.toTime_t()) - shift;
+	const auto delta = int(utc.toSecsSinceEpoch()) - int(local.toSecsSinceEpoch()) - shift;
 	auto sliced = delta;
 	while (sliced < -12 * 3600) {
 		sliced += 24 * 3600;
@@ -543,7 +550,9 @@ MTPVector<MTPJSONObjectValue> SessionPrivate::prepareInitParams() {
 		sliced -= 24 * 3600;
 	}
 	const auto sign = (sliced < 0) ? -1 : 1;
-	const auto rounded = std::round(std::abs(sliced) / 900.) * 900 * sign;
+	const auto rounded = base::SafeRound(std::abs(sliced) / 900.)
+		* 900
+		* sign;
 	return MTP_vector<MTPJSONObjectValue>(
 		1,
 		MTP_jsonObjectValue(
@@ -574,7 +583,7 @@ void SessionPrivate::tryToSend() {
 		&& !_pingIdToSend
 		&& !_pingId
 		&& _pingSendAt <= crl::now()) {
-		_pingIdToSend = openssl::RandomValue<mtpPingId>();
+		_pingIdToSend = base::RandomValue<mtpPingId>();
 	}
 	const auto forceNewMsgId = sendAll && markSessionAsStarted();
 	if (forceNewMsgId && _keyCreator) {
@@ -1355,13 +1364,18 @@ void SessionPrivate::handleReceived() {
 			).arg(getProtocolDcId()
 			).arg(_encryptionKey->keyId()));
 
-		if (_receivedMessageIds.registerMsgId(msgId, needAck)) {
+		const auto registered = _receivedMessageIds.registerMsgId(
+			msgId,
+			needAck);
+		if (registered == ReceivedIdsManager::Result::Success) {
 			res = handleOneReceived(from, end, msgId, {
 				.outerMsgId = msgId,
 				.serverSalt = serverSalt,
 				.serverTime = serverTime,
 				.badTime = badTime,
 			});
+		} else if (registered == ReceivedIdsManager::Result::TooOld) {
+			res = HandleResult::ResetSession;
 		}
 		_receivedMessageIds.shrink();
 
@@ -1469,9 +1483,14 @@ SessionPrivate::HandleResult SessionPrivate::handleOneReceived(
 			}
 
 			auto res = HandleResult::Success; // if no need to handle, then succeed
-			if (_receivedMessageIds.registerMsgId(inMsgId.v, needAck)) {
+			const auto registered = _receivedMessageIds.registerMsgId(
+				inMsgId.v,
+				needAck);
+			if (registered == ReceivedIdsManager::Result::Success) {
 				res = handleOneReceived(from, otherEnd, inMsgId.v, info);
 				info.badTime = false;
+			} else if (registered == ReceivedIdsManager::Result::TooOld) {
+				res = HandleResult::ResetSession;
 			}
 			if (res != HandleResult::Success) {
 				return res;
@@ -2528,7 +2547,7 @@ void SessionPrivate::authKeyChecked() {
 		resendAll();
 	} // else receive salt in bad_server_salt first, then try to send all the requests
 
-	_pingIdToSend = openssl::RandomValue<uint64>(); // get server_salt
+	_pingIdToSend = base::RandomValue<uint64>(); // get server_salt
 	_sessionData->queueNeedToResumeAndSend();
 }
 

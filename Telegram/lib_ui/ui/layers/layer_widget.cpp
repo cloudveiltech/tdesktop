@@ -281,7 +281,7 @@ void LayerStackWidget::BackgroundWidget::paintEvent(QPaintEvent *e) {
 		// in the transparent special layer cache corners after filling special layer
 		// rect above its cache with alpha_current opacity.
 		const auto region = QRegion(bg) - specialLayerBox;
-		for (const auto rect : region) {
+		for (const auto &rect : region) {
 			p.fillRect(rect, st::layerBg);
 		}
 		p.setOpacity((bgOpacity - overSpecialOpacity) / (1. - (overSpecialOpacity * st::layerBg->c.alphaF())));
@@ -456,6 +456,17 @@ void LayerStackWidget::removeBodyCache() {
 
 bool LayerStackWidget::layerShown() const {
 	return _specialLayer || currentLayer() || _mainMenu;
+}
+
+const LayerWidget *LayerStackWidget::topShownLayer() const {
+	if (const auto result = currentLayer()) {
+		return result;
+	} else if (const auto special = _specialLayer.data()) {
+		return special;
+	} else if (const auto menu = _mainMenu.data()) {
+		return menu;
+	}
+	return nullptr;
 }
 
 void LayerStackWidget::setStyleOverrides(

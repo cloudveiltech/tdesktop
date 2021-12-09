@@ -53,6 +53,10 @@ namespace Calls::Group {
 namespace {
 
 constexpr auto kDelaysCount = 201;
+constexpr auto kMicrophoneTooltipAfterLoudCount = 3;
+constexpr auto kDropLoudAfterQuietCount = 5;
+constexpr auto kMicrophoneTooltipLevelThreshold = 0.2;
+constexpr auto kMicrophoneTooltipCheckInterval = crl::time(500);
 
 #ifdef Q_OS_MAC
 constexpr auto kCheckAccessibilityInterval = crl::time(500);
@@ -60,7 +64,7 @@ constexpr auto kCheckAccessibilityInterval = crl::time(500);
 
 void SaveCallJoinMuted(
 		not_null<PeerData*> peer,
-		uint64 callId,
+		CallId callId,
 		bool joinMuted) {
 	const auto call = peer->groupCall();
 	if (!call
@@ -171,9 +175,9 @@ object_ptr<ShareBox> ShareInviteLinkBox(
 		auto &api = peer->session().api();
 		for (const auto peer : result) {
 			const auto history = owner->history(peer);
-			auto message = ApiWrap::MessageToSend(history);
+			auto message = Api::MessageToSend(
+				Api::SendAction(history, options));
 			message.textWithTags = comment;
-			message.action.options = options;
 			message.action.clearDraft = false;
 			api.sendMessage(std::move(message));
 		}
@@ -580,7 +584,12 @@ void SettingsBox(
 			}
 			return false;
 		};
-		if (!lookupLink().isEmpty() || canCreateLink()) {
+		const auto alreadyHasLink = !lookupLink().isEmpty();
+		if (alreadyHasLink || canCreateLink()) {
+			if (!alreadyHasLink) {
+				// Request invite link.
+				peer->session().api().requestFullPeer(peer);
+			}
 			const auto copyLink = [=] {
 				const auto link = lookupLink();
 				if (link.isEmpty()) {
@@ -616,7 +625,9 @@ void SettingsBox(
 	if (peer->canManageGroupCall()) {
 		AddButton(
 			layout,
-			tr::lng_group_call_end(),
+			(peer->isBroadcast()
+				? tr::lng_group_call_end_channel()
+				: tr::lng_group_call_end()),
 			st::groupCallSettingsAttentionButton
 		)->addClickHandler([=] {
 			if (const auto call = weakCall.get()) {
@@ -733,6 +744,33 @@ std::pair<Fn<void()>, rpl::lifetime> ShareInviteLinkAction(
 		}
 	};
 	return { std::move(callback), std::move(lifetime) };
+}
+
+MicLevelTester::MicLevelTester(Fn<void()> show)
+: _show(std::move(show))
+, _timer([=] { check(); })
+, _tester(
+	std::make_unique<Webrtc::AudioInputTester>(
+		Core::App().settings().callAudioBackend(),
+		Core::App().settings().callInputDeviceId())) {
+	_timer.callEach(kMicrophoneTooltipCheckInterval);
+}
+
+bool MicLevelTester::showTooltip() const {
+	return (_loudCount >= kMicrophoneTooltipAfterLoudCount);
+}
+
+void MicLevelTester::check() {
+	const auto level = _tester->getAndResetLevel();
+	if (level >= kMicrophoneTooltipLevelThreshold) {
+		_quietCount = 0;
+		if (++_loudCount >= kMicrophoneTooltipAfterLoudCount) {
+			_show();
+		}
+	} else if (_loudCount > 0 && ++_quietCount >= kDropLoudAfterQuietCount) {
+		_quietCount = 0;
+		_loudCount = 0;
+	}
 }
 
 } // namespace Calls::Group

@@ -13,10 +13,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 class HistoryMessage;
 struct HistoryMessageEdited;
+struct HistoryMessageSponsored;
 struct HistoryMessageForwarded;
 
 namespace HistoryView {
 
+class ViewButton;
 class WebPage;
 
 // Special type of Component for the channel actions log.
@@ -51,11 +53,7 @@ public:
 
 	int marginTop() const override;
 	int marginBottom() const override;
-	void draw(
-		Painter &p,
-		QRect clip,
-		TextSelection selection,
-		crl::time ms) const override;
+	void draw(Painter &p, const PaintContext &context) const override;
 	PointState pointState(QPoint point) const override;
 	TextState textState(
 		QPoint point,
@@ -63,10 +61,10 @@ public:
 	void updatePressed(QPoint point) override;
 	void drawInfo(
 		Painter &p,
+		const PaintContext &context,
 		int right,
 		int bottom,
 		int width,
-		bool selected,
 		InfoDisplayType type) const override;
 	bool pointInTime(
 		int right,
@@ -98,6 +96,7 @@ public:
 	std::optional<QSize> rightActionSize() const override;
 	void drawRightAction(
 		Painter &p,
+		const PaintContext &context,
 		int left,
 		int top,
 		int outerWidth) const override;
@@ -136,13 +135,32 @@ private:
 
 	void toggleCommentsButtonRipple(bool pressed);
 
-	void paintCommentsButton(Painter &p, QRect &g, bool selected) const;
-	void paintFromName(Painter &p, QRect &trect, bool selected) const;
-	void paintForwardedInfo(Painter &p, QRect &trect, bool selected) const;
-	void paintReplyInfo(Painter &p, QRect &trect, bool selected) const;
-	// this method draws "via @bot" if it is not painted in forwarded info or in from name
-	void paintViaBotIdInfo(Painter &p, QRect &trect, bool selected) const;
-	void paintText(Painter &p, QRect &trect, TextSelection selection) const;
+	void paintCommentsButton(
+		Painter &p,
+		QRect &g,
+		const PaintContext &context) const;
+	void paintFromName(
+		Painter &p,
+		QRect &trect,
+		const PaintContext &context) const;
+	void paintForwardedInfo(
+		Painter &p,
+		QRect &trect,
+		const PaintContext &context) const;
+	void paintReplyInfo(
+		Painter &p,
+		QRect &trect,
+		const PaintContext &context) const;
+	// This method draws "via @bot" if it is not painted
+	// in forwarded info or in from name.
+	void paintViaBotIdInfo(
+		Painter &p,
+		QRect &trect,
+		const PaintContext &context) const;
+	void paintText(
+		Painter &p,
+		QRect &trect,
+		const PaintContext &context) const;
 
 	bool getStateCommentsButton(
 		QPoint point,
@@ -186,12 +204,17 @@ private:
 	[[nodiscard]] ClickHandlerPtr fastReplyLink() const;
 	[[nodiscard]] const HistoryMessageEdited *displayedEditBadge() const;
 	[[nodiscard]] HistoryMessageEdited *displayedEditBadge();
+	[[nodiscard]] auto displayedSponsorBadge() const
+		-> const HistoryMessageSponsored*;
 	[[nodiscard]] bool displayPinIcon() const;
 
-	void initTime();
+	void initTime() const;
 	[[nodiscard]] int timeLeft() const;
 	[[nodiscard]] int plainMaxWidth() const;
 	[[nodiscard]] int monospaceMaxWidth() const;
+
+	void updateViewButtonExistence();
+	[[nodiscard]] int viewButtonHeight() const;
 
 	WebPage *logEntryOriginal() const;
 
@@ -204,6 +227,7 @@ private:
 	mutable ClickHandlerPtr _rightActionLink;
 	mutable ClickHandlerPtr _fastReplyLink;
 	mutable std::unique_ptr<CommentsButton> _comments;
+	mutable std::unique_ptr<ViewButton> _viewButton;
 
 	Ui::Text::String _rightBadge;
 	int _bubbleWidthLimit = 0;

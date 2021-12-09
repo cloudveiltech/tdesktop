@@ -77,10 +77,12 @@ DeclareSetting(bool, NoStartUpdate);
 DeclareSetting(bool, StartToSettings);
 DeclareSetting(bool, DebugMode);
 DeclareReadSetting(bool, ManyInstance);
+DeclareSetting(bool, Quit);
 
 DeclareSetting(QByteArray, LocalSalt);
 DeclareSetting(int, ScreenScale);
 DeclareSetting(int, ConfigScale);
+DeclareSetting(QString, DateFormat);
 DeclareSetting(QString, TimeFormat);
 
 class DocumentData;
@@ -108,6 +110,10 @@ DeclareSetting(QStringList, SendPaths);
 DeclareSetting(QString, StartUrl);
 
 DeclareSetting(int, OtherOnline);
+
+inline void cChangeDateFormat(const QString &newFormat) {
+	if (!newFormat.isEmpty()) cSetDateFormat(newFormat);
+}
 
 inline void cChangeTimeFormat(const QString &newFormat) {
 	if (!newFormat.isEmpty()) cSetTimeFormat(newFormat);

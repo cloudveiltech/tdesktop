@@ -11,7 +11,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/facade.h"
 #include "mtproto/connection_tcp.h"
 #include "storage/serialize_common.h"
-#include "base/qt_adapters.h"
 
 #include <QtCore/QFile>
 #include <QtCore/QRegularExpression>
@@ -58,7 +57,7 @@ const BuiltInDc kBuiltInDcsIPv6Test[] = {
 	{ 3, "2001:0b28:f23d:f003:0000:0000:0000:000e", 443 }
 };
 
-const char *(kTestPublicRSAKeys[]) = { "\
+const char *kTestPublicRSAKeys[] = { "\
 -----BEGIN RSA PUBLIC KEY-----\n\
 MIIBCgKCAQEAyMEdY1aR+sCR3ZSJrtztKTKqigvO/vBfqACJLZtS7QMgCGXJ6XIR\n\
 yy7mx66W0/sOFa7/1mAZtEoIokDP3ShoqF4fVNb6XeqgQfaUHd8wJpDWHcR2OFwv\n\
@@ -68,7 +67,7 @@ aHWfYmlEGepfaYR8Q0YqvvhYtMte3ITnuSJs171+GDqpdKcSwHnd6FudwGO4pcCO\n\
 j4WcDuXc2CTHgH8gFTNhp/Y8/SpDOhvn9QIDAQAB\n\
 -----END RSA PUBLIC KEY-----" };
 
-const char *(kPublicRSAKeys[]) = { "\
+const char *kPublicRSAKeys[] = { "\
 -----BEGIN RSA PUBLIC KEY-----\n\
 MIIBCgKCAQEA6LszBcC1LGzyr992NzE0ieY+BSaOW622Aa9Bd4ZHLl+TuFQ4lo4g\n\
 5nKaMBwK/BIb9xUfg0Q29/2mgIR6Zr9krM7HjuIcCzFvDtr+L0GQjae9H0pRB2OO\n\
@@ -754,10 +753,12 @@ bool DcOptions::loadFromFile(const QString &path) {
 		return false;
 	}
 	QTextStream stream(&f);
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 	stream.setCodec("UTF-8");
+#endif // Qt < 6.0.0
 	while (!stream.atEnd()) {
 		auto line = stream.readLine();
-		auto components = line.split(QRegularExpression(R"(\s)"), base::QStringSkipEmptyParts);
+		auto components = line.split(QRegularExpression(R"(\s)"), Qt::SkipEmptyParts);
 		if (components.isEmpty() || components[0].startsWith('#')) {
 			continue;
 		}
@@ -816,7 +817,9 @@ bool DcOptions::writeToFile(const QString &path) const {
 		return false;
 	}
 	QTextStream stream(&f);
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 	stream.setCodec("UTF-8");
+#endif // Qt < 6.0.0
 
 	ReadLocker lock(this);
 	for (const auto &item : _data) {

@@ -22,7 +22,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/toast/toast.h"
 #include "ui/text/text_options.h"
 #include "storage/localstorage.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "mainwidget.h"
 #include "mainwindow.h"
 #include "core/application.h"
@@ -115,12 +115,12 @@ private:
 	const Rows::Row &rowBySelection(Selection selected) const;
 	std::unique_ptr<Ui::RippleAnimation> &rippleBySelection(
 		Selection selected);
-	const std::unique_ptr<Ui::RippleAnimation> &rippleBySelection(
+	[[maybe_unused]] const std::unique_ptr<Ui::RippleAnimation> &rippleBySelection(
 		Selection selected) const;
 	std::unique_ptr<Ui::RippleAnimation> &rippleBySelection(
 		not_null<Row*> row,
 		Selection selected);
-	const std::unique_ptr<Ui::RippleAnimation> &rippleBySelection(
+	[[maybe_unused]] const std::unique_ptr<Ui::RippleAnimation> &rippleBySelection(
 		not_null<const Row*> row,
 		Selection selected) const;
 	void addRipple(Selection selected, QPoint position);
@@ -478,7 +478,7 @@ void Rows::showMenu(int index) {
 		}
 	}
 	const auto toggle = menuToggleArea(row);
-	const auto parentTopLeft = window()->mapToGlobal({ 0, 0 });
+	const auto parentTopLeft = window()->mapToGlobal(QPoint());
 	const auto buttonTopLeft = mapToGlobal(toggle.topLeft());
 	const auto parent = QRect(parentTopLeft, window()->size());
 	const auto button = QRect(buttonTopLeft, toggle.size());

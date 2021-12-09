@@ -20,9 +20,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/boxes/single_choice_box.h"
 #include "boxes/connection_box.h"
 #include "boxes/about_box.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "platform/platform_specific.h"
-#include "platform/platform_window_title.h"
+#include "ui/platform/ui_platform_window.h"
 #include "base/platform/base_platform_info.h"
 #include "window/window_controller.h"
 #include "window/window_session_controller.h"
@@ -346,6 +346,7 @@ void SetupSystemIntegrationContent(
 				checkbox(std::move(label), checked),
 				st::settingsCheckboxPadding));
 	};
+
 	if (Platform::TrayIconSupported()) {
 		const auto trayEnabled = [] {
 			const auto workMode = Core::App().settings().workMode();
@@ -406,7 +407,30 @@ void SetupSystemIntegrationContent(
 			}, taskbar->lifetime());
 		}
 	}
-	if (Platform::AllowNativeWindowFrameToggle()) {
+
+	if (!Platform::IsMac()) {
+		const auto closeToTaskbar = addSlidingCheckbox(
+			tr::lng_settings_close_to_taskbar(),
+			Core::App().settings().closeToTaskbar());
+
+		const auto closeToTaskbarShown = std::make_shared<rpl::variable<bool>>(false);
+		Core::App().settings().workModeValue(
+		) | rpl::start_with_next([=](WorkMode workMode) {
+			*closeToTaskbarShown = (workMode == WorkMode::WindowOnly)
+				|| !Platform::TrayIconSupported();
+		}, closeToTaskbar->lifetime());
+
+		closeToTaskbar->toggleOn(closeToTaskbarShown->value());
+		closeToTaskbar->entity()->checkedChanges(
+		) | rpl::filter([=](bool checked) {
+			return (checked != Core::App().settings().closeToTaskbar());
+		}) | rpl::start_with_next([=](bool checked) {
+			Core::App().settings().setCloseToTaskbar(checked);
+			Local::writeSettings();
+		}, closeToTaskbar->lifetime());
+	}
+
+	if (Ui::Platform::NativeWindowFrameSupported()) {
 		const auto nativeFrame = addCheckbox(
 			tr::lng_settings_native_frame(),
 			Core::App().settings().nativeWindowFrame());
@@ -419,6 +443,7 @@ void SetupSystemIntegrationContent(
 			Core::App().saveSettingsDelayed();
 		}, nativeFrame->lifetime());
 	}
+
 	if (Platform::AutostartSupported() && controller) {
 		const auto minimizedToggled = [=] {
 			return cStartMinimized()
@@ -437,15 +462,20 @@ void SetupSystemIntegrationContent(
 			return (checked != cAutoStart());
 		}) | rpl::start_with_next([=](bool checked) {
 			cSetAutoStart(checked);
-			psAutoStart(checked);
-			if (checked) {
-				Local::writeSettings();
-			} else if (minimized->entity()->checked()) {
-				minimized->entity()->setChecked(false);
-			} else {
-				Local::writeSettings();
-			}
+			Platform::AutostartToggle(checked, crl::guard(autostart, [=](
+					bool enabled) {
+				autostart->setChecked(enabled);
+				if (enabled || !minimized->entity()->checked()) {
+					Local::writeSettings();
+				} else {
+					minimized->entity()->setChecked(false);
+				}
+			}));
 		}, autostart->lifetime());
+
+		Platform::AutostartRequestStateFromSystem(crl::guard(
+			controller,
+			[=](bool enabled) { autostart->setChecked(enabled); }));
 
 		minimized->toggleOn(autostart->checkedValue());
 		minimized->entity()->checkedChanges(
@@ -454,7 +484,7 @@ void SetupSystemIntegrationContent(
 		}) | rpl::start_with_next([=](bool checked) {
 			if (controller->session().domain().local().hasLocalPasscode()) {
 				minimized->entity()->setChecked(false);
-				controller->show(Box<InformBox>(
+				controller->show(Box<Ui::InformBox>(
 					tr::lng_error_start_minimized_passcoded(tr::now)));
 			} else {
 				cSetStartMinimized(checked);
@@ -571,7 +601,7 @@ void SetupANGLE(
 					}
 					App::restart();
 				});
-				controller->show(Box<ConfirmBox>(
+				controller->show(Box<Ui::ConfirmBox>(
 					tr::lng_settings_need_restart(tr::now),
 					tr::lng_settings_restart_now(tr::now),
 					confirmed));
@@ -613,7 +643,7 @@ void SetupOpenGL(
 		const auto cancelled = crl::guard(button, [=] {
 			toggles->fire(!enabled);
 		});
-		controller->show(Box<ConfirmBox>(
+		controller->show(Box<Ui::ConfirmBox>(
 			tr::lng_settings_need_restart(tr::now),
 			tr::lng_settings_restart_now(tr::now),
 			confirmed,

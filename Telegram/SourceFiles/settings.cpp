@@ -35,6 +35,7 @@ bool gAutoUpdate = true;
 LaunchMode gLaunchMode = LaunchModeNormal;
 bool gSeenTrayTooltip = false;
 bool gRestartingUpdate = false, gRestarting = false, gRestartingToSettings = false, gWriteProtected = false;
+bool gQuit = false;
 int32 gLastUpdateCheck = 0;
 bool gNoStartUpdate = false;
 bool gStartToSettings = false;
@@ -46,6 +47,7 @@ QByteArray gLocalSalt;
 int gScreenScale = style::kScaleAuto;
 int gConfigScale = style::kScaleAuto;
 
+QString gDateFormat = qsl("dd.MM.yy");
 QString gTimeFormat = qsl("hh:mm");
 
 RecentStickerPreload gRecentStickersPreload;

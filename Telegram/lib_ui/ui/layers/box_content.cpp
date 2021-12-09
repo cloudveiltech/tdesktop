@@ -12,10 +12,13 @@
 #include "ui/widgets/shadow.h"
 #include "ui/wrap/fade_wrap.h"
 #include "ui/text/text_utilities.h"
+#include "ui/rect_part.h"
 #include "ui/painter.h"
 #include "base/timer.h"
 #include "styles/style_layers.h"
 #include "styles/palette.h"
+
+#include <QtCore/QTimer>
 
 namespace Ui {
 
@@ -85,14 +88,24 @@ void BoxContent::finishScrollCreate() {
 		_scroll->show();
 	}
 	updateScrollAreaGeometry();
-	connect(_scroll, SIGNAL(scrolled()), this, SLOT(onScroll()));
-	connect(_scroll, SIGNAL(innerResized()), this, SLOT(onInnerResize()));
+	_scroll->scrolls(
+	) | rpl::start_with_next([=] {
+		onScroll();
+	}, lifetime());
+	_scroll->innerResizes(
+	) | rpl::start_with_next([=] {
+		onInnerResize();
+	}, lifetime());
 }
 
 void BoxContent::scrollToWidget(not_null<QWidget*> widget) {
 	if (_scroll) {
 		_scroll->scrollToWidget(widget);
 	}
+}
+
+RectParts BoxContent::customCornersFilling() {
+	return {};
 }
 
 void BoxContent::onScrollToY(int top, int bottom) {
@@ -245,7 +258,7 @@ void BoxContent::paintEvent(QPaintEvent *e) {
 
 	if (testAttribute(Qt::WA_OpaquePaintEvent)) {
 		const auto &color = getDelegate()->style().bg;
-		for (const auto rect : e->region()) {
+		for (const auto &rect : e->region()) {
 			p.fillRect(rect, color);
 		}
 	}

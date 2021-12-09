@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/click_handler_types.h"
 #include "main/main_session.h"
 #include "ui/wrap/slide_wrap.h"
+#include "ui/text/format_values.h" // Ui::FormatPhone
 #include "ui/text/text_utilities.h"
 #include "lang/lang_keys.h"
 #include "data/data_peer_values.h"
@@ -22,9 +23,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_user.h"
 #include "data/data_session.h"
 #include "boxes/peers/edit_peer_permissions_box.h"
-#include "app.h"
 #include "cloudveil/GlobalSecuritySettings.h"
-
 
 namespace Info {
 namespace Profile {
@@ -85,7 +84,7 @@ rpl::producer<TextWithEntities> NameValue(not_null<PeerData*> peer) {
 		UpdateFlag::Name
 	) | rpl::map([=] {
 		return peer->name;
-	}) | Ui::Text::ToWithEntities();;
+	}) | Ui::Text::ToWithEntities();
 }
 
 rpl::producer<TextWithEntities> PhoneValue(not_null<UserData*> user) {
@@ -93,7 +92,7 @@ rpl::producer<TextWithEntities> PhoneValue(not_null<UserData*> user) {
 		user,
 		UpdateFlag::PhoneNumber
 	) | rpl::map([=] {
-		return App::formatPhone(user->phone());
+		return Ui::FormatPhone(user->phone());
 	}) | Ui::Text::ToWithEntities();
 }
 
@@ -124,7 +123,9 @@ rpl::producer<TextWithEntities> UsernameValue(not_null<UserData*> user) {
 	}) | Ui::Text::ToWithEntities();
 }
 
-rpl::producer<TextWithEntities> AboutValue(not_null<PeerData*> peer) {
+TextWithEntities AboutWithEntities(
+		not_null<PeerData*> peer,
+		const QString &value) {
 	auto flags = TextParseLinks | TextParseMentions;
 	const auto user = peer->asUser();
 	const auto isBot = user && user->isBot();
@@ -136,15 +137,19 @@ rpl::producer<TextWithEntities> AboutValue(not_null<PeerData*> peer) {
 	const auto stripExternal = peer->isChat()
 		|| peer->isMegagroup()
 		|| (user && !isBot);
+	auto result = TextWithEntities{ value };
+	TextUtilities::ParseEntities(result, flags);
+	if (stripExternal) {
+		StripExternalLinks(result);
+	}
+	return result;
+}
+
+rpl::producer<TextWithEntities> AboutValue(not_null<PeerData*> peer) {
 	return PlainAboutValue(
 		peer
-	) | Ui::Text::ToWithEntities(
-	) | rpl::map([=](TextWithEntities &&text) {
-		TextUtilities::ParseEntities(text, flags);
-		if (stripExternal) {
-			StripExternalLinks(text);
-		}
-		return std::move(text);
+	) | rpl::map([peer](const QString &value) {
+		return AboutWithEntities(peer, value);
 	});
 }
 
@@ -250,6 +255,25 @@ rpl::producer<int> MembersCountValue(not_null<PeerData*> peer) {
 	Unexpected("User in MembersCountViewer().");
 }
 
+rpl::producer<int> PendingRequestsCountValue(not_null<PeerData*> peer) {
+	if (const auto chat = peer->asChat()) {
+		return peer->session().changes().peerFlagsValue(
+			peer,
+			UpdateFlag::PendingRequests
+		) | rpl::map([=] {
+			return chat->pendingRequestsCount();
+		});
+	} else if (const auto channel = peer->asChannel()) {
+		return peer->session().changes().peerFlagsValue(
+			peer,
+			UpdateFlag::PendingRequests
+		) | rpl::map([=] {
+			return channel->pendingRequestsCount();
+		});
+	}
+	Unexpected("User in MembersCountViewer().");
+}
+
 rpl::producer<int> AdminsCountValue(not_null<PeerData*> peer) {
 	if (const auto chat = peer->asChat()) {
 		return peer->session().changes().peerFlagsValue(
@@ -277,7 +301,7 @@ rpl::producer<int> AdminsCountValue(not_null<PeerData*> peer) {
 rpl::producer<int> RestrictionsCountValue(not_null<PeerData*> peer) {
 	const auto countOfRestrictions = [](ChatRestrictions restrictions) {
 		auto count = 0;
-		for (const auto f : Data::ListOfRestrictions()) {
+		for (const auto &f : Data::ListOfRestrictions()) {
 			if (restrictions & f) count++;
 		}
 		return int(Data::ListOfRestrictions().size()) - count;

@@ -71,7 +71,7 @@ QByteArray SerializeString(const QByteArray &value) {
 
 QByteArray SerializeDate(TimeId date) {
 	return SerializeString(
-		QDateTime::fromTime_t(date).toString(Qt::ISODate).toUtf8());
+		QDateTime::fromSecsSinceEpoch(date).toString(Qt::ISODate).toUtf8());
 }
 
 QByteArray StringAllowEmpty(const Data::Utf8String &data) {
@@ -324,7 +324,7 @@ QByteArray SerializeMessage(
 			const std::vector<UserId> &data,
 			const QByteArray &label = "members") {
 		auto list = std::vector<QByteArray>();
-		for (const auto userId : data) {
+		for (const auto &userId : data) {
 			list.push_back(wrapUserName(userId));
 		}
 		pushBare(label, SerializeArray(context, list));
@@ -517,6 +517,15 @@ QByteArray SerializeMessage(
 		pushActor();
 		pushAction("group_call_scheduled");
 		push("schedule_date", data.date);
+	}, [&](const ActionSetChatTheme &data) {
+		pushActor();
+		pushAction("edit_chat_theme");
+		if (!data.emoji.isEmpty()) {
+			push("emoticon", data.emoji.toUtf8());
+		}
+	}, [&](const ActionChatJoinedByRequest &data) {
+		pushActor();
+		pushAction("join_group_by_request");
 	}, [](v::null_t) {});
 
 	if (v::is_null(message.action.content)) {

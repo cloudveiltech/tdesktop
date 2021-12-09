@@ -51,6 +51,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_chat.h"
 #include "styles/style_info.h"
 #include "styles/style_window.h"
+#include "base/qt_adapters.h"
 
 #include <QtCore/QMimeData>
 
@@ -164,7 +165,7 @@ void Widget::BottomButton::paintEvent(QPaintEvent *e) {
 Widget::Widget(
 	QWidget *parent,
 	not_null<Window::SessionController*> controller)
-	: Window::AbstractSectionWidget(parent, controller)
+: Window::AbstractSectionWidget(parent, controller, nullptr)
 , _api(&controller->session().mtp())
 , _searchControls(this)
 , _mainMenuToggle(_searchControls, st::dialogsMenuToggle)
@@ -205,7 +206,11 @@ Widget::Widget(
 	) | rpl::to_empty);
 
 	connect(_inner, SIGNAL(draggingScrollDelta(int)), this, SLOT(onDraggingScrollDelta(int)));
-	connect(_inner, SIGNAL(mustScrollTo(int,int)), _scroll, SLOT(scrollToY(int,int)));
+	connect(_inner, &InnerWidget::mustScrollTo, [=](int top, int bottom) {
+		if (_scroll) {
+			_scroll->scrollToY(top, bottom);
+		}
+	});
 	connect(_inner, SIGNAL(dialogMoved(int,int)), this, SLOT(onDialogMoved(int,int)));
 	connect(_inner, SIGNAL(searchMessages()), this, SLOT(onNeedSearchMessages()));
 	connect(_inner, SIGNAL(completeHashtag(QString)), this, SLOT(onCompleteHashtag(QString)));
@@ -234,8 +239,14 @@ Widget::Widget(
 		}
 	}, lifetime());
 
-	connect(_scroll, SIGNAL(geometryChanged()), _inner, SLOT(onParentGeometryChanged()));
-	connect(_scroll, SIGNAL(scrolled()), this, SLOT(onListScroll()));
+	_scroll->geometryChanged(
+	) | rpl::start_with_next(crl::guard(_inner, [=] {
+		_inner->onParentGeometryChanged();
+	}), lifetime());
+	_scroll->scrolls(
+	) | rpl::start_with_next([=] {
+		onListScroll();
+	}, lifetime());
 
 	session().data().chatsListChanges(
 	) | rpl::filter([=](Data::Folder *folder) {
@@ -273,7 +284,7 @@ Widget::Widget(
 	}, lifetime());
 
 	_cancelSearch->setClickedCallback([this] { onCancelSearch(); });
-	_jumpToDate->entity()->setClickedCallback([this] { showJumpToDate(); });
+	_jumpToDate->entity()->setClickedCallback([this] { showCalendar(); });
 	_chooseFromUser->entity()->setClickedCallback([this] { showSearchFrom(); });
 	rpl::single(
 		rpl::empty_value()
@@ -853,14 +864,14 @@ bool Widget::onSearchMessages(bool searchCache) {
 						: MTP_inputPeerEmpty()),
 					MTPint(), // top_msg_id
 					MTP_inputMessagesFilterEmpty(),
-					MTP_int(0),
-					MTP_int(0),
-					MTP_int(0),
-					MTP_int(0),
+					MTP_int(0), // min_date
+					MTP_int(0), // max_date
+					MTP_int(0), // offset_id
+					MTP_int(0), // add_offset
 					MTP_int(SearchPerPage),
-					MTP_int(0),
-					MTP_int(0),
-					MTP_int(0)
+					MTP_int(0), // max_id
+					MTP_int(0), // min_id
+					MTP_long(0) // hash
 				)).done([=](const MTPmessages_Messages &result) {
 					_searchInHistoryRequest = 0;
 					searchReceived(type, result, _searchRequest);
@@ -1011,14 +1022,14 @@ void Widget::onSearchMore() {
 						: MTP_inputPeerEmpty()),
 					MTPint(), // top_msg_id
 					MTP_inputMessagesFilterEmpty(),
-					MTP_int(0),
-					MTP_int(0),
+					MTP_int(0), // min_date
+					MTP_int(0), // max_date
 					MTP_int(offsetId),
-					MTP_int(0),
+					MTP_int(0), // add_offset
 					MTP_int(SearchPerPage),
-					MTP_int(0),
-					MTP_int(0),
-					MTP_int(0)
+					MTP_int(0), // max_id
+					MTP_int(0), // min_id
+					MTP_long(0) // hash
 				)).done([=](const MTPmessages_Messages &result) {
 					searchReceived(type, result, _searchRequest);
 					_searchInHistoryRequest = 0;
@@ -1084,14 +1095,14 @@ void Widget::onSearchMore() {
 					: MTP_inputPeerEmpty()),
 				MTPint(), // top_msg_id
 				MTP_inputMessagesFilterEmpty(),
-				MTP_int(0),
-				MTP_int(0),
+				MTP_int(0), // min_date
+				MTP_int(0), // max_date
 				MTP_int(offsetMigratedId),
-				MTP_int(0),
+				MTP_int(0), // add_offset
 				MTP_int(SearchPerPage),
-				MTP_int(0),
-				MTP_int(0),
-				MTP_int(0)
+				MTP_int(0), // max_id
+				MTP_int(0), // min_id
+				MTP_long(0) // hash
 			)).done([=](const MTPmessages_Messages &result) {
 				searchReceived(type, result, _searchRequest);
 				_searchInHistoryRequest = 0;
@@ -1442,9 +1453,9 @@ void Widget::clearSearchCache() {
 	cancelSearchRequest();
 }
 
-void Widget::showJumpToDate() {
+void Widget::showCalendar() {
 	if (_searchInChat) {
-		controller()->showJumpToDate(_searchInChat, QDate());
+		controller()->showCalendar(_searchInChat, QDate());
 	}
 }
 
@@ -1465,12 +1476,12 @@ void Widget::showSearchFrom() {
 void Widget::onFilterCursorMoved(int from, int to) {
 	if (to < 0) to = _filter->cursorPosition();
 	QString t = _filter->getLastText();
-	QStringRef r;
+	QStringView r;
 	for (int start = to; start > 0;) {
 		--start;
 		if (t.size() <= start) break;
 		if (t.at(start) == '#') {
-			r = t.midRef(start, to - start);
+			r = base::StringViewMid(t, start, to - start);
 			break;
 		}
 		if (!t.at(start).isLetterOrNumber() && t.at(start) != '_') break;
@@ -1485,7 +1496,9 @@ void Widget::onCompleteHashtag(QString tag) {
 		--start;
 		if (t.size() <= start) break;
 		if (t.at(start) == '#') {
-			if (cur == start + 1 || t.midRef(start + 1, cur - start - 1) == tag.midRef(0, cur - start - 1)) {
+			if (cur == start + 1
+				|| base::StringViewMid(t, start + 1, cur - start - 1)
+					== base::StringViewMid(tag, 0, cur - start - 1)) {
 				for (; cur < t.size() && cur - start - 1 < tag.size(); ++cur) {
 					if (t.at(cur) != tag.at(cur - start - 1)) break;
 				}

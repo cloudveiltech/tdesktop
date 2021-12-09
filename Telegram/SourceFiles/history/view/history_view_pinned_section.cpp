@@ -12,11 +12,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history.h"
 #include "history/history_item_components.h"
 #include "history/history_item.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/shadow.h"
 #include "ui/layers/generic_box.h"
 #include "ui/item_text_options.h"
+#include "ui/chat/chat_style.h"
 #include "ui/toast/toast.h"
 #include "ui/text/format_values.h"
 #include "ui/text/text_utilities.h"
@@ -44,7 +45,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/platform_specific.h"
 #include "lang/lang_keys.h"
 #include "facades.h"
-#include "app.h"
 #include "styles/style_chat.h"
 #include "styles/style_window.h"
 #include "styles/style_info.h"
@@ -60,7 +60,7 @@ namespace {
 
 PinnedMemento::PinnedMemento(
 	not_null<History*> history,
-	MsgId highlightId)
+	UniversalMsgId highlightId)
 : _history(history)
 , _highlightId(highlightId) {
 	_list.setAroundPosition({
@@ -91,17 +91,35 @@ PinnedWidget::PinnedWidget(
 	QWidget *parent,
 	not_null<Window::SessionController*> controller,
 	not_null<History*> history)
-: Window::SectionWidget(parent, controller)
+: Window::SectionWidget(parent, controller, history->peer)
 , _history(history->migrateToOrMe())
 , _migratedPeer(_history->peer->migrateFrom())
 , _topBar(this, controller)
 , _topBarShadow(this)
-, _scroll(std::make_unique<Ui::ScrollArea>(this, st::historyScroll, false))
+, _scroll(std::make_unique<Ui::ScrollArea>(
+	this,
+	controller->chatStyle()->value(lifetime(), st::historyScroll),
+	false))
 , _clearButton(std::make_unique<Ui::FlatButton>(
 	this,
 	QString(),
 	st::historyComposeButton))
-, _scrollDown(_scroll.get(), st::historyToDown) {
+, _scrollDown(
+		_scroll.get(),
+		controller->chatStyle()->value(lifetime(), st::historyToDown)) {
+	controller->chatStyle()->paletteChanged(
+	) | rpl::start_with_next([=] {
+		_scroll->updateBars();
+	}, _scroll->lifetime());
+
+	Window::ChatThemeValueFromPeer(
+		controller,
+		history->peer
+	) | rpl::start_with_next([=](std::shared_ptr<Ui::ChatTheme> &&theme) {
+		_theme = std::move(theme);
+		controller->setChatStyleTheme(_theme);
+	}, lifetime());
+
 	_topBar->setActiveChat(
 		TopBarWidget::ActiveChat{
 			.key = _history,
@@ -139,7 +157,10 @@ PinnedWidget::PinnedWidget(
 		static_cast<ListDelegate*>(this)));
 	_scroll->move(0, _topBar->height());
 	_scroll->show();
-	connect(_scroll.get(), &Ui::ScrollArea::scrolled, [=] { onScroll(); });
+	_scroll->scrolls(
+	) | rpl::start_with_next([=] {
+		onScroll();
+	}, lifetime());
 
 	setupClearButton();
 	setupScrollDownButton();
@@ -458,7 +479,7 @@ void PinnedWidget::paintEvent(QPaintEvent *e) {
 	const auto aboveHeight = _topBar->height();
 	const auto bg = e->rect().intersected(
 		QRect(0, aboveHeight, width(), height() - aboveHeight));
-	SectionWidget::PaintBackground(controller(), this, bg);
+	SectionWidget::PaintBackground(controller(), _theme.get(), this, bg);
 }
 
 void PinnedWidget::onScroll() {
@@ -592,7 +613,7 @@ bool PinnedWidget::listAllowsMultiSelect() {
 
 bool PinnedWidget::listIsItemGoodForSelection(
 		not_null<HistoryItem*> item) {
-	return IsServerMsgId(item->id);
+	return item->isRegular();
 }
 
 bool PinnedWidget::listIsLessInOrder(
@@ -604,7 +625,7 @@ bool PinnedWidget::listIsLessInOrder(
 void PinnedWidget::listSelectionChanged(SelectedItems &&items) {
 	HistoryView::TopBarWidget::SelectedState state;
 	state.count = items.size();
-	for (const auto item : items) {
+	for (const auto &item : items) {
 		if (item.canDelete) {
 			++state.canDeleteCount;
 		}
@@ -640,7 +661,7 @@ bool PinnedWidget::listElementShownUnread(not_null<const Element*> view) {
 
 bool PinnedWidget::listIsGoodForAroundPosition(
 		not_null<const Element*> view) {
-	return IsServerMsgId(view->data()->id);
+	return view->data()->isRegular();
 }
 
 void PinnedWidget::listSendBotCommand(
@@ -649,6 +670,19 @@ void PinnedWidget::listSendBotCommand(
 }
 
 void PinnedWidget::listHandleViaClick(not_null<UserData*> bot) {
+}
+
+not_null<Ui::ChatTheme*> PinnedWidget::listChatTheme() {
+	return _theme.get();
+}
+
+CopyRestrictionType PinnedWidget::listCopyRestrictionType(
+		HistoryItem *item) {
+	return CopyRestrictionTypeFor(_history->peer, item);
+}
+
+CopyRestrictionType PinnedWidget::listSelectRestrictionType() {
+	return SelectRestrictionTypeFor(_history->peer);
 }
 
 void PinnedWidget::confirmDeleteSelected() {

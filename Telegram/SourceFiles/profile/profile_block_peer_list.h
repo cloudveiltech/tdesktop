@@ -52,7 +52,7 @@ public:
 
 	int getListLeft() const;
 
-	const QList<Item*> &items() const {
+	const std::vector<Item*> &items() const {
 		return _items;
 	}
 	int itemsCount() const {
@@ -102,9 +102,9 @@ protected:
 	void mouseMoveEvent(QMouseEvent *e) override;
 	void mousePressEvent(QMouseEvent *e) override;
 	void mouseReleaseEvent(QMouseEvent *e) override;
-	void enterEventHook(QEvent *e) override;
+	void enterEventHook(QEnterEvent *e) override;
 	void enterFromChildEvent(QEvent *e, QWidget *child) override {
-		enterEventHook(e);
+		enterEventHook(nullptr);
 	}
 	void leaveEventHook(QEvent *e) override;
 	void leaveToChildEvent(QEvent *e, QWidget *child) override {
@@ -129,7 +129,7 @@ private:
 	Fn<void(PeerData*)> _removedCallback;
 	Fn<void(Item*)> _updateItemCallback;
 
-	QList<Item*> _items;
+	std::vector<Item*> _items;
 
 	int _visibleTop = 0;
 	int _visibleBottom = 0;

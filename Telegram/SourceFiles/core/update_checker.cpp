@@ -39,11 +39,13 @@ extern "C" {
 #include <openssl/err.h>
 } // extern "C"
 
+#ifndef TDESKTOP_DISABLE_AUTOUPDATE
 #if defined Q_OS_WIN && !defined DESKTOP_APP_USE_PACKAGED // use Lzma SDK for win
 #include <LzmaLib.h>
 #else // Q_OS_WIN && !DESKTOP_APP_USE_PACKAGED
 #include <lzma.h>
 #endif // else of Q_OS_WIN && !DESKTOP_APP_USE_PACKAGED
+#endif // !TDESKTOP_DISABLE_AUTOUPDATE
 
 #ifdef Q_OS_UNIX
 #include <unistd.h>
@@ -242,9 +244,8 @@ QString FindUpdateFile() {
 			"tupdate|"
 			"tx64upd|"
 			"tmacupd|"
-			"tosxupd|"
+			"tarmacupd|"
 			"tlinuxupd|"
-			"tlinux32upd"
 			")\\d+(_[a-z\\d]+)?$",
 			QRegularExpression::CaseInsensitiveOption
 		).match(info.fileName()).hasMatch()) {
@@ -265,6 +266,7 @@ QString ExtractFilename(const QString &url) {
 }
 
 bool UnpackUpdate(const QString &filepath) {
+#ifndef TDESKTOP_DISABLE_AUTOUPDATE
 	QFile input(filepath);
 	if (!input.open(QIODevice::ReadOnly)) {
 		LOG(("Update Error: cant read updates file!"));
@@ -518,6 +520,9 @@ bool UnpackUpdate(const QString &filepath) {
 	input.remove();
 
 	return true;
+#else // !TDESKTOP_DISABLE_AUTOUPDATE
+	return false;
+#endif // TDESKTOP_DISABLE_AUTOUPDATE
 }
 
 template <typename Callback>
@@ -578,11 +583,11 @@ bool ParseCommonMap(
 			if ((*version).isString()) {
 				const auto string = (*version).toString();
 				if (const auto index = string.indexOf(':'); index > 0) {
-					return string.midRef(0, index).toULongLong();
+					return base::StringViewMid(string, 0, index).toULongLong();
 				}
 				return string.toULongLong();
 			} else if ((*version).isDouble()) {
-				return uint64(std::round((*version).toDouble()));
+				return uint64(base::SafeRound((*version).toDouble()));
 			}
 			return 0ULL;
 		}();
@@ -941,7 +946,7 @@ void MtpChecker::start() {
 				MTP_int(1),  // limit
 				MTP_int(0),  // max_id
 				MTP_int(0),  // min_id
-				MTP_int(0)), // hash
+				MTP_long(0)), // hash
 			[=](const MTPmessages_Messages &result) { gotMessage(result); },
 			failHandler());
 	}, [=] { fail(); });
@@ -1010,7 +1015,7 @@ auto MtpChecker::parseText(const QByteArray &text) const
 			return false;
 		}
 		bestLocation.username = full.mid(start + 1, post - start - 1);
-		bestLocation.postId = full.midRef(post + 1).toInt();
+		bestLocation.postId = base::StringViewMid(full, post + 1).toInt();
 		if (bestLocation.username.isEmpty() || !bestLocation.postId) {
 			LOG(("Update Error: MTP entry '%1' is bad for version %2."
 				).arg(full
@@ -1043,7 +1048,7 @@ Fn<void(const MTP::Error &error)> MtpChecker::failHandler() {
 
 } // namespace
 
-bool UpdaterDisabled() {
+bool UpdaterDisabled() {	
 	//CloudVeil start
 	return true;// UpdaterIsDisabled;
 	//CloudVeil end

@@ -18,14 +18,7 @@ endif()
 
 if (NOT TGVOIP_FOUND)
     add_library(lib_tgvoip_bundled STATIC)
-
-    if (WIN32)
-        init_target(lib_tgvoip_bundled cxx_std_17) # Small amount of patches required here.
-    elseif (LINUX)
-        init_target(lib_tgvoip_bundled) # All C++20 on Linux, because otherwise ODR violation.
-    else()
-        init_target(lib_tgvoip_bundled cxx_std_14) # Can't use std::optional::value on macOS.
-    endif()
+    init_target(lib_tgvoip_bundled)
 
     option(LIBTGVOIP_DISABLE_ALSA "Disable libtgvoip's ALSA backend (Linux only)." OFF)
     option(LIBTGVOIP_DISABLE_PULSEAUDIO "Disable libtgvoip's PulseAudio backend (Linux only)." OFF)
@@ -169,7 +162,7 @@ if (NOT TGVOIP_FOUND)
             -Wno-error=sequence-point
             -Wno-error=unused-result
         )
-        if (build_linux32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "i686.*|i386.*|x86.*")
+        if (CMAKE_SIZEOF_VOID_P EQUAL 4 AND CMAKE_SYSTEM_PROCESSOR MATCHES "i686.*|i386.*|x86.*")
             target_compile_options(lib_tgvoip_bundled_options INTERFACE -msse2)
         endif()
         target_link_libraries(lib_tgvoip_bundled
@@ -191,7 +184,7 @@ if (NOT TGVOIP_FOUND)
     if (LINUX)
         if (NOT LIBTGVOIP_DISABLE_ALSA)
             find_package(ALSA REQUIRED)
-            target_include_directories(lib_tgvoip_bundled PRIVATE ${ALSA_INCLUDE_DIRS})
+            target_include_directories(lib_tgvoip_bundled SYSTEM PRIVATE ${ALSA_INCLUDE_DIRS})
         else()
             remove_target_sources(lib_tgvoip_bundled ${tgvoip_loc}
                 os/linux/AudioInputALSA.cpp
@@ -206,7 +199,7 @@ if (NOT TGVOIP_FOUND)
         if (NOT LIBTGVOIP_DISABLE_PULSEAUDIO)
             find_package(PkgConfig REQUIRED)
             pkg_check_modules(PULSE REQUIRED libpulse)
-            target_include_directories(lib_tgvoip_bundled PRIVATE ${PULSE_INCLUDE_DIRS})
+            target_include_directories(lib_tgvoip_bundled SYSTEM PRIVATE ${PULSE_INCLUDE_DIRS})
         else()
             remove_target_sources(lib_tgvoip_bundled ${tgvoip_loc}
                 os/linux/AudioOutputPulse.cpp

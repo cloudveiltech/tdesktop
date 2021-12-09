@@ -14,7 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_user.h"
 #include "data/data_session.h"
 #include "ui/image/image.h"
-#include "app.h"
+#include "ui/text/format_values.h" // Ui::FormatPhone
 
 namespace Serialize {
 namespace {
@@ -178,7 +178,7 @@ void writePeer(QDataStream &stream, not_null<PeerData*> peer) {
 			<< channel->name
 			<< quint64(channel->access)
 			<< qint32(channel->date)
-			<< qint32(channel->version())
+			<< qint32(0) // legacy - version
 			<< qint32(0)
 			<< quint32(channel->flags())
 			<< channel->inviteLink();
@@ -206,10 +206,10 @@ PeerData *readPeer(
 	const auto loaded = (peerId == selfId)
 		? session->user().get()
 		: session->data().peerLoaded(peerId);
-	const auto apply = !loaded || !loaded->isFullLoaded();
+	const auto apply = !loaded || !loaded->isLoaded();
 	const auto result = loaded ? loaded : session->data().peer(peerId).get();
 	if (apply) {
-		result->setLoadedStatus(PeerData::LoadedStatus::Full);
+		result->setLoadedStatus(PeerData::LoadedStatus::Normal);
 	}
 	if (const auto user = result->asUser()) {
 		QString first, last, phone, username, inlinePlaceholder;
@@ -231,7 +231,7 @@ PeerData *readPeer(
 				&& (user->id != selfId)
 				&& (contact <= 0);
 			const auto pname = (showPhone && !phone.isEmpty())
-				? App::formatPhone(phone)
+				? Ui::FormatPhone(phone)
 				: QString();
 
 			user->setPhone(phone);
@@ -277,9 +277,8 @@ PeerData *readPeer(
 				user->input = MTP_inputPeerSelf();
 				user->inputUser = MTP_inputUserSelf();
 			} else {
-				// #TODO ids
-				user->input = MTP_inputPeerUser(MTP_int(peerToUser(user->id).bare), MTP_long(user->accessHash()));
-				user->inputUser = MTP_inputUser(MTP_int(peerToUser(user->id).bare), MTP_long(user->accessHash()));
+				user->input = MTP_inputPeerUser(MTP_long(peerToUser(user->id).bare), MTP_long(user->accessHash()));
+				user->inputUser = MTP_inputUser(MTP_long(peerToUser(user->id).bare), MTP_long(user->accessHash()));
 			}
 		}
 	} else if (const auto chat = result->asChat()) {
@@ -350,8 +349,7 @@ PeerData *readPeer(
 			chat->creator = creator;
 			chat->setInviteLink(inviteLink);
 
-			// #TODO ids
-			chat->input = MTP_inputPeerChat(MTP_int(peerToChat(chat->id).bare));
+			chat->input = MTP_inputPeerChat(MTP_long(peerToChat(chat->id).bare));
 		}
 	} else if (const auto channel = result->asChannel()) {
 		QString name, inviteLink;
@@ -373,10 +371,6 @@ PeerData *readPeer(
 			channel->setName(name, QString());
 			channel->access = access;
 			channel->date = date;
-
-			// We don't save participants, admin status and banned rights.
-			// So we don't restore the version field, info is still unknown.
-			channel->setVersion(0);
 
 			if (streamAppVersion >= 2008007) {
 				channel->setFlags(ChannelDataFlags::from_raw(flags));
@@ -422,9 +416,8 @@ PeerData *readPeer(
 
 			channel->setInviteLink(inviteLink);
 
-			// #TODO ids
-			channel->input = MTP_inputPeerChannel(MTP_int(peerToChannel(channel->id).bare), MTP_long(access));
-			channel->inputChannel = MTP_inputChannel(MTP_int(peerToChannel(channel->id).bare), MTP_long(access));
+			channel->input = MTP_inputPeerChannel(MTP_long(peerToChannel(channel->id).bare), MTP_long(access));
+			channel->inputChannel = MTP_inputChannel(MTP_long(peerToChannel(channel->id).bare), MTP_long(access));
 		}
 	}
 	if (apply) {

@@ -21,10 +21,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <range/v3/view/transform.hpp>
 #include <range/v3/range/conversion.hpp>
 
-namespace App { // Hackish..
-QString formatPhone(QString phone);
-} // namespace App
-
 namespace Export {
 namespace Data {
 namespace {
@@ -181,7 +177,7 @@ Utf8String FillLeft(const Utf8String &data, int length, char filler) {
 	}
 	auto result = Utf8String();
 	result.reserve(length);
-	for (auto i = 0, count = length - data.size(); i != count; ++i) {
+	for (auto i = 0, count = length - int(data.size()); i != count; ++i) {
 		result.append(filler);
 	}
 	result.append(data);
@@ -718,20 +714,20 @@ Chat ParseChat(const MTPChat &data) {
 	data.match([&](const MTPDchat &data) {
 		result.bareId = data.vid().v;
 		result.title = ParseString(data.vtitle());
-		result.input = MTP_inputPeerChat(MTP_int(result.bareId)); // #TODO ids
+		result.input = MTP_inputPeerChat(MTP_long(result.bareId));
 		if (const auto migratedTo = data.vmigrated_to()) {
 			result.migratedToChannelId = migratedTo->match(
 			[](const MTPDinputChannel &data) {
 				return data.vchannel_id().v;
-			}, [](auto&&) { return 0; });
+			}, [](auto&&) { return BareId(); });
 		}
 	}, [&](const MTPDchatEmpty &data) {
 		result.bareId = data.vid().v;
-		result.input = MTP_inputPeerChat(MTP_int(result.bareId)); // #TODO ids
+		result.input = MTP_inputPeerChat(MTP_long(result.bareId));
 	}, [&](const MTPDchatForbidden &data) {
 		result.bareId = data.vid().v;
 		result.title = ParseString(data.vtitle());
-		result.input = MTP_inputPeerChat(MTP_int(result.bareId)); // #TODO ids
+		result.input = MTP_inputPeerChat(MTP_long(result.bareId));
 	}, [&](const MTPDchannel &data) {
 		result.bareId = data.vid().v;
 		result.isBroadcast = data.is_broadcast();
@@ -741,15 +737,15 @@ Chat ParseChat(const MTPChat &data) {
 			result.username = ParseString(*username);
 		}
 		result.input = MTP_inputPeerChannel(
-			MTP_int(result.bareId), // #TODO ids
+			MTP_long(result.bareId),
 			MTP_long(data.vaccess_hash().value_or_empty()));
 	}, [&](const MTPDchannelForbidden &data) {
 		result.bareId = data.vid().v;
 		result.isBroadcast = data.is_broadcast();
 		result.isSupergroup = data.is_megagroup();
 		result.title = ParseString(data.vtitle());
-		result.input = MTP_inputPeerChannel( // #TODO ids
-			MTP_int(result.bareId),
+		result.input = MTP_inputPeerChannel(
+			MTP_long(result.bareId),
 			data.vaccess_hash());
 	});
 	return result;
@@ -835,11 +831,11 @@ std::map<PeerId, Peer> ParsePeersLists(
 }
 
 User EmptyUser(UserId userId) {
-	return ParseUser(MTP_userEmpty(MTP_int(userId.bare))); // #TODO ids
+	return ParseUser(MTP_userEmpty(MTP_long(userId.bare)));
 }
 
 Chat EmptyChat(ChatId chatId) {
-	return ParseChat(MTP_chatEmpty(MTP_int(chatId.bare))); // #TODO ids
+	return ParseChat(MTP_chatEmpty(MTP_long(chatId.bare)));
 }
 
 Peer EmptyPeer(PeerId peerId) {
@@ -1127,6 +1123,12 @@ ServiceAction ParseServiceAction(
 		result.content = ActionGroupCallScheduled{
 			.date = data.vschedule_date().v,
 		};
+	}, [&](const MTPDmessageActionSetChatTheme &data) {
+		result.content = ActionSetChatTheme{
+			.emoji = qs(data.vemoticon()),
+		};
+	}, [&](const MTPDmessageActionChatJoinedByRequest &data) {
+		result.content = ActionChatJoinedByRequest();
 	}, [](const MTPDmessageActionEmpty &data) {});
 	return result;
 }
@@ -1281,15 +1283,14 @@ std::map<MessageId, Message> ParseMessagesList(
 	return result;
 }
 
-PersonalInfo ParsePersonalInfo(const MTPUserFull &data) {
-	Expects(data.type() == mtpc_userFull);
-
-	const auto &fields = data.c_userFull();
+PersonalInfo ParsePersonalInfo(const MTPDusers_userFull &data) {
 	auto result = PersonalInfo();
-	result.user = ParseUser(fields.vuser());
-	if (const auto about = fields.vabout()) {
-		result.bio = ParseString(*about);
-	}
+	result.user = ParseUser(data.vusers().v[0]);
+	data.vfull_user().match([&](const MTPDuserFull &data) {
+		if (const auto about = data.vabout()) {
+			result.bio = ParseString(*about);
+		}
+	});
 	return result;
 }
 
@@ -1795,7 +1796,7 @@ bool SkipMessageByDate(const Message &message, const Settings &settings) {
 Utf8String FormatPhoneNumber(const Utf8String &phoneNumber) {
 	return phoneNumber.isEmpty()
 		? Utf8String()
-		: App::formatPhone(QString::fromUtf8(phoneNumber)).toUtf8();
+		: Ui::FormatPhone(QString::fromUtf8(phoneNumber)).toUtf8();
 }
 
 Utf8String FormatDateTime(
@@ -1806,7 +1807,7 @@ Utf8String FormatDateTime(
 	if (!date) {
 		return Utf8String();
 	}
-	const auto value = QDateTime::fromTime_t(date);
+	const auto value = QDateTime::fromSecsSinceEpoch(date);
 	return (QString("%1") + dateSeparator + "%2" + dateSeparator + "%3"
 		+ separator + "%4" + timeSeparator + "%5" + timeSeparator + "%6"
 	).arg(value.date().day(), 2, 10, QChar('0')

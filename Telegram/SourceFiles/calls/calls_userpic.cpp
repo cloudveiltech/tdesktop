@@ -138,7 +138,7 @@ void Userpic::processPhoto() {
 		_photo->wanted(Data::PhotoSize::Thumbnail, _peer->userpicPhotoOrigin());
 	} else {
 		_photo = nullptr;
-		if (_peer->userpicPhotoUnknown() || (photo && !photo->date)) {
+		if (_peer->userpicPhotoUnknown() || (photo && photo->isNull())) {
 			_peer->session().api().requestFullPeer(_peer);
 		}
 	}
@@ -149,12 +149,14 @@ void Userpic::refreshPhoto() {
 	if (!size()) {
 		return;
 	}
+
 	//CloudVeil start
 	if (GlobalSecuritySettings::getSettings().disableProfilePhoto) {
 		createCache(nullptr);
 		return;
 	}
 	//CloudVeil end
+
 	const auto isNewBigPhoto = [&] {
 		return _photo
 			&& (_photo->image(Data::PhotoSize::Thumbnail) != nullptr)

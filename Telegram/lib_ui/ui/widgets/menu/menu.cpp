@@ -9,6 +9,7 @@
 #include "ui/widgets/menu/menu_action.h"
 #include "ui/widgets/menu/menu_item_base.h"
 #include "ui/widgets/menu/menu_separator.h"
+#include "ui/widgets/scroll_area.h"
 
 #include <QtGui/QtEvents>
 
@@ -107,8 +108,15 @@ not_null<QAction*> Menu::addAction(base::unique_qptr<ItemBase> widget) {
 	widget->selects(
 	) | rpl::start_with_next([=](const CallbackData &data) {
 		if (!data.selected) {
+			if (!findSelectedAction()
+				&& data.index < _actionWidgets.size()
+				&& _childShownAction == data.action) {
+				const auto widget = _actionWidgets[data.index].get();
+				widget->setSelected(true, widget->lastTriggeredSource());
+			}
 			return;
 		}
+		_lastSelectedByMouse = (data.source == TriggeredSource::Mouse);
 		for (auto i = 0; i < _actionWidgets.size(); i++) {
 			if (i != data.index) {
 				_actionWidgets[i]->setSelected(false);
@@ -125,6 +133,15 @@ not_null<QAction*> Menu::addAction(base::unique_qptr<ItemBase> widget) {
 			_triggeredCallback(data);
 		}
 	}, widget->lifetime());
+
+	QObject::connect(action.get(), &QAction::changed, widget.get(), [=] {
+		// Select an item under mouse that was disabled and became enabled.
+		if (_lastSelectedByMouse
+			&& !findSelectedAction()
+			&& action->isEnabled()) {
+			updateSelected(QCursor::pos());
+		}
+	});
 
 	const auto raw = widget.get();
 	_actionWidgets.push_back(std::move(widget));
@@ -196,6 +213,10 @@ rpl::producer<> Menu::resizesFromInner() const {
 	return _resizesFromInner.events();
 }
 
+rpl::producer<ScrollToRequest> Menu::scrollToRequests() const {
+	return _scrollToRequests.events();
+}
+
 void Menu::setShowSource(TriggeredSource source) {
 	const auto mouseSelection = (source == TriggeredSource::Mouse);
 	setSelected(
@@ -217,6 +238,9 @@ void Menu::updateSelected(QPoint globalPosition) {
 	for (const auto &widget : _actionWidgets) {
 		const auto widgetRect = QRect(widget->pos(), widget->size());
 		if (widgetRect.contains(p)) {
+			_lastSelectedByMouse = true;
+
+			// It may actually fail to become selected (if it is disabled).
 			widget->setSelected(true);
 			break;
 		}
@@ -266,7 +290,8 @@ void Menu::handleKeyPress(not_null<QKeyEvent*> e) {
 		} else if (newSelected >= _actions.size()) {
 			newSelected -= _actions.size();
 		}
-	} while (newSelected != start && (!_actionWidgets[newSelected]->isEnabled()));
+	} while (newSelected != start
+		&& (!_actionWidgets[newSelected]->isEnabled()));
 
 	if (_actionWidgets[newSelected]->isEnabled()) {
 		setSelected(newSelected, false);
@@ -282,7 +307,7 @@ void Menu::clearMouseSelection() {
 	const auto mouseSelection = selected
 		? (selected->lastTriggeredSource() == TriggeredSource::Mouse)
 		: false;
-	if (mouseSelection && !_childShown) {
+	if (mouseSelection && !_childShownAction) {
 		clearSelection();
 	}
 }
@@ -294,6 +319,13 @@ void Menu::setSelected(int selected, bool isMouseSelection) {
 	const auto source = isMouseSelection
 		? TriggeredSource::Mouse
 		: TriggeredSource::Keyboard;
+	if (selected >= 0 && source == TriggeredSource::Keyboard) {
+		const auto widget = _actionWidgets[selected].get();
+		_scrollToRequests.fire({
+			widget->y(),
+			widget->y() + widget->height(),
+		});
+	}
 	if (const auto selectedItem = findSelectedAction()) {
 		if (selectedItem->index() == selected) {
 			return;
@@ -301,7 +333,7 @@ void Menu::setSelected(int selected, bool isMouseSelection) {
 		selectedItem->setSelected(false, source);
 	}
 	if (selected >= 0) {
-		_actionWidgets[selected]->setSelected(true, source);
+		_actionWidgets[selected].get()->setSelected(true, source);
 	}
 }
 

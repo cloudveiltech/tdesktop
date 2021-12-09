@@ -8,93 +8,20 @@
 
 #include "base/platform/win/base_windows_h.h"
 
+#define _ROAPI_ // we don't want them from .dll
 #include <roapi.h>
+#undef _ROAPI_
+
 #include <wrl/client.h>
+#include <winstring.h>
 #include <strsafe.h>
 #include <intsafe.h>
 
 namespace base::Platform {
 
-void InitWRL();
+[[nodiscard]] bool SupportsWRL();
 
-inline HRESULT(__stdcall *RoGetActivationFactory)(
-	_In_ HSTRING activatableClassId,
-	_In_ REFIID iid,
-	_COM_Outptr_ void ** factory);
-
-inline HRESULT(__stdcall *RoActivateInstance)(
-	_In_ HSTRING activatableClassId,
-	_COM_Outptr_ IInspectable** instance);
-
-inline HRESULT(__stdcall *WindowsCreateStringReference)(
-	_In_reads_opt_(length + 1) PCWSTR sourceString,
-	UINT32 length,
-	_Out_ HSTRING_HEADER * hstringHeader,
-	_Outptr_result_maybenull_ _Result_nullonfailure_ HSTRING *string);
-
-inline HRESULT(__stdcall *WindowsDeleteString)(
-	_In_opt_ HSTRING string);
-
-[[nodiscard]] inline bool SupportsWRL() {
-	InitWRL();
-	return (RoGetActivationFactory != nullptr)
-		&& (WindowsCreateStringReference != nullptr)
-		&& (WindowsDeleteString != nullptr);
-}
-
-namespace details {
-
-template <class T>
-_Check_return_ __inline HRESULT GetActivationFactory(
-		_In_ HSTRING activatableClassId,
-		_COM_Outptr_ T** factory) {
-	return RoGetActivationFactory
-		? RoGetActivationFactory(activatableClassId, IID_INS_ARGS(factory))
-		: E_FAIL;
-}
-
-template <class T>
-_Check_return_ __inline  HRESULT ActivateInstance(
-		_In_ HSTRING activatableClassId,
-		_COM_Outptr_ T** instance) {
-	*instance = nullptr;
-
-	auto pInspectable = (IInspectable*)nullptr;
-	auto hr = RoActivateInstance
-		? RoActivateInstance(activatableClassId, &pInspectable)
-		: E_FAIL;
-	if (SUCCEEDED(hr)) {
-		if (__uuidof(T) == __uuidof(IInspectable)) {
-			*instance = static_cast<T*>(pInspectable);
-		} else {
-			hr = pInspectable->QueryInterface(IID_INS_ARGS(instance));
-			pInspectable->Release();
-		}
-	}
-	return hr;
-}
-
-} // namespace details
-
-template <typename T>
-inline HRESULT GetActivationFactory(
-		_In_ HSTRING activatableClassId,
-		_Inout_ Microsoft::WRL::Details::ComPtrRef<T> factory) throw() {
-	return details::GetActivationFactory(
-		activatableClassId,
-		factory.ReleaseAndGetAddressOf());
-}
-
-template <typename T>
-inline HRESULT ActivateInstance(
-		_In_ HSTRING activatableClassId,
-		_Inout_::Microsoft::WRL::Details::ComPtrRef<T> instance) throw() {
-	return details::ActivateInstance(
-		activatableClassId,
-		instance.ReleaseAndGetAddressOf());
-}
-
-class StringReferenceWrapper {
+class StringReferenceWrapper final {
 public:
 	StringReferenceWrapper(_In_reads_(length) PCWSTR stringRef, _In_ UINT32 length) throw() {
 		HRESULT hr = WindowsCreateStringReference(stringRef, length, &_header, &_hstring);

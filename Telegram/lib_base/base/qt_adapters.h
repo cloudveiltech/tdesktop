@@ -15,65 +15,70 @@
 #include <QtNetwork/QNetworkReply>
 #include <QtCore/QString>
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
-#include <QtGui/QColorSpace>
-#endif // Qt >= 5.14
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QtGui/QInputDevice>
+#else // Qt >= 6.0.0
+#include <QtGui/QTouchDevice>
+#endif // Qt < 6.0.0
 
 namespace base {
+namespace {
+
+struct ContainerImplHelper {
+    enum CutResult { Null, Empty, Full, Subset };
+    static constexpr CutResult mid(qsizetype originalLength, qsizetype *_position, qsizetype *_length) {
+		qsizetype &position = *_position;
+		qsizetype &length = *_length;
+		if (position > originalLength) {
+			position = 0;
+			length = 0;
+			return Null;
+		}
+
+		if (position < 0) {
+			if (length < 0 || length + position >= originalLength) {
+				position = 0;
+				length = originalLength;
+				return Full;
+			}
+			if (length + position <= 0) {
+				position = length = 0;
+				return Null;
+			}
+			length += position;
+			position = 0;
+		} else if (size_t(length) > size_t(originalLength - position)) {
+			length = originalLength - position;
+		}
+
+		if (position == 0 && length == originalLength)
+			return Full;
+
+		return length > 0 ? Subset : Empty;
+	}
+};
+
+} // namespace
 
 using QLocalSocketErrorSignal = void(QLocalSocket::*)(QLocalSocket::LocalSocketError);
 using QNetworkReplyErrorSignal = void(QNetworkReply::*)(QNetworkReply::NetworkError);
 using QTcpSocketErrorSignal = void(QTcpSocket::*)(QAbstractSocket::SocketError);
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
 inline constexpr auto QLocalSocket_error = QLocalSocketErrorSignal(&QLocalSocket::errorOccurred);
 inline constexpr auto QNetworkReply_error = QNetworkReplyErrorSignal(&QNetworkReply::errorOccurred);
 inline constexpr auto QTcpSocket_error = QTcpSocketErrorSignal(&QAbstractSocket::errorOccurred);
-#else // Qt >= 5.15
-inline constexpr auto QLocalSocket_error = QLocalSocketErrorSignal(&QLocalSocket::error);
-inline constexpr auto QNetworkReply_error = QNetworkReplyErrorSignal(&QNetworkReply::error);
-inline constexpr auto QTcpSocket_error = QTcpSocketErrorSignal(&QAbstractSocket::error);
-#endif // Qt >= 5.15
 
-#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
-inline constexpr auto QStringSkipEmptyParts = Qt::SkipEmptyParts;
-#else // Qt >= 5.14
-inline constexpr auto QStringSkipEmptyParts = QString::SkipEmptyParts;
-#endif // Qt >= 5.14
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+using NativeEventResult = qintptr;
+using TouchDevice = QInputDevice::DeviceType;
+#else // Qt >= 6.0.0
+using NativeEventResult = long;
+using TouchDevice = QTouchDevice;
+#endif // Qt < 6.0.0
 
-[[nodiscard]] inline QScreen *QScreenNearestTo(const QPoint &point) {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
-	const auto result = QGuiApplication::screenAt(point);
-#else // Qt >= 5.10
-	const auto result = [&]() -> QScreen* {
-		const auto list = QGuiApplication::screens();
-		for (const auto screen : list) {
-			if (screen->geometry().contains(point)) {
-				return screen;
-			}
-		}
-		const auto proj = [&](QScreen *screen) {
-			return (screen->geometry().center() - point).manhattanLength();
-		};
-		const auto i = ranges::min_element(list, ranges::less(), proj);
-		return (i == list.end()) ? nullptr : *i;
-	}();
-#endif // Qt >= 5.10
-	return result ? result : QGuiApplication::primaryScreen();
-}
-
-[[nodiscard]] inline QDateTime QDateToDateTime(const QDate &date) {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
-	return date.startOfDay();
-#else // Qt >= 5.14
-	return QDateTime(date);
-#endif // Qt >= 5.14
-}
-
-inline void QClearColorSpace(QImage &image) {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
-	image.setColorSpace(QColorSpace());
-#endif // Qt >= 5.14
+[[nodiscard]] inline QStringView StringViewMid(QStringView view, qsizetype pos, qsizetype n = -1) {
+	const auto result = ContainerImplHelper::mid(view.size(), &pos, &n);
+	return result == ContainerImplHelper::Null ? QStringView() : view.mid(pos, n);
 }
 
 } // namespace base

@@ -13,7 +13,7 @@
 #include <QtGui/QOpenGLContext>
 #include <QtGui/QWindow>
 #include <QtGui/QPaintEngine>
-#include <QtWidgets/QOpenGLWidget>
+#include <QOpenGLWidget>
 
 namespace Ui::GL {
 namespace {
@@ -91,6 +91,9 @@ void SurfaceOpenGL::paintEvent(QPaintEvent *e) {
 		return;
 	}
 	engine->begin(device);
+	if (!isValid()) { // The call above could lose the context.
+		return;
+	}
 	const auto f = context()->functions();
 	if (const auto bg = _renderer->clearColor()) {
 		f->glClearColor(bg->redF(), bg->greenF(), bg->blueF(), bg->alphaF());
@@ -107,11 +110,13 @@ void SurfaceOpenGL::callDeInit() {
 		return;
 	}
 	QObject::disconnect(base::take(_connection));
-	const auto surface = window()->windowHandle();
-	Assert(surface != nullptr);
+	makeCurrent();
 	const auto context = this->context();
-	context->makeCurrent(surface);
-	_renderer->deinit(this, *context->functions());
+	_renderer->deinit(
+		this,
+		((isValid() && context && QOpenGLContext::currentContext() == context)
+			? context->functions()
+			: nullptr));
 }
 
 SurfaceRaster::SurfaceRaster(

@@ -22,7 +22,12 @@ if (DESKTOP_APP_USE_PACKAGED)
     endif()
 endif()
 
-if (NOT rlottie_FOUND AND NOT RLOTTIE_FOUND)
+if (rlottie_FOUND OR RLOTTIE_FOUND)
+    target_compile_definitions(external_rlottie
+    INTERFACE
+        DESKTOP_APP_USE_PACKAGED_RLOTTIE
+    )
+else()
     add_library(external_rlottie_bundled STATIC)
     init_target(external_rlottie_bundled "(external)")
 
@@ -114,6 +119,7 @@ if (NOT rlottie_FOUND AND NOT RLOTTIE_FOUND)
     PRIVATE
         _USE_MATH_DEFINES
         "RAPIDJSON_ASSERT=(void)"
+        LOTTIE_DISABLE_ARM_NEON
     )
 
     target_include_directories(external_rlottie_bundled

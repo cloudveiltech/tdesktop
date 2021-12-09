@@ -12,6 +12,7 @@ INTERFACE
     $<$<CONFIG:Debug>:_DEBUG>
     QT_NO_KEYWORDS
     QT_NO_CAST_FROM_BYTEARRAY
+    QT_IMPLICIT_QCHAR_CONSTRUCTION
 )
 
 if (DESKTOP_APP_DISABLE_CRASH_REPORTS)
@@ -42,13 +43,6 @@ if (DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
     )
 endif()
 
-if (DESKTOP_APP_DISABLE_GTK_INTEGRATION)
-    target_compile_definitions(common_options
-    INTERFACE
-        DESKTOP_APP_DISABLE_GTK_INTEGRATION
-    )
-endif()
-
 if (DESKTOP_APP_USE_PACKAGED)
     target_compile_definitions(common_options
     INTERFACE
@@ -67,13 +61,6 @@ if (DESKTOP_APP_USE_PACKAGED_FONTS)
     target_compile_definitions(common_options
     INTERFACE
         DESKTOP_APP_USE_PACKAGED_FONTS
-    )
-endif()
-
-if (rlottie_FOUND OR RLOTTIE_FOUND)
-    target_compile_definitions(common_options
-    INTERFACE
-        DESKTOP_APP_USE_PACKAGED_RLOTTIE
     )
 endif()
 

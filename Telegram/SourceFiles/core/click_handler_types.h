@@ -9,6 +9,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "ui/basic_click_handlers.h"
 
+constexpr auto kPeerLinkPeerIdProperty = 0x01;
+
 namespace Main {
 class Session;
 } // namespace Main
@@ -23,11 +25,15 @@ class SessionController;
 
 [[nodiscard]] bool UrlRequiresConfirmation(const QUrl &url);
 
+class PeerData;
 struct ClickHandlerContext {
 	FullMsgId itemId;
+	// Is filled from sections.
 	Fn<HistoryView::ElementDelegate*()> elementDelegate;
 	base::weak_ptr<Window::SessionController> sessionWindow;
 	bool skipBotAutoLogin = false;
+	// Is filled from peer info.
+	PeerData *peer = nullptr;
 };
 Q_DECLARE_METATYPE(ClickHandlerContext);
 
@@ -35,11 +41,9 @@ class HiddenUrlClickHandler : public UrlClickHandler {
 public:
 	HiddenUrlClickHandler(QString url) : UrlClickHandler(url, false) {
 	}
-	QString copyToClipboardContextItemText() const override {
-		return (url().isEmpty() || url().startsWith(qstr("internal:")))
-			? QString()
-			: UrlClickHandler::copyToClipboardContextItemText();
-	}
+	QString copyToClipboardText() const override;
+	QString copyToClipboardContextItemText() const override;
+	QString dragText() const override;
 
 	static void Open(QString url, QVariant context = {});
 	void onClick(ClickContext context) const override {
@@ -169,7 +173,6 @@ private:
 
 };
 
-class PeerData;
 class BotCommandClickHandler : public TextClickHandler {
 public:
 	BotCommandClickHandler(const QString &cmd) : _cmd(cmd) {

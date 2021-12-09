@@ -77,8 +77,10 @@ public:
 			Fn<void()> onSuccess,
 			bool video) = 0;
 
-		virtual auto callGetVideoCapture()
-			-> std::shared_ptr<tgcalls::VideoCaptureInterface> = 0;
+		virtual auto callGetVideoCapture(
+			const QString &deviceId,
+			bool isScreenCapture)
+		-> std::shared_ptr<tgcalls::VideoCaptureInterface> = 0;
 
 		virtual ~Delegate() = default;
 
@@ -98,6 +100,9 @@ public:
 	}
 	[[nodiscard]] not_null<UserData*> user() const {
 		return _user;
+	}
+	[[nodiscard]] CallId id() const {
+		return _id;
 	}
 	[[nodiscard]] bool isIncomingWaiting() const;
 
@@ -174,7 +179,6 @@ public:
 	crl::time getDurationMs() const;
 	float64 getWaitingSoundPeakValue() const;
 
-	void switchVideoOutgoing();
 	void answer();
 	void hangup();
 	void redial();
@@ -185,9 +189,21 @@ public:
 	QString getDebugLog() const;
 
 	void setCurrentAudioDevice(bool input, const QString &deviceId);
-	void setCurrentVideoDevice(const QString &deviceId);
 	//void setAudioVolume(bool input, float level);
 	void setAudioDuckingEnabled(bool enabled);
+
+	void setCurrentCameraDevice(const QString &deviceId);
+	[[nodiscard]] QString videoDeviceId() const {
+		return _videoCaptureDeviceId;
+	}
+
+	[[nodiscard]] bool isSharingVideo() const;
+	[[nodiscard]] bool isSharingCamera() const;
+	[[nodiscard]] bool isSharingScreen() const;
+	[[nodiscard]] QString cameraSharingDeviceId() const;
+	[[nodiscard]] QString screenSharingDeviceId() const;
+	void toggleCameraSharing(bool enabled);
+	void toggleScreenSharing(std::optional<QString> uniqueId);
 
 	[[nodiscard]] rpl::lifetime &lifetime() {
 		return _lifetime;
@@ -202,7 +218,7 @@ private:
 		Failed,
 	};
 
-	void handleRequestError(const MTP::Error &error);
+	void handleRequestError(const QString &error);
 	void handleControllerError(const QString &error);
 	void finish(
 		FinishType type,
@@ -242,7 +258,8 @@ private:
 	MTP::Sender _api;
 	Type _type = Type::Outgoing;
 	rpl::variable<State> _state = State::Starting;
-	rpl::variable<RemoteAudioState> _remoteAudioState = RemoteAudioState::Active;
+	rpl::variable<RemoteAudioState> _remoteAudioState =
+		RemoteAudioState::Active;
 	rpl::variable<Webrtc::VideoState> _remoteVideoState;
 	rpl::event_stream<Error> _errors;
 	FinishType _finishAfterRequestingCall = FinishType::None;
@@ -260,14 +277,15 @@ private:
 	bytes::vector _gaHash;
 	bytes::vector _randomPower;
 	MTP::AuthKey::Data _authKey;
-	MTPPhoneCallProtocol _protocol;
 
-	uint64 _id = 0;
+	CallId _id = 0;
 	uint64 _accessHash = 0;
 	uint64 _keyFingerprint = 0;
 
 	std::unique_ptr<tgcalls::Instance> _instance;
 	std::shared_ptr<tgcalls::VideoCaptureInterface> _videoCapture;
+	QString _videoCaptureDeviceId;
+	bool _videoCaptureIsScreencast = false;
 	const std::unique_ptr<Webrtc::VideoTrack> _videoIncoming;
 	const std::unique_ptr<Webrtc::VideoTrack> _videoOutgoing;
 

@@ -9,9 +9,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "ui/rp_widget.h"
 #include "ui/effects/animations.h"
+#include "ui/chat/select_scroll_manager.h" // Has base/timer.h.
 #include "ui/widgets/tooltip.h"
 #include "mtproto/sender.h"
-#include "base/timer.h"
 #include "data/data_messages.h"
 #include "history/view/history_view_element.h"
 
@@ -21,6 +21,7 @@ class Session;
 
 namespace Ui {
 class PopupMenu;
+class ChatTheme;
 } // namespace Ui
 
 namespace Window {
@@ -40,6 +41,12 @@ enum class CursorState : char;
 enum class PointState : char;
 enum class Context : char;
 
+enum class CopyRestrictionType : char {
+	None,
+	Group,
+	Channel,
+};
+
 struct SelectedItem {
 	explicit SelectedItem(FullMsgId msgId) : msgId(msgId) {
 	}
@@ -52,6 +59,7 @@ struct SelectedItem {
 
 struct MessagesBar {
 	Element *element = nullptr;
+	bool hidden = false;
 	bool focus = false;
 };
 
@@ -91,6 +99,13 @@ public:
 		const QString &command,
 		const FullMsgId &context) = 0;
 	virtual void listHandleViaClick(not_null<UserData*> bot) = 0;
+	virtual not_null<Ui::ChatTheme*> listChatTheme() = 0;
+	virtual CopyRestrictionType listCopyRestrictionType(
+		HistoryItem *item) = 0;
+	CopyRestrictionType listCopyRestrictionType() {
+		return listCopyRestrictionType(nullptr);
+	}
+	virtual CopyRestrictionType listSelectRestrictionType() = 0;
 
 };
 
@@ -98,7 +113,6 @@ struct SelectionData {
 	bool canDelete = false;
 	bool canForward = false;
 	bool canSendNow = false;
-
 };
 
 using SelectedMap = base::flat_map<
@@ -154,6 +168,8 @@ public:
 		not_null<Window::SessionController*> controller,
 		not_null<ListDelegate*> delegate);
 
+	static const crl::time kItemRevealDuration;
+
 	[[nodiscard]] Main::Session &session() const;
 	[[nodiscard]] not_null<Window::SessionController*> controller() const;
 	[[nodiscard]] not_null<ListDelegate*> delegate() const;
@@ -194,11 +210,17 @@ public:
 	void selectItem(not_null<HistoryItem*> item);
 	void selectItemAsGroup(not_null<HistoryItem*> item);
 
-	bool loadedAtTopKnown() const;
-	bool loadedAtTop() const;
-	bool loadedAtBottomKnown() const;
-	bool loadedAtBottom() const;
-	bool isEmpty() const;
+	[[nodiscard]] bool loadedAtTopKnown() const;
+	[[nodiscard]] bool loadedAtTop() const;
+	[[nodiscard]] bool loadedAtBottomKnown() const;
+	[[nodiscard]] bool loadedAtBottom() const;
+	[[nodiscard]] bool isEmpty() const;
+
+	[[nodiscard]] bool hasCopyRestriction(HistoryItem *item = nullptr) const;
+	[[nodiscard]] bool showCopyRestriction(HistoryItem *item = nullptr);
+	[[nodiscard]] bool hasCopyRestrictionForSelected() const;
+	[[nodiscard]] bool showCopyRestrictionForSelected();
+	[[nodiscard]] bool hasSelectRestriction() const;
 
 	// AbstractTooltipShower interface
 	QString tooltipText() const override;
@@ -254,6 +276,10 @@ public:
 	void elementHandleViaClick(not_null<UserData*> bot) override;
 	bool elementIsChatWide() override;
 	not_null<Ui::PathShiftGradient*> elementPathShiftGradient() override;
+	void elementReplyTo(const FullMsgId &to) override;
+	void elementStartInteraction(not_null<const Element*> view) override;
+
+	void setEmptyInfoWidget(base::unique_qptr<Ui::RpWidget> &&w);
 
 	~ListWidget();
 
@@ -268,7 +294,7 @@ protected:
 	void mouseMoveEvent(QMouseEvent *e) override;
 	void mouseReleaseEvent(QMouseEvent *e) override;
 	void mouseDoubleClickEvent(QMouseEvent *e) override;
-	void enterEventHook(QEvent *e) override;
+	void enterEventHook(QEnterEvent *e) override;
 	void leaveEventHook(QEvent *e) override;
 	void contextMenuEvent(QContextMenuEvent *e) override;
 
@@ -296,7 +322,10 @@ private:
 		inline bool operator!=(const MouseState &other) const {
 			return !(*this == other);
 		}
-
+	};
+	struct ItemRevealAnimation {
+		Ui::Animations::Simple animation;
+		int startHeight = 0;
 	};
 	enum class Direction {
 		Up,
@@ -329,7 +358,7 @@ private:
 
 	void refreshViewer();
 	void updateAroundPositionFromNearest(int nearestIndex);
-	void refreshRows();
+	void refreshRows(const Data::MessagesSlice &old);
 	ScrollTopState countScrollState() const;
 	void saveScrollState();
 	void restoreScrollState();
@@ -458,6 +487,8 @@ private:
 	void checkUnreadBarCreation();
 	void applyUpdatedScrollState();
 	void scrollToAnimationCallback(FullMsgId attachToId, int relativeTo);
+	void startItemRevealAnimations();
+	void revealItemsCallback();
 
 	void updateHighlightedMessage();
 	void clearHighlightedMessage();
@@ -505,12 +536,19 @@ private:
 	int _itemsWidth = 0;
 	int _itemsHeight = 0;
 	int _itemAverageHeight = 0;
+	base::flat_set<not_null<Element*>> _itemRevealPending;
+	base::flat_map<
+		not_null<Element*>,
+		ItemRevealAnimation> _itemRevealAnimations;
+	int _itemsRevealHeight = 0;
 	base::flat_set<FullMsgId> _animatedStickersPlayed;
 	base::flat_map<
 		not_null<PeerData*>,
 		std::shared_ptr<Data::CloudImageView>> _userpics, _userpicsCache;
 
 	const std::unique_ptr<Ui::PathShiftGradient> _pathGradient;
+
+	base::unique_qptr<Ui::RpWidget> _emptyInfo = nullptr;
 
 	int _minHeight = 0;
 	int _visibleTop = 0;
@@ -569,6 +607,8 @@ private:
 	FullMsgId _highlightedMessageId;
 	base::Timer _highlightTimer;
 
+	Ui::SelectScrollManager _selectScroll;
+
 	rpl::event_stream<FullMsgId> _requestedToEditMessage;
 	rpl::event_stream<FullMsgId> _requestedToReplyToMessage;
 	rpl::event_stream<FullMsgId> _requestedToReadMessage;
@@ -582,13 +622,10 @@ void ConfirmDeleteSelectedItems(not_null<ListWidget*> widget);
 void ConfirmForwardSelectedItems(not_null<ListWidget*> widget);
 void ConfirmSendNowSelectedItems(not_null<ListWidget*> widget);
 
-[[nodiscard]] QString WrapBotCommandInChat(
+[[nodiscard]] CopyRestrictionType CopyRestrictionTypeFor(
 	not_null<PeerData*> peer,
-	const QString &command,
-	const FullMsgId &context);
-[[nodiscard]] QString WrapBotCommandInChat(
-	not_null<PeerData*> peer,
-	const QString &command,
-	not_null<UserData*> bot);
+	HistoryItem *item = nullptr);
+[[nodiscard]] CopyRestrictionType SelectRestrictionTypeFor(
+	not_null<PeerData*> peer);
 
 } // namespace HistoryView

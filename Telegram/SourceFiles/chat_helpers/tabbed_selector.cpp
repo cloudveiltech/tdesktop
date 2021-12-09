@@ -33,6 +33,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_chat_helpers.h"
 #include "cloudveil/GlobalSecuritySettings.h"
 
+
 namespace ChatHelpers {
 
 class TabbedSelector::SlideAnimation : public Ui::RoundShadowAnimation {
@@ -480,6 +481,13 @@ auto TabbedSelector::inlineResultChosen() const
 	return hasGifsTab() ? gifs()->inlineResultChosen() : nullptr;
 }
 
+auto TabbedSelector::choosingStickerUpdated() const
+-> rpl::producer<TabbedSelector::Action>{
+	return hasStickersTab()
+		? stickers()->choosingUpdated()
+		: rpl::never<Action>();
+}
+
 rpl::producer<> TabbedSelector::cancelled() const {
 	return hasGifsTab() ? gifs()->cancelRequests() : nullptr;
 }
@@ -899,17 +907,17 @@ void TabbedSelector::fillTabsSliderSections() {
 
 	const auto sections = ranges::views::all(
 		_tabs
-	) | ranges::views::filter([&](const Tab& tab) {
+	) | ranges::views::filter([&](const Tab &tab) {
 		//CloudVeil start
 		if (tab.type() == SelectorTab::Stickers && !GlobalSecuritySettings::getSettings().disableStickers)
 		{
 			return false;
 		}
-		else if (tab.type() == SelectorTab::Gifs && !GlobalSecuritySettings::getSettings().disableGifs) 
+		else if (tab.type() == SelectorTab::Gifs && !GlobalSecuritySettings::getSettings().disableGifs)
 		{
 			return false;
 		}
-		else 
+		else
 		{
 			return (tab.type() == SelectorTab::Masks)
 				? !masks()->mySetsEmpty()

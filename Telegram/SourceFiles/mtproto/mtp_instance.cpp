@@ -71,7 +71,9 @@ public:
 	void setGoodProxyDomain(const QString &host, const QString &ip);
 	void suggestMainDcId(DcId mainDcId);
 	void setMainDcId(DcId mainDcId);
+	[[nodiscard]] bool hasMainDcId() const;
 	[[nodiscard]] DcId mainDcId() const;
+	[[nodiscard]] rpl::producer<DcId> mainDcIdValue() const;
 
 	[[nodiscard]] rpl::producer<> writeKeysRequests() const;
 
@@ -191,7 +193,7 @@ private:
 
 	Session *findSession(ShiftedDcId shiftedDcId);
 	not_null<Session*> startSession(ShiftedDcId shiftedDcId);
-	Session *removeSession(ShiftedDcId shiftedDcId);
+	void scheduleSessionDestroy(ShiftedDcId shiftedDcId);
 	[[nodiscard]] not_null<QThread*> getThreadForDc(ShiftedDcId shiftedDcId);
 
 	void applyDomainIps(
@@ -222,10 +224,13 @@ private:
 	std::unique_ptr<QThread> _otherSessionsThread;
 	std::vector<std::unique_ptr<QThread>> _fileSessionThreads;
 
-	QString _deviceModel;
+	QString _deviceModelDefault;
 	QString _systemVersion;
 
-	DcId _mainDcId = Fields::kDefaultMainDc;
+	mutable QMutex _deviceModelMutex;
+	QString _customDeviceModel;
+
+	rpl::variable<DcId> _mainDcId = Fields::kDefaultMainDc;
 	bool _mainDcIdForced = false;
 	base::flat_map<DcId, std::unique_ptr<Dcenter>> _dcenters;
 	std::vector<std::unique_ptr<Dcenter>> _dcentersToDestroy;
@@ -319,8 +324,18 @@ Instance::Private::Private(
 		restart();
 	}, _lifetime);
 
-	_deviceModel = std::move(fields.deviceModel);
+	_deviceModelDefault = std::move(fields.deviceModel);
 	_systemVersion = std::move(fields.systemVersion);
+
+	_customDeviceModel = Core::App().settings().customDeviceModel();
+	Core::App().settings().customDeviceModelChanges(
+	) | rpl::start_with_next([=](const QString &value) {
+		QMutexLocker lock(&_deviceModelMutex);
+		_customDeviceModel = value;
+		lock.unlock();
+
+		reInitConnection(mainDcId());
+	}, _lifetime);
 
 	for (auto &key : fields.keys) {
 		auto dcId = key->dcId();
@@ -356,13 +371,13 @@ void Instance::Private::start() {
 		for (const auto &[shiftedDcId, dc] : _dcenters) {
 			startSession(shiftedDcId);
 		}
-	} else if (_mainDcId != Fields::kNoneMainDc) {
-		_mainSession = startSession(_mainDcId);
+	} else if (hasMainDcId()) {
+		_mainSession = startSession(mainDcId());
 	}
 
 	_checkDelayedTimer.setCallback([this] { checkDelayedRequests(); });
 
-	Assert((_mainDcId == Fields::kNoneMainDc) == isKeysDestroyer());
+	Assert(!hasMainDcId() == isKeysDestroyer());
 	requestConfig();
 }
 
@@ -463,18 +478,30 @@ void Instance::Private::setMainDcId(DcId mainDcId) {
 	}
 
 	_mainDcIdForced = true;
-	auto oldMainDcId = _mainSession->getDcWithShift();
-	_mainDcId = mainDcId;
-	if (oldMainDcId != _mainDcId) {
-		killSession(oldMainDcId);
+	const auto oldMainDcId = _mainSession->getDcWithShift();
+	if (oldMainDcId != mainDcId) {
+		scheduleSessionDestroy(oldMainDcId);
+		scheduleSessionDestroy(mainDcId);
+		_mainSession = startSession(mainDcId);
 	}
+	_mainDcId = mainDcId;
 	_writeKeysRequests.fire({});
 }
 
-DcId Instance::Private::mainDcId() const {
-	Expects(_mainDcId != Fields::kNoneMainDc);
+bool Instance::Private::hasMainDcId() const {
+	return (_mainDcId.current() != Fields::kNoneMainDc);
+}
 
-	return _mainDcId;
+DcId Instance::Private::mainDcId() const {
+	Expects(hasMainDcId());
+
+	return _mainDcId.current();
+}
+
+rpl::producer<DcId> Instance::Private::mainDcIdValue() const {
+	Expects(_mainDcId.current() != Fields::kNoneMainDc);
+
+	return _mainDcId.value();
 }
 
 void Instance::Private::requestConfig() {
@@ -548,7 +575,7 @@ void Instance::Private::requestConfigIfExpired() {
 }
 
 void Instance::Private::requestCDNConfig() {
-	if (_cdnConfigLoadRequestId || _mainDcId == Fields::kNoneMainDc) {
+	if (_cdnConfigLoadRequestId || !hasMainDcId()) {
 		return;
 	}
 	_cdnConfigLoadRequestId = request(
@@ -652,19 +679,11 @@ int32 Instance::Private::state(mtpRequestId requestId) {
 }
 
 void Instance::Private::killSession(ShiftedDcId shiftedDcId) {
-	const auto checkIfMainAndKill = [&](ShiftedDcId shiftedDcId) {
-		if (const auto removed = removeSession(shiftedDcId)) {
-			return (removed == _mainSession);
-		}
-		return false;
-	};
-	if (checkIfMainAndKill(shiftedDcId)) {
-		checkIfMainAndKill(_mainDcId);
-		_mainSession = startSession(_mainDcId);
+	const auto i = _sessions.find(shiftedDcId);
+	if (i != _sessions.cend()) {
+		Assert(i->second.get() != _mainSession);
 	}
-	InvokeQueued(_instance, [=] {
-		_sessionsToDestroy.clear();
-	});
+	scheduleSessionDestroy(shiftedDcId);
 }
 
 void Instance::Private::stopSession(ShiftedDcId shiftedDcId) {
@@ -695,6 +714,8 @@ void Instance::Private::logout(Fn<void()> done) {
 }
 
 void Instance::Private::logoutGuestDcs() {
+	Expects(!isKeysDestroyer());
+
 	auto dcIds = std::vector<DcId>();
 	dcIds.reserve(_keysForWrite.size());
 	for (const auto &key : _keysForWrite) {
@@ -866,7 +887,10 @@ bool Instance::Private::isTestMode() const {
 }
 
 QString Instance::Private::deviceModel() const {
-	return _deviceModel;
+	QMutexLocker lock(&_deviceModelMutex);
+	return _customDeviceModel.isEmpty()
+		? _deviceModelDefault
+		: _customDeviceModel;
 }
 
 QString Instance::Private::systemVersion() const {
@@ -1027,7 +1051,7 @@ void Instance::Private::unregisterRequest(mtpRequestId requestId) {
 		auto handling = 0;
 		do {
 			handling = toResend.size();
-			for (const auto [resendingId, afterId] : _dependentRequests) {
+			for (const auto &[resendingId, afterId] : _dependentRequests) {
 				if (toRemove.contains(afterId)) {
 					toRemove.emplace(resendingId);
 					toResend.emplace(resendingId);
@@ -1462,7 +1486,7 @@ bool Instance::Private::onErrorDefault(
 			LOG(("MTP Error: unauthorized request without dc info, requestId %1").arg(requestId));
 		}
 		auto newdc = BareDcId(qAbs(dcWithShift));
-		if (!newdc || newdc == mainDcId()) {
+		if (!newdc || !hasMainDcId() || newdc == mainDcId()) {
 			if (!badGuestDc && _globalFailHandler) {
 				_globalFailHandler(error, response); // auth failed in main dc
 			}
@@ -1563,15 +1587,17 @@ not_null<Session*> Instance::Private::startSession(ShiftedDcId shiftedDcId) {
 	return result;
 }
 
-Session *Instance::Private::removeSession(ShiftedDcId shiftedDcId) {
+void Instance::Private::scheduleSessionDestroy(ShiftedDcId shiftedDcId) {
 	const auto i = _sessions.find(shiftedDcId);
 	if (i == _sessions.cend()) {
-		return nullptr;
+		return;
 	}
 	i->second->kill();
 	_sessionsToDestroy.push_back(std::move(i->second));
 	_sessions.erase(i);
-	return _sessionsToDestroy.back().get();
+	InvokeQueued(_instance, [=] {
+		_sessionsToDestroy.clear();
+	});
 }
 
 
@@ -1788,6 +1814,10 @@ void Instance::setMainDcId(DcId mainDcId) {
 
 DcId Instance::mainDcId() const {
 	return _private->mainDcId();
+}
+
+rpl::producer<DcId> Instance::mainDcIdValue() const {
+	return _private->mainDcIdValue();
 }
 
 QString Instance::systemLangCode() const {

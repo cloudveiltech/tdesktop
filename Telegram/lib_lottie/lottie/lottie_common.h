@@ -25,9 +25,9 @@ constexpr auto kImageFormat = QImage::Format_ARGB32_Premultiplied;
 class Animation;
 
 struct Information {
+	QSize size;
 	int frameRate = 0;
 	int framesCount = 0;
-	QSize size;
 };
 
 enum class Error {
@@ -38,15 +38,19 @@ enum class Error {
 struct FrameRequest {
 	QSize box;
 	std::optional<QColor> colored;
+	bool mirrorHorizontal = false;
 
 	[[nodiscard]] bool empty() const {
 		return box.isEmpty();
 	}
-	[[nodiscard]] QSize size(const QSize &original, bool useCache) const;
+	[[nodiscard]] QSize size(
+		const QSize &original,
+		int sizeRounding) const;
 
 	[[nodiscard]] bool operator==(const FrameRequest &other) const {
 		return (box == other.box)
-			&& (colored == other.colored);
+			&& (colored == other.colored)
+			&& (mirrorHorizontal == other.mirrorHorizontal);
 	}
 	[[nodiscard]] bool operator!=(const FrameRequest &other) const {
 		return !(*this == other);
@@ -59,8 +63,18 @@ enum class Quality : char {
 	Synchronous
 };
 
+enum class SkinModifier {
+	None,
+	Color1,
+	Color2,
+	Color3,
+	Color4,
+	Color5,
+};
+
 struct ColorReplacements {
 	std::vector<std::pair<std::uint32_t, std::uint32_t>> replacements;
+	SkinModifier modifier = SkinModifier::None;
 	uint8 tag = 0;
 };
 
@@ -70,5 +84,12 @@ struct ColorReplacements {
 [[nodiscard]] std::string ReadUtf8(const QByteArray &data);
 [[nodiscard]] bool GoodStorageForFrame(const QImage &storage, QSize size);
 [[nodiscard]] QImage CreateFrameStorage(QSize size);
+
+enum class FrameRenderResult {
+	Ok,
+	NotReady,
+	BadCacheSize,
+	Failed,
+};
 
 } // namespace Lottie

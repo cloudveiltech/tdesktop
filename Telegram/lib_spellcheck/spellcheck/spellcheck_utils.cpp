@@ -25,8 +25,6 @@ rpl::event_stream<> SupportedScriptsEventStream;
 
 constexpr auto kFactor = 1000;
 
-constexpr auto kMaxWordSize = 99;
-
 constexpr auto kAcuteAccentChars = {
 	QChar(769),	QChar(833),	// QChar(180),
 	QChar(714),	QChar(779),	QChar(733),
@@ -218,7 +216,7 @@ QChar::Script LocaleToScriptCode(const QString &locale) {
 	return QChar::Script_Common;
 }
 
-QChar::Script WordScript(const QStringRef &word) {
+QChar::Script WordScript(QStringView word) {
 	// Find the first letter.
 	const auto firstLetter = ranges::find_if(word, [](QChar c) {
 		return c.isLetter();
@@ -228,7 +226,7 @@ QChar::Script WordScript(const QStringRef &word) {
 		: firstLetter->script();
 }
 
-bool IsWordSkippable(const QStringRef &word, bool checkSupportedScripts) {
+bool IsWordSkippable(QStringView word, bool checkSupportedScripts) {
 	if (word.size() > kMaxWordSize) {
 		return true;
 	}
@@ -306,7 +304,7 @@ MisspelledWords RangesFromText(
 }
 
 bool CheckSkipAndSpell(const QString &word) {
-	return !IsWordSkippable(&word)
+	return !IsWordSkippable(word)
 		&& Platform::Spellchecker::CheckSpelling(word);
 }
 

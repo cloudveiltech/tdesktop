@@ -32,18 +32,18 @@ constexpr auto kRequestTimeLimit = 60 * crl::time(1000);
 		&& (item->date() > base::unixtime::now());
 }
 
-MTPMessage PrepareMessage(const MTPMessage &message, MsgId id) {
+MTPMessage PrepareMessage(const MTPMessage &message) {
 	return message.match([&](const MTPDmessageEmpty &data) {
 		return MTP_messageEmpty(
 			data.vflags(),
-			MTP_int(id),
+			data.vid(),
 			data.vpeer_id() ? *data.vpeer_id() : MTPPeer());
 	}, [&](const MTPDmessageService &data) {
 		return MTP_messageService(
 			MTP_flags(data.vflags().v
 				| MTPDmessageService::Flag(
 					MTPDmessage::Flag::f_from_scheduled)),
-			MTP_int(id),
+			data.vid(),
 			data.vfrom_id() ? *data.vfrom_id() : MTPPeer(),
 			data.vpeer_id(),
 			data.vreply_to() ? *data.vreply_to() : MTPMessageReplyHeader(),
@@ -53,11 +53,11 @@ MTPMessage PrepareMessage(const MTPMessage &message, MsgId id) {
 	}, [&](const MTPDmessage &data) {
 		return MTP_message(
 			MTP_flags(data.vflags().v | MTPDmessage::Flag::f_from_scheduled),
-			MTP_int(id),
+			data.vid(),
 			data.vfrom_id() ? *data.vfrom_id() : MTPPeer(),
 			data.vpeer_id(),
 			data.vfwd_from() ? *data.vfwd_from() : MTPMessageFwdHeader(),
-			MTP_int(data.vvia_bot_id().value_or_empty()),
+			MTP_long(data.vvia_bot_id().value_or_empty()),
 			data.vreply_to() ? *data.vreply_to() : MTPMessageReplyHeader(),
 			data.vdate(),
 			data.vmessage(),
@@ -158,6 +158,7 @@ void ScheduledMessages::sendNowSimpleMessage(
 		not_null<HistoryItem*> local) {
 	Expects(local->isSending());
 	Expects(local->isScheduled());
+
 	if (HasScheduledDate(local)) {
 		LOG(("Error: trying to put to history a new local message, "
 			"that has scheduled date."));
@@ -175,27 +176,29 @@ void ScheduledMessages::sendNowSimpleMessage(
 	auto action = Api::SendAction(history);
 	action.replyTo = local->replyToId();
 	const auto replyHeader = NewMessageReplyHeader(action);
-	auto flags = NewMessageFlags(history->peer)
-		| MTPDmessage::Flag::f_entities
+	const auto localFlags = NewMessageFlags(history->peer);
+	const auto flags = MTPDmessage::Flag::f_entities
 		| MTPDmessage::Flag::f_from_id
 		| (local->replyToId()
 			? MTPDmessage::Flag::f_reply_to
 			: MTPDmessage::Flag(0))
 		| (update.vttl_period()
 			? MTPDmessage::Flag::f_ttl_period
+			: MTPDmessage::Flag(0))
+		| ((localFlags & MessageFlag::Outgoing)
+			? MTPDmessage::Flag::f_out
 			: MTPDmessage::Flag(0));
-	auto clientFlags = NewMessageClientFlags()
-		| MTPDmessage_ClientFlag::f_local_history_entry;
 	const auto views = 1;
 	const auto forwards = 0;
 	history->addNewMessage(
+		update.vid().v,
 		MTP_message(
 			MTP_flags(flags),
 			update.vid(),
-			peerToMTP(_session->userPeerId()),
+			peerToMTP(local->from()->id),
 			peerToMTP(history->peer->id),
 			MTPMessageFwdHeader(),
-			MTPint(),
+			MTPlong(), // via_bot_id
 			replyHeader,
 			update.vdate(),
 			MTP_string(local->originalText().text),
@@ -213,7 +216,7 @@ void ScheduledMessages::sendNowSimpleMessage(
 			//MTPMessageReactions(),
 			MTPVector<MTPRestrictionReason>(),
 			MTP_int(update.vttl_period().value_or_empty())),
-		clientFlags,
+		localFlags,
 		NewMessageType::Unread);
 
 	local->destroy();
@@ -266,7 +269,8 @@ void ScheduledMessages::checkEntitiesAndUpdate(const MTPDmessage &data) {
 			qs(data.vmessage()),
 			Api::EntitiesFromMTP(_session, data.ventities().value_or_empty())
 		}, data.vmedia());
-		existing->updateReplyMarkup(data.vreply_markup());
+		existing->updateReplyMarkup(
+			HistoryMessageMarkupData(data.vreply_markup()));
 		existing->updateForwardedInfo(data.vfwd_from());
 		_session->data().requestItemTextRefresh(existing);
 
@@ -376,14 +380,16 @@ void ScheduledMessages::request(not_null<History*> history) {
 		return;
 	}
 	const auto i = _data.find(history);
-	const auto hash = (i != end(_data)) ? countListHash(i->second) : 0;
+	const auto hash = (i != end(_data))
+		? countListHash(i->second)
+		: uint64(0);
 	request.requestId = _session->api().request(
 		MTPmessages_GetScheduledHistory(
 			history->peer->input,
-			MTP_int(hash))
+			MTP_long(hash))
 	).done([=](const MTPmessages_Messages &result) {
 		parse(history, result);
-	}).fail([=](const MTP::Error &error) {
+	}).fail([=] {
 		_requests.remove(history);
 	}).send();
 }
@@ -441,7 +447,7 @@ HistoryItem *ScheduledMessages::append(
 			// so if we receive a flag about it,
 			// probably this message was edited.
 			if (data.is_edit_hide()) {
-				existing->applyEdition(data);
+				existing->applyEdition(HistoryMessageEdition(_session, data));
 			}
 			existing->updateSentContent({
 				qs(data.vmessage()),
@@ -449,7 +455,8 @@ HistoryItem *ScheduledMessages::append(
 					_session,
 					data.ventities().value_or_empty())
 			}, data.vmedia());
-			existing->updateReplyMarkup(data.vreply_markup());
+			existing->updateReplyMarkup(
+				HistoryMessageMarkupData(data.vreply_markup()));
 			existing->updateForwardedInfo(data.vfwd_from());
 			existing->updateDate(data.vdate().v);
 			history->owner().requestItemTextRefresh(existing);
@@ -458,8 +465,9 @@ HistoryItem *ScheduledMessages::append(
 	}
 
 	const auto item = _session->data().addNewMessage(
-		PrepareMessage(message, history->nextNonHistoryEntryId()),
-		MTPDmessage_ClientFlags(),
+		history->nextNonHistoryEntryId(),
+		PrepareMessage(message),
+		MessageFlags(), // localFlags
 		NewMessageType::Existing);
 	if (!item || item->history() != history) {
 		LOG(("API Error: Bad data received in scheduled messages."));
@@ -490,7 +498,7 @@ void ScheduledMessages::updated(
 		const base::flat_set<not_null<HistoryItem*>> &added,
 		const base::flat_set<not_null<HistoryItem*>> &clear) {
 	if (!clear.empty()) {
-		for (const auto item : clear) {
+		for (const auto &item : clear) {
 			item->destroy();
 		}
 	}
@@ -530,7 +538,7 @@ void ScheduledMessages::remove(not_null<const HistoryItem*> item) {
 	_updates.fire_copy(history);
 }
 
-int32 ScheduledMessages::countListHash(const List &list) const {
+uint64 ScheduledMessages::countListHash(const List &list) const {
 	using namespace Api;
 
 	auto hash = HashInit();
@@ -541,11 +549,11 @@ int32 ScheduledMessages::countListHash(const List &list) const {
 	}) | ranges::views::reverse;
 	for (const auto &item : serverside) {
 		const auto j = list.idByItem.find(item.get());
-		HashUpdate(hash, j->second);
+		HashUpdate(hash, j->second.bare);
 		if (const auto edited = item->Get<HistoryMessageEdited>()) {
 			HashUpdate(hash, edited->date);
 		} else {
-			HashUpdate(hash, int32(0));
+			HashUpdate(hash, TimeId(0));
 		}
 		HashUpdate(hash, item->date());
 	}

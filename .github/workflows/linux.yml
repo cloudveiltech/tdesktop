@@ -5,7 +5,7 @@ on:
     paths-ignore:
       - 'docs/**'
       - '**.md'
-      - '!docs/building-cmake.md'
+      - '!docs/building-linux.md'
       - 'changelog.txt'
       - 'LEGAL'
       - 'LICENSE'
@@ -13,7 +13,6 @@ on:
       - '!.github/workflows/linux.yml'
       - 'snap/**'
       - 'Telegram/build/**'
-      - 'Telegram/Patches/**'
       - 'Telegram/Resources/uwp/**'
       - 'Telegram/Resources/winrc/**'
       - 'Telegram/SourceFiles/platform/win/**'
@@ -25,7 +24,7 @@ on:
     paths-ignore:
       - 'docs/**'
       - '**.md'
-      - '!docs/building-cmake.md'
+      - '!docs/building-linux.md'
       - 'changelog.txt'
       - 'LEGAL'
       - 'LICENSE'
@@ -33,7 +32,6 @@ on:
       - '!.github/workflows/linux.yml'
       - 'snap/**'
       - 'Telegram/build/**'
-      - 'Telegram/Patches/**'
       - 'Telegram/Resources/uwp/**'
       - 'Telegram/Resources/winrc/**'
       - 'Telegram/SourceFiles/platform/win/**'
@@ -55,7 +53,7 @@ jobs:
 
     defaults:
       run:
-        shell: scl enable devtoolset-9 -- bash --noprofile --norc -eo pipefail {0}
+        shell: scl enable llvm-toolset-7.0 -- scl enable devtoolset-10 -- bash --noprofile --norc -eo pipefail {0}
 
     strategy:
       matrix:
@@ -64,9 +62,6 @@ jobs:
           - "DESKTOP_APP_DISABLE_DBUS_INTEGRATION"
           - "DESKTOP_APP_DISABLE_X11_INTEGRATION"
           - "DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION"
-          - "DESKTOP_APP_DISABLE_GTK_INTEGRATION"
-          - "LIBTGVOIP_DISABLE_ALSA"
-          - "LIBTGVOIP_DISABLE_PULSEAUDIO"
 
     env:
       UPLOAD_ARTIFACT: "false"
@@ -93,9 +88,6 @@ jobs:
           DEFINE=""
           if [ -n "${{ matrix.defines }}" ]; then
             DEFINE="-D ${{ matrix.defines }}=ON"
-            if [ "${{ matrix.defines }}" == "DESKTOP_APP_DISABLE_DBUS_INTEGRATION" ]; then
-              DEFINE="$DEFINE -D DESKTOP_APP_DISABLE_GTK_INTEGRATION=ON"
-            fi
             echo Define from matrix: $DEFINE
             echo "ARTIFACT_NAME=Telegram_${{ matrix.defines }}" >> $GITHUB_ENV
           else
@@ -111,8 +103,7 @@ jobs:
           -D DESKTOP_APP_DISABLE_CRASH_REPORTS=OFF \
           $DEFINE
 
-          cd ../out/Debug
-          make -j$(nproc)
+          cmake --build ../out --config Debug --parallel
 
       - name: Check.
         run: |

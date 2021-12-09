@@ -5,7 +5,7 @@
 # https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 add_library(td_ui OBJECT)
-init_target(td_ui)
+init_non_host_target(td_ui)
 add_library(tdesktop::td_ui ALIAS td_ui)
 
 include(lib_ui/cmake/generate_styles.cmake)
@@ -41,13 +41,14 @@ set(dependent_style_files
 )
 
 generate_styles(td_ui ${src_loc} "${style_files}" "${dependent_style_files}")
-generate_numbers(td_ui ${res_loc}/numbers.txt)
 
 target_precompile_headers(td_ui PRIVATE ${src_loc}/ui/ui_pch.h)
 nice_target_sources(td_ui ${src_loc}
 PRIVATE
     ${style_files}
 
+    calls/group/ui/calls_group_recording_box.cpp
+    calls/group/ui/calls_group_recording_box.h
     calls/group/ui/calls_group_scheduled_labels.cpp
     calls/group/ui/calls_group_scheduled_labels.h
     calls/group/ui/desktop_capture_choose_source.cpp
@@ -58,8 +59,17 @@ PRIVATE
     core/mime_type.cpp
     core/mime_type.h
 
-    data/data_countries.cpp
-    data/data_countries.h
+    countries/countries_instance.cpp
+    countries/countries_instance.h
+
+    layout/abstract_layout_item.cpp
+    layout/abstract_layout_item.h
+    layout/layout_mosaic.cpp
+    layout/layout_mosaic.h
+    layout/layout_position.cpp
+    layout/layout_position.h
+    layout/layout_selection.cpp
+    layout/layout_selection.h
 
     media/clip/media_clip_check_streaming.cpp
     media/clip/media_clip_check_streaming.h
@@ -69,6 +79,9 @@ PRIVATE
     media/clip/media_clip_implementation.h
     media/clip/media_clip_reader.cpp
     media/clip/media_clip_reader.h
+
+    media/player/media_player_dropdown.cpp
+    media/player/media_player_dropdown.h
 
     passport/ui/passport_details_row.cpp
     passport/ui/passport_details_row.h
@@ -98,14 +111,21 @@ PRIVATE
     ui/boxes/calendar_box.h
     ui/boxes/choose_date_time.cpp
     ui/boxes/choose_date_time.h
+    ui/boxes/confirm_box.cpp
+    ui/boxes/confirm_box.h
+    ui/boxes/confirm_phone_box.cpp
+    ui/boxes/confirm_phone_box.h
     ui/boxes/country_select_box.cpp
     ui/boxes/country_select_box.h
     ui/boxes/edit_invite_link.cpp
     ui/boxes/edit_invite_link.h
+    ui/boxes/rate_call_box.cpp
+    ui/boxes/rate_call_box.h
     ui/boxes/report_box.cpp
     ui/boxes/report_box.h
     ui/boxes/single_choice_box.cpp
     ui/boxes/single_choice_box.h
+
     ui/chat/attach/attach_abstract_single_file_preview.cpp
     ui/chat/attach/attach_abstract_single_file_preview.h
     ui/chat/attach/attach_abstract_single_media_preview.cpp
@@ -127,14 +147,28 @@ PRIVATE
     ui/chat/attach/attach_single_file_preview.h
     ui/chat/attach/attach_single_media_preview.cpp
     ui/chat/attach/attach_single_media_preview.h
+    ui/chat/chat_style.cpp
+    ui/chat/chat_style.h
+    ui/chat/chat_theme.cpp
+    ui/chat/chat_theme.h
+    ui/chat/continuous_scroll.cpp
+    ui/chat/continuous_scroll.h
+    ui/chat/forward_options_box.cpp
+    ui/chat/forward_options_box.h
     ui/chat/group_call_bar.cpp
     ui/chat/group_call_bar.h
     ui/chat/group_call_userpics.cpp
     ui/chat/group_call_userpics.h
     ui/chat/message_bar.cpp
     ui/chat/message_bar.h
+    ui/chat/message_bubble.cpp
+    ui/chat/message_bubble.h
     ui/chat/pinned_bar.cpp
     ui/chat/pinned_bar.h
+    ui/chat/requests_bar.cpp
+    ui/chat/requests_bar.h
+    ui/chat/select_scroll_manager.cpp
+    ui/chat/select_scroll_manager.h
     ui/controls/call_mute_button.cpp
     ui/controls/call_mute_button.h
     ui/controls/delete_message_context_action.cpp
@@ -145,8 +179,12 @@ PRIVATE
     ui/controls/invite_link_buttons.h
     ui/controls/invite_link_label.cpp
     ui/controls/invite_link_label.h
+    ui/controls/send_as_button.cpp
+    ui/controls/send_as_button.h
     ui/controls/send_button.cpp
     ui/controls/send_button.h
+    ui/controls/who_read_context_action.cpp
+    ui/controls/who_read_context_action.h
     ui/text/format_song_name.cpp
     ui/text/format_song_name.h
     ui/text/format_values.cpp
@@ -155,8 +193,16 @@ PRIVATE
     ui/text/text_options.h
     ui/toasts/common_toasts.cpp
     ui/toasts/common_toasts.h
+
+    ui/widgets/continuous_sliders.cpp
+    ui/widgets/continuous_sliders.h
+    ui/widgets/discrete_sliders.cpp
+    ui/widgets/discrete_sliders.h
+    ui/widgets/sent_code_field.cpp
+    ui/widgets/sent_code_field.h
     ui/widgets/separate_panel.cpp
     ui/widgets/separate_panel.h
+
     ui/cached_round_corners.cpp
     ui/cached_round_corners.h
     ui/grouped_layout.cpp

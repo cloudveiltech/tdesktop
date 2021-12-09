@@ -10,7 +10,7 @@ add_library(desktop-app::external_openal ALIAS external_openal)
 if (DESKTOP_APP_USE_PACKAGED)
     find_package(OpenAL)
     if (OPENAL_FOUND)
-        target_include_directories(external_openal INTERFACE ${OPENAL_INCLUDE_DIR})
+        target_include_directories(external_openal SYSTEM INTERFACE ${OPENAL_INCLUDE_DIR})
         target_link_libraries(external_openal INTERFACE ${OPENAL_LIBRARY})
     else()
         find_package(PkgConfig REQUIRED)
@@ -27,15 +27,15 @@ elseif (WIN32)
     INTERFACE
         ${libs_loc}/openal-soft/build/$<IF:$<CONFIG:Debug>,Debug,RelWithDebInfo>/OpenAL32.lib
     )
-elseif(APPLE AND NOT build_osx)
+elseif (APPLE)
     target_include_directories(external_openal SYSTEM
     INTERFACE
-        /usr/local/macos/include
-        /usr/local/macos/include/AL
+        ${libs_loc}/local/include
+        ${libs_loc}/local/include/AL
     )
     target_link_libraries(external_openal
     INTERFACE
-        /usr/local/macos/lib/libopenal.a
+        ${libs_loc}/local/lib/libopenal.a
     )
 else()
     target_include_directories(external_openal SYSTEM

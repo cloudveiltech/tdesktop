@@ -37,7 +37,7 @@ Version **1.8.15** was the last that supports older systems
 
 ## Third-party
 
-* Qt 5.15.2, 5.6.2 and 5.3.2 slightly patched ([LGPL](http://doc.qt.io/qt-5/lgpl.html))
+* Qt 6 ([LGPL](http://doc.qt.io/qt-6/lgpl.html)) and Qt 5.15.2 ([LGPL](http://doc.qt.io/qt-5/lgpl.html)) slightly patched
 * OpenSSL 1.1.1 and 1.0.1 ([OpenSSL License](https://www.openssl.org/source/license.html))
 * WebRTC ([New BSD License](https://github.com/desktop-app/tg_owt/blob/master/LICENSE))
 * zlib 1.2.11 ([zlib License](http://www.zlib.net/zlib_license.html))
@@ -63,9 +63,9 @@ Version **1.8.15** was the last that supports older systems
 
 ## Build instructions
 
-* Visual Studio 2019 [(32 bits)][msvc32] [(64 bits)][msvc64]
-* [Xcode 12][xcode]
-* [CMake on GNU/Linux][cmake]
+* Windows [(32-bit)][win32] [(64-bit)][win64]
+* [macOS][mac]
+* [GNU/Linux using Docker][linux]
 
 [//]: # (LINKS)
 [telegram]: https://telegram.org
@@ -73,10 +73,9 @@ Version **1.8.15** was the last that supports older systems
 [telegram_api]: https://core.telegram.org
 [telegram_proto]: https://core.telegram.org/mtproto
 [license]: LICENSE
-[msvc32]: docs/building-msvc.md
-[msvc64]: docs/building-msvc-x64.md
-[xcode]: docs/building-xcode.md
-[xcode_old]: docs/building-xcode-old.md
-[cmake]: docs/building-cmake.md
+[win32]: docs/building-win.md
+[win64]: docs/building-win-x64.md
+[mac]: docs/building-mac.md
+[linux]: docs/building-linux.md
 [preview_image]: https://github.com/telegramdesktop/tdesktop/blob/dev/docs/assets/preview.png "Preview of Telegram Desktop"
 [preview_image_url]: https://raw.githubusercontent.com/telegramdesktop/tdesktop/dev/docs/assets/preview.png

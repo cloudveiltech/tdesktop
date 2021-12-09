@@ -101,14 +101,10 @@ const char *PlatformString() {
 		return "Windows64Bit";
 	} else if (Platform::IsMacStoreBuild()) {
 		return "MacAppStore";
-	} else if (Platform::IsOSXBuild()) {
-		return "OSX";
 	} else if (Platform::IsMac()) {
 		return "MacOS";
-	} else if (Platform::IsLinux32Bit()) {
-		return "Linux32Bit";
-	} else if (Platform::IsLinux64Bit()) {
-		return "Linux64bit";
+	} else if (Platform::IsLinux()) {
+		return "Linux";
 	}
 	Unexpected("Platform in CrashReports::PlatformString.");
 }

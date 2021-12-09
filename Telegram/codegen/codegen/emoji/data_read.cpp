@@ -8,6 +8,7 @@
 
 #include "codegen/emoji/data.h"
 #include "codegen/emoji/data_old.h"
+#include "base/qt_adapters.h"
 
 #include <QFile>
 
@@ -15,31 +16,29 @@ namespace codegen {
 namespace emoji {
 namespace {
 
-constexpr auto ColorMask = 0xD83CDFFBU;
-
 using Line = std::vector<QString>;
 using Part = std::vector<Line>;
 using Section = std::vector<Part>;
 using File = std::vector<Section>;
 
-[[nodiscard]] QStringRef Skip(QStringRef data, int endIndex) {
-	return (endIndex >= 0) ? data.mid(endIndex + 1) : QStringRef();
+[[nodiscard]] QStringView Skip(QStringView data, int endIndex) {
+	return (endIndex >= 0) ? base::StringViewMid(data, endIndex + 1) : QStringView();
 }
 
-[[nodiscard]] std::pair<QString, QStringRef> ReadString(QStringRef data) {
+[[nodiscard]] std::pair<QString, QStringView> ReadString(QStringView data) {
 	const auto endIndex = data.indexOf(',');
-	auto parse = data.mid(0, endIndex);
+	auto parse = base::StringViewMid(data, 0, endIndex);
 	const auto start = parse.indexOf('"');
 	const auto end = parse.indexOf('"', start + 1);
 	auto result = (start >= 0 && end > start)
-		? parse.mid(start + 1, end - start - 1).toString()
+		? base::StringViewMid(parse, start + 1, end - start - 1).toString()
 		: QString();
 	return { std::move(result), Skip(data, endIndex) };
 }
 
-[[nodiscard]] std::pair<Line, QStringRef> ReadLine(QStringRef data) {
+[[nodiscard]] std::pair<Line, QStringView> ReadLine(QStringView data) {
 	const auto endIndex = data.indexOf('\n');
-	auto parse = data.mid(0, endIndex);
+	auto parse = base::StringViewMid(data, 0, endIndex);
 	auto result = Line();
 	while (true) {
 		auto [string, updated] = ReadString(parse);
@@ -54,11 +53,11 @@ using File = std::vector<Section>;
 	return { std::move(result), Skip(data, endIndex) };
 }
 
-[[nodiscard]] std::pair<Part, QStringRef> ReadPart(QStringRef data) {
-	const auto endIndex1 = data.indexOf("\n\n");
-	const auto endIndex2 = data.indexOf("\r\n\r\n");
+[[nodiscard]] std::pair<Part, QStringView> ReadPart(QStringView data) {
+	const auto endIndex1 = data.indexOf(u"\n\n");
+	const auto endIndex2 = data.indexOf(u"\r\n\r\n");
 	const auto endIndex = (endIndex1 >= 0) ? endIndex1 : endIndex2;
-	auto parse = data.mid(0, endIndex);
+	auto parse = base::StringViewMid(data, 0, endIndex);
 	auto result = Part();
 	while (true) {
 		auto [line, updated] = ReadLine(parse);
@@ -73,9 +72,13 @@ using File = std::vector<Section>;
 	return { std::move(result), Skip(data, endIndex) };
 }
 
-[[nodiscard]] std::pair<Section, QStringRef> ReadSection(QStringRef data) {
-	const auto endIndex = data.indexOf("--------");
-	auto parse = data.mid(0, endIndex);
+[[nodiscard]] std::pair<Section, QStringView> ReadSection(QStringView data) {
+	const auto endIndex1 = data.indexOf(u"--------");
+	const auto endIndex2 = data.indexOf(u"========");
+	const auto endIndex = (endIndex1 >= 0 && endIndex2 >= 0)
+		? std::min(endIndex1, endIndex2)
+		: std::max(endIndex1, endIndex2);
+	auto parse = base::StringViewMid(data, 0, endIndex);
 	auto result = Section();
 	while (true) {
 		auto [part, updated] = ReadPart(parse);
@@ -98,7 +101,7 @@ using File = std::vector<Section>;
 	const auto bytes = QString::fromUtf8(file.readAll());
 	file.close();
 
-	auto parse = bytes.midRef(0);
+	auto parse = QStringView(bytes);
 	auto result = File();
 	while (true) {
 		auto [section, updated] = ReadSection(parse);
@@ -138,7 +141,12 @@ using File = std::vector<Section>;
 	return withColoredLine[1];
 }
 
-[[nodiscard]] std::pair<QString, QString> FindDoubleColored(const File &file, const QString &colored) {
+struct DoubleColoredSample {
+	QString original;
+	QString same;
+	QString different;
+};
+[[nodiscard]] DoubleColoredSample FindDoubleColored(const File &file, const QString &colored) {
 	const auto &withColoredLine = FindColoredLine(file, colored);
 	if (withColoredLine.empty()) {
 		return {};
@@ -146,7 +154,7 @@ using File = std::vector<Section>;
 		logDataError() << "Wrong double colored emoji: " << colored.toStdString();
 		return {};
 	}
-	return { withColoredLine[1], withColoredLine[2] };
+	return { withColoredLine[0], withColoredLine[1], withColoredLine[2] };
 }
 
 } // namespace
@@ -156,7 +164,7 @@ InputId InputIdFromString(const QString &emoji) {
 		return InputId();
 	}
 	auto result = InputId();
-	for (auto i = 0, size = emoji.size(); i != size; ++i) {
+	for (auto i = 0, size = int(emoji.size()); i != size; ++i) {
 		result.push_back(uint32(emoji[i].unicode()));
 		if (emoji[i].isHighSurrogate()) {
 			if (++i == size || !emoji[i].isLowSurrogate()) {
@@ -186,7 +194,7 @@ InputData ReadData(const QString &path) {
 	const auto file = ReadFile(path);
 	if (file.size() < 3
 		|| file[0].size() != 8
-		|| file[1].size() != 8) {
+		|| file[1].size() > 8) {
 		logDataError() << "Wrong file parts.";
 		return InputData();
 	}
@@ -209,25 +217,40 @@ InputData ReadData(const QString &path) {
 		const auto &doubleColored = file[2][1];
 		for (const auto &doubleColoredLine : doubleColored) {
 			for (const auto &doubleColoredString : doubleColoredLine) {
-				const auto [same, different] = FindDoubleColored(file, doubleColoredString);
+				const auto [original, same, different] = FindDoubleColored(file, doubleColoredString);
+				const auto originalId = InputIdFromString(original);
 				const auto sameId = InputIdFromString(same);
 				const auto differentId = InputIdFromString(different);
-				if (sameId.empty() || differentId.empty()) {
+				if (originalId.empty() || sameId.empty() || differentId.empty()) {
 					return InputData();
-				} else if (sameId.size() < 2 || differentId.size() < 7) {
+				} else if (originalId.size() < 1 || sameId.size() < 2 || differentId.size() < 7) {
 					logDataError()
 						<< "Bad double colored emoji: "
-						<< same.toStdString()
+						<< original.toStdString()
 						<< ", " << different.toStdString();
 					return InputData();
 				}
-				result.doubleColored.push_back({ sameId, differentId });
+				result.doubleColored.push_back({ originalId, sameId, differentId });
 			}
 		}
 	}
 	auto index = 0;
-	for (const auto &section : file[1]) {
-		for (const auto &line : section) {
+	auto replacementsUsed = 0;
+	for (const auto &section : file[0]) {
+		const auto first = section.front().front();
+		const auto replacedSection = [&]() -> const Part* {
+			for (const auto &section : file[1]) {
+				if (section.front().front() == first) {
+					++replacementsUsed;
+					return &section;
+				}
+			}
+			return nullptr;
+		}();
+		const auto &sectionData = replacedSection
+			? *replacedSection
+			: section;
+		for (const auto &line : sectionData) {
 			for (const auto &string : line) {
 				const auto inputId = InputIdFromString(string);
 				if (inputId.empty()) {
@@ -239,6 +262,10 @@ InputData ReadData(const QString &path) {
 		if (index + 1 < std::size(result.categories)) {
 			++index;
 		}
+	}
+	if (replacementsUsed != file[1].size()) {
+		logDataError() << "Could not use some non-colored section replacements!";
+		return InputData();
 	}
 	if (file.size() > 3) {
 		for (const auto &section : file[3]) {

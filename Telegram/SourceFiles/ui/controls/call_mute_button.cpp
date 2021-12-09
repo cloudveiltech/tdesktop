@@ -12,7 +12,7 @@
 #include "ui/painter.h"
 #include "ui/widgets/call_button.h"
 #include "ui/widgets/labels.h"
-#include "base/openssl_help.h"
+#include "base/random.h"
 #include "styles/palette.h"
 #include "styles/style_widgets.h"
 #include "styles/style_calls.h"
@@ -590,13 +590,13 @@ void CallMuteButton::refreshLabels() {
 
 void CallMuteButton::refreshIcons() {
 	_icons[0].emplace(Lottie::IconDescriptor{
-		.path = u":/gui/icons/calls/voice.lottie"_q,
+		.path = u":/icons/calls/voice.lottie"_q,
 		.color = st::groupCallIconFg,
 		.sizeOverride = _st->lottieSize,
 		.frame = (_iconState.index ? 0 : _iconState.frameTo),
 	});
 	_icons[1].emplace(Lottie::IconDescriptor{
-		.path = u":/gui/icons/calls/hands.lottie"_q,
+		.path = u":/icons/calls/hands.lottie"_q,
 		.color = st::groupCallIconFg,
 		.sizeOverride = _st->lottieSize,
 		.frame = (_iconState.index ? _iconState.frameTo : 0),
@@ -681,7 +681,7 @@ CallMuteButton::IconState CallMuteButton::randomWavingState() {
 		{ 240, 420 },
 		{ 420, 540 },
 	};
-	const auto index = openssl::RandomValue<uint32>() % kAnimations.size();
+	const auto index = base::RandomIndex(kAnimations.size());
 	return { 1, kAnimations[index].from, kAnimations[index].to };
 }
 
@@ -1002,7 +1002,7 @@ void CallMuteButton::shake() {
 			? -1.
 			: 0.;
 		const auto shift = from * (1. - part) + to * part;
-		_labelShakeShift = int(std::round(shift * st::shakeShift));
+		_labelShakeShift = int(base::SafeRound(shift * st::shakeShift));
 		updateLabelsGeometry();
 	};
 	_shakeAnimation.start(

@@ -6,7 +6,7 @@
 //
 #include "ui/paint/blob.h"
 
-#include "base/openssl_help.h"
+#include "base/random.h"
 #include "ui/painter.h"
 
 #include <QtGui/QPainterPath>
@@ -22,8 +22,8 @@ constexpr auto kMinSpeed = 0.8;
 constexpr auto kMinSegmentSpeed = 0.017;
 constexpr auto kSegmentSpeedDiff = 0.003;
 
-float64 RandomAdditional() {
-	return (openssl::RandomValue<int>() % 100 / 100.);
+[[nodiscard]] float64 RandomAdditional() {
+	return (base::RandomValue<int>() % 100 / 100.);
 }
 
 } // namespace
@@ -84,7 +84,7 @@ RadialBlob::RadialBlob(int n, float minScale, float minSpeed, float maxSpeed)
 
 void RadialBlob::paint(Painter &p, const QBrush &brush, float outerScale) {
 	auto path = QPainterPath();
-	auto m = QMatrix();
+	auto m = QTransform();
 
 	const auto scale = (_minScale + (1. - _minScale) * _scale) * outerScale;
 	if (scale == 0.) {

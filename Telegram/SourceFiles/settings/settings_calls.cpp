@@ -15,11 +15,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/level_meter.h"
 #include "ui/widgets/buttons.h"
 #include "ui/boxes/single_choice_box.h"
-#include "boxes/confirm_box.h"
+#include "ui/boxes/confirm_box.h"
 #include "platform/platform_specific.h"
 #include "main/main_session.h"
 #include "lang/lang_keys.h"
-#include "layout.h"
 #include "styles/style_settings.h"
 #include "ui/widgets/continuous_sliders.h"
 #include "window/window_session_controller.h"
@@ -28,6 +27,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "calls/calls_call.h"
 #include "calls/calls_instance.h"
 #include "calls/calls_video_bubble.h"
+#include "apiwrap.h"
+#include "api/api_authorizations.h"
 #include "webrtc/webrtc_media_devices.h"
 #include "webrtc/webrtc_video_track.h"
 #include "webrtc/webrtc_audio_input_tester.h"
@@ -70,9 +71,9 @@ void Calls::setupContent() {
 	if (!cameras.empty()) {
 		const auto hasCall = (Core::App().calls().currentCall() != nullptr);
 
-		auto capturerOwner = Core::App().calls().getVideoCapture();
-		const auto capturer = capturerOwner.get();
-		content->lifetime().add([owner = std::move(capturerOwner)]{});
+		auto capturerOwner = content->lifetime().make_state<
+			std::shared_ptr<tgcalls::VideoCaptureInterface>
+		>();
 
 		const auto track = content->lifetime().make_state<VideoTrack>(
 			(hasCall
@@ -103,7 +104,8 @@ void Calls::setupContent() {
 		)->addClickHandler([=] {
 			const auto &devices = GetVideoInputList();
 			const auto options = ranges::views::concat(
-				ranges::views::single(tr::lng_settings_call_device_default(tr::now)),
+				ranges::views::single(
+					tr::lng_settings_call_device_default(tr::now)),
 				devices | ranges::views::transform(&VideoInput::name)
 			) | ranges::to_vector;
 			const auto i = ranges::find(
@@ -118,11 +120,15 @@ void Calls::setupContent() {
 				const auto deviceId = option
 					? devices[option - 1].id
 					: "default";
-				capturer->switchToDevice(deviceId.toStdString());
 				Core::App().settings().setCallVideoInputDeviceId(deviceId);
 				Core::App().saveSettingsDelayed();
 				if (const auto call = Core::App().calls().currentCall()) {
-					call->setCurrentVideoDevice(deviceId);
+					call->setCurrentCameraDevice(deviceId);
+				}
+				if (*capturerOwner) {
+					(*capturerOwner)->switchToDevice(
+						deviceId.toStdString(),
+						false);
 				}
 			});
 			_controller->show(Box([=](not_null<Ui::GenericBox*> box) {
@@ -170,6 +176,20 @@ void Calls::setupContent() {
 		}, bubbleWrap->lifetime());
 
 		using namespace rpl::mappers;
+		const auto checkCapturer = [=] {
+			if (*capturerOwner
+				|| Core::App().calls().currentCall()
+				|| Core::App().calls().currentGroupCall()) {
+				return;
+			}
+			*capturerOwner = Core::App().calls().getVideoCapture(
+				Core::App().settings().callVideoInputDeviceId(),
+				false);
+			(*capturerOwner)->setPreferredAspectRatio(0.);
+			track->setState(VideoState::Active);
+			(*capturerOwner)->setState(tgcalls::VideoState::Active);
+			(*capturerOwner)->setOutput(track->sink());
+		};
 		rpl::combine(
 			Core::App().calls().currentCallValue(),
 			Core::App().calls().currentGroupCallValue(),
@@ -178,10 +198,9 @@ void Calls::setupContent() {
 			if (has) {
 				track->setState(VideoState::Inactive);
 				bubbleWrap->resize(bubbleWrap->width(), 0);
+				*capturerOwner = nullptr;
 			} else {
-				capturer->setPreferredAspectRatio(0.);
-				track->setState(VideoState::Active);
-				capturer->setOutput(track->sink());
+				crl::on_main(content, checkCapturer);
 			}
 		}, content->lifetime());
 
@@ -251,19 +270,21 @@ void Calls::setupContent() {
 	AddSkip(content);
 	AddSubsectionTitle(content, tr::lng_settings_call_section_other());
 
+	const auto api = &_controller->session().api();
 	AddButton(
 		content,
 		tr::lng_settings_call_accept_calls(),
 		st::settingsButton
-	)->toggleOn(rpl::single(
-		!settings.disableCalls()
-	))->toggledChanges(
-	) | rpl::filter([&settings](bool value) {
-		return (settings.disableCalls() == value);
-	}) | rpl::start_with_next([=](bool value) {
-		Core::App().settings().setDisableCalls(!value);
-		Core::App().saveSettingsDelayed();
+	)->toggleOn(
+		api->authorizations().callsDisabledHereValue(
+		) | rpl::map(!rpl::mappers::_1)
+	)->toggledChanges(
+	) | rpl::filter([=](bool value) {
+		return (value == api->authorizations().callsDisabledHere());
+	}) | start_with_next([=](bool value) {
+		api->authorizations().toggleCallsDisabledHere(!value);
 	}, content->lifetime());
+
 	AddButton(
 		content,
 		tr::lng_settings_call_open_system_prefs(),
@@ -273,7 +294,7 @@ void Calls::setupContent() {
 			Platform::SystemSettingsType::Audio);
 		if (!opened) {
 			_controller->show(
-				Box<InformBox>(tr::lng_linux_no_audio_prefs(tr::now)));
+				Box<Ui::InformBox>(tr::lng_linux_no_audio_prefs(tr::now)));
 		}
 	});
 
@@ -305,7 +326,7 @@ void Calls::requestPermissionAndStartTestingMicrophone() {
 				Platform::PermissionType::Microphone);
 			Ui::hideLayer();
 		};
-		_controller->show(Box<ConfirmBox>(
+		_controller->show(Box<Ui::ConfirmBox>(
 			tr::lng_no_mic_permission(tr::now),
 			tr::lng_menu_settings(tr::now),
 			showSystemSettings));

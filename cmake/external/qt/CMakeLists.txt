@@ -4,10 +4,14 @@
 # For license and copyright information please follow this link:
 # https://github.com/desktop-app/legal/blob/master/LEGAL
 
+add_subdirectory(qt_static_plugins)
+if (DESKTOP_APP_QT6)
+    add_subdirectory(qt6)
+    return()
+endif()
+
 add_library(external_qt INTERFACE IMPORTED GLOBAL)
 add_library(desktop-app::external_qt ALIAS external_qt)
-
-add_subdirectory(qt_static_plugins)
 
 if (DESKTOP_APP_USE_PACKAGED)
     target_link_libraries(external_qt
@@ -16,9 +20,10 @@ if (DESKTOP_APP_USE_PACKAGED)
         Qt5::Gui
         Qt5::Widgets
         Qt5::Network
+        Qt5::Svg
     )
 
-    target_include_directories(external_qt
+    target_include_directories(external_qt SYSTEM
     INTERFACE
         ${Qt5Core_PRIVATE_INCLUDE_DIRS}
         ${Qt5Gui_PRIVATE_INCLUDE_DIRS}
@@ -31,16 +36,16 @@ if (DESKTOP_APP_USE_PACKAGED)
     if (Qt5XkbCommonSupport_FOUND)
         target_link_libraries(external_qt INTERFACE Qt5::XkbCommonSupport)
 
-        target_include_directories(external_qt
+        target_include_directories(external_qt SYSTEM
         INTERFACE
             ${Qt5XkbCommonSupport_PRIVATE_INCLUDE_DIRS}
         )
     endif()
 
-    if (Qt5WaylandClient_FOUND)
+    if (LINUX AND NOT DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
         target_link_libraries(external_qt INTERFACE Qt5::WaylandClient)
 
-        target_include_directories(external_qt
+        target_include_directories(external_qt SYSTEM
         INTERFACE
             ${Qt5WaylandClient_PRIVATE_INCLUDE_DIRS}
         )
@@ -52,6 +57,7 @@ else()
         ${qt_loc}/include/QtCore
         ${qt_loc}/include/QtGui
         ${qt_loc}/include/QtWidgets
+        ${qt_loc}/include/QtSvg
         ${qt_loc}/include/QtCore/${qt_version}
         ${qt_loc}/include/QtGui/${qt_version}
         ${qt_loc}/include/QtCore/${qt_version}/QtCore
@@ -74,7 +80,7 @@ else()
         )
     endif()
 
-    if (Qt5WaylandClient_FOUND)
+    if (LINUX AND NOT DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
         target_include_directories(external_qt SYSTEM
         INTERFACE
             ${qt_loc}/include/QtWaylandClient
@@ -92,6 +98,7 @@ else()
         QT_NETWORK_LIB
         QT_GUI_LIB
         QT_CORE_LIB
+        QT_SVG_LIB
     )
 
     if (Qt5DBus_FOUND)
@@ -108,7 +115,7 @@ else()
         )
     endif()
 
-    if (Qt5WaylandClient_FOUND)
+    if (LINUX AND NOT DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
         target_compile_definitions(external_qt
         INTERFACE
             QT_WAYLANDCLIENT_LIB
@@ -128,6 +135,7 @@ else()
     endif()
 
     set(common_qt_libs
+        plugins/bearer/${qt_lib_prefix}qgenericbearer
         plugins/imageformats/${qt_lib_prefix}qwebp
         plugins/imageformats/${qt_lib_prefix}qgif
         plugins/imageformats/${qt_lib_prefix}qjpeg
@@ -139,6 +147,7 @@ else()
         lib/${qt_lib_prefix}Qt5Network
         lib/${qt_lib_prefix}Qt5Widgets
         lib/${qt_lib_prefix}Qt5Gui
+        lib/${qt_lib_prefix}Qt5Svg
         lib/${qt_lib_prefix}qtharfbuzz
         lib/${qt_lib_prefix}qtlibpng
     )
@@ -163,33 +172,15 @@ else()
             desktop-app::external_angle
         )
     elseif (APPLE)
-        if (NOT build_osx)
-            set(qt_libs
-                ${common_qt_libs}
-                lib/${qt_lib_prefix}Qt5Core
-                lib/${qt_lib_prefix}Qt5GraphicsSupport
-                lib/${qt_lib_prefix}Qt5ClipboardSupport
-                lib/${qt_lib_prefix}qtfreetype
-                lib/${qt_lib_prefix}qtpcre2
-                plugins/platforms/${qt_lib_prefix}qcocoa
-                plugins/bearer/${qt_lib_prefix}qgenericbearer
-            )
-        else()
-            set(qt_libs
-                lib/${qt_lib_prefix}Qt5PrintSupport
-                lib/${qt_lib_prefix}Qt5PlatformSupport
-                lib/${qt_lib_prefix}Qt5Network
-                lib/${qt_lib_prefix}Qt5Widgets
-                lib/${qt_lib_prefix}Qt5Gui
-                lib/${qt_lib_prefix}Qt5Core
-                lib/${qt_lib_prefix}qtharfbuzzng
-                lib/${qt_lib_prefix}qtfreetype
-                lib/${qt_lib_prefix}qtpcre
-                plugins/platforms/${qt_lib_prefix}qcocoa
-                plugins/imageformats/${qt_lib_prefix}qwebp
-                plugins/bearer/${qt_lib_prefix}qgenericbearer
-            )
-        endif()
+        set(qt_libs
+            ${common_qt_libs}
+            lib/${qt_lib_prefix}Qt5Core
+            lib/${qt_lib_prefix}Qt5GraphicsSupport
+            lib/${qt_lib_prefix}Qt5ClipboardSupport
+            lib/${qt_lib_prefix}qtfreetype
+            lib/${qt_lib_prefix}qtpcre2
+            plugins/platforms/${qt_lib_prefix}qcocoa
+        )
         foreach (lib ${qt_libs})
             list(APPEND qt_libs_list "${qt_loc}/${lib}${qt_lib_suffix}")
         endforeach()
@@ -215,27 +206,20 @@ else()
         endif()
         set(qt_libs_waylandclient)
         set(qt_libs_waylandclient_plugins)
-        if (Qt5WaylandClient_FOUND)
+        if (NOT DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
             set(qt_libs_waylandclient lib/${qt_lib_prefix}Qt5WaylandClient)
             set(qt_libs_waylandclient_plugins
                 plugins/platforms/${qt_lib_prefix}qwayland-generic
                 plugins/platforms/${qt_lib_prefix}qwayland-egl
                 plugins/wayland-graphics-integration-client/${qt_lib_prefix}qt-plugin-wayland-egl
-                plugins/wayland-shell-integration/${qt_lib_prefix}wl-shell
                 plugins/wayland-decoration-client/${qt_lib_prefix}bradient
-            )
-        endif()
-        set(qt_libs_gtk_plugins)
-        if (NOT DESKTOP_APP_DISABLE_GTK_INTEGRATION)
-            set(qt_libs_gtk_plugins
-                plugins/platformthemes/${qt_lib_prefix}qgtk3
             )
         endif()
         set(qt_libs
             plugins/platforminputcontexts/${qt_lib_prefix}composeplatforminputcontextplugin
             ${qt_libs_dbus_plugins}
             ${qt_libs_waylandclient_plugins}
-            ${qt_libs_gtk_plugins}
+            plugins/platformthemes/${qt_lib_prefix}qgtk3
             plugins/platforms/${qt_lib_prefix}qxcb
             plugins/xcbglintegrations/${qt_lib_prefix}qxcb-egl-integration
             plugins/xcbglintegrations/${qt_lib_prefix}qxcb-glx-integration
@@ -247,13 +231,11 @@ else()
             lib/${qt_lib_prefix}Qt5EdidSupport
             lib/${qt_lib_prefix}Qt5XkbCommonSupport
             ${qt_libs_dbus_support}
-            plugins/bearer/${qt_lib_prefix}qgenericbearer
             ${qt_libs_dbus_bearers}
             ${qt_libs_waylandclient}
             lib/${qt_lib_prefix}Qt5ServiceSupport
             ${common_qt_libs}
             ${qt_libs_dbus}
-            lib/${qt_lib_prefix}Qt5Svg
             lib/${qt_lib_prefix}Qt5Core
             lib/${qt_lib_prefix}qtpcre2
         )
@@ -276,32 +258,10 @@ else()
         INTERFACE
             ${qt_loc}/mkspecs/linux-g++
         )
-        target_link_options(external_qt
-        INTERFACE
-            -static-libstdc++
-            -pthread
-            -rdynamic
-        )
-        if (DESKTOP_APP_USE_ALLOCATION_TRACER)
-            target_link_options(external_qt
-            INTERFACE
-                # -Wl,-wrap,__malloc
-                -Wl,-wrap,__libc_malloc
-                -Wl,-wrap,malloc
-                -Wl,-wrap,valloc
-                -Wl,-wrap,pvalloc
-                -Wl,-wrap,calloc
-                -Wl,-wrap,realloc
-                -Wl,-wrap,memalign
-                -Wl,-wrap,aligned_alloc
-                -Wl,-wrap,posix_memalign
-                -Wl,-wrap,free
-                -Wl,--no-as-needed,-lrt
-            )
-        endif()
         target_link_static_libraries(external_qt
         INTERFACE
             proxy
+            epoxy
             xkbcommon
             xkbcommon-x11
             xcb-glx
@@ -319,38 +279,24 @@ else()
             xcb-util
             xcb-render-util
             xcb-keysyms
+            z
         )
-        if (DESKTOP_APP_USE_ALLOCATION_TRACER)
-            target_link_libraries(external_qt
-            INTERFACE
-                desktop-app::linux_allocation_tracer
-                $<TARGET_FILE:desktop-app::linux_allocation_tracer>
-            )
-        endif()
-        if (Qt5WaylandClient_FOUND)
+        if (NOT DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
             target_link_libraries(external_qt
             INTERFACE
                 desktop-app::linux_wayland_helper
                 $<TARGET_FILE:desktop-app::linux_wayland_helper>
             )
         endif()
-        if (NOT DESKTOP_APP_DISABLE_GTK_INTEGRATION)
-            target_link_libraries(external_qt
-            INTERFACE
-                desktop-app::linux_gtk_helper
-                $<TARGET_FILE:desktop-app::linux_gtk_helper>
-            )
-        endif()
         target_link_libraries(external_qt
         INTERFACE
+            desktop-app::linux_xcb_helper
+            $<TARGET_FILE:desktop-app::linux_xcb_helper>
             fontconfig
             freetype
-            EGL
-            GL
             xcb
             X11
             X11-xcb
-            glib-2.0
             ${CMAKE_DL_LIBS}
             pthread
         )

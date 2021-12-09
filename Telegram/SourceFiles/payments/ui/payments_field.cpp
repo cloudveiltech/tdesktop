@@ -12,9 +12,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/format_values.h"
 #include "ui/ui_utility.h"
 #include "ui/special_fields.h"
-#include "data/data_countries.h"
+#include "countries/countries_instance.h"
 #include "base/platform/base_platform_info.h"
 #include "base/event_filter.h"
+#include "base/qt_adapters.h"
 #include "styles/style_payments.h"
 
 #include <QtCore/QRegularExpression>
@@ -49,11 +50,11 @@ struct SimpleFieldState {
 	);
 	const auto digitsLimit = 16 - rule.exponent;
 	const auto beforePosition = state.value.mid(0, state.position);
-	auto decimalPosition = withDecimal.lastIndexOf(rule.decimal);
+	auto decimalPosition = int(withDecimal.lastIndexOf(rule.decimal));
 	if (decimalPosition < 0) {
 		state = {
 			.value = RemoveNonNumbers(state.value),
-			.position = RemoveNonNumbers(beforePosition).size(),
+			.position = int(RemoveNonNumbers(beforePosition).size()),
 		};
 	} else {
 		const auto onlyNumbersBeforeDecimal = RemoveNonNumbers(
@@ -62,7 +63,7 @@ struct SimpleFieldState {
 			.value = (onlyNumbersBeforeDecimal
 				+ QChar(rule.decimal)
 				+ RemoveNonNumbers(state.value.mid(decimalPosition + 1))),
-			.position = (RemoveNonNumbers(beforePosition).size()
+			.position = int(RemoveNonNumbers(beforePosition).size()
 				+ (state.position > decimalPosition ? 1 : 0)),
 		};
 		decimalPosition = onlyNumbersBeforeDecimal.size();
@@ -133,19 +134,19 @@ struct SimpleFieldState {
 [[nodiscard]] bool IsBackspace(const FieldValidateRequest &request) {
 	return (request.wasAnchor == request.wasPosition)
 		&& (request.wasPosition == request.nowPosition + 1)
-		&& (request.wasValue.midRef(0, request.wasPosition - 1)
-			== request.nowValue.midRef(0, request.nowPosition))
-		&& (request.wasValue.midRef(request.wasPosition)
-			== request.nowValue.midRef(request.nowPosition));
+		&& (base::StringViewMid(request.wasValue, 0, request.wasPosition - 1)
+			== base::StringViewMid(request.nowValue, 0, request.nowPosition))
+		&& (base::StringViewMid(request.wasValue, request.wasPosition)
+			== base::StringViewMid(request.nowValue, request.nowPosition));
 }
 
 [[nodiscard]] bool IsDelete(const FieldValidateRequest &request) {
 	return (request.wasAnchor == request.wasPosition)
 		&& (request.wasPosition == request.nowPosition)
-		&& (request.wasValue.midRef(0, request.wasPosition)
-			== request.nowValue.midRef(0, request.nowPosition))
-		&& (request.wasValue.midRef(request.wasPosition + 1)
-			== request.nowValue.midRef(request.nowPosition));
+		&& (base::StringViewMid(request.wasValue, 0, request.wasPosition)
+			== base::StringViewMid(request.nowValue, 0, request.nowPosition))
+		&& (base::StringViewMid(request.wasValue, request.wasPosition + 1)
+			== base::StringViewMid(request.nowValue, request.nowPosition));
 }
 
 [[nodiscard]] auto MoneyValidator(const CurrencyRule &rule) {
@@ -189,7 +190,7 @@ struct SimpleFieldState {
 
 [[nodiscard]] QString Parse(const FieldConfig &config) {
 	if (config.type == FieldType::Country) {
-		return Data::CountryNameByISO2(config.value);
+		return Countries::Instance().countryNameByISO2(config.value);
 	} else if (config.type == FieldType::Money) {
 		const auto amount = config.value.toLongLong();
 		if (!amount) {
@@ -229,7 +230,7 @@ struct SimpleFieldState {
 			QString()
 		).toDouble();
 		return QString::number(
-			int64(std::round(real * std::pow(10., rule.exponent))));
+			int64(base::SafeRound(real * std::pow(10., rule.exponent))));
 	} else if (config.type == FieldType::CardNumber
 		|| config.type == FieldType::CardCVC) {
 		return QString(parsed).replace(
@@ -345,7 +346,7 @@ struct SimpleFieldState {
 		const auto symbol = QChar(rule.decimal);
 		const auto decimal = text.indexOf(symbol);
 		const auto zeros = (decimal >= 0)
-			? std::max(rule.exponent - (text.size() - decimal - 1), 0)
+			? std::max(rule.exponent - int(text.size() - decimal - 1), 0)
 			: rule.stripDotZero
 			? 0
 			: rule.exponent;
@@ -405,8 +406,9 @@ struct SimpleFieldState {
 			wrap.get(),
 			st::paymentsField,
 			std::move(config.placeholder),
-			ExtractPhonePrefix(config.defaultPhone),
-			Parse(config));
+			Countries::ExtractPhoneCode(config.defaultPhone),
+			Parse(config),
+			[](const QString &s) { return Countries::Groups(s); });
 	case FieldType::Money:
 		return CreateMoneyField(
 			wrap,
@@ -490,7 +492,8 @@ void Field::setupCountry() {
 	QObject::connect(_masked, &MaskedInputField::focused, [=] {
 		setFocus();
 
-		const auto name = Data::CountryNameByISO2(_countryIso2);
+		const auto name = Countries::Instance().countryNameByISO2(
+			_countryIso2);
 		const auto country = !name.isEmpty()
 			? _countryIso2
 			: !_config.defaultCountry.isEmpty()
@@ -503,7 +506,7 @@ void Field::setupCountry() {
 		raw->countryChosen(
 		) | rpl::start_with_next([=](QString iso2) {
 			_countryIso2 = iso2;
-			_masked->setText(Data::CountryNameByISO2(iso2));
+			_masked->setText(Countries::Instance().countryNameByISO2(iso2));
 			_masked->hideError();
 			raw->closeBox();
 			if (!iso2.isEmpty()) {

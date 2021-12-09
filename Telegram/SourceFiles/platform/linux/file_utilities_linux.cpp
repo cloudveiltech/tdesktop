@@ -7,9 +7,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "platform/linux/file_utilities_linux.h"
 
-#include "platform/linux/linux_gtk_integration.h"
-#include "platform/linux/specific_linux.h"
-
 #ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 #include "platform/linux/linux_xdp_file_dialog.h"
 #include "platform/linux/linux_xdp_open_with_dialog.h"
@@ -18,15 +15,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QProcess>
 #include <QtGui/QDesktopServices>
 
+#ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 #include <glibmm.h>
 #include <giomm.h>
-
-using Platform::internal::GtkIntegration;
+#endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
 namespace Platform {
 namespace File {
 
 void UnsafeOpenUrl(const QString &url) {
+#ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 	try {
 		if (Gio::AppInfo::launch_default_for_uri(url.toStdString())) {
 			return;
@@ -34,6 +32,7 @@ void UnsafeOpenUrl(const QString &url) {
 	} catch (const Glib::Error &e) {
 		LOG(("App Error: %1").arg(QString::fromStdString(e.what())));
 	}
+#endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
 	if (QDesktopServices::openUrl(url)) {
 		return;
@@ -53,18 +52,11 @@ bool UnsafeShowOpenWith(const QString &filepath) {
 	}
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
-	if (InFlatpak() || InSnap()) {
-		return false;
-	}
-
-	if (const auto integration = GtkIntegration::Instance()) {
-		return integration->showOpenWithDialog(filepath);
-	}
-
 	return false;
 }
 
 void UnsafeLaunch(const QString &filepath) {
+#ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 	try {
 		if (Gio::AppInfo::launch_default_for_uri(
 			Glib::filename_to_uri(filepath.toStdString()))) {
@@ -77,6 +69,7 @@ void UnsafeLaunch(const QString &filepath) {
 	if (UnsafeShowOpenWith(filepath)) {
 		return;
 	}
+#endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
 	const auto qUrlPath = QUrl::fromLocalFile(filepath);
 	if (QDesktopServices::openUrl(qUrlPath)) {

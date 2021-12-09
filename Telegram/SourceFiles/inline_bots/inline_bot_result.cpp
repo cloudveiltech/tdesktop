@@ -8,7 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "inline_bots/inline_bot_result.h"
 
 #include "api/api_text_entities.h"
-#include "base/openssl_help.h"
+#include "base/random.h"
 #include "data/data_photo.h"
 #include "data/data_document.h"
 #include "data/data_session.h"
@@ -16,6 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_file_origin.h"
 #include "data/data_photo_media.h"
 #include "data/data_document_media.h"
+#include "history/history_item_reply_markup.h"
 #include "inline_bots/inline_bot_layout_item.h"
 #include "inline_bots/inline_bot_send_data.h"
 #include "storage/file_download.h"
@@ -129,7 +130,7 @@ std::unique_ptr<Result> Result::Create(
 		if (!result->_photo && !result->_document && imageThumb) {
 			result->_thumbnail.update(result->_session, ImageWithLocation{
 				.location = Images::FromWebDocument(*data.vthumb())
-				});
+			});
 		}
 		return &data.vsend_message();
 	}, [&](const MTPDbotInlineMediaResult &data) {
@@ -267,7 +268,8 @@ std::unique_ptr<Result> Result::Create(
 
 	message->match([&](const auto &data) {
 		if (const auto markup = data.vreply_markup()) {
-			result->_mtpKeyboard = std::make_unique<MTPReplyMarkup>(*markup);
+			result->_replyMarkup
+				= std::make_unique<HistoryMessageMarkupData>(markup);
 		}
 	});
 
@@ -364,33 +366,30 @@ bool Result::hasThumbDisplay() const {
 
 void Result::addToHistory(
 		History *history,
-		MTPDmessage::Flags flags,
-		MTPDmessage_ClientFlags clientFlags,
+		MessageFlags flags,
 		MsgId msgId,
 		PeerId fromId,
-		MTPint mtpDate,
+		TimeId date,
 		UserId viaBotId,
 		MsgId replyToId,
 		const QString &postAuthor) const {
-	clientFlags |= MTPDmessage_ClientFlag::f_from_inline_bot;
+	flags |= MessageFlag::FromInlineBot;
 
-	auto markup = MTPReplyMarkup();
-	if (_mtpKeyboard) {
-		flags |= MTPDmessage::Flag::f_reply_markup;
-		markup = *_mtpKeyboard;
+	auto markup = _replyMarkup ? *_replyMarkup : HistoryMessageMarkupData();
+	if (!markup.isNull()) {
+		flags |= MessageFlag::HasReplyMarkup;
 	}
 	sendData->addToHistory(
 		this,
 		history,
 		flags,
-		clientFlags,
 		msgId,
 		fromId,
-		mtpDate,
+		date,
 		viaBotId,
 		replyToId,
 		postAuthor,
-		markup);
+		std::move(markup));
 }
 
 QString Result::getErrorOnSend(History *history) const {
@@ -418,7 +417,7 @@ void Result::createGame(not_null<Main::Session*> session) {
 		return;
 	}
 
-	const auto gameId = openssl::RandomValue<GameId>();
+	const auto gameId = base::RandomValue<GameId>();
 	_game = session->data().game(
 		gameId,
 		0,

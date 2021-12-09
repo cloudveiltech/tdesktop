@@ -7,8 +7,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "info/profile/info_profile_cover.h"
 
-#include <rpl/never.h>
-#include <rpl/combine.h>
 #include "data/data_photo.h"
 #include "data/data_peer_values.h"
 #include "data/data_channel.h"
@@ -29,6 +27,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "main/main_session.h"
 #include "apiwrap.h"
+#include "api/api_peer_photo.h"
 #include "styles/style_boxes.h"
 #include "styles/style_info.h"
 #include "cloudveil/GlobalSecuritySettings.h"
@@ -274,7 +273,7 @@ Cover::Cover(
 
 	_userpic->uploadPhotoRequests(
 	) | rpl::start_with_next([=] {
-		_peer->session().api().uploadPeerPhoto(
+		_peer->session().api().peerPhoto().upload(
 			_peer,
 			_userpic->takeResultImage());
 	}, _userpic->lifetime());
@@ -345,6 +344,7 @@ void Cover::refreshUploadPhotoOverlay() {
 		} else if (const auto channel = _peer->asChannel()) {
 			return channel->canEditInformation();
 		}
+
 		//CloudVeil start
 		return _peer->isSelf() && !GlobalSecuritySettings::getSettings().disableProfilePhotoChange;
 		//CloudVeil end

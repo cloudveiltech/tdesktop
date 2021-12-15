@@ -126,6 +126,9 @@ public:
 	[[nodiscard]] int imageByteSize(Data::PhotoSize size) const;
 
 	[[nodiscard]] bool hasVideo() const;
+	//CloudVeil start
+	bool hasVideoUnfiltered() const;
+	//CloudVeil end
 	[[nodiscard]] bool videoLoading() const;
 	[[nodiscard]] bool videoFailed() const;
 	void loadVideo(Data::FileOrigin origin);

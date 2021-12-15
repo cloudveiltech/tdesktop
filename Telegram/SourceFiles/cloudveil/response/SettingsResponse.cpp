@@ -10,15 +10,6 @@
 
 void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 {
-	if (jsonObject.contains("secret_chat") && jsonObject["secret_chat"].isBool())
-	{
-		secretChat = jsonObject["secret_chat"].toBool();
-	}
-	if (jsonObject.contains("secret_chat_minimum_length") && jsonObject["secret_chat_minimum_length"].isDouble())
-	{
-		secretChatMinimumLength = jsonObject["secret_chat_minimum_length"].toInt();
-	}
-
 	if (jsonObject.contains("disable_bio") && jsonObject["disable_bio"].isBool())
 	{
 		disableBio = jsonObject["disable_bio"].toBool();
@@ -49,6 +40,20 @@ void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 		bannedImageUrl = jsonObject["disable_stickers_image"].toString();
 	}
 
+	if (jsonObject.contains("profile_photo_limit"))
+	{
+		profilePhotoLimit = jsonObject["profile_photo_limit"].toString().toInt();
+	}
+
+	if (jsonObject.contains("disable_profile_video") && jsonObject["disable_profile_video"].isBool())
+	{
+		disableProfileVideo = jsonObject["disable_profile_video"].toBool();
+	}
+
+	if (jsonObject.contains("disable_profile_video_change") && jsonObject["disable_profile_video_change"].isBool())
+	{
+		disableProfileVideoChange = jsonObject["disable_profile_video_change"].toBool();
+	}
 
 	if (jsonObject.contains("access") && jsonObject["access"].isObject())
 	{
@@ -90,8 +95,6 @@ template<typename T> void SettingsResponse::readArrayFromJson(QJsonArray &jsonAr
 
 void SettingsResponse::writeToJson(QJsonObject &json)
 {
-	json["secret_chat"] = secretChat;
-	json["secret_chat_minimum_length"] = secretChatMinimumLength;
 	json["disable_bio"] = disableBio;
 	json["disable_bio_change"] = disableBioChange;
 	json["disable_profile_photo"] = disableProfilePhoto;
@@ -99,6 +102,9 @@ void SettingsResponse::writeToJson(QJsonObject &json)
 	json["disable_bio"] = disableBio;
 	json["disable_bio_change"] = disableBioChange;
 	json["disable_stickers_image"] = bannedImageUrl;
+	json["profile_photo_limit"] = profilePhotoLimit;
+	json["disable_profile_video"] = disableProfileVideo;
+	json["disable_profile_video_change"] = disableProfileVideoChange;
 
 	QJsonObject accessObject;
 

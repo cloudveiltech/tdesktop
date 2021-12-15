@@ -389,6 +389,11 @@ MainWidget::MainWidget(
 }
 
 //CloudVeil start
+void MainWidget::refreshHistory() {
+	_dialogs->refreshOnUpdate();
+	_history->onSettingsUpdate();
+}
+
 void MainWidget::simpleUpdateReceived(UpdateResponse* response) {
 	Ui::show(Box<Ui::ConfirmBox>(response->message, tr::lng_download_click(tr::now), [response] {
 		Ui::hideLayer();

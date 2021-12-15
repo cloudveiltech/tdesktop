@@ -553,7 +553,12 @@ void HistoryService::applyAction(const MTPMessageAction &action) {
 	}, [&](const MTPDmessageActionChatEditPhoto &data) {
 		//CloudVeil start
 		if (!GlobalSecuritySettings::getSettings().disableProfilePhoto) {
-			data.vphoto().match([&](const MTPDphoto &photo) {
+			data.vphoto().match([&](const MTPDphoto& photo) {
+				//CloudVeil start
+				if (photo.vvideo_sizes() != nullptr && GlobalSecuritySettings::getSettings().disableProfileVideo) {
+					return;
+				}
+				//CloudVeil end
 				_media = std::make_unique<Data::MediaPhoto>(
 					this,
 					history()->peer,

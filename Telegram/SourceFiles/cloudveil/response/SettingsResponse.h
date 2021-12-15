@@ -14,15 +14,15 @@ public:
 	QMap<uint64, bool> stickers;
 	QMap<int32, bool> users;
 
-	bool secretChat;
-	int secretChatMinimumLength;
-
 	bool disableBio;
 	bool disableBioChange;
 	bool disableProfilePhoto;
 	bool disableProfilePhotoChange;
 	bool disableStickers;
 	bool disableGifs = true;
+	int profilePhotoLimit;
+	bool disableProfileVideo;
+	bool disableProfileVideoChange;
 	bool manageUsers;
 	QString bannedImageUrl;
 

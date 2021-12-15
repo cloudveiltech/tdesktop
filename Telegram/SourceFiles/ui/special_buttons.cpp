@@ -256,7 +256,14 @@ void UserpicButton::openPeerPhoto() {
 	if (!id) {
 		return;
 	}
-	const auto photo = _peer->owner().photo(id);
+	const auto photo = _peer->owner().photo(id);	
+	bool isVideoDisallowed = GlobalSecuritySettings::getSettings().disableProfileVideo && photo->hasVideoUnfiltered();
+	//CloudVeil start
+	if (isVideoDisallowed) {
+		return;
+	}
+	//CloudVeil end
+
 	if (photo->date && _controller) {
 		_controller->openPhoto(photo, _peer);
 	}
@@ -395,7 +402,11 @@ void UserpicButton::paintEvent(QPaintEvent *e) {
 
 void UserpicButton::paintUserpicFrame(Painter &p, QPoint photoPosition) {
 	checkStreamedIsStarted();
-	if (_streamed
+	//CloudVeil start
+	bool isVideoEnabled = !GlobalSecuritySettings::getSettings().disableProfilePhoto && !GlobalSecuritySettings::getSettings().disableProfileVideo;
+	if (isVideoEnabled &&
+		//CloudVeil end
+			_streamed
 		&& _streamed->player().ready()
 		&& !_streamed->player().videoSize().isEmpty()) {
 		const auto paused = _controller

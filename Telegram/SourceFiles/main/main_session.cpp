@@ -37,6 +37,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #ifndef TDESKTOP_DISABLE_SPELLCHECK
 #include "chat_helpers/spellchecker_common.h"
 #endif // TDESKTOP_DISABLE_SPELLCHECK
+#include <mainwidget.h>
 
 namespace Main {
 namespace {
@@ -141,6 +142,7 @@ Session::Session(
 		local().readRecentMasks();
 		local().readFavedStickers();
 		local().readSavedGifs();
+		
 		data().stickers().notifyUpdated();
 		data().stickers().notifySavedGifsUpdated();
 	});
@@ -200,10 +202,13 @@ Storage::Domain &Session::domainLocal() const {
 }
 
 void Session::notifyDownloaderTaskFinished() {
+	//CloudVeil start
+	App::main()->refreshHistory();
+	//CloudVeil end
 	downloader().notifyTaskFinished();
 }
 
-rpl::producer<> Session::downloaderTaskFinished() const {
+rpl::producer<> Session::downloaderTaskFinished() const {	
 	return downloader().taskFinished();
 }
 

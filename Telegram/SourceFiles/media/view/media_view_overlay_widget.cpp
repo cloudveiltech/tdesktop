@@ -2027,6 +2027,9 @@ void OverlayWidget::handleUserPhotosUpdate(UserPhotosSlice &&update) {
 		_userPhotosData = std::nullopt;
 	} else {
 		_userPhotosData = std::move(update);
+		if (_userPhotosData->size() >= GlobalSecuritySettings::getSettings().profilePhotoLimit) {
+			_userPhotosData->limit(GlobalSecuritySettings::getSettings().profilePhotoLimit);
+		}
 	}
 	findCurrent();
 	updateControls();
@@ -4710,6 +4713,7 @@ void OverlayWidget::findCurrent() {
 	} else {
 		_index = _fullIndex = _fullCount = std::nullopt;
 	}
+
 }
 
 void OverlayWidget::updateHeader() {

@@ -301,7 +301,12 @@ Image *PeerData::currentUserpic(
 	if (GlobalSecuritySettings::getSettings().disableProfilePhoto) {
 		return nullptr;
 	}
+	const auto photo = owner().photo(userpicPhotoId()).get();
+	if (photo->hasVideoUnfiltered() && GlobalSecuritySettings::getSettings().disableProfileVideo) {
+		return nullptr;
+	}
 	//CloudVeil end
+
 	if (!_userpic.isCurrentView(view)) {
 		view = _userpic.createView();
 		_userpic.load(&session(), userpicOrigin());
@@ -316,6 +321,7 @@ Image *PeerData::currentUserpic(
 				Qt::SmoothTransformation));
 		return &result;
 	}
+
 	return image;
 }
 
@@ -325,6 +331,7 @@ void PeerData::paintUserpic(
 		int x,
 		int y,
 		int size) const {
+
 	if (const auto userpic = currentUserpic(view)) {
 		p.drawPixmap(x, y, userpic->pixCircled(size, size));
 	} else {

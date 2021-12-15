@@ -30,6 +30,7 @@ public:
 	std::optional<int> distance(const Key &a, const Key &b) const;
 	const Key &key() const { return _key; }
 
+
 private:
 	Key _key;
 

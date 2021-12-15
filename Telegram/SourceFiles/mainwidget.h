@@ -133,6 +133,8 @@ public:
 	QImage& getBannedImage() {
 		return banned;
 	}
+
+	void refreshHistory();
 	//CloudVeil end
 
 	[[nodiscard]] Main::Session &session() const;

@@ -425,8 +425,20 @@ int PhotoData::height() const {
 }
 
 bool PhotoData::hasVideo() const {
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableProfileVideo) {
+		return false;
+	}
+	//CloudVeil end
+
+	return hasVideoUnfiltered();
+}
+
+//CloudVeil start
+bool PhotoData::hasVideoUnfiltered() const {
 	return _video.location.valid();
 }
+//CloudVeil end
 
 bool PhotoData::videoLoading() const {
 	return _video.loader != nullptr;

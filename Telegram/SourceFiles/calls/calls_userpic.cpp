@@ -151,7 +151,9 @@ void Userpic::refreshPhoto() {
 	}
 
 	//CloudVeil start
-	if (GlobalSecuritySettings::getSettings().disableProfilePhoto) {
+	bool isVideoPic = !_photo->videoContent().isEmpty();
+	bool isVideoDisallowed = GlobalSecuritySettings::getSettings().disableProfileVideo && isVideoPic;
+	if (GlobalSecuritySettings::getSettings().disableProfilePhoto || isVideoDisallowed) {
 		createCache(nullptr);
 		return;
 	}

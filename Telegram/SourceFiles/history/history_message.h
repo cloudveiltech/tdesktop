@@ -271,4 +271,8 @@ private:
 	friend class HistoryView::Element;
 	friend class HistoryView::Message;
 
+	//CloudVeil start
+	bool isSticker;
+	QString stickerAlt;
+	//CloudVeil end
 };

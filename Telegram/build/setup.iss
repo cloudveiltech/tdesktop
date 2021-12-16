@@ -4,8 +4,8 @@
 #define MyAppURL "https://github.com/cloudveiltech"
 #define MyAppExeName "CloudVeilMessenger.exe"
 #define MyAppId "7BF3C861-C022-41EC-8C16-87EBECBDCE4B"   
-#define MyAppVersion "3.3.0"
-#define MyAppVersionFull "3.3.0"
+#define MyAppVersion "3.3.1"
+#define MyAppVersionFull "3.3.1"
 #define ReleasePath "..\..\out\Release"
 #define MyBuildTarget "win64"  
 

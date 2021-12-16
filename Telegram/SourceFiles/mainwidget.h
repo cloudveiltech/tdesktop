@@ -130,10 +130,6 @@ public:
 	~MainWidget();
 
 	//CloudVeil start
-	QImage& getBannedImage() {
-		return banned;
-	}
-
 	void refreshHistory();
 	//CloudVeil end
 
@@ -411,7 +407,6 @@ private:
 	//CloudVeil start	
 	object_ptr<GlobalSecuritySettings> globalSettings;
 	object_ptr<SimpleUpdater> simpleUpdater;
-	QImage banned;
 	//CloudVeil end
 };
 

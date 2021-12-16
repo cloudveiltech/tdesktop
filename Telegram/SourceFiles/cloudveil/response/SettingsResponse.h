@@ -24,7 +24,6 @@ public:
 	bool disableProfileVideo;
 	bool disableProfileVideoChange;
 	bool manageUsers;
-	QString bannedImageUrl;
 
 public:
 	void readFromJson(QJsonObject &jsonObject);

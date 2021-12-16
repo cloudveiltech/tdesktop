@@ -232,8 +232,6 @@ MainWidget::MainWidget(
 , _changelogs(Core::Changelogs::Create(&controller->session())) //CloudVeil start
 , globalSettings(this)
 , simpleUpdater(this) {
-
-	banned.load(qsl(":/gui/art/banned.png"));
 	//CloudVeil end
 	setupConnectingWidget();
 

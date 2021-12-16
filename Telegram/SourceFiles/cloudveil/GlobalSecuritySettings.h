@@ -32,8 +32,7 @@ private:
 	SettingsRequest lastRequest;
 	qint64 lastRequestTime;
 	PeerData *additionalItem;
-	QVector<SettingsRequest::Row<uint64>> additionalStickers;
-	FileDownloader fileDownloader;
+	QVector<SettingsRequest::Row<uint64>> additionalStickers; 
 
 	static bool loaded;
 	static SettingsResponse lastResponse;	
@@ -61,7 +60,6 @@ private:
 
 public Q_SLOTS:
 	void requestFinished(QNetworkReply* networkReply);
-	void imageReady();
 
 Q_SIGNALS:
 	void settingsReady();

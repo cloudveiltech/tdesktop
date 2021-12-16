@@ -33,7 +33,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lottie/lottie_single_player.h"
 #include "chat_helpers/stickers_lottie.h"
 #include "styles/style_chat.h"
-#include <mainwidget.h>
 
 namespace HistoryView {
 namespace {
@@ -144,16 +143,6 @@ void Sticker::draw(
 		Painter &p,
 		const PaintContext &context,
 		const QRect &r) {
-	//CloudVeil start
-	if (!GlobalSecuritySettings::getSettings().isStickerSetAllowed(_data.get())) {
-		p.drawImage(
-			QPoint(
-				r.x() + (r.width() - _size.width()) / 2,
-				r.y() + (r.height() - _size.height()) / 2),
-			App::main()->getBannedImage().scaledToHeight(_size.height()));
-		return;
-	}
-	//CloudVeil end
 
 	ensureDataMediaCreated();
 	if (readyToDrawLottie()) {

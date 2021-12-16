@@ -509,7 +509,15 @@ HistoryMessage::HistoryMessage(
 			&history->session(),
 			data.ventities().value_or_empty())
 	};
-	setText(_media ? textWithEntities : EnsureNonEmpty(textWithEntities));
+
+	//CloudVeil start
+	if (isSticker) {
+		setText(TextWithEntities{ stickerAlt });
+	}
+	else {
+		setText(_media ? textWithEntities : EnsureNonEmpty(textWithEntities));
+	}
+	//CloudVeil end
 	if (const auto groupedId = data.vgrouped_id()) {
 		setGroupId(
 			MessageGroupId::FromRaw(history->peer->id, groupedId->v));
@@ -1321,9 +1329,21 @@ std::unique_ptr<Data::Media> HistoryMessage::CreateMedia(
 			return nullptr;
 		}
 		return document->match([&](const MTPDdocument &document) -> Result {
-			return std::make_unique<Data::MediaFile>(
-				item,
-				item->history()->owner().processDocument(document));
+			//CloudVeil start
+			auto processedDoc = item->history()->owner().processDocument(document);
+			if (!processedDoc->sticker() || GlobalSecuritySettings::getSettings().isStickerSetAllowed(processedDoc)) {
+				return std::make_unique<Data::MediaFile>(
+					item,
+					processedDoc);
+			}
+			else {
+				if (processedDoc->sticker()) {
+					item->stickerAlt = processedDoc->sticker()->alt;
+					item->isSticker = true;
+				}
+				return nullptr;
+			}
+			//CloudVeil end
 		}, [](const MTPDdocumentEmpty &) -> Result {
 			return nullptr;
 		});

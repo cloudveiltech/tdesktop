@@ -24,12 +24,11 @@ GlobalSecuritySettings* GlobalSecuritySettings::instance;
 bool GlobalSecuritySettings::loaded = false;
 
 
-GlobalSecuritySettings::GlobalSecuritySettings(QObject *parent) : QObject(parent), manager(this), timer(this), fileDownloader(this) {
+GlobalSecuritySettings::GlobalSecuritySettings(QObject *parent) : QObject(parent), manager(this), timer(this) {
 	lastResponse = SettingsResponse::loadFromCache();
 
 	instance = this;
 	connect(&timer, SIGNAL(timeout()), SLOT(doServerRequest()));
-	connect(&fileDownloader, SIGNAL(downloaded()), this, SLOT(imageReady()));
 
 	loaded = true;
 	additionalItem = nullptr;
@@ -81,12 +80,6 @@ SettingsResponse& GlobalSecuritySettings::getSettings() {
 
 GlobalSecuritySettings* GlobalSecuritySettings::getInstance() {
 	return instance;
-}
-
-void GlobalSecuritySettings::imageReady()
-{
-	App::main()->getBannedImage().loadFromData(fileDownloader.data());
-	lastResponse.saveBannedImage();
 }
 
 void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
@@ -316,8 +309,6 @@ void GlobalSecuritySettings::requestFinished(QNetworkReply *networkReply)
 
 				settingsResponse.saveToCache();
 				lastResponse = settingsResponse;
-
-				fileDownloader.download(QUrl(lastResponse.bannedImageUrl));
 
 				this->settingsReady();
 			}

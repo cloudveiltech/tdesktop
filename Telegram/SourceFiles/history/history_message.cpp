@@ -471,6 +471,9 @@ HistoryMessage::HistoryMessage(
 		FlagsFromMTP(id, data.vflags().v, localFlags),
 		data.vdate().v,
 		data.vfrom_id() ? peerFromMTP(*data.vfrom_id()) : PeerId(0)) {
+	//CloudVeil start
+	isSticker = false;
+	//CloudVeil end
 	auto config = CreateConfig();
 	if (const auto forwarded = data.vfwd_from()) {
 		forwarded->match([&](const MTPDmessageFwdHeader &data) {
@@ -1331,6 +1334,8 @@ std::unique_ptr<Data::Media> HistoryMessage::CreateMedia(
 		return document->match([&](const MTPDdocument &document) -> Result {
 			//CloudVeil start
 			auto processedDoc = item->history()->owner().processDocument(document);
+
+			item->isSticker = false;
 			if (!processedDoc->sticker() || GlobalSecuritySettings::getSettings().isStickerSetAllowed(processedDoc)) {
 				return std::make_unique<Data::MediaFile>(
 					item,

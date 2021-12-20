@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include <QtCore/QJsonDocument>
 #include "SettingsResponse.h"
 #include "mainwidget.h"
 #include "dialogs/dialogs_indexed_list.h"
@@ -6,7 +7,6 @@
 #include "history/history.h"
 #include "data/data_user.h"
 #include <QtCore/QJsonArray>
-#include <QtCore/QJsonDocument>
 
 void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 {
@@ -131,7 +131,7 @@ template<typename T> void SettingsResponse::writeArrayToJson(QJsonArray &jsonArr
 
 void SettingsResponse::saveToCache()
 {
-	QFile saveFile(QStringLiteral("save.dat"));
+	QFile saveFile(QStringLiteral("save.json"));
 
 	if (!saveFile.open(QIODevice::WriteOnly)) {
 		qWarning("Couldn't open save file.");
@@ -142,13 +142,12 @@ void SettingsResponse::saveToCache()
 	writeToJson(json);
 
 	QJsonDocument saveDoc(json);
-	saveFile.write(saveDoc.toBinaryData());
+	saveFile.write(saveDoc.toJson());
 }
-
 
 SettingsResponse SettingsResponse::loadFromCache()
 {
-	QFile loadFile(QStringLiteral("save.dat"));
+	QFile loadFile(QStringLiteral("save.json"));
 
 	if (!loadFile.open(QIODevice::ReadOnly)) {
 		qWarning("Couldn't open save file.");
@@ -157,7 +156,7 @@ SettingsResponse SettingsResponse::loadFromCache()
 
 	QByteArray saveData = loadFile.readAll();
 
-	QJsonDocument loadDoc(QJsonDocument::fromBinaryData(saveData));
+	QJsonDocument loadDoc(QJsonDocument::fromJson(saveData));
 
 	SettingsResponse result;
 	QJsonObject json = loadDoc.object();
@@ -178,7 +177,7 @@ bool SettingsResponse::isDialogAllowed(PeerData *peer) {
 		return true;
 	}
 
-	bool isInlineBot = peer->isUser() && peer->asUser()->botInfo != NULL && peer->asUser()->botInfo->inlinePlaceholder != NULL && peer->asUser()->botInfo->inlinePlaceholder.length() > 0;
+	bool isInlineBot = peer->isUser() && peer->asUser()->botInfo != NULL && !peer->asUser()->botInfo->inlinePlaceholder.isEmpty() && peer->asUser()->botInfo->inlinePlaceholder.length() > 0;
 		
 	if (!isInlineBot && !isDialogSecured(peer)) {//unknown dialogs assumed to be allowed
 		return true;

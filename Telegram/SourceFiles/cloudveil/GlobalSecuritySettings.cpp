@@ -342,18 +342,16 @@ void GlobalSecuritySettings::patchResponseIds(SettingsResponse &response) {
 
 template<typename T> void GlobalSecuritySettings::patchResponseIds(QMap<T, bool> &groups) {
 	QMap<T, bool> other;
-	QList<T> keys = groups.uniqueKeys();
+    QList<T> keys = groups.keys();
 	for (int k = 0; k < keys.length(); k++) {
 		T key = keys[k];
 
 		//We're using insertMulti in case
 		//we have multiple values associated to single key
-		QList<bool> values = groups.values(key);
+        bool value = groups.value(key);
 
 		key = patchId(key);
-		for (int j = 0; j < values.length(); j++) {
-			other.insertMulti(key, values.at(j));
-		}
+        other.insert(key, value);
 	}
 	groups.swap(other);
 }

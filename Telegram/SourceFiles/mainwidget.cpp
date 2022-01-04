@@ -233,8 +233,7 @@ MainWidget::MainWidget(
 , globalSettings(this)
 , simpleUpdater(this) {
 	//CloudVeil end
-	setupConnectingWidget();
-
+	setupConnectingWidget();    
 	//CloudVeil start
 	connect(this, SIGNAL(dialogsUpdated()), this, SLOT(requestCloudVeil()));
 	connect(simpleUpdater, SIGNAL(updateReceived(UpdateResponse*)), this, SLOT(simpleUpdateReceived(UpdateResponse*)));

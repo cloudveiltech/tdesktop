@@ -95,6 +95,17 @@ PRIVATE
     desktop-app::external_xxhash
 )
 
+
+if (WIN32)
+    target_link_libraries(Telegram
+     PRIVATE
+        dbghelp
+        winhttp
+        ${src_loc}/cloudveil/sentry/release/breakpad_client.lib
+        ${src_loc}/cloudveil/sentry/release/sentry.lib
+    )
+endif()
+
 target_precompile_headers(Telegram PRIVATE ${src_loc}/stdafx.h)
 nice_target_sources(Telegram ${src_loc}
 PRIVATE
@@ -1213,6 +1224,7 @@ PRIVATE
 	cloudveil/response/UpdateResponse.cpp
 	cloudveil/FileDownloader.h
 	cloudveil/FileDownloader.cpp
+	cloudveil/sentry/include/sentry.h
 )
 
 if (NOT build_winstore)

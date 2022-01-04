@@ -73,7 +73,7 @@ public:
 		int skip = _ids.size() - size;
 		if (skip > 0) {
 			_ids.erase(_ids.end() - skip, _ids.end());
-			_skippedAfter.value() = skip;
+            _skippedAfter = skip;
 		}
 	}
 	//CloudVeil end

@@ -105,7 +105,13 @@ if (WIN32)
             ${src_loc}/cloudveil/sentry/release/breakpad_client.lib
             ${src_loc}/cloudveil/sentry/release/sentry.lib
         )
-  #  endif()
+elseif (APPLE)
+    target_link_libraries(Telegram
+     PRIVATE
+        curl
+        ${src_loc}/cloudveil/sentry/release/libbreakpad_client.a        
+        ${src_loc}/cloudveil/sentry/release/libsentry.a
+    )
 endif()
 
 target_precompile_headers(Telegram PRIVATE ${src_loc}/stdafx.h)

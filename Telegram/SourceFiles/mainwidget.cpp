@@ -387,7 +387,7 @@ MainWidget::MainWidget(
 }
 
 //CloudVeil start
-void MainWidget::refreshHistory() {
+void MainWidget::onSettingsUpdate() {
 	_dialogs->refreshOnUpdate();
 	_history->onSettingsUpdate();
 }

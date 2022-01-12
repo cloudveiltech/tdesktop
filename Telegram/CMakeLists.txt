@@ -97,13 +97,15 @@ PRIVATE
 
 
 if (WIN32)
-    target_link_libraries(Telegram
-     PRIVATE
-        dbghelp
-        winhttp
-        ${src_loc}/cloudveil/sentry/release/breakpad_client.lib
-        ${src_loc}/cloudveil/sentry/release/sentry.lib
-    )
+   # if (CMAKE_BUILD_TYPE MATCHES Release)
+        target_link_libraries(Telegram
+            PRIVATE
+            dbghelp
+            winhttp
+            ${src_loc}/cloudveil/sentry/release/breakpad_client.lib
+            ${src_loc}/cloudveil/sentry/release/sentry.lib
+        )
+  #  endif()
 endif()
 
 target_precompile_headers(Telegram PRIVATE ${src_loc}/stdafx.h)

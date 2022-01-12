@@ -130,7 +130,7 @@ public:
 	~MainWidget();
 
 	//CloudVeil start
-	void refreshHistory();
+	void onSettingsUpdate();
 	//CloudVeil end
 
 	[[nodiscard]] Main::Session &session() const;

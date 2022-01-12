@@ -202,9 +202,6 @@ Storage::Domain &Session::domainLocal() const {
 }
 
 void Session::notifyDownloaderTaskFinished() {
-	//CloudVeil start
-	App::main()->refreshHistory();
-	//CloudVeil end
 	downloader().notifyTaskFinished();
 }
 

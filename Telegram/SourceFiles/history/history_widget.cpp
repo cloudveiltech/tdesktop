@@ -1939,11 +1939,9 @@ void HistoryWidget::showHistory(
 				}
 			}
 
-			QString subject = QString("Unblock Request for %1: %2").arg(type, title);
-			QString body = QString("User ID : %1\nConversation ID : %2\nUsername : %3\nType : %4\nTitle : %5\nSent from CloudVeil Messenger for Desktop")
-				.arg(QString::number(App::main()->session().user()->id.value), QString::number(peer->id.value), userName, type, title);
+			QString url = QString("https://messenger.cloudveil.org/unblock/%1/%2")
+				.arg(QString::number(App::main()->session().user()->id.value), QString::number(peer->id.value));
 
-			QString url = QString("mailto:?to=support@cloudveil.org&subject=%1&body=%2").arg(subject, body);
 			QDesktopServices::openUrl(QUrl(url, QUrl::TolerantMode));
 		}));
 		return;

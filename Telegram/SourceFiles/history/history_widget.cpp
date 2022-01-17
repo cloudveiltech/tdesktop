@@ -1920,27 +1920,9 @@ void HistoryWidget::showHistory(
 			[=] {
 
 			PeerData* peer = App::main()->session().data().peer(peerId);
-			QString type = "group";
-			QString userName = peer->userName();
-			QString title = peer->name;
-
-			if (peer->isChannel()) {
-				if (peer->isMegagroup()) {
-					type = "megagroup";
-				}
-				else {
-					type = "channel";
-				}
-			}
-			else if (peer->isUser()) {
-				type = "user";
-				if (peer->asUser()->botInfo.get() != nullptr) {
-					type = "bot";
-				}
-			}
-
+			int32 dialogId = peer->id.value;
 			QString url = QString("https://messenger.cloudveil.org/unblock/%1/%2")
-				.arg(QString::number(App::main()->session().user()->id.value), QString::number(peer->id.value));
+				.arg(QString::number(App::main()->session().user()->id.value), QString::number(dialogId));
 
 			QDesktopServices::openUrl(QUrl(url, QUrl::TolerantMode));
 		}));

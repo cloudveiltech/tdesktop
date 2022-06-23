@@ -16,6 +16,7 @@ enum class SharedMediaType : signed char;
 } // namespace Storage
 
 namespace Ui {
+class RoundRect;
 class ScrollArea;
 class InputField;
 struct ScrollToRequest;
@@ -27,6 +28,10 @@ namespace Info {
 namespace Settings {
 struct Tag;
 } // namespace Settings
+
+namespace Downloads {
+struct Tag;
+} // namespace Downloads
 
 class ContentMemento;
 class Controller;
@@ -41,8 +46,8 @@ public:
 		not_null<ContentMemento*> memento) = 0;
 	std::shared_ptr<ContentMemento> createMemento();
 
-	virtual void setIsStackBottom(bool isStackBottom) {
-	}
+	virtual void setIsStackBottom(bool isStackBottom);
+	[[nodiscard]] bool isStackBottom() const;
 
 	rpl::producer<int> scrollHeightValue() const;
 	rpl::producer<int> desiredHeightValue() const override;
@@ -50,6 +55,10 @@ public:
 	bool hasTopBarShadow() const;
 
 	virtual void setInnerFocus();
+	virtual void showFinished() {
+	}
+	virtual void enableBackButton() {
+	}
 
 	// When resizing the widget with top edge moved up or down and we
 	// want to add this top movement to the scroll position, so inner
@@ -59,18 +68,26 @@ public:
 		int topDelta);
 	void applyAdditionalScroll(int additionalScroll);
 	int scrollTillBottom(int forHeight) const;
-	rpl::producer<int> scrollTillBottomChanges() const;
+	[[nodiscard]] rpl::producer<int> scrollTillBottomChanges() const;
+	[[nodiscard]] virtual const Ui::RoundRect *bottomSkipRounding() const {
+		return nullptr;
+	}
 
 	// Float player interface.
 	bool floatPlayerHandleWheelEvent(QEvent *e);
 	QRect floatPlayerAvailableRect() const;
 
 	virtual rpl::producer<SelectedItems> selectedListValue() const;
-	virtual void cancelSelection() {
+	virtual void selectionAction(SelectionAction action) {
 	}
 
-	virtual rpl::producer<bool> canSaveChanges() const;
+	[[nodiscard]] virtual rpl::producer<QString> title() = 0;
+
 	virtual void saveChanges(FnMut<void()> done);
+
+	[[nodiscard]] int scrollBottomSkip() const;
+	[[nodiscard]] rpl::producer<int> scrollBottomSkipValue() const;
+	[[nodiscard]] rpl::producer<bool> desiredBottomShadowVisibility() const;
 
 protected:
 	template <typename Widget>
@@ -87,9 +104,15 @@ protected:
 	void paintEvent(QPaintEvent *e) override;
 
 	void setScrollTopSkip(int scrollTopSkip);
+	void setScrollBottomSkip(int scrollBottomSkip);
 	int scrollTopSave() const;
 	void scrollTopRestore(int scrollTop);
 	void scrollTo(const Ui::ScrollToRequest &request);
+	[[nodiscard]] rpl::producer<int> scrollTopValue() const;
+
+	void setPaintPadding(const style::margins &padding);
+
+	void setViewport(rpl::producer<not_null<QEvent*>> &&events) const;
 
 private:
 	RpWidget *doSetInnerWidget(object_ptr<RpWidget> inner);
@@ -102,15 +125,20 @@ private:
 
 	style::color _bg;
 	rpl::variable<int> _scrollTopSkip = -1;
+	rpl::variable<int> _scrollBottomSkip = 0;
 	rpl::event_stream<int> _scrollTillBottomChanges;
 	object_ptr<Ui::ScrollArea> _scroll;
 	Ui::PaddingWrap<Ui::RpWidget> *_innerWrap = nullptr;
 	base::unique_qptr<Ui::RpWidget> _searchWrap = nullptr;
 	QPointer<Ui::InputField> _searchField;
 	int _innerDesiredHeight = 0;
+	bool _isStackBottom = false;
 
 	// Saving here topDelta in setGeometryWithTopMoved() to get it passed to resizeEvent().
 	int _topDelta = 0;
+
+	// To paint round edges from content.
+	style::margins _paintPadding;
 
 };
 
@@ -121,6 +149,7 @@ public:
 	, _migratedPeerId(migratedPeerId) {
 	}
 	explicit ContentMemento(Settings::Tag settings);
+	explicit ContentMemento(Downloads::Tag downloads);
 	ContentMemento(not_null<PollData*> poll, FullMsgId contextId)
 	: _poll(poll)
 	, _pollContextId(contextId) {

@@ -12,7 +12,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_chat.h"
 #include "data/data_user.h"
 #include "data/data_changes.h"
+#include "data/data_session.h"
+#include "data/data_message_reactions.h"
 #include "main/main_session.h"
+#include "main/main_account.h"
+#include "main/main_app_config.h"
 #include "ui/image/image_prepare.h"
 #include "base/unixtime.h"
 
@@ -175,8 +179,7 @@ rpl::producer<bool> CanWriteValue(ChatData *chat) {
 		| ChatDataFlag::Deactivated
 		| ChatDataFlag::Forbidden
 		| ChatDataFlag::Left
-		| ChatDataFlag::Creator
-		| ChatDataFlag::Kicked;
+		| ChatDataFlag::Creator;
 	return rpl::combine(
 		PeerFlagsValue(chat, mask),
 		AdminRightsValue(chat),
@@ -190,8 +193,7 @@ rpl::producer<bool> CanWriteValue(ChatData *chat) {
 			const auto amOutFlags = 0
 				| ChatDataFlag::Deactivated
 				| ChatDataFlag::Forbidden
-				| ChatDataFlag::Left
-				| ChatDataFlag::Kicked;
+				| ChatDataFlag::Left;
 			return !(flags & amOutFlags)
 				&& ((flags & ChatDataFlag::Creator)
 					|| (adminRights.value != ChatAdminRights(0))
@@ -203,6 +205,7 @@ rpl::producer<bool> CanWriteValue(ChannelData *channel) {
 	using Flag = ChannelDataFlag;
 	const auto mask = 0
 		| Flag::Left
+		| Flag::JoinToWrite
 		| Flag::HasLink
 		| Flag::Forbidden
 		| Flag::Creator
@@ -225,7 +228,7 @@ rpl::producer<bool> CanWriteValue(ChannelData *channel) {
 				bool defaultSendMessagesRestriction) {
 			const auto notAmInFlags = Flag::Left | Flag::Forbidden;
 			const auto allowed = !(flags & notAmInFlags)
-				|| (flags & Flag::HasLink);
+				|| ((flags & Flag::HasLink) && !(flags & Flag::JoinToWrite));
 			return allowed && (postMessagesRight
 					|| (flags & Flag::Creator)
 					|| (!(flags & Flag::Broadcast)
@@ -258,8 +261,7 @@ rpl::producer<bool> CanPinMessagesValue(not_null<PeerData*> peer) {
 			| ChatDataFlag::Deactivated
 			| ChatDataFlag::Forbidden
 			| ChatDataFlag::Left
-			| ChatDataFlag::Creator
-			| ChatDataFlag::Kicked;
+			| ChatDataFlag::Creator;
 		return rpl::combine(
 			PeerFlagsValue(chat, mask),
 			AdminRightValue(chat, ChatAdminRight::PinMessages),
@@ -271,8 +273,7 @@ rpl::producer<bool> CanPinMessagesValue(not_null<PeerData*> peer) {
 			const auto amOutFlags = 0
 				| ChatDataFlag::Deactivated
 				| ChatDataFlag::Forbidden
-				| ChatDataFlag::Left
-				| ChatDataFlag::Kicked;
+				| ChatDataFlag::Left;
 			return !(flags & amOutFlags)
 				&& ((flags & ChatDataFlag::Creator)
 					|| adminRightAllows
@@ -320,6 +321,23 @@ rpl::producer<bool> CanManageGroupCallValue(not_null<PeerData*> peer) {
 			: AdminRightValue(channel, flag);
 	}
 	return rpl::single(false);
+}
+
+rpl::producer<bool> PeerPremiumValue(not_null<PeerData*> peer) {
+	const auto user = peer->asUser();
+	if (!user) {
+		return rpl::single(false);
+	}
+	return user->flagsValue(
+	) | rpl::filter([=](UserData::Flags::Change change) {
+		return (change.diff & UserDataFlag::Premium);
+	}) | rpl::map([=] {
+		return user->isPremium();
+	});
+}
+
+rpl::producer<bool> AmPremiumValue(not_null<Main::Session*> session) {
+	return PeerPremiumValue(session->user());
 }
 
 TimeId SortByOnlineValue(not_null<UserData*> user, TimeId now) {
@@ -493,6 +511,38 @@ rpl::producer<QImage> PeerUserpicImageValue(
 		) | rpl::start_with_next(state->push, result);
 		return result;
 	};
+}
+
+std::optional<base::flat_set<QString>> PeerAllowedReactions(
+		not_null<PeerData*> peer) {
+	if (const auto chat = peer->asChat()) {
+		return chat->allowedReactions();
+	} else if (const auto channel = peer->asChannel()) {
+		return channel->allowedReactions();
+	} else {
+		return std::nullopt;
+	}
+}
+
+ auto PeerAllowedReactionsValue(
+	not_null<PeerData*> peer)
+-> rpl::producer<std::optional<base::flat_set<QString>>> {
+	return peer->session().changes().peerFlagsValue(
+		peer,
+		Data::PeerUpdate::Flag::Reactions
+	) | rpl::map([=]{
+		return PeerAllowedReactions(peer);
+	});
+}
+
+rpl::producer<int> UniqueReactionsLimitValue(
+		not_null<Main::Session*> session) {
+	const auto config = &session->account().appConfig();
+	return config->value(
+	) | rpl::map([=] {
+		return int(base::SafeRound(
+			config->get<double>("reactions_uniq_max", 11)));
+	}) | rpl::distinct_until_changed();
 }
 
 } // namespace Data

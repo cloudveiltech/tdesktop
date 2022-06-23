@@ -82,82 +82,32 @@ style::color PeerUserpicColor(PeerId peerId) {
 }
 
 PeerId FakePeerIdForJustName(const QString &name) {
-	return peerFromUser(name.isEmpty()
+	constexpr auto kShift = (0xFEULL << 32);
+	const auto base = name.isEmpty()
 		? 777
-		: base::crc32(name.constData(), name.size() * sizeof(QChar)));
+		: base::crc32(name.constData(), name.size() * sizeof(QChar));
+	return peerFromUser(kShift + std::abs(base));
 }
 
-bool UpdateBotCommands(
-		std::vector<BotCommand> &commands,
-		const MTPVector<MTPBotCommand> &data) {
-	const auto &v = data.v;
-	commands.reserve(v.size());
-	auto result = false;
-	auto index = 0;
-	for (const auto &command : v) {
-		command.match([&](const MTPDbotCommand &data) {
-			const auto command = qs(data.vcommand());
-			const auto description = qs(data.vdescription());
-			if (commands.size() <= index) {
-				commands.push_back({
-					.command = command,
-					.description = description,
-				});
-				result = true;
-			} else {
-				auto &entry = commands[index];
-				if (entry.command != command
-					|| entry.description != description) {
-					entry.command = command;
-					entry.description = description;
-					result = true;
-				}
-			}
-			++index;
+bool ApplyBotMenuButton(
+		not_null<BotInfo*> info,
+		const MTPBotMenuButton *button) {
+	auto text = QString();
+	auto url = QString();
+	if (button) {
+		button->match([&](const MTPDbotMenuButton &data) {
+			text = qs(data.vtext());
+			url = qs(data.vurl());
+		}, [&](const auto &) {
 		});
 	}
-	if (index < commands.size()) {
-		result = true;
-	}
-	commands.resize(index);
-	return result;
-}
+	const auto changed = (info->botMenuButtonText != text)
+		|| (info->botMenuButtonUrl != url);
 
-bool UpdateBotCommands(
-		base::flat_map<UserId, std::vector<BotCommand>> &commands,
-		UserId botId,
-		const MTPVector<MTPBotCommand> &data) {
-	return data.v.isEmpty()
-		? commands.remove(botId)
-		: UpdateBotCommands(commands[botId], data);
-}
+	info->botMenuButtonText = text;
+	info->botMenuButtonUrl = url;
 
-bool UpdateBotCommands(
-		base::flat_map<UserId, std::vector<BotCommand>> &commands,
-		const MTPVector<MTPBotInfo> &data) {
-	auto result = false;
-	auto filled = base::flat_set<UserId>();
-	filled.reserve(data.v.size());
-	for (const auto &item : data.v) {
-		item.match([&](const MTPDbotInfo &data) {
-			const auto id = UserId(data.vuser_id().v);
-			if (!filled.emplace(id).second) {
-				LOG(("API Error: Two BotInfo for a single bot."));
-				return;
-			} else if (UpdateBotCommands(commands, id, data.vcommands())) {
-				result = true;
-			}
-		});
-	}
-	for (auto i = begin(commands); i != end(commands);) {
-		if (filled.contains(i->first)) {
-			++i;
-		} else {
-			i = commands.erase(i);
-			result = true;
-		}
-	}
-	return result;
+	return changed;
 }
 
 } // namespace Data
@@ -276,8 +226,12 @@ ClickHandlerPtr PeerData::createOpenLink() {
 	return std::make_shared<PeerClickHandler>(this);
 }
 
-void PeerData::setUserpic(PhotoId photoId, const ImageLocation &location) {
+void PeerData::setUserpic(
+		PhotoId photoId,
+		const ImageLocation &location,
+		bool hasVideo) {
 	_userpicPhotoId = photoId;
+	_userpicHasVideo = hasVideo;
 	_userpic.set(&session(), ImageWithLocation{ .location = location });
 }
 
@@ -321,7 +275,6 @@ Image *PeerData::currentUserpic(
 				Qt::SmoothTransformation));
 		return &result;
 	}
-
 	return image;
 }
 
@@ -331,9 +284,12 @@ void PeerData::paintUserpic(
 		int x,
 		int y,
 		int size) const {
-
 	if (const auto userpic = currentUserpic(view)) {
-		p.drawPixmap(x, y, userpic->pixCircled(size, size));
+		const auto circled = Images::Option::RoundCircle;
+		p.drawPixmap(
+			x,
+			y,
+			userpic->pix(size, size, { .options = circled }));
 	} else {
 		ensureEmptyUserpic()->paint(p, x, y, x + size + x, size);
 	}
@@ -393,10 +349,14 @@ QPixmap PeerData::genUserpic(
 		std::shared_ptr<Data::CloudImageView> &view,
 		int size) const {
 	if (const auto userpic = currentUserpic(view)) {
-		return userpic->pixCircled(size, size);
+		const auto circle = Images::Option::RoundCircle;
+		return userpic->pix(size, size, { .options = circle });
 	}
-	auto result = QImage(QSize(size, size) * cIntRetinaFactor(), QImage::Format_ARGB32_Premultiplied);
-	result.setDevicePixelRatio(cRetinaFactor());
+	const auto ratio = style::DevicePixelRatio();
+	auto result = QImage(
+		QSize(size, size) * ratio,
+		QImage::Format_ARGB32_Premultiplied);
+	result.setDevicePixelRatio(ratio);
 	result.fill(Qt::transparent);
 	{
 		Painter p(&result);
@@ -417,15 +377,13 @@ QImage PeerData::generateUserpicImage(
 		ImageRoundRadius radius) const {
 	if (const auto userpic = currentUserpic(view)) {
 		const auto options = (radius == ImageRoundRadius::Ellipse)
-			? (Images::Option::RoundedAll | Images::Option::Circled)
+			? Images::Option::RoundCircle
 			: (radius == ImageRoundRadius::None)
-			? Images::Options()
-			: (Images::Option::RoundedAll | Images::Option::RoundedSmall);
+			? Images::Option()
+			: Images::Option::RoundSmall;
 		return userpic->pixNoCache(
-			size,
-			size,
-			Images::Option::Smooth | options
-		).toImage();
+			{ size, size },
+			{ .options = options }).toImage();
 	}
 	auto result = QImage(
 		QSize(size, size),
@@ -454,7 +412,10 @@ Data::FileOrigin PeerData::userpicPhotoOrigin() const {
 		: Data::FileOrigin();
 }
 
-void PeerData::updateUserpic(PhotoId photoId, MTP::DcId dcId) {
+void PeerData::updateUserpic(
+		PhotoId photoId,
+		MTP::DcId dcId,
+		bool hasVideo) {
 	setUserpicChecked(
 		photoId,
 		ImageLocation(
@@ -466,19 +427,27 @@ void PeerData::updateUserpic(PhotoId photoId, MTP::DcId dcId) {
 					input,
 					MTP_long(photoId))) },
 			kUserpicSize,
-			kUserpicSize));
+			kUserpicSize),
+		hasVideo);
 }
 
 void PeerData::clearUserpic() {
-	setUserpicChecked(PhotoId(), ImageLocation());
+	setUserpicChecked(PhotoId(), ImageLocation(), false);
 }
 
 void PeerData::setUserpicChecked(
 		PhotoId photoId,
-		const ImageLocation &location) {
-	if (_userpicPhotoId != photoId || _userpic.location() != location) {
-		setUserpic(photoId, location);
+		const ImageLocation &location,
+		bool hasVideo) {
+	if (_userpicPhotoId != photoId
+		|| _userpic.location() != location
+		|| _userpicHasVideo != hasVideo) {
+		const auto known = !userpicPhotoUnknown();
+		setUserpic(photoId, location, hasVideo);
 		session().changes().peerUpdated(this, UpdateFlag::Photo);
+		if (known && isPremium() && userpicPhotoUnknown()) {
+			updateFull();
+		}
 	}
 }
 
@@ -820,6 +789,13 @@ bool PeerData::isVerified() const {
 		return user->isVerified();
 	} else if (const auto channel = asChannel()) {
 		return channel->isVerified();
+	}
+	return false;
+}
+
+bool PeerData::isPremium() const {
+	if (const auto user = asUser()) {
+		return user->isPremium();
 	}
 	return false;
 }
@@ -1206,11 +1182,11 @@ FullMsgId ResolveTopPinnedId(
 			.skippedAfter = 0,
 		};
 	if (!slice.messageIds.empty()) {
-		return FullMsgId(peerToChannel(peer->id), slice.messageIds.back());
+		return FullMsgId(peer->id, slice.messageIds.back());
 	} else if (!migrated || slice.count != 0 || old.messageIds.empty()) {
 		return FullMsgId();
 	} else {
-		return FullMsgId(0, old.messageIds.back());
+		return FullMsgId(migrated->id, old.messageIds.back());
 	}
 }
 
@@ -1240,9 +1216,9 @@ FullMsgId ResolveMinPinnedId(
 			.skippedAfter = 0,
 		};
 	if (!old.messageIds.empty()) {
-		return FullMsgId(0, old.messageIds.front());
+		return FullMsgId(migrated->id, old.messageIds.front());
 	} else if (old.count == 0 && !slice.messageIds.empty()) {
-		return FullMsgId(peerToChannel(peer->id), slice.messageIds.front());
+		return FullMsgId(peer->id, slice.messageIds.front());
 	} else {
 		return FullMsgId();
 	}

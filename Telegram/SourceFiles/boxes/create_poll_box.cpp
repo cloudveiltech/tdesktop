@@ -18,13 +18,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/labels.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/checkbox.h"
-#include "ui/toast/toast.h"
+#include "ui/text/text_utilities.h"
 #include "main/main_session.h"
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "chat_helpers/emoji_suggestions_widget.h"
 #include "chat_helpers/message_field.h"
-#include "chat_helpers/send_context_menu.h"
+#include "menu/menu_send.h"
 #include "history/view/history_view_schedule_box.h"
 #include "settings/settings_common.h"
 #include "base/unique_qptr.h"
@@ -190,9 +190,12 @@ not_null<Ui::FlatLabel*> CreateWarningLabel(
 			const auto value = valueLimit - length;
 			const auto shown = (value < warnLimit)
 				&& (field->height() > st::createPollOptionField.heightMin);
-			result->setRichText((value >= 0)
-				? QString::number(value)
-				: textcmdLink(1, QString::number(value)));
+			if (value >= 0) {
+				result->setText(QString::number(value));
+			} else {
+				result->setMarkedText(Ui::Text::PlainLink(
+					QString::number(value)));
+			}
 			result->setVisible(shown);
 		}));
 	});
@@ -772,7 +775,7 @@ void CreatePollBox::setInnerFocus() {
 }
 
 void CreatePollBox::submitFailed(const QString &error) {
-	Ui::Toast::Show(error);
+	Ui::Toast::Show(Ui::BoxShow(this).toastParent(), error);
 }
 
 not_null<Ui::InputField*> CreatePollBox::setupQuestion(
@@ -847,7 +850,10 @@ not_null<Ui::InputField*> CreatePollBox::setupSolution(
 		Core::App().settings().replaceEmojiValue());
 	solution->setMarkdownReplacesEnabled(rpl::single(true));
 	solution->setEditLinkCallback(
-		DefaultEditLinkCallback(_controller, solution));
+		DefaultEditLinkCallback(
+			std::make_shared<Window::Show>(_controller),
+			session,
+			solution));
 	solution->customTab(true);
 
 	const auto warning = CreateWarningLabel(
@@ -983,8 +989,11 @@ object_ptr<Ui::RpWidget> CreatePollBox::setupContent() {
 		multiple->events(
 		) | rpl::filter([=](not_null<QEvent*> e) {
 			return (e->type() == QEvent::MouseButtonPress) && quiz->checked();
-		}) | rpl::start_with_next([=] {
-			Ui::Toast::Show(tr::lng_polls_create_one_answer(tr::now));
+		}) | rpl::start_with_next([
+				toastParent = Ui::BoxShow(this).toastParent()] {
+			Ui::Toast::Show(
+				toastParent,
+				tr::lng_polls_create_one_answer(tr::now));
 		}, multiple->lifetime());
 	}
 
@@ -1061,8 +1070,10 @@ object_ptr<Ui::RpWidget> CreatePollBox::setupContent() {
 			*error &= ~Error::Solution;
 		}
 	};
-	const auto showError = [](tr::phrase<> text) {
-		Ui::Toast::Show(text(tr::now));
+	const auto showError = [
+		toastParent = Ui::BoxShow(this).toastParent()](
+			tr::phrase<> text) {
+		Ui::Toast::Show(toastParent, text(tr::now));
 	};
 	const auto send = [=](Api::SendOptions sendOptions) {
 		collectError();

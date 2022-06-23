@@ -10,6 +10,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/platform_main_window.h"
 #include "base/unique_qptr.h"
 
+class QMenuBar;
+
 namespace Ui {
 class PopupMenu;
 } // namespace Ui
@@ -20,42 +22,22 @@ class MainWindow : public Window::MainWindow {
 public:
 	explicit MainWindow(not_null<Window::Controller*> controller);
 
-	void psShowTrayMenu();
-
-	bool trayAvailable() {
-		return _sniAvailable || QSystemTrayIcon::isSystemTrayAvailable();
-	}
-
 	bool isActiveForTrayMenu() override;
 
 	~MainWindow();
 
 protected:
+	bool eventFilter(QObject *obj, QEvent *evt) override;
+
 	void initHook() override;
 	void unreadCounterChangedHook() override;
 	void updateGlobalMenuHook() override;
 
-	void initTrayMenuHook() override;
-	bool hasTrayIcon() const override;
-
 	void workmodeUpdated(Core::Settings::WorkMode mode) override;
 	void createGlobalMenu() override;
 
-	QSystemTrayIcon *trayIcon = nullptr;
-	QMenu *trayIconMenu = nullptr;
-
-	void psTrayMenuUpdated();
-	void psSetupTrayIcon();
-
 private:
-	class Private;
-	friend class Private;
-	const std::unique_ptr<Private> _private;
-
-	bool _sniAvailable = false;
-	base::unique_qptr<Ui::PopupMenu> _trayIconMenuXEmbed;
-
-	QMenu *psMainMenu = nullptr;
+	QMenuBar *psMainMenu = nullptr;
 	QAction *psLogout = nullptr;
 	QAction *psUndo = nullptr;
 	QAction *psRedo = nullptr;

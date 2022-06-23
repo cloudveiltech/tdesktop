@@ -77,7 +77,7 @@ static tgcalls::DarwinVideoTrackSource *getObjCVideoSource(const rtc::scoped_ref
             [self custom_cropAndScaleARGBTo:outputPixelBuffer];
             break;
         }
-        default: { RTC_NOTREACHED() << "Unsupported pixel format."; }
+        default: { RTC_DCHECK_NOTREACHED() << "Unsupported pixel format."; }
     }
 
     return YES;
@@ -179,7 +179,7 @@ static tgcalls::DarwinVideoTrackSource *getObjCVideoSource(const rtc::scoped_ref
     BOOL _hasRetriedOnFatalError;
     BOOL _hadFatalError;
     BOOL _isRunning;
-    
+
     BOOL _shouldBeMirrored;
 
     // Live on RTCDispatcherTypeCaptureSession and main thread.
@@ -246,13 +246,13 @@ static tgcalls::DarwinVideoTrackSource *getObjCVideoSource(const rtc::scoped_ref
 + (NSArray<AVCaptureDevice *> *)captureDevices {
     AVCaptureDevice * defaultDevice = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
     NSMutableArray<AVCaptureDevice *> * devices = [[AVCaptureDevice devicesWithMediaType:AVMediaTypeVideo] mutableCopy];
-    
+
     [devices addObjectsFromArray:[AVCaptureDevice devicesWithMediaType:AVMediaTypeMuxed]];
 
     if ([devices count] > 0) {
         [devices insertObject:defaultDevice atIndex:0];
     }
-        
+
     return devices;
 }
 
@@ -290,7 +290,7 @@ static tgcalls::DarwinVideoTrackSource *getObjCVideoSource(const rtc::scoped_ref
 }
 
 -(void)setOnPause:(std::function<void (bool)>)pause {
-   
+
 }
 
 - (void)stop {
@@ -353,18 +353,18 @@ static tgcalls::DarwinVideoTrackSource *getObjCVideoSource(const rtc::scoped_ref
                            fps:(NSInteger)fps
              completionHandler:(nullable void (^)(NSError *))completionHandler {
 
-    
+
     CMIOObjectPropertyAddress latency_pa = {
         kCMIODevicePropertyLatency,
         kCMIOObjectPropertyScopeWildcard,
         kCMIOObjectPropertyElementWildcard
     };
     UInt32 dataSize = 0;
-    
+
     NSNumber *_connectionID = ((NSNumber *)[device valueForKey:@"_connectionID"]);
-    
+
     CMIODeviceID deviceId = (CMIODeviceID)[_connectionID intValue];
-    
+
     if (device) {
         if (CMIOObjectGetPropertyDataSize(deviceId, &latency_pa, 0, nil, &dataSize) == noErr) {
             _shouldBeMirrored = NO;
@@ -381,8 +381,8 @@ static tgcalls::DarwinVideoTrackSource *getObjCVideoSource(const rtc::scoped_ref
     NSError *error = nil;
 
       self->_currentDevice = device;
-    
-    
+
+
       self->_currentInput = [[AVCaptureDeviceInput alloc] initWithDevice:device error:&error];
       if (![self->_currentDevice lockForConfiguration:&error]) {
           RTCLogError(@"Failed to lock device %@. Error: %@",
@@ -394,10 +394,10 @@ static tgcalls::DarwinVideoTrackSource *getObjCVideoSource(const rtc::scoped_ref
           self->_willBeRunning = false;
           return;
       }
-      [self reconfigureCaptureSessionInput];
       [self updateDeviceCaptureFormat:format fps:fps];
       [self updateVideoDataOutputPixelFormat:format];
       [self->_currentDevice unlockForConfiguration];
+      [self reconfigureCaptureSessionInput];
       if (completionHandler) {
           completionHandler(nil);
       }
@@ -458,12 +458,12 @@ static tgcalls::DarwinVideoTrackSource *getObjCVideoSource(const rtc::scoped_ref
     if (pixelBuffer == nil) {
         return;
     }
-    
+
     int width = (int)CVPixelBufferGetWidth(pixelBuffer);
     int height = (int)CVPixelBufferGetHeight(pixelBuffer);
 
     CameraFrameSize fittedSize = { width, height };
-    
+
     fittedSize.width -= (fittedSize.width % 32);
     fittedSize.height -= (fittedSize.height % 4);
 
@@ -646,7 +646,7 @@ static tgcalls::DarwinVideoTrackSource *getObjCVideoSource(const rtc::scoped_ref
     _outputPixelFormat = _preferredOutputPixelFormat;
     videoDataOutput.videoSettings = @{(NSString *)kCVPixelBufferPixelFormatTypeKey : pixelFormat};
     videoDataOutput.alwaysDiscardsLateVideoFrames = YES;
-    
+
     [videoDataOutput setSampleBufferDelegate:self queue:self.frameQueue];
     _videoDataOutput = videoDataOutput;
 }
@@ -656,18 +656,18 @@ static tgcalls::DarwinVideoTrackSource *getObjCVideoSource(const rtc::scoped_ref
     if (![[RTCCVPixelBuffer supportedPixelFormats] containsObject:@(mediaSubType)]) {
         mediaSubType = _preferredOutputPixelFormat;
     }
+    CMVideoDimensions dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription);
 
     if (mediaSubType != _outputPixelFormat) {
         _outputPixelFormat = mediaSubType;
         _videoDataOutput.videoSettings =
         @{ (NSString *)kCVPixelBufferPixelFormatTypeKey : @(mediaSubType) };
+    } else {
+//        _videoDataOutput.videoSettings =
+//        @{ (NSString *)kCVPixelBufferWidthKey: @(dimensions.width), (NSString *)kCVPixelBufferHeightKey: @(dimensions.height) };
     }
     AVCaptureConnection *connection = [_videoDataOutput connectionWithMediaType:AVMediaTypeVideo];
 
-
-    if ([connection isVideoMirroringSupported]) {
-        [connection setVideoMirrored:YES];
-    }
 }
 
 #pragma mark - Private, called inside capture queue
@@ -677,7 +677,22 @@ static tgcalls::DarwinVideoTrackSource *getObjCVideoSource(const rtc::scoped_ref
 //             @"updateDeviceCaptureFormat must be called on the capture queue.");
     @try {
         _currentDevice.activeFormat = format;
-        _currentDevice.activeVideoMaxFrameDuration = CMTimeMake(1, 24);
+        if (format.videoSupportedFrameRateRanges.count > 0) {
+            int target = 24;
+            int closest = -1;
+            CMTime result;
+            for (int i = 0; i < format.videoSupportedFrameRateRanges.count; i++) {
+                const auto rateRange = format.videoSupportedFrameRateRanges[i];
+                int gap = abs(rateRange.minFrameRate - target);
+                if (gap <= closest || closest == -1) {
+                    closest = gap;
+                    result = rateRange.maxFrameDuration;
+                }
+            }
+            if (closest >= 0) {
+                _currentDevice.activeVideoMaxFrameDuration = result;
+            }
+        }
     } @catch (NSException *exception) {
         RTCLogError(@"Failed to set active format!\n User info:%@", exception.userInfo);
         return;

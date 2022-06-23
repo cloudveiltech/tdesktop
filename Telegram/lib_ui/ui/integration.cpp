@@ -139,4 +139,16 @@ QString Integration::phraseFormattingMonospace() {
 	return "Monospace";
 }
 
+QString Integration::phraseFormattingSpoiler() {
+	return "Spoiler";
+}
+
+QString Integration::phraseButtonOk() {
+	return "OK";
+}
+
+QString Integration::phraseButtonCancel() {
+	return "Cancel";
+}
+
 } // namespace Ui

@@ -15,7 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history.h"
 #include "history/history_drag_area.h"
 #include "history/history_item.h"
-#include "chat_helpers/send_context_menu.h" // SendMenu::Type.
+#include "menu/menu_send.h" // SendMenu::Type.
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/shadow.h"
 #include "ui/layers/generic_box.h"
@@ -36,17 +36,21 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/delete_messages_box.h"
 #include "boxes/edit_caption_box.h"
 #include "boxes/send_files_box.h"
+#include "boxes/premium_limits_box.h"
 #include "window/window_adaptive.h"
 #include "window/window_session_controller.h"
 #include "window/window_peer_menu.h"
 #include "base/event_filter.h"
 #include "base/call_delayed.h"
+#include "base/qt/qt_key_modifiers.h"
 #include "core/file_utilities.h"
 #include "main/main_session.h"
 #include "data/data_chat_participant_status.h"
 #include "data/data_session.h"
+#include "data/data_changes.h"
 #include "data/data_scheduled_messages.h"
 #include "data/data_user.h"
+#include "data/data_message_reactions.h"
 #include "storage/storage_media_prepare.h"
 #include "storage/storage_account.h"
 #include "inline_bots/inline_bot_result.h"
@@ -187,6 +191,14 @@ ScheduledWidget::ScheduledWidget(
 		_inner->setEmptyInfoWidget(std::move(emptyInfo));
 	}
 
+	_history->session().changes().messageUpdates(
+		Data::MessageUpdate::Flag::Destroyed
+	) | rpl::start_with_next([=](const Data::MessageUpdate &update) {
+		while (update.item == _replyReturn) {
+			calculateNextReplyReturn();
+		}
+	}, lifetime());
+
 	setupScrollDownButton();
 	setupComposeControls();
 }
@@ -307,6 +319,7 @@ void ScheduledWidget::chooseAttach() {
 			_history->peer,
 			ChatRestriction::SendMedia)) {
 		Ui::ShowMultilineToast({
+			.parentOverride = Window::Show(controller()).toastParent(),
 			.text = { *error },
 		});
 		return;
@@ -331,9 +344,11 @@ void ScheduledWidget::chooseAttach() {
 				uploadFile(result.remoteContent, SendMediaType::File);
 			}
 		} else {
+			const auto premium = controller()->session().user()->isPremium();
 			auto list = Storage::PrepareMediaList(
 				result.paths,
-				st::sendMediaPreviewSize);
+				st::sendMediaPreviewSize,
+				premium);
 			confirmSendingFiles(std::move(list));
 		}
 	}), nullptr);
@@ -344,11 +359,13 @@ bool ScheduledWidget::confirmSendingFiles(
 		std::optional<bool> overrideSendImagesAsPhotos,
 		const QString &insertTextOnCancel) {
 	const auto hasImage = data->hasImage();
+	const auto premium = controller()->session().user()->isPremium();
 
 	if (const auto urls = data->urls(); !urls.empty()) {
 		auto list = Storage::PrepareMediaList(
 			urls,
-			st::sendMediaPreviewSize);
+			st::sendMediaPreviewSize,
+			premium);
 		if (list.error != Ui::PreparedList::Error::NonLocalUrl) {
 			if (list.error == Ui::PreparedList::Error::None
 				|| !hasImage) {
@@ -468,6 +485,47 @@ bool ScheduledWidget::confirmSendingFiles(
 	return confirmSendingFiles(std::move(list), insertTextOnCancel);
 }
 
+void ScheduledWidget::pushReplyReturn(not_null<HistoryItem*> item) {
+	if (_inner->viewByPosition(item->position())) {
+		_replyReturns.push_back(item->id);
+	} else {
+		return;
+	}
+	_replyReturn = item;
+	updateScrollDownVisibility();
+}
+
+void ScheduledWidget::computeCurrentReplyReturn() {
+	_replyReturn = _replyReturns.empty()
+		? nullptr
+		: _history->owner().message(_history->peer, _replyReturns.back());
+}
+
+void ScheduledWidget::calculateNextReplyReturn() {
+	_replyReturn = nullptr;
+	while (!_replyReturns.empty() && !_replyReturn) {
+		_replyReturns.pop_back();
+		computeCurrentReplyReturn();
+	}
+	if (!_replyReturn) {
+		updateScrollDownVisibility();
+	}
+}
+
+void ScheduledWidget::checkReplyReturns() {
+	const auto currentTop = _scroll->scrollTop();
+	for (; _replyReturn != nullptr; calculateNextReplyReturn()) {
+		const auto position = _replyReturn->position();
+		const auto scrollTop = _inner->scrollTopForPosition(position);
+		const auto scrolledBelow = scrollTop
+			? (currentTop >= std::min(*scrollTop, _scroll->scrollTopMax()))
+			: _inner->isBelowPosition(position);
+		if (!scrolledBelow) {
+			break;
+		}
+	}
+}
+
 void ScheduledWidget::uploadFile(
 		const QByteArray &fileContent,
 		SendMediaType type) {
@@ -500,18 +558,20 @@ bool ScheduledWidget::showSendingFilesError(
 			tr::now,
 			lt_name,
 			list.errorData);
-		case Error::TooLargeFile: return tr::lng_send_image_too_large(
-			tr::now,
-			lt_name,
-			list.errorData);
+		case Error::TooLargeFile: return u"(toolarge)"_q;
 		}
 		return tr::lng_forward_send_files_cant(tr::now);
 	}();
 	if (text.isEmpty()) {
 		return false;
+	} else if (text == u"(toolarge)"_q) {
+		const auto fileSize = list.files.back().size;
+		controller()->show(Box(FileSizeLimitBox, &session(), fileSize));
+		return true;
 	}
 
 	Ui::ShowMultilineToast({
+		.parentOverride = Window::Show(controller()).toastParent(),
 		.text = { text },
 	});
 	return true;
@@ -547,6 +607,7 @@ void ScheduledWidget::send(Api::SendOptions options) {
 	//	message.textWithTags);
 	//if (!error.isEmpty()) {
 	//	Ui::ShowMultilineToast({
+	//		.parentOverride = Window::Show(controller()).toastParent(),
 	//		.text = { error },
 	//	});
 	//	return;
@@ -615,8 +676,7 @@ void ScheduledWidget::edit(
 		}
 		return;
 	} else if (!left.text.isEmpty()) {
-		controller()->show(Box<Ui::InformBox>(
-			tr::lng_edit_too_long(tr::now)));
+		controller()->show(Ui::MakeInformBox(tr::lng_edit_too_long()));
 		return;
 	}
 
@@ -641,15 +701,13 @@ void ScheduledWidget::edit(
 
 		const auto &err = error.type();
 		if (ranges::contains(Api::kDefaultEditMessagesErrors, err)) {
-			controller()->show(Box<Ui::InformBox>(
-				tr::lng_edit_error(tr::now)));
+			controller()->show(Ui::MakeInformBox(tr::lng_edit_error()));
 		} else if (err == u"MESSAGE_NOT_MODIFIED"_q) {
 			_composeControls->cancelEditMessage();
 		} else if (err == u"MESSAGE_EMPTY"_q) {
 			_composeControls->focus();
 		} else {
-			controller()->show(Box<Ui::InformBox>(
-				tr::lng_edit_error(tr::now)));
+			controller()->show(Ui::MakeInformBox(tr::lng_edit_error()));
 		}
 		update();
 		return true;
@@ -684,8 +742,10 @@ bool ScheduledWidget::sendExistingDocument(
 		ChatRestriction::SendStickers);
 	if (error) {
 		controller()->show(
-			Box<Ui::InformBox>(*error),
+			Ui::MakeInformBox(*error),
 			Ui::LayerOption::KeepOther);
+		return false;
+	} else if (ShowSendPremiumError(controller(), document)) {
 		return false;
 	}
 
@@ -715,7 +775,7 @@ bool ScheduledWidget::sendExistingPhoto(
 		ChatRestriction::SendMedia);
 	if (error) {
 		controller()->show(
-			Box<Ui::InformBox>(*error),
+			Ui::MakeInformBox(*error),
 			Ui::LayerOption::KeepOther);
 		return false;
 	}
@@ -734,7 +794,7 @@ void ScheduledWidget::sendInlineResult(
 		not_null<UserData*> bot) {
 	const auto errorText = result->getErrorOnSend(_history);
 	if (!errorText.isEmpty()) {
-		controller()->show(Box<Ui::InformBox>(errorText));
+		controller()->show(Ui::MakeInformBox(errorText));
 		return;
 	}
 	const auto callback = [=](Api::SendOptions options) {
@@ -751,7 +811,7 @@ void ScheduledWidget::sendInlineResult(
 		Api::SendOptions options) {
 	auto action = prepareSendAction(options);
 	action.generateLocal = true;
-	session().api().sendInlineResult(bot, result, action);
+	session().api().sendInlineResult(bot, result, action, std::nullopt);
 
 	_composeControls->clear();
 	//_saveDraftText = true;
@@ -798,11 +858,23 @@ void ScheduledWidget::setupScrollDownButton() {
 }
 
 void ScheduledWidget::scrollDownClicked() {
+	if (base::IsCtrlPressed()) {
+		showAtEnd();
+	} else if (_replyReturn) {
+		showAtPosition(_replyReturn->position());
+	} else {
+		showAtEnd();
+	}
+}
+
+void ScheduledWidget::showAtEnd() {
 	showAtPosition(Data::MaxMessagePosition);
 }
 
-void ScheduledWidget::showAtPosition(Data::MessagePosition position) {
-	if (showAtPositionNow(position)) {
+void ScheduledWidget::showAtPosition(
+		Data::MessagePosition position,
+		HistoryItem *originItem) {
+	if (showAtPositionNow(position, originItem)) {
 		if (const auto highlight = base::take(_highlightMessageId)) {
 			_inner->highlightMessage(highlight);
 		}
@@ -818,8 +890,13 @@ void ScheduledWidget::showAtPosition(Data::MessagePosition position) {
 	}
 }
 
-bool ScheduledWidget::showAtPositionNow(Data::MessagePosition position) {
+bool ScheduledWidget::showAtPositionNow(
+		Data::MessagePosition position,
+		HistoryItem *originItem) {
 	if (const auto scrollTop = _inner->scrollTopForPosition(position)) {
+		while (_replyReturn && position.fullId.msg == _replyReturn->id) {
+			calculateNextReplyReturn();
+		}
 		const auto currentScrollTop = _scroll->scrollTop();
 		const auto wanted = std::clamp(
 			*scrollTop,
@@ -835,13 +912,20 @@ bool ScheduledWidget::showAtPositionNow(Data::MessagePosition position) {
 			(std::abs(fullDelta) > limit
 				? HistoryView::ListWidget::AnimatedScroll::Part
 				: HistoryView::ListWidget::AnimatedScroll::Full));
+		if (position != Data::MaxMessagePosition
+			&& position != Data::UnreadMessagePosition) {
+			_inner->highlightMessage(position.fullId);
+		}
+		if (originItem) {
+			pushReplyReturn(originItem);
+		}
 		return true;
 	}
 	return false;
 }
 
 void ScheduledWidget::updateScrollDownVisibility() {
-	if (animating()) {
+	if (animatingShow()) {
 		return;
 	}
 
@@ -905,7 +989,7 @@ not_null<History*> ScheduledWidget::history() const {
 Dialogs::RowDescriptor ScheduledWidget::activeChat() const {
 	return {
 		_history,
-		FullMsgId(_history->channelId(), ShowAtUnreadMsgId)
+		FullMsgId(_history->peer->id, ShowAtUnreadMsgId)
 	};
 }
 
@@ -1010,11 +1094,10 @@ void ScheduledWidget::updateControlsGeometry() {
 }
 
 void ScheduledWidget::paintEvent(QPaintEvent *e) {
-	if (animating()) {
+	if (animatingShow()) {
 		SectionWidget::paintEvent(e);
 		return;
-	}
-	if (Ui::skipPaintEvent(this, e)) {
+	} else if (Ui::skipPaintEvent(this, e)) {
 		return;
 	}
 	//if (hasPendingResizedItems()) {
@@ -1036,6 +1119,9 @@ void ScheduledWidget::onScroll() {
 }
 
 void ScheduledWidget::updateInnerVisibleArea() {
+	if (!_inner->animatedScrolling()) {
+		checkReplyReturns();
+	}
 	const auto scrollTop = _scroll->scrollTop();
 	_inner->setVisibleTopBottom(scrollTop, scrollTop + _scroll->height());
 	updateScrollDownVisibility();
@@ -1099,9 +1185,7 @@ rpl::producer<Data::MessagesSlice> ScheduledWidget::listSource(
 		int limitBefore,
 		int limitAfter) {
 	const auto data = &controller()->session().data();
-	return rpl::single(
-		rpl::empty_value()
-	) | rpl::then(
+	return rpl::single(rpl::empty) | rpl::then(
 		data->scheduledMessages().updates(_history)
 	) | rpl::map([=] {
 		return data->scheduledMessages().list(_history);
@@ -1198,6 +1282,35 @@ bool ScheduledWidget::listIsGoodForAroundPosition(
 	return true;
 }
 
+bool ScheduledWidget::showMessage(
+		PeerId peerId,
+		const Window::SectionShow &params,
+		MsgId messageId) {
+	if (peerId != _history->peer->id) {
+		return false;
+	}
+	const auto id = FullMsgId(_history->peer->id, messageId);
+	const auto message = _history->owner().message(id);
+	if (!message || !_inner->viewByPosition(message->position())) {
+		return false;
+	}
+
+	const auto originItem = [&]() -> HistoryItem* {
+		using OriginMessage = Window::SectionShow::OriginMessage;
+		if (const auto origin = std::get_if<OriginMessage>(&params.origin)) {
+			if (const auto returnTo = session().data().message(origin->id)) {
+				if (_inner->viewByPosition(returnTo->position())
+					&& _replyReturn != returnTo) {
+					return returnTo;
+				}
+			}
+		}
+		return nullptr;
+	}();
+	showAtPosition(message->position(), originItem);
+	return true;
+}
+
 Window::SectionActionResult ScheduledWidget::sendBotCommand(
 		Bot::SendCommandRequest request) {
 	if (request.peer != _history->peer) {
@@ -1239,6 +1352,12 @@ CopyRestrictionType ScheduledWidget::listCopyRestrictionType(
 
 CopyRestrictionType ScheduledWidget::listSelectRestrictionType() {
 	return CopyRestrictionType::None;
+}
+
+auto ScheduledWidget::listAllowedReactionsValue()
+-> rpl::producer<std::optional<base::flat_set<QString>>> {
+	const auto empty = base::flat_set<QString>();
+	return rpl::single(std::optional<base::flat_set<QString>>(empty));
 }
 
 void ScheduledWidget::confirmSendNowSelected() {

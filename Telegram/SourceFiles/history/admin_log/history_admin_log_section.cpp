@@ -328,9 +328,9 @@ Widget::Widget(
 	}, lifetime());
 
 	_whatIsThis->setClickedCallback([=] {
-		controller->show(Box<Ui::InformBox>(channel->isMegagroup()
-			? tr::lng_admin_log_about_text(tr::now)
-			: tr::lng_admin_log_about_text_channel(tr::now)));
+		controller->show(Ui::MakeInformBox(channel->isMegagroup()
+			? tr::lng_admin_log_about_text()
+			: tr::lng_admin_log_about_text_channel()));
 	});
 
 	setupShortcuts();
@@ -339,7 +339,7 @@ Widget::Widget(
 void Widget::showFilter() {
 	_inner->showFilter([this](FilterValue &&filter) {
 		applyFilter(std::move(filter));
-		Ui::hideLayer();
+		controller()->hideLayer();
 	});
 }
 
@@ -358,7 +358,7 @@ not_null<ChannelData*> Widget::channel() const {
 Dialogs::RowDescriptor Widget::activeChat() const {
 	return {
 		channel()->owner().history(channel()),
-		FullMsgId(peerToChannel(channel()->id), ShowAtUnreadMsgId)
+		FullMsgId(channel()->id, ShowAtUnreadMsgId)
 	};
 }
 
@@ -458,11 +458,10 @@ void Widget::resizeEvent(QResizeEvent *e) {
 }
 
 void Widget::paintEvent(QPaintEvent *e) {
-	if (animating()) {
+	if (animatingShow()) {
 		SectionWidget::paintEvent(e);
 		return;
-	}
-	if (Ui::skipPaintEvent(this, e)) {
+	} else if (Ui::skipPaintEvent(this, e)) {
 		return;
 	}
 	//if (hasPendingResizedItems()) {

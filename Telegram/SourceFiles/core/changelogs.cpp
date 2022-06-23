@@ -13,7 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "storage/storage_domain.h"
 #include "data/data_session.h"
-#include "base/qt_adapters.h"
+#include "base/qt/qt_common_adapters.h"
 #include "mainwindow.h"
 #include "apiwrap.h"
 
@@ -22,109 +22,6 @@ namespace {
 
 std::map<int, const char*> BetaLogs() {
 	return {
-	{
-		2009004,
-		"- Choose one from dozens of new gorgeous animated backgrounds"
-		" in Chat Settings > Chat background.\n"
-	},
-	{
-		2009005,
-		"- Tile chat background patterns horizontally.\n"
-
-		"- Fix a rare crash in spellchecker on Windows.\n"
-
-		"- Fix animated chat backgrounds in Saved Messages.\n"
-
-		"- Fix \"Sorry, group is inaccessible\" message "
-		"in scheduled voice chats.\n",
-	},
-	{
-		2009013,
-		"- See unread comments count when scrolling discussions in channels."
-	},
-	{
-		3000002,
-		"- Check who've seen your message in small groups "
-		"from the context menu.\n"
-
-		"- Enable recording with video in live streams and video chats."
-	},
-	{
-		3000004,
-		"- Fix a crash when joining video chat or live broadcast.\n"
-
-		"- Add a \"Close to Taskbar\" option when tray icon is disabled "
-		"(Windows and Linux)."
-	},
-	{
-		3000005,
-		"- Add support for Emoji 13.1."
-	},
-	{
-		3001002,
-		"- Control video in fullscreen mode using arrows and numbers.\n"
-
-		"- Open locations in browser if default Bing Maps is not installed.\n"
-
-		"- Reconnect without timeout when network availability changes.\n"
-
-		"- Crash fixes."
-	},
-	{
-		3001005,
-		"- Choose one of 8 new preset themes for any individual private chat.\n"
-
-		"- Click on '...' menu > 'Change Colors' to pick a theme.\n"
-
-		"- Both chat participants will see the same theme in that chat "
-		"– on all their devices.\n"
-
-		"- Each new theme features colorful gradient message bubbles, "
-		"beautifully animated backgrounds and unique background patterns.\n"
-
-		"- All chat themes have day and night versions and will follow "
-		"your overall dark mode settings.\n"
-
-		"- Implement main window rounded corners on Windows 11.\n"
-
-		"- Fix audio capture from AirPods on macOS.\n"
-	},
-	{
-		3001006,
-		"- Show small media previews in chats list.\n"
-
-		"- Show media album previews and caption text in chats list.\n"
-
-		"- Add \"Quick Reply\" and \"Mark as Read\" "
-		"to native Windows notifications.\n"
-	},
-	{
-		3001012,
-		"- Create special invite links that require admins "
-		"to approve users before they become members.\n"
-
-		"- Admins can view the applicants' profiles and bios "
-		"by tapping the Join Requests bar at the top of the chat.\n"
-
-		"- Add internal labels to your chat's Invite Links "
-		"to keep them organized.\n"
-
-		"- Run natively on Apple Silicon (macOS only).\n"
-	},
-	{
-		3001013,
-		"- Fix requests to groups / channels processing.\n"
-
-		"- Fix internal link previews with View Content button layout.\n"
-
-		"- Fix crash in messages search with imported messages results.\n"
-
-		"- Don't use fractional system UI scaling on Linux.\n"
-
-		"- Fix invite link icons on macOS.\n"
-
-		"- Several crash fixes.\n"
-	},
 	{
 		3002006,
 		"- Try out the new audio player with playlist shuffle and repeat.\n"
@@ -141,6 +38,106 @@ std::map<int, const char*> BetaLogs() {
 		"- Fix a crash in archived stickers loading.\n"
 		
 		"- Fix a crash in calls to old Telegram versions.\n"
+	},
+	{
+		3003001,
+		"- Switch between contacts list sorting modes.\n"
+
+		"- Sort contacts list by last seen time by default.\n"
+
+		"- Fix disappearing Send As Channel button after message editing.\n"
+
+		"- Fix file upload cancelling.\n"
+
+		"- Fix crash in video capture on macOS.\n"
+
+		"- Fix labels in the About box.\n"
+
+		"- Use Qt 6.2.2 for macOS and Linux builds.\n"
+
+		"- Allow installing x64 Windows version on Windows ARM.\n"
+	},
+	{
+		3003002,
+		"- Select text when typing and choose 'Formatting > Spoiler' in the "
+		"context menu to hide some or all of the contents of a message.\n"
+
+		"- Click on the spoiler in chat to reveal its hidden text.\n"
+
+		"- Spoiler formatting hides text in chat, "
+		"as well as in the chat list and notifications.\n"
+	},
+	{
+		3004005,
+		"- Fix crash in monospace blocks processing.\n"
+
+		"- Fix reaction animations stopping after an hour uptime.\n"
+	},
+	{
+		3004006,
+		"- Add snap layouts support on Windows 11.\n"
+		
+		"- Fix crash in drafts after accounts switching.\n"
+	},
+	{
+		3005003,
+		"- Check the status of media and file downloads by clicking "
+		"on the new panel in the bottom of the chats list.\n"
+
+		"- View recently downloaded files "
+		"from the new Settings > Advanced > Downloads section.\n"
+
+		"- Manage Live Streams in your groups and channels "
+		"using external software like OBS Studio or XSplit Broadcaster.\n"
+	},
+	{
+		3005005,
+		"- Support stereo audio output in RTMP streams.\n"
+
+		"- Improve RTMP stream full screen mode.\n"
+
+		"- Fix a couple of crashes.\n"
+	},
+	{
+		3005006,
+		"- Show viewers count in RTMP streams.\n"
+
+		"- Send GIFs search results without \"via @bot\".\n"
+
+		"- Display the file thumbnail in downloads bar.\n"
+
+		"- Always try to save original photo bytes to disk.\n"
+
+		"- Fix crash when deleting a user from your contacts list.\n"
+	},
+	{
+		3006003,
+		"- Allow sending the default reaction by a double click.\n"
+
+		"- Select a custom sound for message notifications.\n"
+
+		"- Add chats to folders from a chat context menu.\n"
+
+		"- Fix group and channel photo upload.\n"
+
+		"- Test hardware video decoding.\n"
+	},
+	{
+		3007004,
+		"- More icons for chat folders.\n"
+
+		"- Improve some more sections design.\n"
+		
+		"- Update the OpenAL library to 1.22.0.\n"
+	},
+	{
+		3007006,
+		"- Settings > Advanced > Experimental adds an option "
+		"to open chats in separate windows.\n"
+
+		"- Fix possible crash in video chat reconnection.\n"
+
+		"- Fix possible crash after account switch.\n"
 	}
 	};
 };

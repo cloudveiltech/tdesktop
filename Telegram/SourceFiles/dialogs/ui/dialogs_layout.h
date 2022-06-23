@@ -18,6 +18,8 @@ class BasicRow;
 
 namespace Dialogs::Ui {
 
+class VideoUserpic;
+
 using namespace ::Ui;
 
 const style::icon *ChatTypeIcon(
@@ -30,11 +32,13 @@ public:
 	static void paint(
 		Painter &p,
 		not_null<const Row*> row,
+		VideoUserpic *videoUserpic,
 		FilterId filterId,
 		int fullWidth,
 		bool active,
 		bool selected,
-		crl::time ms);
+		crl::time ms,
+		bool paused);
 	static void paint(
 		Painter &p,
 		not_null<const FakeRow*> row,
@@ -63,10 +67,12 @@ void PaintCollapsedRow(
 
 enum UnreadBadgeSize {
 	UnreadBadgeInDialogs = 0,
+	UnreadBadgeInMainMenu,
 	UnreadBadgeInHistoryToDown,
 	UnreadBadgeInStickersPanel,
 	UnreadBadgeInStickersBox,
 	UnreadBadgeInTouchBar,
+	UnreadBadgeReactionInDialogs,
 
 	UnreadBadgeSizesCount
 };
@@ -83,13 +89,16 @@ struct UnreadBadgeStyle {
 	UnreadBadgeSize sizeId = UnreadBadgeInDialogs;
 	style::font font;
 };
-void paintUnreadCount(
+[[nodiscard]] QSize CountUnreadBadgeSize(
+	const QString &unreadCount,
+	const UnreadBadgeStyle &st,
+	int allowDigits = 0);
+QRect PaintUnreadBadge(
 	Painter &p,
 	const QString &t,
 	int x,
 	int y,
 	const UnreadBadgeStyle &st,
-	int *outUnreadWidth = nullptr,
 	int allowDigits = 0);
 
 void clearUnreadBadgesCache();

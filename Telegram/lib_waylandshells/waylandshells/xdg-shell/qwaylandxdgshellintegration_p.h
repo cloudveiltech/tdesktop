@@ -61,13 +61,15 @@ namespace WaylandShells {
 
 using namespace QtWaylandClient;
 
-class Q_WAYLAND_CLIENT_EXPORT QWaylandXdgShellIntegration : public QWaylandShellIntegration
+class QWaylandXdgShellIntegration : public QWaylandShellIntegration
 {
 public:
     QWaylandXdgShellIntegration() {}
     bool initialize(QWaylandDisplay *display) override;
     QWaylandShellSurface *createShellSurface(QWaylandWindow *window) override;
+#if QT_VERSION < QT_VERSION_CHECK(6, 3, 0)
     void handleKeyboardFocusChanged(QWaylandWindow *newFocus, QWaylandWindow *oldFocus) override;
+#endif
     void *nativeResourceForWindow(const QByteArray &resource, QWindow *window) override;
 
 private:

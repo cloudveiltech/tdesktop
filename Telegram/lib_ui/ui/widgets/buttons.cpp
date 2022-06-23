@@ -332,11 +332,14 @@ void RoundButton::resizeToText(const QString &text) {
 
 	int innerWidth = contentWidth();
 	if (_fullWidthOverride > 0) {
+		const auto padding = _fullRadius
+			? (_st.padding.left() + _st.padding.right())
+			: 0;
 		if (_fullWidthOverride < innerWidth + (_st.height - _st.font->height)) {
-			_text = _st.font->elided(text, qMax(_fullWidthOverride - (_st.height - _st.font->height), 1));
+			_text = _st.font->elided(text, qMax(_fullWidthOverride - (_st.height - _st.font->height) - padding, 1));
 			_textWidth = _st.font->width(_text);
 		}
-		resize(_fullWidthOverride, _st.height + _st.padding.top() + _st.padding.bottom());
+		resize(_fullWidthOverride + padding, _st.height + _st.padding.top() + _st.padding.bottom());
 	} else if (_fullWidthOverride < 0) {
 		resize(innerWidth - _fullWidthOverride, _st.height + _st.padding.top() + _st.padding.bottom());
 	} else if (_st.width <= 0) {
@@ -476,14 +479,19 @@ void IconButton::setRippleColorOverride(const style::color *colorOverride) {
 	_rippleColorOverride = colorOverride;
 }
 
+float64 IconButton::iconOverOpacity() const {
+	return (isDown() || forceRippled())
+		? 1.
+		: _a_over.value(isOver() ? 1. : 0.);
+}
+
 void IconButton::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
 	paintRipple(p, _st.rippleAreaPosition, _rippleColorOverride ? &(*_rippleColorOverride)->c : nullptr);
 
-	auto down = isDown();
-	auto overIconOpacity = (down || forceRippled()) ? 1. : _a_over.value(isOver() ? 1. : 0.);
-	auto overIcon = [this] {
+	const auto overIconOpacity = iconOverOpacity();
+	const auto overIcon = [&] {
 		if (_iconOverrideOver) {
 			return _iconOverrideOver;
 		} else if (!_st.iconOver.empty()) {
@@ -493,13 +501,13 @@ void IconButton::paintEvent(QPaintEvent *e) {
 		}
 		return &_st.icon;
 	};
-	auto justIcon = [this] {
+	const auto justIcon = [&] {
 		if (_iconOverride) {
 			return _iconOverride;
 		}
 		return &_st.icon;
 	};
-	auto icon = (overIconOpacity == 1.) ? overIcon() : justIcon();
+	const auto icon = (overIconOpacity == 1.) ? overIcon() : justIcon();
 	auto position = _st.iconPosition;
 	if (position.x() < 0) {
 		position.setX((width() - icon->width()) / 2);
@@ -509,7 +517,7 @@ void IconButton::paintEvent(QPaintEvent *e) {
 	}
 	icon->paint(p, position, width());
 	if (overIconOpacity > 0. && overIconOpacity < 1.) {
-		auto iconOver = overIcon();
+		const auto iconOver = overIcon();
 		if (iconOver != icon) {
 			p.setOpacity(overIconOpacity);
 			iconOver->paint(p, position, width());
@@ -690,7 +698,8 @@ SettingsButton::SettingsButton(
 	rpl::producer<QString> &&text,
 	const style::SettingsButton &st)
 : RippleButton(parent, st.ripple)
-, _st(st) {
+, _st(st)
+, _padding(_st.padding) {
 	std::move(
 		text
 	) | rpl::start_with_next([this](QString &&value) {
@@ -700,15 +709,20 @@ SettingsButton::SettingsButton(
 
 SettingsButton::~SettingsButton() = default;
 
-SettingsButton *SettingsButton::toggleOn(rpl::producer<bool> &&toggled) {
+SettingsButton *SettingsButton::toggleOn(
+		rpl::producer<bool> &&toggled,
+		bool ignoreClick) {
 	Expects(_toggle == nullptr);
+
 	_toggle = std::make_unique<Ui::ToggleView>(
 		isOver() ? _st.toggleOver : _st.toggle,
 		false,
 		[this] { rtlupdate(toggleRect()); });
-	addClickHandler([this] {
-		_toggle->setChecked(!_toggle->checked(), anim::type::normal);
-	});
+	if (!ignoreClick) {
+		addClickHandler([this] {
+			_toggle->setChecked(!_toggle->checked(), anim::type::normal);
+		});
+	}
 	std::move(
 		toggled
 	) | rpl::start_with_next([this](bool toggled) {
@@ -736,33 +750,63 @@ rpl::producer<bool> SettingsButton::toggledValue() const {
 	return nullptr;
 }
 
-void SettingsButton::setColorOverride(std::optional<QColor> textColorOverride) {
+void SettingsButton::setColorOverride(
+		std::optional<QColor> textColorOverride) {
 	_textColorOverride = textColorOverride;
 	update();
+}
+
+void SettingsButton::setPaddingOverride(style::margins padding) {
+	_padding = padding;
+	resizeToWidth(widthNoMargins());
+}
+
+const style::SettingsButton &SettingsButton::st() const {
+	return _st;
 }
 
 void SettingsButton::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
-	auto paintOver = (isOver() || isDown()) && !isDisabled();
-	p.fillRect(e->rect(), paintOver ? _st.textBgOver : _st.textBg);
+	const auto paintOver = (isOver() || isDown()) && !isDisabled();
+	paintBg(p, e->rect(), paintOver);
 
 	paintRipple(p, 0, 0);
 
-	auto outerw = width();
-	p.setFont(_st.font);
+	const auto outerw = width();
+	paintText(p, paintOver, outerw);
+
+	if (_toggle) {
+		paintToggle(p, outerw);
+	}
+}
+
+void SettingsButton::paintBg(Painter &p, const QRect &rect, bool over) const {
+	p.fillRect(rect, over ? _st.textBgOver : _st.textBg);
+}
+
+void SettingsButton::paintText(Painter &p, bool over, int outerw) const {
+	auto available = outerw - _padding.left() - _padding.right();
+	if (_toggle) {
+		available -= (width() - toggleRect().x());
+	}
+	if (available <= 0) {
+		return;
+	}
 	p.setPen(_textColorOverride
 		? QPen(*_textColorOverride)
-		: paintOver
+		: over
 		? _st.textFgOver
 		: _st.textFg);
-	p.drawTextLeft(
-		_st.padding.left(),
-		_st.padding.top(),
-		outerw,
-		_text,
-		_textWidth);
+	_text.drawLeftElided(
+		p,
+		_padding.left(),
+		_padding.top(),
+		available,
+		outerw);
+}
 
+void SettingsButton::paintToggle(Painter &p, int outerw) const {
 	if (_toggle) {
 		auto rect = toggleRect();
 		_toggle->paint(p, rect.left(), rect.top(), outerw);
@@ -779,8 +823,7 @@ QRect SettingsButton::toggleRect() const {
 }
 
 int SettingsButton::resizeGetHeight(int newWidth) {
-	updateVisibleText(newWidth);
-	return _st.padding.top() + _st.height + _st.padding.bottom();
+	return _padding.top() + _st.height + _padding.bottom();
 }
 
 void SettingsButton::onStateChanged(
@@ -796,26 +839,7 @@ void SettingsButton::onStateChanged(
 }
 
 void SettingsButton::setText(QString &&text) {
-	_original = std::move(text);
-	_originalWidth = _st.font->width(_original);
-	updateVisibleText(width());
-}
-
-void SettingsButton::updateVisibleText(int newWidth) {
-	auto availableWidth = newWidth
-		- _st.padding.left()
-		- _st.padding.right();
-	if (_toggle) {
-		availableWidth -= (width() - toggleRect().x());
-	}
-	accumulate_max(availableWidth, 0);
-	if (availableWidth < _originalWidth) {
-		_text = _st.font->elided(_original, availableWidth);
-		_textWidth = _st.font->width(_text);
-	} else {
-		_text = _original;
-		_textWidth = _originalWidth;
-	}
+	_text.setText(_st.style, text);
 	update();
 }
 

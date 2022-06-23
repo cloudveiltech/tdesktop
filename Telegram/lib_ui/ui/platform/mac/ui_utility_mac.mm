@@ -91,21 +91,28 @@ void DrainMainQueue() {
 void IgnoreAllActivation(not_null<QWidget*> widget) {
 }
 
+void DisableSystemWindowResize(not_null<QWidget*> widget, QSize ratio) {
+	const auto winId = widget->winId();
+	if (const auto view = reinterpret_cast<NSView*>(winId)) {
+		if (const auto window = [view window]) {
+			window.styleMask &= ~NSWindowStyleMaskResizable;
+		}
+	}
+}
+
 std::optional<bool> IsOverlapped(
 		not_null<QWidget*> widget,
 		const QRect &rect) {
-	NSWindow *window = [reinterpret_cast<NSView*>(widget->window()->winId()) window];
+	NSWindow *window = [reinterpret_cast<NSView*>(widget->winId()) window];
 	Assert(window != nullptr);
 
 	if (![window isOnActiveSpace]) {
 		return true;
 	}
 
-	const auto nativeRect = CGRectMake(
-		rect.x(),
-		rect.y(),
-		rect.width(),
-		rect.height());
+	const auto nativeRect = QRect(
+		widget->mapToGlobal(rect.topLeft()),
+		rect.size()).toCGRect();
 
 	CGWindowID windowId = (CGWindowID)[window windowNumber];
 	const CGWindowListOption options = kCGWindowListExcludeDesktopElements

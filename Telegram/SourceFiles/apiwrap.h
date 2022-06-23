@@ -30,6 +30,7 @@ namespace Data {
 struct UpdatedFileReferences;
 class WallPaper;
 struct ResolvedForwardDraft;
+enum class DefaultNotify;
 } // namespace Data
 
 namespace InlineBots {
@@ -52,6 +53,8 @@ struct PreparedList;
 
 namespace Api {
 
+struct SearchResult;
+
 class Updates;
 class Authorizations;
 class AttachedStickers;
@@ -67,6 +70,10 @@ class ConfirmPhone;
 class PeerPhoto;
 class Polls;
 class ChatParticipants;
+class UnreadThings;
+class Ringtones;
+class Transcribes;
+class Premium;
 
 namespace details {
 
@@ -147,11 +154,7 @@ public:
 		bool archived,
 		Fn<void()> callback);
 
-	using RequestMessageDataCallback = Fn<void(ChannelData*, MsgId)>;
-	void requestMessageData(
-		ChannelData *channel,
-		MsgId msgId,
-		RequestMessageDataCallback callback);
+	void requestMessageData(PeerData *peer, MsgId msgId, Fn<void()> done);
 	QString exportDirectMessageLink(
 		not_null<HistoryItem*> item,
 		bool inRepliesContext);
@@ -199,7 +202,6 @@ public:
 		const QString &hash,
 		FnMut<void(const MTPChatInvite &)> done,
 		Fn<void(const MTP::Error &)> fail);
-	void importChatInvite(const QString &hash, bool isGroup);
 
 	void processFullPeer(
 		not_null<PeerData*> peer,
@@ -210,8 +212,9 @@ public:
 		FnMut<void(not_null<ChannelData*>)> done,
 		Fn<void(const QString &)> fail = nullptr);
 
-	void markMediaRead(const base::flat_set<not_null<HistoryItem*>> &items);
-	void markMediaRead(not_null<HistoryItem*> item);
+	void markContentsRead(
+		const base::flat_set<not_null<HistoryItem*>> &items);
+	void markContentsRead(not_null<HistoryItem*> item);
 
 	void deleteAllFromParticipant(
 		not_null<ChannelData*> channel,
@@ -241,6 +244,7 @@ public:
 
 	void requestNotifySettings(const MTPInputNotifyPeer &peer);
 	void updateNotifySettingsDelayed(not_null<const PeerData*> peer);
+	void updateDefaultNotifySettingsDelayed(Data::DefaultNotify type);
 	void saveDraftToCloudDelayed(not_null<History*> history);
 
 	static int OnlineTillFromStatus(
@@ -254,11 +258,6 @@ public:
 
 	void jumpToDate(Dialogs::Key chat, const QDate &date);
 
-	void preloadEnoughUnreadMentions(not_null<History*> history);
-	void checkForUnreadMentions(
-		const base::flat_set<MsgId> &possiblyReadMentions,
-		ChannelData *channel = nullptr);
-
 	using SliceType = Data::LoadDirection;
 	void requestSharedMedia(
 		not_null<PeerData*> peer,
@@ -268,10 +267,6 @@ public:
 	void requestSharedMediaCount(
 			not_null<PeerData*> peer,
 			Storage::SharedMediaType type);
-
-	void requestUserPhotos(
-		not_null<UserData*> user,
-		PhotoId afterId);
 
 	void readFeaturedSetDelayed(uint64 setId);
 
@@ -328,11 +323,15 @@ public:
 	void cancelLocalItem(not_null<HistoryItem*> item);
 
 	void sendMessage(MessageToSend &&message);
-	void sendBotStart(not_null<UserData*> bot, PeerData *chat = nullptr);
+	void sendBotStart(
+		not_null<UserData*> bot,
+		PeerData *chat = nullptr,
+		const QString &startTokenForChat = QString());
 	void sendInlineResult(
 		not_null<UserData*> bot,
 		not_null<InlineBots::Result*> data,
-		const SendAction &action);
+		const SendAction &action,
+		std::optional<MsgId> localMessageId);
 	void sendMessageFail(
 		const MTP::Error &error,
 		not_null<PeerData*> peer,
@@ -360,12 +359,18 @@ public:
 	[[nodiscard]] Api::PeerPhoto &peerPhoto();
 	[[nodiscard]] Api::Polls &polls();
 	[[nodiscard]] Api::ChatParticipants &chatParticipants();
+	[[nodiscard]] Api::UnreadThings &unreadThings();
+	[[nodiscard]] Api::Ringtones &ringtones();
+	[[nodiscard]] Api::Transcribes &transcribes();
+	[[nodiscard]] Api::Premium &premium();
 
 	void updatePrivacyLastSeens();
 
+	static constexpr auto kJoinErrorDuration = 5 * crl::time(1000);
+
 private:
 	struct MessageDataRequest {
-		using Callbacks = std::vector<RequestMessageDataCallback>;
+		using Callbacks = std::vector<Fn<void()>>;
 
 		mtpRequestId requestId = 0;
 		Callbacks callbacks;
@@ -417,12 +422,10 @@ private:
 
 	void gotChatFull(
 		not_null<PeerData*> peer,
-		const MTPmessages_ChatFull &result,
-		mtpRequestId req);
+		const MTPmessages_ChatFull &result);
 	void gotUserFull(
 		not_null<UserData*> user,
-		const MTPusers_UserFull &result,
-		mtpRequestId req);
+		const MTPusers_UserFull &result);
 	void resolveWebPages();
 	void gotWebPages(
 		ChannelData *channel,
@@ -449,14 +452,7 @@ private:
 	void sharedMediaDone(
 		not_null<PeerData*> peer,
 		SharedMediaType type,
-		MsgId messageId,
-		SliceType slice,
-		const MTPmessages_Messages &result);
-
-	void userPhotosDone(
-		not_null<UserData*> user,
-		PhotoId photoId,
-		const MTPphotos_Photos &result);
+		Api::SearchResult &&parsed);
 
 	void sendSharedContact(
 		const QString &phone,
@@ -520,11 +516,11 @@ private:
 
 	MessageDataRequests _messageDataRequests;
 	base::flat_map<
-		ChannelData*,
+		not_null<ChannelData*>,
 		MessageDataRequests> _channelMessageDataRequests;
 	SingleQueuedInvokation _messageDataResolveDelayed;
 
-	using PeerRequests = QMap<PeerData*, mtpRequestId>;
+	using PeerRequests = base::flat_map<PeerData*, mtpRequestId>;
 	PeerRequests _fullPeerRequests;
 	PeerRequests _peerRequests;
 	base::flat_set<not_null<PeerData*>> _requestedPeerSettings;
@@ -566,15 +562,11 @@ private:
 	mtpRequestId _contactsRequestId = 0;
 	mtpRequestId _contactsStatusesRequestId = 0;
 
-	base::flat_map<not_null<History*>, mtpRequestId> _unreadMentionsRequests;
-
 	base::flat_set<std::tuple<
 		not_null<PeerData*>,
 		SharedMediaType,
 		MsgId,
 		SliceType>> _sharedMediaRequests;
-
-	base::flat_map<not_null<UserData*>, mtpRequestId> _userPhotosRequests;
 
 	std::unique_ptr<DialogsLoadState> _dialogsLoadState;
 	TimeId _dialogsLoadTill = 0;
@@ -596,6 +588,7 @@ private:
 	base::Timer _topPromotionTimer;
 
 	base::flat_set<not_null<const PeerData*>> _updateNotifySettingsPeers;
+	base::flat_set<Data::DefaultNotify> _updateNotifySettingsDefaults;
 	base::Timer _updateNotifySettingsTimer;
 
 	std::map<
@@ -640,6 +633,10 @@ private:
 	const std::unique_ptr<Api::PeerPhoto> _peerPhoto;
 	const std::unique_ptr<Api::Polls> _polls;
 	const std::unique_ptr<Api::ChatParticipants> _chatParticipants;
+	const std::unique_ptr<Api::UnreadThings> _unreadThings;
+	const std::unique_ptr<Api::Ringtones> _ringtones;
+	const std::unique_ptr<Api::Transcribes> _transcribes;
+	const std::unique_ptr<Api::Premium> _premium;
 
 	mtpRequestId _wallPaperRequestId = 0;
 	QString _wallPaperSlug;

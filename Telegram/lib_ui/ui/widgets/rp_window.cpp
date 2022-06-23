@@ -15,7 +15,10 @@ RpWindow::RpWindow(QWidget *parent)
 , _helper(Platform::CreateWindowHelper(this)) {
 	Expects(_helper != nullptr);
 
+	_helper->initInWindow(this);
 	hide();
+
+	_initialized = true;
 }
 
 RpWindow::~RpWindow() = default;
@@ -30,6 +33,27 @@ not_null<const RpWidget*> RpWindow::body() const {
 
 QMargins RpWindow::frameMargins() const {
 	return _helper->frameMargins();
+}
+
+int RpWindow::additionalContentPadding() const {
+	return _helper->additionalContentPadding();
+}
+
+rpl::producer<int> RpWindow::additionalContentPaddingValue() const {
+	return _helper->additionalContentPaddingValue();
+}
+
+auto RpWindow::hitTestRequests() const
+-> rpl::producer<not_null<Platform::HitTestRequest*>> {
+	return _helper->hitTestRequests();
+}
+
+rpl::producer<Platform::HitTestResult> RpWindow::systemButtonOver() const {
+	return _helper->systemButtonOver();
+}
+
+rpl::producer<Platform::HitTestResult> RpWindow::systemButtonDown() const {
+	return _helper->systemButtonDown();
 }
 
 void RpWindow::setTitle(const QString &title) {
@@ -75,6 +99,19 @@ void RpWindow::close() {
 void RpWindow::setBodyTitleArea(
 		Fn<WindowTitleHitTestFlags(QPoint)> testMethod) {
 	_helper->setBodyTitleArea(std::move(testMethod));
+}
+
+bool RpWindow::nativeEvent(
+		const QByteArray &eventType,
+		void *message,
+		base::NativeEventResult *result) {
+	if (_initialized && _helper->nativeEvent(
+		eventType,
+		message,
+		result)) {
+		return true;
+	}
+	return RpWidget::nativeEvent(eventType, message, result);
 }
 
 } // namespace Ui

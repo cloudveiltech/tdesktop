@@ -13,13 +13,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/unixtime.h"
 #include "chat_helpers/emoji_suggestions_widget.h"
 #include "chat_helpers/message_field.h"
-#include "chat_helpers/send_context_menu.h"
+#include "menu/menu_send.h"
 #include "chat_helpers/tabbed_panel.h"
 #include "chat_helpers/tabbed_section.h"
 #include "chat_helpers/tabbed_selector.h"
 #include "chat_helpers/field_autocomplete.h"
 #include "core/application.h"
 #include "core/core_settings.h"
+#include "data/notify/data_notify_settings.h"
 #include "data/data_changes.h"
 #include "data/data_drafts.h"
 #include "data/data_messages.h"
@@ -100,6 +101,226 @@ WebPageText ProcessWebPageData(WebPageData *page) {
 }
 
 } // namespace
+
+class WebpageProcessor final {
+public:
+	WebpageProcessor(
+		not_null<History*> history,
+		not_null<Ui::InputField*> field);
+
+	void cancel();
+	void checkPreview();
+
+	[[nodiscard]] Data::PreviewState state() const;
+	void setState(Data::PreviewState value);
+	void refreshState(Data::PreviewState value);
+
+	[[nodiscard]] rpl::producer<> paintRequests() const;
+	[[nodiscard]] rpl::producer<QString> titleChanges() const;
+	[[nodiscard]] rpl::producer<QString> descriptionChanges() const;
+	[[nodiscard]] rpl::producer<WebPageData*> pageDataChanges() const;
+
+private:
+	void updatePreview();
+	void getWebPagePreview();
+
+	const not_null<History*> _history;
+	MTP::Sender _api;
+	MessageLinksParser _fieldLinksParser;
+
+	Data::PreviewState _previewState = Data::PreviewState();
+
+	QStringList _parsedLinks;
+	QString _previewLinks;
+
+	WebPageData *_previewData = nullptr;
+	std::map<QString, WebPageId> _previewCache;
+
+	mtpRequestId _previewRequest = 0;
+
+	rpl::event_stream<> _paintRequests;
+	rpl::event_stream<QString> _titleChanges;
+	rpl::event_stream<QString> _descriptionChanges;
+	rpl::event_stream<WebPageData*> _pageDataChanges;
+
+	base::Timer _timer;
+
+	rpl::lifetime _lifetime;
+
+};
+
+WebpageProcessor::WebpageProcessor(
+	not_null<History*> history,
+	not_null<Ui::InputField*> field)
+: _history(history)
+, _api(&history->session().mtp())
+, _fieldLinksParser(field)
+, _previewState(Data::PreviewState::Allowed)
+, _timer([=] {
+	if (!ShowWebPagePreview(_previewData)
+		|| _previewLinks.isEmpty()) {
+		return;
+	}
+	getWebPagePreview();
+}) {
+
+	_history->session().downloaderTaskFinished(
+	) | rpl::filter([=] {
+		return _previewData
+			&& (_previewData->document || _previewData->photo);
+	}) | rpl::start_with_next([=] {
+		_paintRequests.fire({});
+	}, _lifetime);
+
+	_history->owner().webPageUpdates(
+	) | rpl::filter([=](not_null<WebPageData*> page) {
+		return (_previewData == page.get());
+	}) | rpl::start_with_next([=] {
+		updatePreview();
+	}, _lifetime);
+
+	_fieldLinksParser.list().changes(
+	) | rpl::start_with_next([=](QStringList &&parsed) {
+		if (_previewState == Data::PreviewState::EmptyOnEdit
+			&& _parsedLinks != parsed) {
+			_previewState = Data::PreviewState::Allowed;
+		}
+		_parsedLinks = std::move(parsed);
+
+		checkPreview();
+	}, _lifetime);
+}
+
+rpl::producer<> WebpageProcessor::paintRequests() const {
+	return _paintRequests.events();
+}
+
+Data::PreviewState WebpageProcessor::state() const {
+	return _previewState;
+}
+
+void WebpageProcessor::setState(Data::PreviewState value) {
+	_previewState = value;
+}
+
+void WebpageProcessor::refreshState(Data::PreviewState value) {
+	// Save links from _field to _parsedLinks without generating preview.
+	_previewState = Data::PreviewState::Cancelled;
+	_fieldLinksParser.parseNow();
+	_parsedLinks = _fieldLinksParser.list().current();
+	_previewState = value;
+}
+
+void WebpageProcessor::cancel() {
+	_api.request(base::take(_previewRequest)).cancel();
+	_previewData = nullptr;
+	_previewLinks.clear();
+	updatePreview();
+}
+
+void WebpageProcessor::updatePreview() {
+	_timer.cancel();
+	auto t = QString();
+	auto d = QString();
+	if (ShowWebPagePreview(_previewData)) {
+		if (const auto till = _previewData->pendingTill) {
+			t = tr::lng_preview_loading(tr::now);
+			d = QStringView(_previewLinks).split(' ').at(0).toString();
+
+			const auto timeout = till - base::unixtime::now();
+			_timer.callOnce(
+				std::max(timeout, 0) * crl::time(1000));
+		} else {
+			const auto preview = ProcessWebPageData(_previewData);
+			t = preview.title;
+			d = preview.description;
+		}
+	}
+	_titleChanges.fire_copy(t);
+	_descriptionChanges.fire_copy(d);
+	_pageDataChanges.fire_copy(_previewData);
+	_paintRequests.fire({});
+}
+
+void WebpageProcessor::getWebPagePreview() {
+	const auto links = _previewLinks;
+	_previewRequest = _api.request(
+		MTPmessages_GetWebPagePreview(
+			MTP_flags(0),
+			MTP_string(links),
+			MTPVector<MTPMessageEntity>()
+	)).done([=](const MTPMessageMedia &result) {
+		_previewRequest = 0;
+		result.match([=](const MTPDmessageMediaWebPage &d) {
+			const auto page = _history->owner().processWebpage(d.vwebpage());
+			_previewCache.insert({ links, page->id });
+			auto &till = page->pendingTill;
+			if (till > 0 && till <= base::unixtime::now()) {
+				till = -1;
+			}
+			if (links == _previewLinks
+				&& _previewState == Data::PreviewState::Allowed) {
+				_previewData = (page->id && page->pendingTill >= 0)
+					? page.get()
+					: nullptr;
+				updatePreview();
+			}
+		}, [=](const MTPDmessageMediaEmpty &d) {
+			_previewCache.insert({ links, 0 });
+			if (links == _previewLinks
+				&& _previewState == Data::PreviewState::Allowed) {
+				_previewData = nullptr;
+				updatePreview();
+			}
+		}, [](const auto &d) {
+		});
+	}).fail([=] {
+		_previewRequest = 0;
+	}).send();
+}
+
+void WebpageProcessor::checkPreview() {
+	const auto previewRestricted = _history->peer
+		&& _history->peer->amRestricted(ChatRestriction::EmbedLinks);
+	if (_previewState != Data::PreviewState::Allowed
+		|| previewRestricted) {
+		cancel();
+		return;
+	}
+	const auto newLinks = _parsedLinks.join(' ');
+	if (_previewLinks == newLinks) {
+		return;
+	}
+	_api.request(base::take(_previewRequest)).cancel();
+	_previewLinks = newLinks;
+	if (_previewLinks.isEmpty()) {
+		if (ShowWebPagePreview(_previewData)) {
+			cancel();
+		}
+	} else {
+		const auto i = _previewCache.find(_previewLinks);
+		if (i == _previewCache.end()) {
+			getWebPagePreview();
+		} else if (i->second) {
+			_previewData = _history->owner().webpage(i->second);
+			updatePreview();
+		} else if (ShowWebPagePreview(_previewData)) {
+			cancel();
+		}
+	}
+}
+
+rpl::producer<QString> WebpageProcessor::titleChanges() const {
+	return _titleChanges.events();
+}
+
+rpl::producer<QString> WebpageProcessor::descriptionChanges() const {
+	return _descriptionChanges.events();
+}
+
+rpl::producer<WebPageData*> WebpageProcessor::pageDataChanges() const {
+	return _pageDataChanges.events();
+}
 
 class FieldHeader final : public Ui::RpWidget {
 public:
@@ -276,7 +497,7 @@ void FieldHeader::init() {
 	) | rpl::start_with_next([=](const auto &d) {
 		_preview.description.setText(
 			st::messageTextStyle,
-			TextUtilities::Clean(d),
+			d,
 			Ui::DialogTextOptions());
 	}, lifetime());
 
@@ -325,7 +546,7 @@ void FieldHeader::init() {
 void FieldHeader::updateShownMessageText() {
 	Expects(_shownMessage != nullptr);
 
-	_shownMessageText.setText(
+	_shownMessageText.setMarkedText(
 		st::messageTextStyle,
 		_shownMessage->inReplyText(),
 		Ui::DialogTextOptions());
@@ -368,15 +589,14 @@ void FieldHeader::resolveMessageData() {
 	if (!id) {
 		return;
 	}
-	const auto channel = id.channel
-		? _data->channel(id.channel).get()
-		: nullptr;
-	const auto callback = [=](ChannelData *channel, MsgId msgId) {
+	const auto peer = _data->peer(id.peer);
+	const auto itemId = id.msg;
+	const auto callback = crl::guard(this, [=] {
 		const auto now = (isEditingMessage()
 			? _editMsgId
 			: _replyToId).current();
 		if (now == id && !_shownMessage) {
-			if (const auto message = _data->message(channel, msgId)) {
+			if (const auto message = _data->message(peer, itemId)) {
 				setShownMessage(message);
 			} else if (isEditingMessage()) {
 				_editCancelled.fire({});
@@ -384,11 +604,8 @@ void FieldHeader::resolveMessageData() {
 				_replyCancelled.fire({});
 			}
 		}
-	};
-	_data->session().api().requestMessageData(
-		channel,
-		id.msg,
-		crl::guard(this, callback));
+	});
+	_data->session().api().requestMessageData(peer, itemId, callback);
 }
 
 void FieldHeader::previewRequested(
@@ -629,8 +846,7 @@ ComposeControls::ComposeControls(
 		_send,
 		st::historySendSize.height()))
 , _sendMenuType(sendMenuType)
-, _saveDraftTimer([=] { saveDraft(); })
-, _previewState(Data::PreviewState::Allowed) {
+, _saveDraftTimer([=] { saveDraft(); }) {
 	init();
 }
 
@@ -815,8 +1031,7 @@ rpl::producer<> ComposeControls::attachRequests() const {
 		_attachRequests.events()
 	) | rpl::filter([=] {
 		if (isEditingMessage()) {
-			_window->show(
-				Box<Ui::InformBox>(tr::lng_edit_caption_attach(tr::now)));
+			_window->show(Ui::MakeInformBox(tr::lng_edit_caption_attach()));
 			return false;
 		}
 		return true;
@@ -922,8 +1137,10 @@ void ComposeControls::setFieldText(
 	_textUpdateEvents = TextUpdateEvent::SaveDraft
 		| TextUpdateEvent::SendTyping;
 
-	_previewCancel();
-	_previewState = Data::PreviewState::Allowed;
+	if (_preview) {
+		_preview->cancel();
+		_preview->setState(Data::PreviewState::Allowed);
+	}
 }
 
 void ComposeControls::saveFieldToHistoryLocalDraft() {
@@ -932,13 +1149,13 @@ void ComposeControls::saveFieldToHistoryLocalDraft() {
 		return;
 	}
 	const auto id = _header->getDraftMessageId();
-	if (id || !_field->empty()) {
+	if (_preview && (id || !_field->empty())) {
 		_history->setDraft(
 			draftKeyCurrent(),
 			std::make_unique<Data::Draft>(
 				_field,
 				_header->getDraftMessageId(),
-				_previewState));
+				_preview->state()));
 	} else {
 		_history->clearDraft(draftKeyCurrent());
 	}
@@ -991,6 +1208,19 @@ void ComposeControls::checkAutocomplete() {
 		autocomplete.fromStart);
 }
 
+void ComposeControls::hide() {
+	showStarted();
+	_hidden = true;
+}
+
+void ComposeControls::show() {
+	if (_hidden.current()) {
+		_hidden = false;
+		showFinished();
+		checkAutocomplete();
+	}
+}
+
 void ComposeControls::init() {
 	initField();
 	initTabbedSelector();
@@ -999,6 +1229,11 @@ void ComposeControls::init() {
 	initWriteRestriction();
 	initVoiceRecordBar();
 	initKeyHandler();
+
+	_hidden.changes(
+	) | rpl::start_with_next([=] {
+		updateWrappingVisibility();
+	}, _wrap->lifetime());
 
 	_botCommandStart->setClickedCallback([=] { setText({ "/" }); });
 
@@ -1030,7 +1265,9 @@ void ComposeControls::init() {
 
 	_header->previewCancelled(
 	) | rpl::start_with_next([=] {
-		_previewState = Data::PreviewState::Cancelled;
+		if (_preview) {
+			_preview->setState(Data::PreviewState::Cancelled);
+		}
 		_saveDraftText = true;
 		_saveDraftStart = crl::now();
 		saveDraft();
@@ -1089,6 +1326,7 @@ void ComposeControls::orderControls() {
 bool ComposeControls::showRecordButton() const {
 	return ::Media::Capture::instance()->available()
 		&& !_voiceRecordBar->isListenState()
+		&& !_voiceRecordBar->isRecordingByAnotherBar()
 		&& !HasSendText(_field)
 		//&& !readyToForward()
 		&& !isEditingMessage();
@@ -1258,6 +1496,7 @@ void ComposeControls::initAutocomplete() {
 		_fileChosen.fire(FileChosen{
 			.document = data.sticker,
 			.options = data.options,
+			.messageSendingFrom = base::take(data.messageSendingFrom),
 		});
 	}, _autocomplete->lifetime());
 
@@ -1342,7 +1581,7 @@ void ComposeControls::updateFieldPlaceholder() {
 			return tr::lng_message_ph();
 		} else if (const auto channel = _history->peer->asChannel()) {
 			if (channel->isBroadcast()) {
-				return session().data().notifySilentPosts(channel)
+				return session().data().notifySettings().silentPosts(channel)
 					? tr::lng_broadcast_silent_ph()
 					: tr::lng_broadcast_ph();
 			} else if (channel->adminRights() & ChatAdminRight::Anonymous) {
@@ -1362,8 +1601,9 @@ void ComposeControls::updateSilentBroadcast() {
 		return;
 	}
 	const auto &peer = _history->peer;
-	if (!session().data().notifySilentPostsUnknown(peer)) {
-		_silent->setChecked(session().data().notifySilentPosts(peer));
+	if (!session().data().notifySettings().silentPostsUnknown(peer)) {
+		_silent->setChecked(
+			session().data().notifySettings().silentPosts(peer));
 		updateFieldPlaceholder();
 	}
 }
@@ -1373,8 +1613,8 @@ void ComposeControls::fieldChanged() {
 		&& !_header->isEditingMessage()
 		&& (_textUpdateEvents & TextUpdateEvent::SendTyping));
 	updateSendButtonType();
-	if (!HasSendText(_field)) {
-		_previewState = Data::PreviewState::Allowed;
+	if (!HasSendText(_field) && _preview) {
+		_preview->setState(Data::PreviewState::Allowed);
 	}
 	if (updateBotCommandShown()) {
 		updateControlsVisibility();
@@ -1465,7 +1705,7 @@ void ComposeControls::unregisterDraftSources() {
 }
 
 void ComposeControls::registerDraftSource() {
-	if (!_history) {
+	if (!_history || !_preview) {
 		return;
 	}
 	const auto key = draftKeyCurrent();
@@ -1474,7 +1714,7 @@ void ComposeControls::registerDraftSource() {
 			return Storage::MessageDraft{
 				_header->getDraftMessageId(),
 				_field->getTextWithTags(),
-				_previewState,
+				_preview->state(),
 			};
 		};
 		auto draftSource = Storage::MessageDraftSource{
@@ -1534,13 +1774,15 @@ void ComposeControls::applyDraft(FieldHistoryAction fieldHistoryAction) {
 	_field->setFocus();
 	draft->cursor.applyTo(_field);
 	_textUpdateEvents = TextUpdateEvent::SaveDraft | TextUpdateEvent::SendTyping;
-	_previewSetState(draft->previewState);
+	if (_preview) {
+		_preview->refreshState(draft->previewState);
+	}
 
 	if (draft == editDraft) {
-		_header->editMessage({ _history->channelId(), draft->msgId });
+		_header->editMessage({ _history->peer->id, draft->msgId });
 		_header->replyToMessage({});
 	} else {
-		_header->replyToMessage({ _history->channelId(), draft->msgId });
+		_header->replyToMessage({ _history->peer->id, draft->msgId });
 		_header->editMessage({});
 	}
 }
@@ -1565,7 +1807,11 @@ void ComposeControls::initTabbedSelector() {
 	}
 
 	_tabbedSelectorToggle->addClickHandler([=] {
-		toggleTabbedSelectorMode();
+		if (_tabbedPanel && _tabbedPanel->isHidden()) {
+			_tabbedPanel->showAnimated();
+		} else {
+			toggleTabbedSelectorMode();
+		}
 	});
 
 	const auto selector = _window->tabbedSelector();
@@ -1646,42 +1892,6 @@ void ComposeControls::initSendAsButton() {
 	}, _wrap->lifetime());
 }
 
-void ComposeControls::inlineBotResolveDone(
-		const MTPcontacts_ResolvedPeer &result) {
-	Expects(result.type() == mtpc_contacts_resolvedPeer);
-
-	_inlineBotResolveRequestId = 0;
-	const auto &data = result.c_contacts_resolvedPeer();
-	const auto resolvedBot = [&]() -> UserData* {
-		if (const auto result = session().data().processUsers(data.vusers())) {
-			if (result->isBot()
-				&& !result->botInfo->inlinePlaceholder.isEmpty()) {
-				return result;
-			}
-		}
-		return nullptr;
-	}();
-	session().data().processChats(data.vchats());
-
-	const auto query = ParseInlineBotQuery(&session(), _field);
-	if (_inlineBotUsername == query.username) {
-		applyInlineBotQuery(
-			query.lookingUpBot ? resolvedBot : query.bot,
-			query.query);
-	} else {
-		clearInlineBot();
-	}
-}
-
-void ComposeControls::inlineBotResolveFail(
-		const MTP::Error &error,
-		const QString &username) {
-	_inlineBotResolveRequestId = 0;
-	if (username == _inlineBotUsername) {
-		clearInlineBot();
-	}
-}
-
 void ComposeControls::cancelInlineBot() {
 	const auto &textWithTags = _field->getTextWithTags();
 	if (textWithTags.text.size() > _inlineBotUsername.size() + 2) {
@@ -1752,7 +1962,7 @@ void ComposeControls::initVoiceRecordBar() {
 				ChatRestriction::SendMedia)
 			: std::nullopt;
 		if (error) {
-			_window->show(Box<Ui::InformBox>(*error));
+			_window->show(Ui::MakeInformBox(*error));
 			return true;
 		} else if (_showSlowmodeError && _showSlowmodeError()) {
 			return true;
@@ -1787,10 +1997,11 @@ void ComposeControls::initVoiceRecordBar() {
 }
 
 void ComposeControls::updateWrappingVisibility() {
+	const auto hidden = _hidden.current();
 	const auto restricted = _writeRestriction.current().has_value();
-	_writeRestricted->setVisible(restricted);
-	_wrap->setVisible(!restricted);
-	if (!restricted) {
+	_writeRestricted->setVisible(!hidden && restricted);
+	_wrap->setVisible(!hidden && !restricted);
+	if (!hidden && !restricted) {
 		_wrap->raise();
 	}
 }
@@ -1949,7 +2160,10 @@ void ComposeControls::updateMessagesTTLShown() {
 		updateControlsVisibility();
 		updateControlsGeometry(_wrap->size());
 	} else if (shown && !_ttlInfo) {
-		_ttlInfo = std::make_unique<Controls::TTLButton>(_wrap.get(), peer);
+		_ttlInfo = std::make_unique<Controls::TTLButton>(
+			_wrap.get(),
+			std::make_shared<Window::Show>(_window),
+			peer);
 		orderControls();
 		updateControlsVisibility();
 		updateControlsGeometry(_wrap->size());
@@ -2082,8 +2296,7 @@ void ComposeControls::editMessage(not_null<HistoryItem*> item) {
 	Expects(draftKeyCurrent() != Data::DraftKey::None());
 
 	if (_voiceRecordBar->isActive()) {
-		_window->show(Box<Ui::InformBox>(
-			tr::lng_edit_caption_voice(tr::now)));
+		_window->show(Ui::MakeInformBox(tr::lng_edit_caption_voice()));
 		return;
 	}
 
@@ -2204,150 +2417,26 @@ bool ComposeControls::handleCancelRequest() {
 void ComposeControls::initWebpageProcess() {
 	Expects(_history);
 
-	const auto peer = _history->peer;
 	auto &lifetime = _wrap->lifetime();
-	const auto requestRepaint = crl::guard(_header.get(), [=] {
+	_preview = std::make_unique<WebpageProcessor>(_history, _field);
+
+	_preview->paintRequests(
+	) | rpl::start_with_next(crl::guard(_header.get(), [=] {
 		_header->update();
-	});
-
-	const auto parsedLinks = lifetime.make_state<QStringList>();
-	const auto previewLinks = lifetime.make_state<QString>();
-	const auto previewData = lifetime.make_state<WebPageData*>(nullptr);
-	using PreviewCache = std::map<QString, WebPageId>;
-	const auto previewCache = lifetime.make_state<PreviewCache>();
-	const auto previewRequest = lifetime.make_state<mtpRequestId>(0);
-	const auto mtpSender =
-		lifetime.make_state<MTP::Sender>(&_window->session().mtp());
-
-	const auto title = std::make_shared<rpl::event_stream<QString>>();
-	const auto description = std::make_shared<rpl::event_stream<QString>>();
-	const auto pageData = std::make_shared<rpl::event_stream<WebPageData*>>();
-
-	const auto previewTimer = lifetime.make_state<base::Timer>();
-
-	const auto updatePreview = [=] {
-		previewTimer->cancel();
-		auto t = QString();
-		auto d = QString();
-		if (ShowWebPagePreview(*previewData)) {
-			if (const auto till = (*previewData)->pendingTill) {
-				t = tr::lng_preview_loading(tr::now);
-				d = QStringView(*previewLinks).split(' ').at(0).toString();
-
-				const auto timeout = till - base::unixtime::now();
-				previewTimer->callOnce(
-					std::max(timeout, 0) * crl::time(1000));
-			} else {
-				const auto preview = ProcessWebPageData(*previewData);
-				t = preview.title;
-				d = preview.description;
-			}
-		}
-		title->fire_copy(t);
-		description->fire_copy(d);
-		pageData->fire_copy(*previewData);
-		requestRepaint();
-	};
-
-	const auto gotPreview = crl::guard(_wrap.get(), [=](
-			const auto &result,
-			QString links) {
-		if (*previewRequest) {
-			*previewRequest = 0;
-		}
-		result.match([=](const MTPDmessageMediaWebPage &d) {
-			const auto page = _history->owner().processWebpage(d.vwebpage());
-			previewCache->insert({ links, page->id });
-			auto &till = page->pendingTill;
-			if (till > 0 && till <= base::unixtime::now()) {
-				till = -1;
-			}
-			if (links == *previewLinks
-				&& _previewState == Data::PreviewState::Allowed) {
-				*previewData = (page->id && page->pendingTill >= 0)
-					? page.get()
-					: nullptr;
-				updatePreview();
-			}
-		}, [=](const MTPDmessageMediaEmpty &d) {
-			previewCache->insert({ links, 0 });
-			if (links == *previewLinks
-				&& _previewState == Data::PreviewState::Allowed) {
-				*previewData = nullptr;
-				updatePreview();
-			}
-		}, [](const auto &d) {
-		});
-	});
-
-	_previewCancel = [=] {
-		mtpSender->request(base::take(*previewRequest)).cancel();
-		*previewData = nullptr;
-		previewLinks->clear();
-		updatePreview();
-	};
-
-	const auto getWebPagePreview = [=] {
-		const auto links = *previewLinks;
-		*previewRequest = mtpSender->request(MTPmessages_GetWebPagePreview(
-			MTP_flags(0),
-			MTP_string(links),
-			MTPVector<MTPMessageEntity>()
-		)).done([=](const MTPMessageMedia &result) {
-			gotPreview(result, links);
-		}).send();
-	};
-
-	const auto checkPreview = crl::guard(_wrap.get(), [=] {
-		const auto previewRestricted = peer
-			&& peer->amRestricted(ChatRestriction::EmbedLinks);
-		if (_previewState != Data::PreviewState::Allowed
-			|| previewRestricted) {
-			_previewCancel();
-			return;
-		}
-		const auto newLinks = parsedLinks->join(' ');
-		if (*previewLinks == newLinks) {
-			return;
-		}
-		mtpSender->request(base::take(*previewRequest)).cancel();
-		*previewLinks = newLinks;
-		if (previewLinks->isEmpty()) {
-			if (ShowWebPagePreview(*previewData)) {
-				_previewCancel();
-			}
-		} else {
-			const auto i = previewCache->find(*previewLinks);
-			if (i == previewCache->end()) {
-				getWebPagePreview();
-			} else if (i->second) {
-				*previewData = _history->owner().webpage(i->second);
-				updatePreview();
-			} else if (ShowWebPagePreview(*previewData)) {
-				_previewCancel();
-			}
-		}
-	});
-
-	previewTimer->setCallback([=] {
-		if (!ShowWebPagePreview(*previewData) || previewLinks->isEmpty()) {
-			return;
-		}
-		getWebPagePreview();
-	});
+	}), lifetime);
 
 	session().changes().peerUpdates(
 		Data::PeerUpdate::Flag::Rights
 		| Data::PeerUpdate::Flag::Notifications
 		| Data::PeerUpdate::Flag::MessagesTTL
 		| Data::PeerUpdate::Flag::FullInfo
-	) | rpl::filter([=](const Data::PeerUpdate &update) {
+	) | rpl::filter([peer = _history->peer](const Data::PeerUpdate &update) {
 		return (update.peer.get() == peer);
 	}) | rpl::map([](const Data::PeerUpdate &update) {
 		return update.flags;
 	}) | rpl::start_with_next([=](Data::PeerUpdate::Flags flags) {
 		if (flags & Data::PeerUpdate::Flag::Rights) {
-			checkPreview();
+			_preview->checkPreview();
 			updateStickersByEmoji();
 			updateFieldPlaceholder();
 		}
@@ -2365,47 +2454,10 @@ void ComposeControls::initWebpageProcess() {
 		}
 	}, lifetime);
 
-	session().downloaderTaskFinished(
-	) | rpl::filter([=] {
-		return (*previewData)
-			&& ((*previewData)->document || (*previewData)->photo);
-	}) | rpl::start_with_next((
-		requestRepaint
-	), lifetime);
-
-	session().data().webPageUpdates(
-	) | rpl::filter([=](not_null<WebPageData*> page) {
-		return (*previewData == page.get());
-	}) | rpl::start_with_next([=] {
-		updatePreview();
-	}, lifetime);
-
-	const auto fieldLinksParser =
-		lifetime.make_state<MessageLinksParser>(_field);
-
-	_previewSetState = [=](Data::PreviewState state) {
-		// Save links from _field to _parsedLinks without generating preview.
-		_previewState = Data::PreviewState::Cancelled;
-		fieldLinksParser->parseNow();
-		*parsedLinks = fieldLinksParser->list().current();
-		_previewState = state;
-	};
-
-	fieldLinksParser->list().changes(
-	) | rpl::start_with_next([=](QStringList &&parsed) {
-		if (_previewState == Data::PreviewState::EmptyOnEdit
-			&& *parsedLinks != parsed) {
-			_previewState = Data::PreviewState::Allowed;
-		}
-		*parsedLinks = std::move(parsed);
-
-		checkPreview();
-	}, lifetime);
-
 	_header->previewRequested(
-		title->events(),
-		description->events(),
-		pageData->events());
+		_preview->titleChanges(),
+		_preview->descriptionChanges(),
+		_preview->pageDataChanges());
 }
 
 WebPageId ComposeControls::webPageId() const {
@@ -2463,7 +2515,7 @@ bool ComposeControls::hasSilentBroadcastToggle() const {
 		&& peer->isChannel()
 		&& !peer->isMegagroup()
 		&& peer->canWrite()
-		&& !session().data().notifySilentPostsUnknown(peer);
+		&& !session().data().notifySettings().silentPostsUnknown(peer);
 }
 
 void ComposeControls::updateInlineBotQuery() {
@@ -2485,9 +2537,36 @@ void ComposeControls::updateInlineBotQuery() {
 			_inlineBotResolveRequestId = api.request(
 				MTPcontacts_ResolveUsername(MTP_string(username))
 			).done([=](const MTPcontacts_ResolvedPeer &result) {
-				inlineBotResolveDone(result);
-			}).fail([=](const MTP::Error &error) {
-				inlineBotResolveFail(error, username);
+				Expects(result.type() == mtpc_contacts_resolvedPeer);
+
+				const auto &data = result.c_contacts_resolvedPeer();
+				const auto resolvedBot = [&]() -> UserData* {
+					if (const auto user = session().data().processUsers(
+							data.vusers())) {
+						if (user->isBot()
+							&& !user->botInfo->inlinePlaceholder.isEmpty()) {
+							return user;
+						}
+					}
+					return nullptr;
+				}();
+				session().data().processChats(data.vchats());
+
+				_inlineBotResolveRequestId = 0;
+				const auto query = ParseInlineBotQuery(&session(), _field);
+				if (_inlineBotUsername == query.username) {
+					applyInlineBotQuery(
+						query.lookingUpBot ? resolvedBot : query.bot,
+						query.query);
+				} else {
+					clearInlineBot();
+				}
+
+			}).fail([=] {
+				_inlineBotResolveRequestId = 0;
+				if (username == _inlineBotUsername) {
+					clearInlineBot();
+				}
 			}).send();
 		} else {
 			applyInlineBotQuery(query.bot, query.query);

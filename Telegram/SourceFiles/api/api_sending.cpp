@@ -63,7 +63,8 @@ void SendExistingMedia(
 		MessageToSend &&message,
 		not_null<MediaData*> media,
 		Fn<MTPInputMedia()> inputMedia,
-		Data::FileOrigin origin) {
+		Data::FileOrigin origin,
+		std::optional<MsgId> localMessageId) {
 	const auto history = message.action.history;
 	const auto peer = history->peer;
 	const auto session = &history->session();
@@ -74,8 +75,10 @@ void SendExistingMedia(
 	api->sendAction(message.action);
 
 	const auto newId = FullMsgId(
-		peerToChannel(peer->id),
-		session->data().nextLocalMessageId());
+		peer->id,
+		localMessageId
+			? (*localMessageId)
+			: session->data().nextLocalMessageId());
 	const auto randomId = base::RandomValue<uint64>();
 
 	auto flags = NewMessageFlags(peer);
@@ -166,7 +169,7 @@ void SendExistingMedia(
 						} else {
 							api->sendMessageFail(error, peer, randomId, newId);
 						}
-						});
+					});
 				} else {
 					api->sendMessageFail(error, peer, randomId, newId);
 				}
@@ -185,7 +188,8 @@ void SendExistingMedia(
 
 void SendExistingDocument(
 		MessageToSend &&message,
-		not_null<DocumentData*> document) {
+		not_null<DocumentData*> document,
+		std::optional<MsgId> localMessageId) {
 	const auto inputMedia = [=] {
 		return MTP_inputMediaDocument(
 			MTP_flags(0),
@@ -197,7 +201,8 @@ void SendExistingDocument(
 		std::move(message),
 		document,
 		inputMedia,
-		document->stickerOrGifOrigin());
+		document->stickerOrGifOrigin(),
+		std::move(localMessageId));
 
 	if (document->sticker()) {
 		document->owner().stickers().incrementSticker(document);
@@ -206,7 +211,8 @@ void SendExistingDocument(
 
 void SendExistingPhoto(
 		MessageToSend &&message,
-		not_null<PhotoData*> photo) {
+		not_null<PhotoData*> photo,
+		std::optional<MsgId> localMessageId) {
 	const auto inputMedia = [=] {
 		return MTP_inputMediaPhoto(
 			MTP_flags(0),
@@ -217,7 +223,8 @@ void SendExistingPhoto(
 		std::move(message),
 		photo,
 		inputMedia,
-		Data::FileOrigin());
+		Data::FileOrigin(),
+		std::move(localMessageId));
 }
 
 bool SendDice(MessageToSend &message) {
@@ -255,7 +262,7 @@ bool SendDice(MessageToSend &message) {
 	api->sendAction(message.action);
 
 	const auto newId = FullMsgId(
-		peerToChannel(peer->id),
+		peer->id,
 		session->data().nextLocalMessageId());
 	const auto randomId = base::RandomValue<uint64>();
 
@@ -346,10 +353,8 @@ void SendConfirmedFile(
 		const std::shared_ptr<FileLoadResult> &file) {
 	const auto isEditing = (file->type != SendMediaType::Audio)
 		&& (file->to.replaceMediaOf != 0);
-	const auto channelId = peerToChannel(file->to.peer);
-
 	const auto newId = FullMsgId(
-		channelId,
+		file->to.peer,
 		isEditing
 			? file->to.replaceMediaOf
 			: session->data().nextLocalMessageId());
@@ -454,6 +459,7 @@ void SendConfirmedFile(
 		edition.textWithEntities = caption;
 		edition.useSameMarkup = true;
 		edition.useSameReplies = true;
+		edition.useSameReactions = true;
 		itemToEdit->applyEdition(std::move(edition));
 	} else {
 		const auto viaBotId = UserId();

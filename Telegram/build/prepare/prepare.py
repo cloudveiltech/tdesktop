@@ -25,15 +25,14 @@ if win and not win32 and not win64:
 
 os.chdir(scriptPath + '/../../../..')
 
-dirSep = '\\' if win else '/'
 pathSep = ';' if win else ':'
-libsLoc = 'Libraries' if not win64 else 'Libraries/win64'
+libsLoc = 'Libraries' if not win64 else (os.path.join('Libraries', 'win64'))
 keysLoc = 'cache_keys'
 
 rootDir = os.getcwd()
-libsDir = rootDir + dirSep + libsLoc
-thirdPartyDir = rootDir + dirSep + 'ThirdParty'
-usedPrefix = libsDir + dirSep + 'local'
+libsDir = os.path.realpath(os.path.join(rootDir, libsLoc))
+thirdPartyDir = os.path.realpath(os.path.join(rootDir, 'ThirdParty'))
+usedPrefix = os.path.realpath(os.path.join(libsDir, 'local'))
 
 optionsList = [
     'skip-release',
@@ -56,10 +55,10 @@ for arg in sys.argv[1:]:
 buildQt5 = not 'skip-qt5' in options if win else 'build-qt5' in options
 buildQt6 = 'build-qt6' in options if win else not 'skip-qt6' in options
 
-if not os.path.isdir(libsDir + '/' + keysLoc):
-    pathlib.Path(libsDir + '/' + keysLoc).mkdir(parents=True, exist_ok=True)
-if not os.path.isdir(thirdPartyDir + '/' + keysLoc):
-    pathlib.Path(thirdPartyDir + '/' + keysLoc).mkdir(parents=True, exist_ok=True)
+if not os.path.isdir(os.path.join(libsDir, keysLoc)):
+    pathlib.Path(os.path.join(libsDir, keysLoc)).mkdir(parents=True, exist_ok=True)
+if not os.path.isdir(os.path.join(thirdPartyDir, keysLoc)):
+    pathlib.Path(os.path.join(thirdPartyDir, keysLoc)).mkdir(parents=True, exist_ok=True)
 
 pathPrefixes = [
     'ThirdParty\\Strawberry\\perl\\bin',
@@ -67,7 +66,6 @@ pathPrefixes = [
     'ThirdParty\\NASM',
     'ThirdParty\\jom',
     'ThirdParty\\cmake\\bin',
-    'ThirdParty\\yasm',
     'ThirdParty\\gyp',
     'ThirdParty\\Ninja',
 ] if win else [
@@ -77,7 +75,7 @@ pathPrefixes = [
 ]
 pathPrefix = ''
 for singlePrefix in pathPrefixes:
-    pathPrefix = pathPrefix + rootDir + dirSep + singlePrefix + pathSep
+    pathPrefix = pathPrefix + os.path.join(rootDir, singlePrefix) + pathSep
 
 environment = {
     'MAKE_THREADS_CNT': '-j8',
@@ -139,10 +137,10 @@ def computeCacheKey(stage):
         stage['commands']
     ]
     for pattern in stage['dependencies']:
-        pathlist = glob.glob(libsDir + '/' + pattern)
+        pathlist = glob.glob(os.path.join(libsDir, pattern))
         items = [pattern]
         if len(pathlist) == 0:
-            pathlist = glob.glob(thirdPartyDir + '/' + pattern)
+            pathlist = glob.glob(os.path.join(thirdPartyDir, pattern))
         if len(pathlist) == 0:
             error('Nothing found: ' + pattern)
         for path in pathlist:
@@ -153,13 +151,13 @@ def computeCacheKey(stage):
     return hashlib.sha1(';'.join(objects).encode('utf-8')).hexdigest()
 
 def keyPath(stage):
-    return stage['directory'] + '/' + keysLoc + '/' + stage['name']
+    return os.path.join(stage['directory'], keysLoc, stage['name'])
 
 def checkCacheKey(stage):
     if not 'key' in stage:
         error('Key not set in stage: ' + stage['name'])
     key = keyPath(stage)
-    if not os.path.exists(stage['directory'] + '/' + stage['name']):
+    if not os.path.exists(os.path.join(stage['directory'], stage['name'])):
         return 'NotFound'
     if not os.path.exists(key):
         return 'Stale'
@@ -342,7 +340,7 @@ def runStages():
             continue
         index = index + 1
         version = ('#' + str(stage['version'])) if (stage['version'] != '0') else ''
-        prefix = '[' + str(index) + '/' + str(count) + '](' + stage['location'] + '/' + stage['name'] + version + ')'
+        prefix = '[' + os.path.join(str(index), str(count)) + '](' + os.path.join(stage['location'], stage['name']) + version + ')'
         print(prefix + ': ', end = '', flush=True)
         stage['key'] = computeCacheKey(stage)
         commands = removeDir(stage['name']) + '\n' + stage['commands']
@@ -401,12 +399,14 @@ if customRunCommand:
 stage('patches', """
     git clone https://github.com/desktop-app/patches.git
     cd patches
-    git checkout 4c21dfa0db
+    git checkout e1383b0e8f
 """)
 
 stage('depot_tools', """
 mac:
     git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+    cd depot_tools
+    ./update_depot_tools
 """, 'ThirdParty')
 
 if not mac or 'build-stackwalk' in options:
@@ -444,6 +444,7 @@ stage('xz', """
 !win:
     git clone -b v5.2.5 https://git.tukaani.org/xz.git
     cd xz
+    sed -i '' '\\@check_symbol_exists(futimens "sys/types.h;sys/stat.h" HAVE_FUTIMENS)@d' CMakeLists.txt
     CFLAGS="$UNGUARDED" CPPFLAGS="$UNGUARDED" cmake -B build . \\
         -D CMAKE_OSX_DEPLOYMENT_TARGET:STRING=$MACOSX_DEPLOYMENT_TARGET \\
         -D CMAKE_OSX_ARCHITECTURES="x86_64;arm64" \\
@@ -474,7 +475,6 @@ stage('mozjpeg', """
     cd mozjpeg
 win:
     cmake . ^
-        -G "Visual Studio 16 2019" ^
         -A %WIN32X64% ^
         -DWITH_JPEG8=ON ^
         -DPNG_SUPPORTED=OFF
@@ -492,7 +492,9 @@ mac:
         -D ENABLE_SHARED=OFF \\
         -D PNG_SUPPORTED=OFF
     cmake --build build.arm64 $MAKE_THREADS_CNT
-    cmake -B build . \\
+    CFLAGS="-arch x86_64" cmake -B build . \\
+        -D CMAKE_SYSTEM_NAME=Darwin \\
+        -D CMAKE_SYSTEM_PROCESSOR=x86_64 \\
         -D CMAKE_BUILD_TYPE=Release \\
         -D CMAKE_INSTALL_PREFIX=$USED_PREFIX \\
         -D CMAKE_OSX_DEPLOYMENT_TARGET:STRING=$MACOSX_DEPLOYMENT_TARGET \\
@@ -555,11 +557,10 @@ stage('opus', """
 win:
     cmake -B out . ^
         -A %WIN32X64% ^
-        -DCMAKE_INSTALL_PREFIX=%LIBS_DIR%/local/opus ^
+        -DCMAKE_INSTALL_PREFIX=%LIBS_DIR%/local ^
         -DCMAKE_C_FLAGS_DEBUG="/MTd /Zi /Ob0 /Od /RTC1" ^
         -DCMAKE_C_FLAGS_RELEASE="/MT /O2 /Ob2 /DNDEBUG"
     cmake --build out --config Debug
-release:
     cmake --build out --config Release
     cmake --install out --config Release
 mac:
@@ -613,28 +614,103 @@ mac:
     mkdir out.arm64
     mv lib/.libs/libiconv.a out.arm64
     make clean
-    CFLAGS="$MIN_VER $UNGUARDED" CPPFLAGS="$MIN_VER $UNGUARDED" LDFLAGS="$MIN_VER" ./configure --enable-static --prefix=$USED_PREFIX
+    CFLAGS="$MIN_VER $UNGUARDED -arch x86_64" CPPFLAGS="$MIN_VER $UNGUARDED -arch x86_64" LDFLAGS="$MIN_VER" ./configure --enable-static --host=x86_64 --prefix=$USED_PREFIX
     make $MAKE_THREADS_CNT
-    lipo -create out.arm64/libiconv.a lib/.libs/libiconv.a -output lib/.libs/libiconv.a
+    mkdir out.x86_64
+    mv lib/.libs/libiconv.a out.x86_64
+    lipo -create out.arm64/libiconv.a out.x86_64/libiconv.a -output lib/.libs/libiconv.a
     make install
+""")
+
+stage('libvpx', """
+    git clone https://github.com/webmproject/libvpx.git
+depends:patches/libvpx/*.patch
+    cd libvpx
+    git checkout v1.11.0
+win:
+    for /r %%i in (..\\patches\\libvpx\\*) do git apply %%i
+
+    SET PATH_BACKUP_=%PATH%
+    SET PATH=%ROOT_DIR%\\ThirdParty\\msys64\\usr\\bin;%PATH%
+
+    SET CHERE_INVOKING=enabled_from_arguments
+    SET MSYS2_PATH_TYPE=inherit
+
+    if "%X8664%" equ "x64" (
+        SET "TARGET=x86_64-win64-vs17"
+    ) else (
+        SET "TARGET=x86-win32-vs17"
+    )
+
+depends:patches/build_libvpx_win.sh
+    bash --login ../patches/build_libvpx_win.sh
+
+    SET PATH=%PATH_BACKUP_%
+mac:
+    find ../patches/libvpx -type f -print0 | sort -z | xargs -0 git apply
+
+depends:yasm/yasm
+    ./configure --prefix=$USED_PREFIX \
+    --target=arm64-darwin20-gcc \
+    --disable-examples \
+    --disable-unit-tests \
+    --disable-tools \
+    --disable-docs \
+    --enable-vp8 \
+    --enable-vp9 \
+    --enable-webm-io
+
+    make $MAKE_THREADS_CNT
+
+    mkdir out.arm64
+    mv libvpx.a out.arm64
+
+    make clean
+
+    ./configure --prefix=$USED_PREFIX \
+    --target=x86_64-darwin20-gcc \
+    --disable-examples \
+    --disable-unit-tests \
+    --disable-tools \
+    --disable-docs \
+    --enable-vp8 \
+    --enable-vp9 \
+    --enable-webm-io
+
+    make $MAKE_THREADS_CNT
+
+    mkdir out.x86_64
+    mv libvpx.a out.x86_64
+
+    lipo -create out.arm64/libvpx.a out.x86_64/libvpx.a -output libvpx.a
+
+    make install
+""")
+
+stage('nv-codec-headers', """
+win:
+    git clone https://github.com/FFmpeg/nv-codec-headers.git
+    cd nv-codec-headers
+    git checkout n11.1.5.1
 """)
 
 stage('ffmpeg', """
     git clone https://github.com/FFmpeg/FFmpeg.git ffmpeg
     cd ffmpeg
-    git checkout release/4.4
+    git checkout cc33e73618
 win:
     SET PATH_BACKUP_=%PATH%
     SET PATH=%ROOT_DIR%\\ThirdParty\\msys64\\usr\\bin;%PATH%
 
-    set CHERE_INVOKING=enabled_from_arguments
-    set MSYS2_PATH_TYPE=inherit
+    SET CHERE_INVOKING=enabled_from_arguments
+    SET MSYS2_PATH_TYPE=inherit
 
 depends:patches/build_ffmpeg_win.sh
     bash --login ../patches/build_ffmpeg_win.sh
 
     SET PATH=%PATH_BACKUP_%
 mac:
+    export PKG_CONFIG_PATH=$USED_PREFIX/lib/pkgconfig
 depends:yasm/yasm
     ./configure --prefix=$USED_PREFIX \
     --enable-cross-compile \
@@ -643,12 +719,13 @@ depends:yasm/yasm
     --extra-cflags="$MIN_VER -arch arm64 $UNGUARDED -DCONFIG_SAFE_BITSTREAM_READER=1 -I$USED_PREFIX/include" \
     --extra-cxxflags="$MIN_VER -arch arm64 $UNGUARDED -DCONFIG_SAFE_BITSTREAM_READER=1 -I$USED_PREFIX/include" \
     --extra-ldflags="$MIN_VER -arch arm64 $USED_PREFIX/lib/libopus.a" \
-    --enable-protocol=file \
-    --enable-libopus \
     --disable-programs \
     --disable-doc \
     --disable-network \
     --disable-everything \
+    --enable-protocol=file \
+    --enable-libopus \
+    --enable-libvpx \
     --enable-hwaccel=h264_videotoolbox \
     --enable-hwaccel=hevc_videotoolbox \
     --enable-hwaccel=mpeg1_videotoolbox \
@@ -659,12 +736,17 @@ depends:yasm/yasm
     --enable-decoder=aac_fixed \
     --enable-decoder=aac_latm \
     --enable-decoder=aasc \
+    --enable-decoder=ac3 \
     --enable-decoder=alac \
     --enable-decoder=alac_at \
+    --enable-decoder=av1 \
+    --enable-decoder=eac3 \
     --enable-decoder=flac \
     --enable-decoder=gif \
     --enable-decoder=h264 \
     --enable-decoder=hevc \
+    --enable-decoder=libvpx_vp8 \
+    --enable-decoder=libvpx_vp9 \
     --enable-decoder=mp1 \
     --enable-decoder=mp1float \
     --enable-decoder=mp2 \
@@ -711,6 +793,7 @@ depends:yasm/yasm
     --enable-decoder=pcm_u32le \
     --enable-decoder=pcm_u8 \
     --enable-decoder=vorbis \
+    --enable-decoder=vp8 \
     --enable-decoder=wavpack \
     --enable-decoder=wmalossless \
     --enable-decoder=wmapro \
@@ -732,6 +815,7 @@ depends:yasm/yasm
     --enable-demuxer=gif \
     --enable-demuxer=h264 \
     --enable-demuxer=hevc \
+    --enable-demuxer=matroska \
     --enable-demuxer=m4v \
     --enable-demuxer=mov \
     --enable-demuxer=mp3 \
@@ -752,15 +836,19 @@ depends:yasm/yasm
     make clean
 
     ./configure --prefix=$USED_PREFIX \
-    --extra-cflags="$MIN_VER $UNGUARDED -DCONFIG_SAFE_BITSTREAM_READER=1 -I$USED_PREFIX/include" \
-    --extra-cxxflags="$MIN_VER $UNGUARDED -DCONFIG_SAFE_BITSTREAM_READER=1 -I$USED_PREFIX/include" \
-    --extra-ldflags="$MIN_VER $USED_PREFIX/lib/libopus.a" \
-    --enable-protocol=file \
-    --enable-libopus \
+    --enable-cross-compile \
+    --target-os=darwin \
+    --arch="x86_64" \
+    --extra-cflags="$MIN_VER -arch x86_64 $UNGUARDED -DCONFIG_SAFE_BITSTREAM_READER=1 -I$USED_PREFIX/include" \
+    --extra-cxxflags="$MIN_VER -arch x86_64 $UNGUARDED -DCONFIG_SAFE_BITSTREAM_READER=1 -I$USED_PREFIX/include" \
+    --extra-ldflags="$MIN_VER -arch x86_64 $USED_PREFIX/lib/libopus.a" \
     --disable-programs \
     --disable-doc \
     --disable-network \
     --disable-everything \
+    --enable-protocol=file \
+    --enable-libopus \
+    --enable-libvpx \
     --enable-hwaccel=h264_videotoolbox \
     --enable-hwaccel=hevc_videotoolbox \
     --enable-hwaccel=mpeg1_videotoolbox \
@@ -777,6 +865,8 @@ depends:yasm/yasm
     --enable-decoder=gif \
     --enable-decoder=h264 \
     --enable-decoder=hevc \
+    --enable-decoder=libvpx_vp8 \
+    --enable-decoder=libvpx_vp9 \
     --enable-decoder=mp1 \
     --enable-decoder=mp1float \
     --enable-decoder=mp2 \
@@ -835,6 +925,7 @@ depends:yasm/yasm
     --enable-parser=flac \
     --enable-parser=h264 \
     --enable-parser=hevc \
+    --enable-demuxer=matroska \
     --enable-parser=mpeg4video \
     --enable-parser=mpegaudio \
     --enable-parser=opus \
@@ -853,39 +944,48 @@ depends:yasm/yasm
     --enable-muxer=opus
 
     make $MAKE_THREADS_CNT
-
-    lipo -create out.arm64/libavformat.a libavformat/libavformat.a -output libavformat/libavformat.a
-    lipo -create out.arm64/libavcodec.a libavcodec/libavcodec.a -output libavcodec/libavcodec.a
-    lipo -create out.arm64/libswresample.a libswresample/libswresample.a -output libswresample/libswresample.a
-    lipo -create out.arm64/libswscale.a libswscale/libswscale.a -output libswscale/libswscale.a
-    lipo -create out.arm64/libavutil.a libavutil/libavutil.a -output libavutil/libavutil.a
+    
+    mkdir out.x86_64
+    mv libavformat/libavformat.a out.x86_64
+    mv libavcodec/libavcodec.a out.x86_64
+    mv libswresample/libswresample.a out.x86_64
+    mv libswscale/libswscale.a out.x86_64
+    mv libavutil/libavutil.a out.x86_64
+    
+    lipo -create out.arm64/libavformat.a out.x86_64/libavformat.a -output libavformat/libavformat.a
+    lipo -create out.arm64/libavcodec.a out.x86_64/libavcodec.a -output libavcodec/libavcodec.a
+    lipo -create out.arm64/libswresample.a out.x86_64/libswresample.a -output libswresample/libswresample.a
+    lipo -create out.arm64/libswscale.a out.x86_64/libswscale.a -output libswscale/libswscale.a
+    lipo -create out.arm64/libavutil.a out.x86_64/libavutil.a -output libavutil/libavutil.a
 
     make install
 """)
 
 stage('openal-soft', """
 version: 2
+win:
     git clone -b wasapi_exact_device_time https://github.com/telegramdesktop/openal-soft.git
     cd openal-soft
-    cd build
-win:
-    cmake .. ^
-        -G "Visual Studio 16 2019" ^
+    cmake -B build . ^
         -A %WIN32X64% ^
         -D LIBTYPE:STRING=STATIC ^
         -D FORCE_STATIC_VCRT=ON
-    msbuild OpenAL.vcxproj /property:Configuration=Debug /property:Platform="%WIN32X64%"
+    cmake --build build --config Debug --parallel
 release:
-    msbuild OpenAL.vcxproj /property:Configuration=RelWithDebInfo /property:Platform="%WIN32X64%"
+    cmake --build build --config RelWithDebInfo --parallel
 mac:
-    CFLAGS=$UNGUARDED CPPFLAGS=$UNGUARDED cmake .. \\
+    git clone https://github.com/kcat/openal-soft.git
+    cd openal-soft
+    git checkout af8e756d
+    CFLAGS=$UNGUARDED CPPFLAGS=$UNGUARDED cmake -B build . \\
         -D CMAKE_INSTALL_PREFIX:PATH=$USED_PREFIX \\
         -D ALSOFT_EXAMPLES=OFF \\
+        -D ALSOFT_UTILS=OFF \\
         -D LIBTYPE:STRING=STATIC \\
         -D CMAKE_OSX_DEPLOYMENT_TARGET:STRING=$MACOSX_DEPLOYMENT_TARGET \\
         -D CMAKE_OSX_ARCHITECTURES="x86_64;arm64"
-    make $MAKE_THREADS_CNT
-    make install
+    cmake --build build $MAKE_THREADS_CNT
+    cmake --install build
 """)
 
 if 'build-stackwalk' in options:
@@ -915,9 +1015,9 @@ depends:patches/breakpad.diff
     git clone -b release-1.11.0 https://github.com/google/googletest src/testing
 win:
     if "%X8664%" equ "x64" (
-        set "FolderPostfix=_x64"
+        SET "FolderPostfix=_x64"
     ) else (
-        set "FolderPostfix="
+        SET "FolderPostfix="
     )
     cd src\\client\\windows
     gyp --no-circular-check breakpad_client.gyp --format=ninja
@@ -1029,30 +1129,30 @@ release:
 """)
 
 if buildQt5:
-    stage('qt_5_15_2', """
-    git clone git://code.qt.io/qt/qt5.git qt_5_15_2
-    cd qt_5_15_2
+    stage('qt_5_15_4', """
+    git clone https://code.qt.io/qt/qt5.git qt_5_15_4
+    cd qt_5_15_4
     perl init-repository --module-subset=qtbase,qtimageformats,qtsvg
-    git checkout v5.15.2
+    git checkout v5.15.4-lts-lgpl
     git submodule update qtbase qtimageformats qtsvg
-depends:patches/qtbase_5_15_2/*.patch
+depends:patches/qtbase_5_15_4/*.patch
     cd qtbase
 win:
-    for /r %%i in (..\\..\\patches\\qtbase_5_15_2\\*) do git apply %%i
+    for /r %%i in (..\\..\\patches\\qtbase_5_15_4\\*) do git apply %%i
     cd ..
 
     SET CONFIGURATIONS=-debug
 release:
     SET CONFIGURATIONS=-debug-and-release
 win:
-    """ + removeDir("\"%LIBS_DIR%\\Qt-5.15.2\"") + """
+    """ + removeDir("\"%LIBS_DIR%\\Qt-5.15.4\"") + """
     SET ANGLE_DIR=%LIBS_DIR%\\tg_angle
     SET ANGLE_LIBS_DIR=%ANGLE_DIR%\\out
     SET MOZJPEG_DIR=%LIBS_DIR%\\mozjpeg
     SET OPENSSL_DIR=%LIBS_DIR%\\openssl
     SET OPENSSL_LIBS_DIR=%OPENSSL_DIR%\\out
     SET ZLIB_LIBS_DIR=%LIBS_DIR%\\zlib\\contrib\\vstudio\\vc14\\%X8664%
-    configure -prefix "%LIBS_DIR%\\Qt-5.15.2" ^
+    configure -prefix "%LIBS_DIR%\\Qt-5.15.4" ^
         %CONFIGURATIONS% ^
         -force-debug-info ^
         -opensource ^
@@ -1083,14 +1183,14 @@ win:
     jom -j16
     jom -j16 install
 mac:
-    find ../../patches/qtbase_5_15_2 -type f -print0 | sort -z | xargs -0 git apply
+    find ../../patches/qtbase_5_15_4 -type f -print0 | sort -z | xargs -0 git apply
     cd ..
 
     CONFIGURATIONS=-debug
 release:
     CONFIGURATIONS=-debug-and-release
 mac:
-    ./configure -prefix "$USED_PREFIX/Qt-5.15.2" \
+    ./configure -prefix "$USED_PREFIX/Qt-5.15.4" \
         $CONFIGURATIONS \
         -force-debug-info \
         -opensource \
@@ -1111,28 +1211,22 @@ mac:
 """)
 
 if buildQt6:
-    stage('qt_6_2_0', """
+    stage('qt_6_3_1', """
 mac:
-    git clone -b v6.2.0 git://code.qt.io/qt/qt5.git qt_6_2_0
-    cd qt_6_2_0
+    git clone -b v6.3.1 https://code.qt.io/qt/qt5.git qt_6_3_1
+    cd qt_6_3_1
     perl init-repository --module-subset=qtbase,qtimageformats,qtsvg,qt5compat
-depends:patches/qtbase_6_2_0/*.patch
+depends:patches/qtbase_6_3_1/*.patch
     cd qtbase
 
-    find ../../patches/qtbase_6_2_0 -type f -print0 | sort -z | xargs -0 git apply
-    cd ..
-
-depends:patches/qt5compat_6_2_0/*.patch
-    cd qt5compat
-
-    find ../../patches/qt5compat_6_2_0 -type f -print0 | sort -z | xargs -0 git apply
+    find ../../patches/qtbase_6_3_1 -type f -print0 | sort -z | xargs -0 git apply
     cd ..
 
     CONFIGURATIONS=-debug
 release:
     CONFIGURATIONS=-debug-and-release
 mac:
-    ./configure -prefix "$USED_PREFIX/Qt-6.2.0" \
+    ./configure -prefix "$USED_PREFIX/Qt-6.3.1" \
         $CONFIGURATIONS \
         -force-debug-info \
         -opensource \
@@ -1154,12 +1248,14 @@ mac:
 stage('tg_owt', """
     git clone https://github.com/desktop-app/tg_owt.git
     cd tg_owt
-    git checkout b02478677b
+    git checkout bab760d7bd
     git submodule init
-    git submodule update src/third_party/libvpx/source/libvpx src/third_party/libyuv
+    git submodule update src/third_party/libyuv src/third_party/crc32c/src
 win:
     SET MOZJPEG_PATH=$LIBS_DIR/mozjpeg
-    SET OPUS_PATH=$LIBS_DIR/opus/include
+    SET OPUS_PATH=$USED_PREFIX/include/opus
+    SET OPENSSL_PATH=$LIBS_DIR/openssl/include
+    SET LIBVPX_PATH=$USED_PREFIX/include
     SET FFMPEG_PATH=$LIBS_DIR/ffmpeg
     mkdir out
     cd out
@@ -1170,8 +1266,9 @@ win:
         -DTG_OWT_BUILD_AUDIO_BACKENDS=OFF \
         -DTG_OWT_SPECIAL_TARGET=$SPECIAL_TARGET \
         -DTG_OWT_LIBJPEG_INCLUDE_PATH=$MOZJPEG_PATH \
-        -DTG_OWT_OPENSSL_INCLUDE_PATH=$LIBS_DIR/openssl/include \
+        -DTG_OWT_OPENSSL_INCLUDE_PATH=$OPENSSL_PATH \
         -DTG_OWT_OPUS_INCLUDE_PATH=$OPUS_PATH \
+        -DTG_OWT_LIBVPX_INCLUDE_PATH=$LIBVPX_PATH \
         -DTG_OWT_FFMPEG_INCLUDE_PATH=$FFMPEG_PATH ../..
     ninja
 release:
@@ -1183,13 +1280,15 @@ release:
         -DTG_OWT_BUILD_AUDIO_BACKENDS=OFF \
         -DTG_OWT_SPECIAL_TARGET=$SPECIAL_TARGET \
         -DTG_OWT_LIBJPEG_INCLUDE_PATH=$MOZJPEG_PATH \
-        -DTG_OWT_OPENSSL_INCLUDE_PATH=$LIBS_DIR/openssl/include \
+        -DTG_OWT_OPENSSL_INCLUDE_PATH=$OPENSSL_PATH \
         -DTG_OWT_OPUS_INCLUDE_PATH=$OPUS_PATH \
+        -DTG_OWT_LIBVPX_INCLUDE_PATH=$LIBVPX_PATH \
         -DTG_OWT_FFMPEG_INCLUDE_PATH=$FFMPEG_PATH ../..
     ninja
 mac:
     MOZJPEG_PATH=$USED_PREFIX/include
     OPUS_PATH=$USED_PREFIX/include/opus
+    LIBVPX_PATH=$USED_PREFIX/include
     FFMPEG_PATH=$USED_PREFIX/include
     mkdir out
     cd out
@@ -1203,6 +1302,7 @@ mac:
         -DTG_OWT_LIBJPEG_INCLUDE_PATH=$MOZJPEG_PATH \
         -DTG_OWT_OPENSSL_INCLUDE_PATH=$LIBS_DIR/openssl/include \
         -DTG_OWT_OPUS_INCLUDE_PATH=$OPUS_PATH \
+        -DTG_OWT_LIBVPX_INCLUDE_PATH=$LIBVPX_PATH \
         -DTG_OWT_FFMPEG_INCLUDE_PATH=$FFMPEG_PATH ../..
     ninja
     cd ..
@@ -1216,6 +1316,7 @@ mac:
         -DTG_OWT_LIBJPEG_INCLUDE_PATH=$MOZJPEG_PATH \
         -DTG_OWT_OPENSSL_INCLUDE_PATH=$LIBS_DIR/openssl/include \
         -DTG_OWT_OPUS_INCLUDE_PATH=$OPUS_PATH \
+        -DTG_OWT_LIBVPX_INCLUDE_PATH=$LIBVPX_PATH \
         -DTG_OWT_FFMPEG_INCLUDE_PATH=$FFMPEG_PATH ../..
     ninja
     cd ..
@@ -1227,11 +1328,11 @@ release:
     cmake -G Ninja \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_OSX_ARCHITECTURES=x86_64 \
-        -DTG_OWT_BUILD_AUDIO_BACKENDS=OFF \
         -DTG_OWT_SPECIAL_TARGET=$SPECIAL_TARGET \
         -DTG_OWT_LIBJPEG_INCLUDE_PATH=$MOZJPEG_PATH \
         -DTG_OWT_OPENSSL_INCLUDE_PATH=$LIBS_DIR/openssl/include \
         -DTG_OWT_OPUS_INCLUDE_PATH=$OPUS_PATH \
+        -DTG_OWT_LIBVPX_INCLUDE_PATH=$LIBVPX_PATH \
         -DTG_OWT_FFMPEG_INCLUDE_PATH=$FFMPEG_PATH ../..
     ninja
     cd ..
@@ -1240,11 +1341,11 @@ release:
     cmake -G Ninja \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_OSX_ARCHITECTURES=arm64 \
-        -DTG_OWT_BUILD_AUDIO_BACKENDS=OFF \
         -DTG_OWT_SPECIAL_TARGET=$SPECIAL_TARGET \
         -DTG_OWT_LIBJPEG_INCLUDE_PATH=$MOZJPEG_PATH \
         -DTG_OWT_OPENSSL_INCLUDE_PATH=$LIBS_DIR/openssl/include \
         -DTG_OWT_OPUS_INCLUDE_PATH=$OPUS_PATH \
+        -DTG_OWT_LIBVPX_INCLUDE_PATH=$LIBVPX_PATH \
         -DTG_OWT_FFMPEG_INCLUDE_PATH=$FFMPEG_PATH ../..
     ninja
     cd ..

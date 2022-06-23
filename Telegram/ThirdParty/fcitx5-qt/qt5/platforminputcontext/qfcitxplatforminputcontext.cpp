@@ -28,6 +28,7 @@
 #include "qfcitxplatforminputcontext.h"
 #include "qtkey.h"
 
+#include <array>
 #include <memory>
 #include <xcb/xcb.h>
 
@@ -189,12 +190,24 @@ void QFcitxPlatformInputContext::cleanUp() {
 
 bool QFcitxPlatformInputContext::isValid() const { return true; }
 
-void QFcitxPlatformInputContext::invokeAction(QInputMethod::Action action,
+void QFcitxPlatformInputContext::invokeAction(QInputMethod::Action imAction,
                                               int cursorPosition) {
-    if (action == QInputMethod::Click &&
-        (cursorPosition <= 0 || cursorPosition >= preedit_.length())) {
-        // qDebug() << action << cursorPosition;
-        commitPreedit();
+    unsigned int action;
+    if (imAction == QInputMethod::Click) {
+        action = 0;
+    } else if (imAction == QInputMethod::ContextMenu) {
+        action = 1;
+    } else {
+        return;
+    }
+    if (FcitxQtInputContextProxy *proxy = validIC();
+        proxy->supportInvokeAction()) {
+        proxy->invokeAction(action, cursorPosition);
+    } else {
+        if (cursorPosition <= 0 || cursorPosition >= preedit_.length()) {
+            // qDebug() << action << cursorPosition;
+            reset();
+        }
     }
 }
 
@@ -205,9 +218,9 @@ void QFcitxPlatformInputContext::commitPreedit(QPointer<QObject> input) {
         return;
     QInputMethodEvent e;
     e.setCommitString(commitPreedit_);
-    QCoreApplication::sendEvent(input, &e);
     commitPreedit_.clear();
     preeditList_.clear();
+    QCoreApplication::sendEvent(input, &e);
 }
 
 bool checkUtf8(const QByteArray &byteArray) {
@@ -363,17 +376,18 @@ void QFcitxPlatformInputContext::setFocusObject(QObject *object) {
         proxy->focusIn();
         // We need to delegate this otherwise it may cause self-recursion in
         // certain application like libreoffice.
-        QMetaObject::invokeMethod(
-            this,
-            [this, window = lastWindow_]() {
-                if (window != lastWindow_) {
-                    return;
-                }
-                if (validICByWindow(window.data())) {
-                    cursorRectChanged();
-                }
-            },
-            Qt::QueuedConnection);
+        QMetaObject::invokeMethod(this, "updateCursorRect",
+                                  Qt::QueuedConnection,
+                                  Q_ARG(QPointer<QWindow>, lastWindow_));
+    }
+}
+
+void QFcitxPlatformInputContext::updateCursorRect(QPointer<QWindow> window) {
+    if (window != lastWindow_) {
+        return;
+    }
+    if (validICByWindow(window.data())) {
+        cursorRectChanged();
     }
 }
 
@@ -432,9 +446,9 @@ void QFcitxPlatformInputContext::createInputContextFinished(
     if (!proxy) {
         return;
     }
-    auto w = static_cast<QWindow *>(proxy->property("wid").value<void *>());
     FcitxQtICData *data =
         static_cast<FcitxQtICData *>(proxy->property("icData").value<void *>());
+    auto w = data->window();
     data->rect = QRect();
 
     if (proxy->isValid()) {
@@ -561,11 +575,11 @@ void QFcitxPlatformInputContext::updateClientSideUI(
     if (!proxy) {
         return;
     }
-    auto w = static_cast<QWindow *>(proxy->property("wid").value<void *>());
+    FcitxQtICData *data =
+        static_cast<FcitxQtICData *>(proxy->property("icData").value<void *>());
+    auto w = data->window();
     auto window = qApp->focusWindow();
     if (window && w == window) {
-        FcitxQtICData *data = static_cast<FcitxQtICData *>(
-            proxy->property("icData").value<void *>());
         if (!theme_) {
             theme_ = new FcitxTheme(this);
         }
@@ -642,7 +656,7 @@ void QFcitxPlatformInputContext::forwardKey(unsigned int keyval,
     }
     FcitxQtICData &data = *static_cast<FcitxQtICData *>(
         proxy->property("icData").value<void *>());
-    auto w = static_cast<QWindow *>(proxy->property("wid").value<void *>());
+    auto *w = data.window();
     QObject *input = qApp->focusObject();
     auto window = qApp->focusWindow();
     if (input && window && w == window) {
@@ -687,10 +701,6 @@ void QFcitxPlatformInputContext::createICData(QWindow *w) {
         } else if (QGuiApplication::platformName().startsWith("wayland")) {
             data.proxy->setDisplay("wayland:");
         }
-        data.proxy->setProperty("wid",
-                                QVariant::fromValue(static_cast<void *>(w)));
-        data.proxy->setProperty(
-            "icData", QVariant::fromValue(static_cast<void *>(&data)));
         connect(data.proxy, &FcitxQtInputContextProxy::inputContextCreated,
                 this, &QFcitxPlatformInputContext::createInputContextFinished);
         connect(data.proxy, &FcitxQtInputContextProxy::commitString, this,
@@ -713,6 +723,7 @@ QKeyEvent *QFcitxPlatformInputContext::createKeyEvent(unsigned int keyval,
                                                       bool isRelease,
                                                       const QKeyEvent *event) {
     QKeyEvent *newEvent = nullptr;
+    state &= (~(1u << 31));
     if (event && event->nativeVirtualKey() == keyval &&
         event->nativeModifiers() == state &&
         isRelease == (event->type() == QEvent::KeyRelease)) {

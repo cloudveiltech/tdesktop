@@ -38,7 +38,7 @@
 //! - Available in 6 programming languages, all with nearly equal functionality: Java, TypeScript/JavaScript, Python, Rust, C++, C
 //! - Significantly shorter code but more documentation comments compared to competing libraries
 //! - Supports encoding all 40 versions (sizes) and all 4 error correction levels, as per the QR Code Model 2 standard
-//! - Output formats: Raw modules/pixels of the QR symbol, SVG XML string
+//! - Output format: Raw modules/pixels of the QR symbol
 //! - Detects finder-like penalty patterns more accurately than other implementations
 //! - Encodes numeric and special-alphanumeric text in less space than general text
 //! - Open source code under the permissive MIT License
@@ -54,9 +54,11 @@
 //! 
 //! ```
 //! extern crate qrcodegen;
+//! use qrcodegen::Mask;
 //! use qrcodegen::QrCode;
 //! use qrcodegen::QrCodeEcc;
 //! use qrcodegen::QrSegment;
+//! use qrcodegen::Version;
 //! ```
 //! 
 //! Simple operation:
@@ -64,7 +66,7 @@
 //! ```
 //! let qr = QrCode::encode_text("Hello, world!",
 //!     QrCodeEcc::Medium).unwrap();
-//! let svg = qr.to_svg_string(4);
+//! let svg = to_svg_string(&qr, 4);  // See qrcodegen-demo
 //! ```
 //! 
 //! Manual operation:
@@ -72,8 +74,8 @@
 //! ```
 //! let chrs: Vec<char> = "3141592653589793238462643383".chars().collect();
 //! let segs = QrSegment::make_segments(&chrs);
-//! let qr = QrCode::encode_segments_advanced(
-//!     &segs, QrCodeEcc::High, 5, 5, Some(Mask::new(2)), false).unwrap();
+//! let qr = QrCode::encode_segments_advanced(&segs, QrCodeEcc::High,
+//!     Version::new(5), Version::new(5), Some(Mask::new(2)), false).unwrap();
 //! for y in 0 .. qr.size() {
 //!     for x in 0 .. qr.size() {
 //!         (... paint qr.get_module(x, y) ...)
@@ -88,7 +90,7 @@
 /// 
 /// Invented by Denso Wave and described in the ISO/IEC 18004 standard.
 /// 
-/// Instances of this struct represent an immutable square grid of black and white cells.
+/// Instances of this struct represent an immutable square grid of dark and light cells.
 /// The impl provides static factory functions to create a QR Code from text or binary data.
 /// The struct and impl cover the QR Code Model 2 specification, supporting all versions
 /// (sizes) from 1 to 40, all 4 error correction levels, and 4 character encoding modes.
@@ -103,7 +105,7 @@
 ///   appropriate version number, and call the `QrCode::encode_codewords()` constructor.
 /// 
 /// (Note that all ways require supplying the desired error correction level.)
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct QrCode {
 	
 	// Scalar parameters:
@@ -126,7 +128,7 @@ pub struct QrCode {
 	
 	// Grids of modules/pixels, with dimensions of size*size:
 	
-	// The modules of this QR Code (false = white, true = black).
+	// The modules of this QR Code (false = light, true = dark).
 	// Immutable after constructor finishes. Accessed through get_module().
 	modules: Vec<bool>,
 	
@@ -184,7 +186,7 @@ impl QrCode {
 	/// Returns a wrapped `QrCode` if successful, or `Err` if the
 	/// data is too long to fit in any version at the given ECC level.
 	pub fn encode_segments(segs: &[QrSegment], ecl: QrCodeEcc) -> Result<Self,DataTooLong> {
-		QrCode::encode_segments_advanced(segs, ecl, QrCode_MIN_VERSION, QrCode_MAX_VERSION, None, true)
+		QrCode::encode_segments_advanced(segs, ecl, Version::MIN, Version::MAX, None, true)
 	}
 	
 	
@@ -207,7 +209,7 @@ impl QrCode {
 		assert!(minversion.value() <= maxversion.value(), "Invalid value");
 		
 		// Find the minimal version number to use
-		let mut version = minversion;
+		let mut version: Version = minversion;
 		let datausedbits: usize = loop {
 			// Number of data bits available
 			let datacapacitybits: usize = QrCode::get_num_data_codewords(version, ecl) * 8;
@@ -245,9 +247,9 @@ impl QrCode {
 		// Add terminator and pad up to a byte if applicable
 		let datacapacitybits: usize = QrCode::get_num_data_codewords(version, ecl) * 8;
 		assert!(bb.0.len() <= datacapacitybits);
-		let numzerobits = std::cmp::min(4, datacapacitybits - bb.0.len());
+		let numzerobits: usize = std::cmp::min(4, datacapacitybits - bb.0.len());
 		bb.append_bits(0, numzerobits as u8);
-		let numzerobits = bb.0.len().wrapping_neg() & 7;
+		let numzerobits: usize = bb.0.len().wrapping_neg() & 7;
 		bb.append_bits(0, numzerobits as u8);
 		assert_eq!(bb.0.len() % 8, 0, "Assertion error");
 		
@@ -285,7 +287,7 @@ impl QrCode {
 			size: size as i32,
 			mask: Mask::new(0),  // Dummy value
 			errorcorrectionlevel: ecl,
-			modules   : vec![false; size * size],  // Initially all white
+			modules   : vec![false; size * size],  // Initially all light
 			isfunction: vec![false; size * size],
 		};
 		
@@ -296,7 +298,7 @@ impl QrCode {
 		
 		// Do masking
 		if mask.is_none() {  // Automatically choose best mask
-			let mut minpenalty: i32 = std::i32::MAX;
+			let mut minpenalty = std::i32::MAX;
 			for i in 0u8 .. 8 {
 				let newmask = Mask::new(i);
 				result.apply_mask(newmask);
@@ -347,10 +349,10 @@ impl QrCode {
 	
 	
 	/// Returns the color of the module (pixel) at the given coordinates,
-	/// which is `false` for white or `true` for black.
+	/// which is `false` for light or `true` for dark.
 	/// 
 	/// The top left corner has the coordinates (x=0, y=0). If the given
-	/// coordinates are out of bounds, then `false` (white) is returned.
+	/// coordinates are out of bounds, then `false` (light) is returned.
 	pub fn get_module(&self, x: i32, y: i32) -> bool {
 		0 <= x && x < self.size && 0 <= y && y < self.size && self.module(x, y)
 	}
@@ -365,36 +367,6 @@ impl QrCode {
 	// Returns a mutable reference to the module's color at the given coordinates, which must be in bounds.
 	fn module_mut(&mut self, x: i32, y: i32) -> &mut bool {
 		&mut self.modules[(y * self.size + x) as usize]
-	}
-	
-	
-	/// Returns a string of SVG code for an image depicting
-	/// this QR Code, with the given number of border modules.
-	/// 
-	/// The string always uses Unix newlines (\n), regardless of the platform.
-	pub fn to_svg_string(&self, border: i32) -> String {
-		assert!(border >= 0, "Border must be non-negative");
-		let mut result = String::new();
-		result += "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
-		result += "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">\n";
-		let dimension = self.size.checked_add(border.checked_mul(2).unwrap()).unwrap();
-		result += &format!(
-			"<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" viewBox=\"0 0 {0} {0}\" stroke=\"none\">\n", dimension);
-		result += "\t<rect width=\"100%\" height=\"100%\" fill=\"#FFFFFF\"/>\n";
-		result += "\t<path d=\"";
-		for y in 0 .. self.size {
-			for x in 0 .. self.size {
-				if self.get_module(x, y) {
-					if x != 0 || y != 0 {
-						result += " ";
-					}
-					result += &format!("M{},{}h1v1h-1z", x + border, y + border);
-				}
-			}
-		}
-		result += "\" fill=\"#000000\"/>\n";
-		result += "</svg>\n";
-		result
 	}
 	
 	
@@ -438,7 +410,7 @@ impl QrCode {
 		// Calculate error correction code and pack bits
 		let bits: u32 = {
 			// errcorrlvl is uint2, mask is uint3
-			let data: u32 = self.errorcorrectionlevel.format_bits() << 3 | u32::from(mask.value());
+			let data: u32 = u32::from(self.errorcorrectionlevel.format_bits() << 3 | mask.value());
 			let mut rem: u32 = data;
 			for _ in 0 .. 10 {
 				rem = (rem << 1) ^ ((rem >> 9) * 0x537);
@@ -466,7 +438,7 @@ impl QrCode {
 		for i in 8 .. 15 {
 			self.set_function_module(8, size - 15 + i, get_bit(bits, i));
 		}
-		self.set_function_module(8, size - 8, true);  // Always black
+		self.set_function_module(8, size - 8, true);  // Always dark
 	}
 	
 	
@@ -528,8 +500,8 @@ impl QrCode {
 	
 	// Sets the color of a module and marks it as a function module.
 	// Only used by the constructor. Coordinates must be in bounds.
-	fn set_function_module(&mut self, x: i32, y: i32, isblack: bool) {
-		*self.module_mut(x, y) = isblack;
+	fn set_function_module(&mut self, x: i32, y: i32, isdark: bool) {
+		*self.module_mut(x, y) = isdark;
 		self.isfunction[(y * self.size + x) as usize] = true;
 	}
 	
@@ -539,8 +511,8 @@ impl QrCode {
 	// Returns a new byte string representing the given data with the appropriate error correction
 	// codewords appended to it, based on this object's version and error correction level.
 	fn add_ecc_and_interleave(&self, data: &[u8]) -> Vec<u8> {
-		let ver = self.version;
-		let ecl = self.errorcorrectionlevel;
+		let ver: Version = self.version;
+		let ecl: QrCodeEcc = self.errorcorrectionlevel;
 		assert_eq!(data.len(), QrCode::get_num_data_codewords(ver, ecl), "Illegal argument");
 		
 		// Calculate parameter numbers
@@ -602,7 +574,7 @@ impl QrCode {
 						i += 1;
 					}
 					// If this QR Code has any remainder bits (0 to 7), they were assigned as
-					// 0/false/white by the constructor and are left unchanged by this method
+					// 0/false/light by the constructor and are left unchanged by this method
 				}
 			}
 			right -= 2;
@@ -613,14 +585,13 @@ impl QrCode {
 	
 	// XORs the codeword modules in this QR Code with the given mask pattern.
 	// The function modules must be marked and the codeword bits must be drawn
-	// before masking. Due to the arithmetic of XOR, calling applyMask() with
+	// before masking. Due to the arithmetic of XOR, calling apply_mask() with
 	// the same mask value a second time will undo the mask. A final well-formed
 	// QR Code needs exactly one (not zero, two, etc.) mask applied.
 	fn apply_mask(&mut self, mask: Mask) {
-		let mask: u8 = mask.value();
 		for y in 0 .. self.size {
 			for x in 0 .. self.size {
-				let invert: bool = match mask {
+				let invert: bool = match mask.value() {
 					0 => (x + y) % 2 == 0,
 					1 => y % 2 == 0,
 					2 => x % 3 == 0,
@@ -647,8 +618,7 @@ impl QrCode {
 		for y in 0 .. size {
 			let mut runcolor = false;
 			let mut runx: i32 = 0;
-			let mut runhistory = [0i32; 7];
-			let mut padrun = size;  // Add white border to initial run
+			let mut runhistory = FinderPenalty::new(size);
 			for x in 0 .. size {
 				if self.module(x, y) == runcolor {
 					runx += 1;
@@ -658,23 +628,21 @@ impl QrCode {
 						result += 1;
 					}
 				} else {
-					QrCode::finder_penalty_add_history(runx + padrun, &mut runhistory);
-					padrun = 0;
+					runhistory.add_history(runx);
 					if !runcolor {
-						result += self.finder_penalty_count_patterns(&runhistory) * PENALTY_N3;
+						result += runhistory.count_patterns() * PENALTY_N3;
 					}
 					runcolor = self.module(x, y);
 					runx = 1;
 				}
 			}
-			result += self.finder_penalty_terminate_and_count(runcolor, runx + padrun, &mut runhistory) * PENALTY_N3;
+			result += runhistory.terminate_and_count(runcolor, runx) * PENALTY_N3;
 		}
 		// Adjacent modules in column having same color, and finder-like patterns
 		for x in 0 .. size {
 			let mut runcolor = false;
 			let mut runy: i32 = 0;
-			let mut runhistory = [0i32; 7];
-			let mut padrun = size;  // Add white border to initial run
+			let mut runhistory = FinderPenalty::new(size);
 			for y in 0 .. size {
 				if self.module(x, y) == runcolor {
 					runy += 1;
@@ -684,16 +652,15 @@ impl QrCode {
 						result += 1;
 					}
 				} else {
-					QrCode::finder_penalty_add_history(runy + padrun, &mut runhistory);
-					padrun = 0;
+					runhistory.add_history(runy);
 					if !runcolor {
-						result += self.finder_penalty_count_patterns(&runhistory) * PENALTY_N3;
+						result += runhistory.count_patterns() * PENALTY_N3;
 					}
 					runcolor = self.module(x, y);
 					runy = 1;
 				}
 			}
-			result += self.finder_penalty_terminate_and_count(runcolor, runy + padrun, &mut runhistory) * PENALTY_N3;
+			result += runhistory.terminate_and_count(runcolor, runy) * PENALTY_N3;
 		}
 		
 		// 2*2 blocks of modules having same color
@@ -708,11 +675,11 @@ impl QrCode {
 			}
 		}
 		
-		// Balance of black and white modules
-		let black: i32 = self.modules.iter().copied().map(i32::from).sum();
-		let total: i32 = size * size;  // Note that size is odd, so black/total != 1/2
-		// Compute the smallest integer k >= 0 such that (45-5k)% <= black/total <= (55+5k)%
-		let k: i32 = ((black * 20 - total * 10).abs() + total - 1) / total - 1;
+		// Balance of dark and light modules
+		let dark: i32 = self.modules.iter().copied().map(i32::from).sum();
+		let total: i32 = size * size;  // Note that size is odd, so dark/total != 1/2
+		// Compute the smallest integer k >= 0 such that (45-5k)% <= dark/total <= (55+5k)%
+		let k: i32 = ((dark * 20 - total * 10).abs() + total - 1) / total - 1;
 		result += k * PENALTY_N4;
 		result
 	}
@@ -724,13 +691,13 @@ impl QrCode {
 	// Each position is in the range [0,177), and are used on both the x and y axes.
 	// This could be implemented as lookup table of 40 variable-length lists of unsigned bytes.
 	fn get_alignment_pattern_positions(&self) -> Vec<i32> {
-		let ver = self.version.value();
+		let ver: u8 = self.version.value();
 		if ver == 1 {
 			vec![]
 		} else {
 			let numalign = i32::from(ver) / 7 + 2;
 			let step: i32 = if ver == 32 { 26 } else
-				{(i32::from(ver)*4 + numalign*2 + 1) / (numalign*2 - 2) * 2};
+				{(i32::from(ver) * 4 + numalign * 2 + 1) / (numalign * 2 - 2) * 2};
 			let mut result: Vec<i32> = (0 .. numalign - 1).map(
 				|i| self.size - 7 - i * step).collect();
 			result.push(6);
@@ -827,49 +794,66 @@ impl QrCode {
 		z
 	}
 	
+}
+
+
+/*---- Helper struct for get_penalty_score() ----*/
+
+struct FinderPenalty {
+	qr_size: i32,
+	run_history: [i32; 7],
+}
+
+
+impl FinderPenalty {
 	
-	// Can only be called immediately after a white run is added, and
-	// returns either 0, 1, or 2. A helper function for get_penalty_score().
-	fn finder_penalty_count_patterns(&self, runhistory: &[i32;7]) -> i32 {
-		let n = runhistory[1];
-		assert!(n <= self.size * 3);
-		let core = n > 0 && runhistory[2] == n && runhistory[3] == n * 3 && runhistory[4] == n && runhistory[5] == n;
-		( i32::from(core && runhistory[0] >= n * 4 && runhistory[6] >= n)
-		+ i32::from(core && runhistory[6] >= n * 4 && runhistory[0] >= n))
+	pub fn new(size: i32) -> Self {
+		Self {
+			qr_size: size,
+			run_history: [0i32; 7],
+		}
 	}
 	
 	
-	// Must be called at the end of a line (row or column) of modules. A helper function for get_penalty_score().
-	fn finder_penalty_terminate_and_count(&self, currentruncolor: bool, mut currentrunlength: i32, runhistory: &mut [i32;7]) -> i32 {
-		if currentruncolor {  // Terminate black run
-			QrCode::finder_penalty_add_history(currentrunlength, runhistory);
+	// Pushes the given value to the front and drops the last value.
+	pub fn add_history(&mut self, mut currentrunlength: i32) {
+		if self.run_history[0] == 0 {
+			currentrunlength += self.qr_size;  // Add light border to initial run
+		}
+		let rh = &mut self.run_history;
+		for i in (0 .. rh.len()-1).rev() {
+			rh[i + 1] = rh[i];
+		}
+		rh[0] = currentrunlength;
+	}
+	
+	
+	// Can only be called immediately after a light run is added, and returns either 0, 1, or 2.
+	pub fn count_patterns(&self) -> i32 {
+		let rh = &self.run_history;
+		let n = rh[1];
+		assert!(n <= self.qr_size * 3);
+		let core = n > 0 && rh[2] == n && rh[3] == n * 3 && rh[4] == n && rh[5] == n;
+		( i32::from(core && rh[0] >= n * 4 && rh[6] >= n)
+		+ i32::from(core && rh[6] >= n * 4 && rh[0] >= n))
+	}
+	
+	
+	// Must be called at the end of a line (row or column) of modules.
+	pub fn terminate_and_count(mut self, currentruncolor: bool, mut currentrunlength: i32) -> i32 {
+		if currentruncolor {  // Terminate dark run
+			self.add_history(currentrunlength);
 			currentrunlength = 0;
 		}
-		currentrunlength += self.size;  // Add white border to final run
-		QrCode::finder_penalty_add_history(currentrunlength, runhistory);
-		self.finder_penalty_count_patterns(runhistory)
-	}
-	
-	
-	// Pushes the given value to the front and drops the last value. A helper function for get_penalty_score().
-	fn finder_penalty_add_history(currentrunlength: i32, runhistory: &mut [i32;7]) {
-		for i in (0 .. runhistory.len()-1).rev() {
-			runhistory[i + 1] = runhistory[i];
-		}
-		runhistory[0] = currentrunlength;
+		currentrunlength += self.qr_size;  // Add light border to final run
+		self.add_history(currentrunlength);
+		self.count_patterns()
 	}
 	
 }
 
 
-/*---- Cconstants and tables ----*/
-
-/// The minimum version number supported in the QR Code Model 2 standard.
-pub const QrCode_MIN_VERSION: Version = Version( 1);
-
-/// The maximum version number supported in the QR Code Model 2 standard.
-pub const QrCode_MAX_VERSION: Version = Version(40);
-
+/*---- Constants and tables ----*/
 
 // For use in get_penalty_score(), when evaluating which mask is best.
 const PENALTY_N1: i32 =  3;
@@ -901,7 +885,7 @@ static NUM_ERROR_CORRECTION_BLOCKS: [[i8; 41]; 4] = [
 /*---- QrCodeEcc functionality ----*/
 
 /// The error correction level in a QR Code symbol.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum QrCodeEcc {
 	/// The QR Code can tolerate about  7% erroneous codewords.
 	Low     ,
@@ -929,7 +913,7 @@ impl QrCodeEcc {
 	
 	
 	// Returns an unsigned 2-bit integer (in the range 0 to 3).
-	fn format_bits(self) -> u32 {
+	fn format_bits(self) -> u8 {
 		use QrCodeEcc::*;
 		match self {
 			Low      => 1,
@@ -957,7 +941,7 @@ impl QrCodeEcc {
 /// This segment struct imposes no length restrictions, but QR Codes have restrictions.
 /// Even in the most favorable conditions, a QR Code can only hold 7089 characters of data.
 /// Any segment longer than this is meaningless for the purpose of generating QR Codes.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct QrSegment {
 	
 	// The mode indicator of this segment. Accessed through mode().
@@ -1027,7 +1011,7 @@ impl QrSegment {
 		let mut accumdata: u32 = 0;
 		let mut accumcount: u32 = 0;
 		for &c in text {
-			let i = ALPHANUMERIC_CHARSET.iter().position(|&x| x == c)
+			let i: usize = ALPHANUMERIC_CHARSET.iter().position(|&x| x == c)
 				.expect("String contains unencodable characters in alphanumeric mode");
 			accumdata = accumdata * 45 + (i as u32);
 			accumcount += 1;
@@ -1120,28 +1104,34 @@ impl QrSegment {
 	fn get_total_bits(segs: &[Self], version: Version) -> Option<usize> {
 		let mut result: usize = 0;
 		for seg in segs {
-			let ccbits = seg.mode.num_char_count_bits(version);
-			if seg.numchars >= 1 << ccbits {
-				return None;  // The segment's length doesn't fit the field's bit width
+			let ccbits: u8 = seg.mode.num_char_count_bits(version);
+			// ccbits can be as large as 16, but usize can be as small as 16
+			if let Some(limit) = 1usize.checked_shl(u32::from(ccbits)) {
+				if seg.numchars >= limit {
+					return None;  // The segment's length doesn't fit the field's bit width
+				}
 			}
-			result = result.checked_add(4 + usize::from(ccbits) + seg.data.len())?;
+			result = result.checked_add(4 + usize::from(ccbits))?;
+			result = result.checked_add(seg.data.len())?;
 		}
 		Some(result)
 	}
 	
 	
-	// Tests whether the given string can be encoded as a segment in alphanumeric mode.
-	// A string is encodable iff each character is in the following set: 0 to 9, A to Z
-	// (uppercase only), space, dollar, percent, asterisk, plus, hyphen, period, slash, colon.
-	fn is_alphanumeric(text: &[char]) -> bool {
-		text.iter().all(|c| ALPHANUMERIC_CHARSET.contains(c))
+	/// Tests whether the given string can be encoded as a segment in numeric mode.
+	/// 
+	/// A string is encodable iff each character is in the range 0 to 9.
+	pub fn is_numeric(text: &[char]) -> bool {
+		text.iter().all(|&c| '0' <= c && c <= '9')
 	}
 	
 	
-	// Tests whether the given string can be encoded as a segment in numeric mode.
-	// A string is encodable iff each character is in the range 0 to 9.
-	fn is_numeric(text: &[char]) -> bool {
-		text.iter().all(|&c| '0' <= c && c <= '9')
+	/// Tests whether the given string can be encoded as a segment in alphanumeric mode.
+	/// 
+	/// A string is encodable iff each character is in the following set: 0 to 9, A to Z
+	/// (uppercase only), space, dollar, percent, asterisk, plus, hyphen, period, slash, colon.
+	pub fn is_alphanumeric(text: &[char]) -> bool {
+		text.iter().all(|c| ALPHANUMERIC_CHARSET.contains(c))
 	}
 	
 }
@@ -1158,7 +1148,7 @@ static ALPHANUMERIC_CHARSET: [char; 45] = ['0','1','2','3','4','5','6','7','8','
 /*---- QrSegmentMode functionality ----*/
 
 /// Describes how a segment's data bits are interpreted.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum QrSegmentMode {
 	Numeric,
 	Alphanumeric,
@@ -1229,8 +1219,8 @@ impl BitBuffer {
 /// 
 /// - Decrease the error correction level if it was greater than `QrCodeEcc::Low`.
 /// - If the `encode_segments_advanced()` function was called, then increase the maxversion
-///   argument if it was less than `QrCode_MAX_VERSION`. (This advice does not apply to the
-///   other factory functions because they search all versions up to `QrCode_MAX_VERSION`.)
+///   argument if it was less than `Version::MAX`. (This advice does not apply to the
+///   other factory functions because they search all versions up to `Version::MAX`.)
 /// - Split the text data into better or optimal segments in order to reduce the number of bits required.
 /// - Change the text or binary data to be shorter.
 /// - Change the text to fit the character set of a particular segment mode (e.g. alphanumeric).
@@ -1252,15 +1242,21 @@ impl std::fmt::Display for DataTooLong {
 
 
 /// A number between 1 and 40 (inclusive).
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Version(u8);
 
 impl Version {
+	/// The minimum version number supported in the QR Code Model 2 standard.
+	pub const MIN: Version = Version( 1);
+	
+	/// The maximum version number supported in the QR Code Model 2 standard.
+	pub const MAX: Version = Version(40);
+	
 	/// Creates a version object from the given number.
 	/// 
 	/// Panics if the number is outside the range [1, 40].
 	pub fn new(ver: u8) -> Self {
-		assert!(QrCode_MIN_VERSION.value() <= ver && ver <= QrCode_MAX_VERSION.value(), "Version number out of range");
+		assert!(Version::MIN.value() <= ver && ver <= Version::MAX.value(), "Version number out of range");
 		Self(ver)
 	}
 	
@@ -1272,7 +1268,7 @@ impl Version {
 
 
 /// A number between 0 and 7 (inclusive).
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Mask(u8);
 
 impl Mask {

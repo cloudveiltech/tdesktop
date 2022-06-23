@@ -28,6 +28,10 @@ VerticalLayoutReorder::VerticalLayoutReorder(
 , _scrollAnimation([=] { updateScrollCallback(); }) {
 }
 
+VerticalLayoutReorder::VerticalLayoutReorder(not_null<VerticalLayout*> layout)
+: _layout(layout) {
+}
+
 void VerticalLayoutReorder::cancel() {
 	if (_currentWidget) {
 		cancelCurrent(indexOf(_currentWidget));
@@ -71,6 +75,24 @@ void VerticalLayoutReorder::start() {
 	}
 }
 
+void VerticalLayoutReorder::addPinnedInterval(int from, int length) {
+	_pinnedIntervals.push_back({ from, length });
+}
+
+void VerticalLayoutReorder::clearPinnedIntervals() {
+	_pinnedIntervals.clear();
+}
+
+bool VerticalLayoutReorder::Interval::isIn(int index) const {
+	return (index >= from) && (index < (from + length));
+}
+
+bool VerticalLayoutReorder::isIndexPinned(int index) const {
+	return ranges::any_of(_pinnedIntervals, [&](const Interval &i) {
+		return i.isIn(index);
+	});
+}
+
 void VerticalLayoutReorder::mouseMove(
 		not_null<RpWidget*> widget,
 		QPoint position) {
@@ -101,6 +123,9 @@ void VerticalLayoutReorder::checkForStart(QPoint position) {
 }
 
 void VerticalLayoutReorder::updateOrder(int index, QPoint position) {
+	if (isIndexPinned(index)) {
+		return;
+	}
 	const auto shift = position.y() - _currentStart;
 	auto &current = _entries[index];
 	current.shiftAnimation.stop();
@@ -116,6 +141,9 @@ void VerticalLayoutReorder::updateOrder(int index, QPoint position) {
 	if (shift > 0) {
 		auto top = current.widget->y() - shift;
 		for (auto next = index + 1; next != count; ++next) {
+			if (isIndexPinned(next)) {
+				return;
+			}
 			const auto &entry = _entries[next];
 			top += entry.widget->height();
 			if (currentMiddle < top) {
@@ -133,6 +161,9 @@ void VerticalLayoutReorder::updateOrder(int index, QPoint position) {
 			moveToShift(next, 0);
 		}
 		for (auto prev = index - 1; prev >= 0; --prev) {
+			if (isIndexPinned(prev)) {
+				return;
+			}
 			const auto &entry = _entries[prev];
 			if (currentMiddle >= entry.widget->y() - entry.shift + currentHeight) {
 				moveToShift(prev, 0);
@@ -183,7 +214,9 @@ void VerticalLayoutReorder::cancelCurrent(int index) {
 }
 
 void VerticalLayoutReorder::finishReordering() {
-	_scrollAnimation.stop();
+	if (_scroll) {
+		_scrollAnimation.stop();
+	}
 	finishCurrent();
 }
 
@@ -281,6 +314,9 @@ auto VerticalLayoutReorder::updates() const -> rpl::producer<Single> {
 }
 
 void VerticalLayoutReorder::updateScrollCallback() {
+	if (!_scroll) {
+		return;
+	}
 	const auto delta = deltaFromEdge();
 	const auto oldTop = _scroll->scrollTop();
 	_scroll->scrollToY(oldTop + delta);
@@ -293,7 +329,7 @@ void VerticalLayoutReorder::updateScrollCallback() {
 }
 
 void VerticalLayoutReorder::checkForScrollAnimation() {
-	if (!deltaFromEdge() || _scrollAnimation.animating()) {
+	if (!_scroll || !deltaFromEdge() || _scrollAnimation.animating()) {
 		return;
 	}
 	_scrollAnimation.start();
@@ -301,6 +337,7 @@ void VerticalLayoutReorder::checkForScrollAnimation() {
 
 int VerticalLayoutReorder::deltaFromEdge() {
 	Expects(_currentWidget != nullptr);
+	Expects(_scroll);
 
 	const auto globalPosition = _currentWidget->mapToGlobal(QPoint(0, 0));
 	const auto localTop = _scroll->mapFromGlobal(globalPosition).y();

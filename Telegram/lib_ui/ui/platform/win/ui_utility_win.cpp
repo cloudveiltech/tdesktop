@@ -9,7 +9,6 @@
 #include "base/platform/win/base_windows_h.h"
 
 #include <QtWidgets/QApplication>
-#include <QtGui/QWindow>
 
 #include <wrl/client.h>
 #include <Shobjidl.h>
@@ -53,7 +52,7 @@ void IgnoreAllActivation(not_null<QWidget*> widget) {
 std::optional<bool> IsOverlapped(
 		not_null<QWidget*> widget,
 		const QRect &rect) {
-	const auto handle = reinterpret_cast<HWND>(widget->window()->winId());
+	const auto handle = HWND(widget->winId());
 	Expects(handle != nullptr);
 
 	ComPtr<IVirtualDesktopManager> virtualDesktopManager;
@@ -73,14 +72,36 @@ std::optional<bool> IsOverlapped(
 		}
 	}
 
-	std::vector<HWND> visited;
-	const RECT nativeRect{
-		rect.left(),
-		rect.top(),
-		rect.right(),
-		rect.bottom(),
-	};
+	const auto nativeRect = [&] {
+		const auto topLeft = [&] {
+			const auto qpoints = rect.topLeft()
+				* widget->devicePixelRatioF();
+			POINT result{
+				qpoints.x(),
+				qpoints.y(),
+			};
+			ClientToScreen(handle, &result);
+			return result;
+		}();
+		const auto bottomRight = [&] {
+			const auto qpoints = rect.bottomRight()
+				* widget->devicePixelRatioF();
+			POINT result{
+				qpoints.x(),
+				qpoints.y(),
+			};
+			ClientToScreen(handle, &result);
+			return result;
+		}();
+		return RECT{
+			topLeft.x,
+			topLeft.y,
+			bottomRight.x,
+			bottomRight.y,
+		};
+	}();
 
+	std::vector<HWND> visited;
 	for (auto curHandle = handle;
 		curHandle != nullptr && !ranges::contains(visited, curHandle);
 		curHandle = GetWindow(curHandle, GW_HWNDPREV)) {
@@ -99,16 +120,16 @@ std::optional<bool> IsOverlapped(
 	return false;
 }
 
-bool ShowWindowMenu(QWindow *window) {
-	const auto pos = QCursor::pos();
-
+void ShowWindowMenu(not_null<QWidget*> widget, const QPoint &point) {
+	const auto handle = HWND(widget->winId());
+	const auto mapped = point * widget->devicePixelRatioF();
+	POINT p{ mapped.x(), mapped.y() };
+	ClientToScreen(handle, &p);
 	SendMessage(
-		HWND(window->winId()),
-		WM_SYSCOMMAND,
-		SC_MOUSEMENU,
-		MAKELPARAM(pos.x(), pos.y()));
-
-	return true;
+		handle,
+		0x313 /* WM_POPUPSYSTEMMENU */,
+		0,
+		MAKELPARAM(p.x, p.y));
 }
 
 TitleControls::Layout TitleControlsLayout() {

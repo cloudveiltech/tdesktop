@@ -197,7 +197,7 @@ TermsLock TermsLock::FromMTP(
 	return {
 		bytes::make_vector(data.vid().c_dataJSON().vdata().v),
 		TextWithEntities {
-			TextUtilities::Clean(qs(data.vtext())),
+			qs(data.vtext()),
 			Api::EntitiesFromMTP(session, data.ventities().v) },
 		(minAge ? std::make_optional(minAge->v) : std::nullopt),
 		data.is_popup()
@@ -263,6 +263,7 @@ void TermsBox::prepare() {
 			st::termsPadding),
 		0,
 		age ? age->height() : 0);
+	const auto toastParent = Ui::BoxShow(this).toastParent();
 	content->entity()->setClickHandlerFilter([=](
 			const ClickHandlerPtr &handler,
 			Qt::MouseButton button) {
@@ -271,7 +272,9 @@ void TermsBox::prepare() {
 			: QString();
 		if (TextUtilities::RegExpMention().match(link).hasMatch()) {
 			_lastClickedMention = link;
-			Ui::Toast::Show(tr::lng_terms_agree_to_proceed(tr::now, lt_bot, link));
+			Ui::Toast::Show(
+				toastParent,
+				tr::lng_terms_agree_to_proceed(tr::now, lt_bot, link));
 			return false;
 		}
 		return true;

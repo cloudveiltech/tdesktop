@@ -8,6 +8,7 @@
 
 #include "ui/rp_widget.h"
 #include "base/flags.h"
+#include "base/qt/qt_common_adapters.h"
 
 namespace style {
 struct WindowTitle;
@@ -16,6 +17,8 @@ struct WindowTitle;
 namespace Ui {
 namespace Platform {
 class BasicWindowHelper;
+struct HitTestRequest;
+enum class HitTestResult;
 } // namespace Platform
 
 enum class WindowTitleHitTestFlag {
@@ -38,6 +41,21 @@ public:
 	[[nodiscard]] not_null<const RpWidget*> body() const;
 	[[nodiscard]] QMargins frameMargins() const;
 
+	// In Windows 11 the window rounding shadow takes about
+	// round(1px * system_scale) from the window geometry on each side.
+	//
+	// Top shift is made by the TitleWidget height, but the rest of the
+	// side shifts are left for the RpWindow client to consider.
+	[[nodiscard]] int additionalContentPadding() const;
+	[[nodiscard]] rpl::producer<int> additionalContentPaddingValue() const;
+
+	[[nodiscard]] auto hitTestRequests() const
+		-> rpl::producer<not_null<Platform::HitTestRequest*>>;
+	[[nodiscard]] auto systemButtonOver() const
+		-> rpl::producer<Platform::HitTestResult>;
+	[[nodiscard]] auto systemButtonDown() const
+		-> rpl::producer<Platform::HitTestResult>;
+
 	void setTitle(const QString &title);
 	void setTitleStyle(const style::WindowTitle &st);
 	void setNativeFrame(bool enabled);
@@ -50,7 +68,14 @@ public:
 	void close();
 	void setBodyTitleArea(Fn<WindowTitleHitTestFlags(QPoint)> testMethod);
 
+protected:
+	bool nativeEvent(
+		const QByteArray &eventType,
+		void *message,
+		base::NativeEventResult *result) override;
+
 private:
+	bool _initialized = false;
 	const std::unique_ptr<Platform::BasicWindowHelper> _helper;
 
 };

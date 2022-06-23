@@ -29,7 +29,7 @@ namespace app {
 	function initialize(): void {
 		getElem("loading").style.display = "none";
 		getElem("loaded").style.removeProperty("display");
-		let elems = document.querySelectorAll("input[type=number], textarea");
+		let elems = document.querySelectorAll("input[type=number], input[type=text], textarea");
 		for (let el of elems) {
 			if (el.id.indexOf("version-") != 0)
 				(el as any).oninput = redrawQrCode;
@@ -86,22 +86,26 @@ namespace app {
 		
 		// Draw image output
 		const border: number = parseInt(getInput("border-input").value, 10);
+		const lightColor: string = getInput("light-color-input").value;
+		const darkColor : string = getInput("dark-color-input" ).value;
 		if (border < 0 || border > 100)
 			return;
 		if (bitmapOutput) {
 			const scale: number = parseInt(getInput("scale-input").value, 10);
 			if (scale <= 0 || scale > 30)
 				return;
-			qr.drawCanvas(scale, border, canvas);
+			drawCanvas(qr, scale, border, lightColor, darkColor, canvas);
 			canvas.style.removeProperty("display");
 		} else {
-			const code: string = qr.toSvgString(border);
+			const code: string = toSvgString(qr, border, lightColor, darkColor);
 			const viewBox: string = (/ viewBox="([^"]*)"/.exec(code) as RegExpExecArray)[1];
 			const pathD: string = (/ d="([^"]*)"/.exec(code) as RegExpExecArray)[1];
 			svg.setAttribute("viewBox", viewBox);
 			(svg.querySelector("path") as Element).setAttribute("d", pathD);
+			(svg.querySelector("rect") as Element).setAttribute("fill", lightColor);
+			(svg.querySelector("path") as Element).setAttribute("fill", darkColor);
 			svg.style.removeProperty("display");
-			svgXml.value = qr.toSvgString(border);
+			svgXml.value = code;
 		}
 		
 		// Returns a string to describe the given list of segments.
@@ -146,6 +150,48 @@ namespace app {
 			`error correction = level ${"LMQH".charAt(qr.errorCorrectionLevel.ordinal)}, ` +
 			`data bits = ${qrcodegen.QrSegment.getTotalBits(segs, qr.version) as number}.`;
 	}
+	
+	
+	// Draws the given QR Code, with the given module scale and border modules, onto the given HTML
+	// canvas element. The canvas's width and height is resized to (qr.size + border * 2) * scale.
+	// The drawn image is purely dark and light, and fully opaque.
+	// The scale must be a positive integer and the border must be a non-negative integer.
+	function drawCanvas(qr: qrcodegen.QrCode, scale: number, border: number, lightColor: string, darkColor: string, canvas: HTMLCanvasElement): void {
+		if (scale <= 0 || border < 0)
+			throw "Value out of range";
+		const width: number = (qr.size + border * 2) * scale;
+		canvas.width = width;
+		canvas.height = width;
+		let ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+		for (let y = -border; y < qr.size + border; y++) {
+			for (let x = -border; x < qr.size + border; x++) {
+				ctx.fillStyle = qr.getModule(x, y) ? darkColor : lightColor;
+				ctx.fillRect((x + border) * scale, (y + border) * scale, scale, scale);
+			}
+		}
+	}
+	
+	
+	// Returns a string of SVG code for an image depicting the given QR Code, with the given number
+	// of border modules. The string always uses Unix newlines (\n), regardless of the platform.
+	function toSvgString(qr: qrcodegen.QrCode, border: number, lightColor: string, darkColor: string): string {
+		if (border < 0)
+			throw "Border must be non-negative";
+		let parts: Array<string> = [];
+		for (let y = 0; y < qr.size; y++) {
+			for (let x = 0; x < qr.size; x++) {
+				if (qr.getModule(x, y))
+					parts.push(`M${x + border},${y + border}h1v1h-1z`);
+			}
+		}
+		return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 ${qr.size + border * 2} ${qr.size + border * 2}" stroke="none">
+	<rect width="100%" height="100%" fill="${lightColor}"/>
+	<path d="${parts.join(" ")}" fill="${darkColor}"/>
+</svg>
+`
+		}
 	
 	
 	export function handleVersionMinMax(which: "min"|"max"): void {

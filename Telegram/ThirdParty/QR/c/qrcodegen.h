@@ -36,7 +36,7 @@ extern "C" {
 /* 
  * This library creates QR Code symbols, which is a type of two-dimension barcode.
  * Invented by Denso Wave and described in the ISO/IEC 18004 standard.
- * A QR Code structure is an immutable square grid of black and white cells.
+ * A QR Code structure is an immutable square grid of dark and light cells.
  * The library provides functions to create a QR Code from text or binary data.
  * The library covers the QR Code Model 2 specification, supporting all versions (sizes)
  * from 1 to 40, all 4 error correction levels, and 4 character encoding modes.
@@ -154,8 +154,8 @@ struct qrcodegen_Segment {
  * - The input text must be encoded in UTF-8 and contain no NULs.
  * - The variables ecl and mask must correspond to enum constant values.
  * - Requires 1 <= minVersion <= maxVersion <= 40.
- * - The arrays tempBuffer and qrcode must each have a length
- *   of at least qrcodegen_BUFFER_LEN_FOR_VERSION(maxVersion).
+ * - The arrays tempBuffer and qrcode must each have a length of at least
+ *   qrcodegen_BUFFER_LEN_FOR_VERSION(maxVersion), and cannot overlap.
  * - After the function returns, tempBuffer contains no useful data.
  * - If successful, the resulting QR Code may use numeric,
  *   alphanumeric, or byte mode to encode the text.
@@ -178,8 +178,8 @@ bool qrcodegen_encodeText(const char *text, uint8_t tempBuffer[], uint8_t qrcode
  *   valid UTF-8 text, but is not required by the QR Code standard.
  * - The variables ecl and mask must correspond to enum constant values.
  * - Requires 1 <= minVersion <= maxVersion <= 40.
- * - The arrays dataAndTemp and qrcode must each have a length
- *   of at least qrcodegen_BUFFER_LEN_FOR_VERSION(maxVersion).
+ * - The arrays dataAndTemp and qrcode must each have a length of at least
+ *   qrcodegen_BUFFER_LEN_FOR_VERSION(maxVersion), and cannot overlap.
  * - After the function returns, the contents of dataAndTemp may have changed,
  *   and does not represent useful data anymore.
  * - If successful, the resulting QR Code will use byte mode to encode the data.
@@ -230,18 +230,18 @@ bool qrcodegen_encodeSegmentsAdvanced(const struct qrcodegen_Segment segs[], siz
 
 
 /* 
+ * Tests whether the given string can be encoded as a segment in numeric mode.
+ * A string is encodable iff each character is in the range 0 to 9.
+ */
+bool qrcodegen_isNumeric(const char *text);
+
+
+/* 
  * Tests whether the given string can be encoded as a segment in alphanumeric mode.
  * A string is encodable iff each character is in the following set: 0 to 9, A to Z
  * (uppercase only), space, dollar, percent, asterisk, plus, hyphen, period, slash, colon.
  */
 bool qrcodegen_isAlphanumeric(const char *text);
-
-
-/* 
- * Tests whether the given string can be encoded as a segment in numeric mode.
- * A string is encodable iff each character is in the range 0 to 9.
- */
-bool qrcodegen_isNumeric(const char *text);
 
 
 /* 
@@ -300,8 +300,8 @@ int qrcodegen_getSize(const uint8_t qrcode[]);
 
 /* 
  * Returns the color of the module (pixel) at the given coordinates, which is false
- * for white or true for black. The top left corner has the coordinates (x=0, y=0).
- * If the given coordinates are out of bounds, then false (white) is returned.
+ * for light or true for dark. The top left corner has the coordinates (x=0, y=0).
+ * If the given coordinates are out of bounds, then false (light) is returned.
  */
 bool qrcodegen_getModule(const uint8_t qrcode[], int x, int y);
 

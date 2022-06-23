@@ -469,7 +469,7 @@ void Histories::requestGroupAround(not_null<HistoryItem*> item) {
 				result);
 			_chatListGroupRequests.remove(history);
 			history->migrateToOrMe()->applyChatListGroup(
-				history->channelId(),
+				history->peer->id,
 				result);
 			finish();
 		}).fail([=] {
@@ -641,7 +641,9 @@ void Histories::deleteAllMessages(
 			//	}
 			}).send();
 		} else if (channel) {
+			using Flag = MTPchannels_DeleteHistory::Flag;
 			return session().api().request(MTPchannels_DeleteHistory(
+				MTP_flags(revoke ? Flag::f_for_everyone : Flag(0)),
 				channel->inputChannel,
 				MTP_int(deleteTillId)
 			)).done(finish).fail(finish).send();

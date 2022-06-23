@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/mime_type.h"
 #include "core/utils.h"
 #include <QtCore/QDateTime>
+#include <QtCore/QTimeZone>
 #include <QtCore/QRegularExpression>
 #include <QtGui/QImageReader>
 #include <range/v3/algorithm/max_element.hpp>
@@ -30,7 +31,7 @@ constexpr auto kMigratedMessagesIdShift = -1'000'000'000;
 
 QString PrepareFileNameDatePart(TimeId date) {
 	return date
-		? ('@' + QString::fromUtf8(FormatDateTime(date, '-', '-', '_')))
+		? ('@' + QString::fromUtf8(FormatDateTime(date, 0, '-', '-', '_')))
 		: QString();
 }
 
@@ -153,7 +154,8 @@ std::vector<TextPart> ParseText(
 			[](const MTPDmessageEntityStrike&) { return Type::Strike; },
 			[](const MTPDmessageEntityBlockquote&) {
 				return Type::Blockquote; },
-			[](const MTPDmessageEntityBankCard&) { return Type::BankCard; });
+			[](const MTPDmessageEntityBankCard&) { return Type::BankCard; },
+			[](const MTPDmessageEntitySpoiler&) { return Type::Spoiler; });
 		part.text = mid(start, length);
 		part.additional = entity.match(
 		[](const MTPDmessageEntityPre &data) {
@@ -1021,6 +1023,8 @@ ServiceAction ParseServiceAction(
 		auto content = ActionPaymentSent();
 		content.currency = ParseString(data.vcurrency());
 		content.amount = data.vtotal_amount().v;
+		content.recurringInit = data.is_recurring_init();
+		content.recurringUsed = data.is_recurring_used();
 		result.content = content;
 	}, [&](const MTPDmessageActionPhoneCall &data) {
 		auto content = ActionPhoneCall();
@@ -1129,6 +1133,12 @@ ServiceAction ParseServiceAction(
 		};
 	}, [&](const MTPDmessageActionChatJoinedByRequest &data) {
 		result.content = ActionChatJoinedByRequest();
+	}, [&](const MTPDmessageActionWebViewDataSentMe &data) {
+		// Should not be in user inbox.
+	}, [&](const MTPDmessageActionWebViewDataSent &data) {
+		auto content = ActionWebViewDataSent();
+		content.text = ParseString(data.vtext());
+		result.content = content;
 	}, [](const MTPDmessageActionEmpty &data) {});
 	return result;
 }
@@ -1801,6 +1811,7 @@ Utf8String FormatPhoneNumber(const Utf8String &phoneNumber) {
 
 Utf8String FormatDateTime(
 		TimeId date,
+		bool hasTimeZone,
 		QChar dateSeparator,
 		QChar timeSeparator,
 		QChar separator) {
@@ -1808,14 +1819,21 @@ Utf8String FormatDateTime(
 		return Utf8String();
 	}
 	const auto value = QDateTime::fromSecsSinceEpoch(date);
+	const auto timeZoneOffset = hasTimeZone
+		? separator + value.timeZone().displayName(
+			QTimeZone::StandardTime,
+			QTimeZone::OffsetName)
+		: QString();
 	return (QString("%1") + dateSeparator + "%2" + dateSeparator + "%3"
 		+ separator + "%4" + timeSeparator + "%5" + timeSeparator + "%6"
+		+ "%7"
 	).arg(value.date().day(), 2, 10, QChar('0')
 	).arg(value.date().month(), 2, 10, QChar('0')
 	).arg(value.date().year()
 	).arg(value.time().hour(), 2, 10, QChar('0')
 	).arg(value.time().minute(), 2, 10, QChar('0')
 	).arg(value.time().second(), 2, 10, QChar('0')
+	).arg(timeZoneOffset
 	).toUtf8();
 }
 

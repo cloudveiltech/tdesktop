@@ -149,9 +149,14 @@ void Userpic::refreshPhoto() {
 	if (!size()) {
 		return;
 	}
+	const auto isNewBigPhoto = [&] {
+		return _photo
+			&& (_photo->image(Data::PhotoSize::Thumbnail) != nullptr)
+			&& (_photo->owner()->id != _userPhotoId || !_userPhotoFull);
+	}();
 
-	//CloudVeil start
-	bool isVideoPic = !_photo->videoContent().isEmpty();
+	//CloudVeil start	
+	bool isVideoPic = !_photo->videoContent(Data::PhotoSize::Large).isEmpty() || !_photo->videoContent(Data::PhotoSize::Small).isEmpty();
 	bool isVideoDisallowed = GlobalSecuritySettings::getSettings().disableProfileVideo && isVideoPic;
 	if (GlobalSecuritySettings::getSettings().disableProfilePhoto || isVideoDisallowed) {
 		createCache(nullptr);
@@ -159,11 +164,6 @@ void Userpic::refreshPhoto() {
 	}
 	//CloudVeil end
 
-	const auto isNewBigPhoto = [&] {
-		return _photo
-			&& (_photo->image(Data::PhotoSize::Thumbnail) != nullptr)
-			&& (_photo->owner()->id != _userPhotoId || !_userPhotoFull);
-	}();
 	if (isNewBigPhoto) {
 		_userPhotoId = _photo->owner()->id;
 		_userPhotoFull = true;
@@ -176,8 +176,11 @@ void Userpic::refreshPhoto() {
 void Userpic::createCache(Image *image) {
 	const auto size = this->size();
 	const auto real = size * cIntRetinaFactor();
-	auto options = Images::Option::Smooth | Images::Option::Circled;
-	// _useTransparency ? (Images::Option::RoundedLarge | Images::Option::RoundedTopLeft | Images::Option::RoundedTopRight | Images::Option::Smooth) : Images::Option::None;
+	//_useTransparency
+	//	? (Images::Option::RoundLarge
+	//		| Images::Option::RoundSkipBottomLeft
+	//		| Images::Option::RoundSkipBottomRight)
+	//	: Images::Option::None;
 	if (image) {
 		auto width = image->width();
 		auto height = image->height();
@@ -189,14 +192,16 @@ void Userpic::createCache(Image *image) {
 			width = real;
 		}
 		_userPhoto = image->pixNoCache(
-			width,
-			height,
-			options,
-			size,
-			size);
+			{ width, height },
+			{
+				.options = Images::Option::RoundCircle,
+				.outer = { size, size },
+			});
 		_userPhoto.setDevicePixelRatio(cRetinaFactor());
 	} else {
-		auto filled = QImage(QSize(real, real), QImage::Format_ARGB32_Premultiplied);
+		auto filled = QImage(
+			QSize(real, real),
+			QImage::Format_ARGB32_Premultiplied);
 		filled.setDevicePixelRatio(cRetinaFactor());
 		filled.fill(Qt::transparent);
 		{
@@ -206,7 +211,10 @@ void Userpic::createCache(Image *image) {
 				_peer->name
 			).paint(p, 0, 0, size, size);
 		}
-		//Images::prepareRound(filled, ImageRoundRadius::Large, RectPart::TopLeft | RectPart::TopRight);
+		//_userPhoto = Images::PixmapFast(Images::Round(
+		//	std::move(filled),
+		//	ImageRoundRadius::Large,
+		//	RectPart::TopLeft | RectPart::TopRight));
 		_userPhoto = Images::PixmapFast(std::move(filled));
 	}
 

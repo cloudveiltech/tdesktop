@@ -14,6 +14,14 @@
 
 namespace anim {
 
+[[nodiscard]] QColor gradient_color_at(
+	const QGradientStops &stops,
+	float64 ratio);
+
+[[nodiscard]] QColor gradient_color_at(
+	const QGradient &gradient,
+	float64 ratio);
+
 struct gradient_colors {
 	explicit gradient_colors(QColor color) {
 		stops.push_back({ 0., color });

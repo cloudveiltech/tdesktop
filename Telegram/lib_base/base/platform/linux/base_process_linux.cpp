@@ -24,13 +24,13 @@ void XCBActivateWindow(WId window) {
 		return;
 	}
 
-	const auto root = XCB::GetRootWindowFromQt();
+	const auto root = XCB::GetRootWindow(connection);
 	if (!root.has_value()) {
 		return;
 	}
 
-	const auto appTime = XCB::GetAppTimeFromQt();
-	if (!appTime.has_value()) {
+	const auto timestamp = XCB::GetTimestamp();
+	if (!timestamp.has_value()) {
 		return;
 	}
 
@@ -63,7 +63,7 @@ void XCBActivateWindow(WId window) {
 	xev.window = window;
 	xev.type = *activeWindowAtom;
 	xev.data.data32[0] = 1; // source: 1=application 2=pager
-	xev.data.data32[1] = *appTime; // timestamp
+	xev.data.data32[1] = *timestamp; // timestamp
 	xev.data.data32[2] = focusWindow // currently active window
 		? focusWindow->winId()
 		: XCB_NONE;

@@ -71,12 +71,18 @@ bool Resolve() {
 		&& LOAD_SYMBOL(webkit2gtk, webkit_web_view_get_settings)
 		&& LOAD_SYMBOL(webkit2gtk, webkit_settings_set_javascript_can_access_clipboard)
 		&& LOAD_SYMBOL(webkit2gtk, webkit_web_view_load_uri)
+		&& LOAD_SYMBOL(webkit2gtk, webkit_web_view_reload_bypass_cache)
 		&& LOAD_SYMBOL(webkit2gtk, webkit_user_script_new)
 		&& LOAD_SYMBOL(webkit2gtk, webkit_user_content_manager_add_script)
 		&& LOAD_SYMBOL(webkit2gtk, webkit_web_view_run_javascript)
 		&& LOAD_SYMBOL(webkit2gtk, webkit_uri_request_get_uri)
 		&& LOAD_SYMBOL(webkit2gtk, webkit_policy_decision_ignore)
-		&& LOAD_SYMBOL(webkit2gtk, webkit_navigation_policy_decision_get_type);
+		&& LOAD_SYMBOL(webkit2gtk, webkit_navigation_policy_decision_get_type)
+		&& LOAD_SYMBOL(webkit2gtk, webkit_script_dialog_get_dialog_type)
+		&& LOAD_SYMBOL(webkit2gtk, webkit_script_dialog_get_message)
+		&& LOAD_SYMBOL(webkit2gtk, webkit_script_dialog_confirm_set_confirmed)
+		&& LOAD_SYMBOL(webkit2gtk, webkit_script_dialog_prompt_get_default_text)
+		&& LOAD_SYMBOL(webkit2gtk, webkit_script_dialog_prompt_set_text);
 	if (!result) {
 		return false;
 	}

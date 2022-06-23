@@ -37,6 +37,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_dialogs.h"
 #include "styles/style_layers.h"
 #include "styles/style_boxes.h"
+#include "styles/style_menu_icons.h"
 
 namespace Window {
 namespace Theme {
@@ -422,8 +423,8 @@ Editor::Inner::Inner(QWidget *parent, const QString &path)
 		if (update.type == BackgroundUpdate::Type::TestingTheme) {
 			Revert();
 			base::call_delayed(st::slideDuration, this, [] {
-				Ui::show(Box<Ui::InformBox>(
-					tr::lng_theme_editor_cant_change_theme(tr::now)));
+				Ui::show(Ui::MakeInformBox(
+					tr::lng_theme_editor_cant_change_theme()));
 			});
 		}
 	}, lifetime());
@@ -667,7 +668,7 @@ Editor::Editor(
 		[=] { save(); }));
 
 	_inner->setErrorCallback([=] {
-		window->show(Box<Ui::InformBox>(tr::lng_theme_editor_error(tr::now)));
+		window->show(Ui::MakeInformBox(tr::lng_theme_editor_error()));
 
 		// This could be from inner->_context observable notification.
 		// We should not destroy it while iterating in subscribers.
@@ -703,7 +704,9 @@ void Editor::showMenu() {
 	if (_menu) {
 		return;
 	}
-	_menu = base::make_unique_q<Ui::DropdownMenu>(this);
+	_menu = base::make_unique_q<Ui::DropdownMenu>(
+		this,
+		st::dropdownMenuWithIcons);
 	_menu->setHiddenCallback([weak = Ui::MakeWeak(this), menu = _menu.get()]{
 		menu->deleteLater();
 		if (weak && weak->_menu == menu) {
@@ -727,15 +730,15 @@ void Editor::showMenu() {
 		base::call_delayed(st::defaultRippleAnimation.hideDuration, this, [=] {
 			exportTheme();
 		});
-	});
+	}, &st::menuIconExportTheme);
 	_menu->addAction(tr::lng_theme_editor_menu_import(tr::now), [=] {
 		base::call_delayed(st::defaultRippleAnimation.hideDuration, this, [=] {
 			importTheme();
 		});
-	});
+	}, &st::menuIconImportTheme);
 	_menu->addAction(tr::lng_theme_editor_menu_show(tr::now), [=] {
 		File::ShowInFolder(EditingPalettePath());
-	});
+	}, &st::menuIconPalette);
 	_menu->moveToRight(st::themesMenuPosition.x(), st::themesMenuPosition.y());
 	_menu->showAnimated(Ui::PanelAnimation::Origin::TopRight);
 }
@@ -749,17 +752,15 @@ void Editor::exportTheme() {
 		QFile f(path);
 		if (!f.open(QIODevice::WriteOnly)) {
 			LOG(("Theme Error: could not open zip-ed theme file '%1' for writing").arg(path));
-			_window->show(
-				Box<Ui::InformBox>(tr::lng_theme_editor_error(tr::now)));
+			_window->show(Ui::MakeInformBox(tr::lng_theme_editor_error()));
 			return;
 		}
 		if (f.write(result) != result.size()) {
 			LOG(("Theme Error: could not write zip-ed theme to file '%1'").arg(path));
-			_window->show(
-				Box<Ui::InformBox>(tr::lng_theme_editor_error(tr::now)));
+			_window->show(Ui::MakeInformBox(tr::lng_theme_editor_error()));
 			return;
 		}
-		Ui::Toast::Show(tr::lng_theme_editor_done(tr::now));
+		_window->showToast(tr::lng_theme_editor_done(tr::now));
 	}));
 }
 
@@ -816,10 +817,10 @@ QByteArray Editor::ColorizeInContent(
 
 void Editor::save() {
 	if (Core::App().passcodeLocked()) {
-		Ui::Toast::Show(tr::lng_theme_editor_need_unlock(tr::now));
+		_window->showToast(tr::lng_theme_editor_need_unlock(tr::now));
 		return;
 	} else if (!_window->account().sessionExists()) {
-		Ui::Toast::Show(tr::lng_theme_editor_need_auth(tr::now));
+		_window->showToast(tr::lng_theme_editor_need_auth(tr::now));
 		return;
 	} else if (_saving) {
 		return;
@@ -903,10 +904,11 @@ void Editor::closeWithConfirmation() {
 		closeEditor();
 		close();
 	});
-	_window->show(Box<Ui::ConfirmBox>(
-		tr::lng_theme_editor_sure_close(tr::now),
-		tr::lng_close(tr::now),
-		close));
+	_window->show(Ui::MakeConfirmBox({
+		.text = tr::lng_theme_editor_sure_close(),
+		.confirmed = close,
+		.confirmText = tr::lng_close(),
+	}));
 }
 
 void Editor::closeEditor() {

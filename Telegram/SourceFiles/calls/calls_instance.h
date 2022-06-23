@@ -25,10 +25,15 @@ namespace Main {
 class Session;
 } // namespace Main
 
+namespace Ui {
+class Show;
+} // namespace Ui
+
 namespace Calls::Group {
 struct JoinInfo;
 class Panel;
 class ChooseJoinAsProcess;
+class StartRtmpProcess;
 } // namespace Calls::Group
 
 namespace tgcalls {
@@ -43,6 +48,19 @@ class GroupCall;
 class Panel;
 struct DhConfig;
 
+struct StartGroupCallArgs {
+	enum class JoinConfirm {
+		None,
+		IfNowInAnother,
+		Always,
+	};
+	QString joinHash;
+	JoinConfirm confirm = JoinConfirm::IfNowInAnother;
+	bool scheduleNeeded = false;
+	bool rtmpNeeded = false;
+	bool useRtmp = false;
+};
+
 class Instance final : public base::has_weak_ptr {
 public:
 	Instance();
@@ -50,9 +68,9 @@ public:
 
 	void startOutgoingCall(not_null<UserData*> user, bool video);
 	void startOrJoinGroupCall(
+		std::shared_ptr<Ui::Show> show,
 		not_null<PeerData*> peer,
-		const QString &joinHash = QString(),
-		bool confirmNeeded = false);
+		const StartGroupCallArgs &args);
 	void handleUpdate(
 		not_null<Main::Session*> session,
 		const MTPUpdate &update);
@@ -139,6 +157,7 @@ private:
 	base::flat_map<QString, std::unique_ptr<Media::Audio::Track>> _tracks;
 
 	const std::unique_ptr<Group::ChooseJoinAsProcess> _chooseJoinAs;
+	const std::unique_ptr<Group::StartRtmpProcess> _startWithRtmp;
 
 	base::flat_set<std::unique_ptr<crl::semaphore>> _asyncWaiters;
 

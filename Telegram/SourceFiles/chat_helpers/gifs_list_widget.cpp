@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "api/api_toggling_media.h" // Api::ToggleSavedGif
 #include "base/const_string.h"
+#include "base/qt/qt_key_modifiers.h"
 #include "data/data_photo.h"
 #include "data/data_document.h"
 #include "data/data_session.h"
@@ -17,7 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_photo_media.h"
 #include "data/data_document_media.h"
 #include "data/stickers/data_stickers.h"
-#include "chat_helpers/send_context_menu.h" // SendMenu::FillSendMenu
+#include "menu/menu_send.h" // SendMenu::FillSendMenu
 #include "core/click_handler_types.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/input_fields.h"
@@ -35,6 +36,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_cursor_state.h"
 #include "storage/storage_account.h" // Account::writeSavedGifs
 #include "styles/style_chat_helpers.h"
+#include "styles/style_menu_icons.h"
 
 #include <QtWidgets/QApplication>
 
@@ -42,13 +44,15 @@ namespace ChatHelpers {
 namespace {
 
 constexpr auto kSearchRequestDelay = 400;
-constexpr auto kInlineItemsMaxPerRow = 5;
 constexpr auto kSearchBotUsername = "gif"_cs;
+constexpr auto kMinRepaintDelay = crl::time(33);
+constexpr auto kMinAfterScrollDelay = crl::time(33);
 
 } // namespace
 
 void AddGifAction(
-		Fn<void(QString, Fn<void()> &&)> callback,
+		Fn<void(QString, Fn<void()> &&, const style::icon*)> callback,
+		Window::SessionController *controller,
 		not_null<DocumentData*> document) {
 	if (!document->isGifv()) {
 		return;
@@ -61,6 +65,7 @@ void AddGifAction(
 		: tr::lng_context_save_gif)(tr::now);
 	callback(text, [=] {
 		Api::ToggleSavedGif(
+			controller,
 			document,
 			Data::FileOriginSavedGifs(),
 			!saved);
@@ -71,7 +76,7 @@ void AddGifAction(
 			document->session().local().writeSavedGifs();
 		}
 		data.stickers().notifySavedGifsUpdated();
-	});
+	}, saved ? &st::menuIconDelete : &st::menuIconGif);
 }
 
 class GifsListWidget::Footer : public TabbedSelector::InnerFooter {
@@ -187,14 +192,14 @@ GifsListWidget::GifsListWidget(
 
 	controller->session().downloaderTaskFinished(
 	) | rpl::start_with_next([=] {
-		update();
+		updateInlineItems();
 	}, lifetime());
 
 	controller->gifPauseLevelChanged(
 	) | rpl::start_with_next([=] {
 		if (!controller->isGifPausedAtLeastFor(
 				Window::GifPauseReason::SavedGifs)) {
-			update();
+			updateInlineItems();
 		}
 	}, lifetime());
 
@@ -234,10 +239,11 @@ object_ptr<TabbedSelector::InnerFooter> GifsListWidget::createFooter() {
 void GifsListWidget::visibleTopBottomUpdated(
 		int visibleTop,
 		int visibleBottom) {
-	auto top = getVisibleTop();
+	const auto top = getVisibleTop();
 	Inner::visibleTopBottomUpdated(visibleTop, visibleBottom);
 	if (top != getVisibleTop()) {
-		_lastScrolled = crl::now();
+		_lastScrolledAt = crl::now();
+		update();
 	}
 	checkLoadMore();
 }
@@ -386,10 +392,13 @@ void GifsListWidget::fillContextMenu(
 			? item->getDocument() // Saved GIF.
 			: item->getPreviewDocument(); // Searched GIF.
 		if (document) {
-			auto callback = [&](const QString &text, Fn<void()> &&done) {
-				menu->addAction(text, std::move(done));
+			auto callback = [&](
+					const QString &text,
+					Fn<void()> &&done,
+					const style::icon *icon) {
+				menu->addAction(text, std::move(done), icon);
 			};
-			AddGifAction(std::move(callback), document);
+			AddGifAction(std::move(callback), controller(), document);
 		}
 	};
 }
@@ -433,15 +442,28 @@ void GifsListWidget::selectInlineResult(
 		return;
 	}
 
-	forceSend |= (QGuiApplication::keyboardModifiers()
-		== Qt::ControlModifier);
+	const auto messageSendingFrom = [&] {
+		if (options.scheduled) {
+			return Ui::MessageSendingAnimationFrom();
+		}
+		const auto rect = item->innerContentRect().translated(
+			_mosaic.findRect(index).topLeft());
+		return Ui::MessageSendingAnimationFrom{
+			.type = Ui::MessageSendingAnimationFrom::Type::Gif,
+			.localId = controller()->session().data().nextLocalMessageId(),
+			.globalStartGeometry = mapToGlobal(rect),
+			.crop = true,
+		};
+	};
+
+	forceSend |= base::IsCtrlPressed();
 	if (const auto photo = item->getPhoto()) {
 		using Data::PhotoSize;
 		const auto media = photo->activeMediaView();
 		if (forceSend
 			|| (media && media->image(PhotoSize::Thumbnail))
 			|| (media && media->image(PhotoSize::Large))) {
-			_photoChosen.fire_copy({
+			_photoChosen.fire({
 				.photo = photo,
 				.options = options });
 		} else if (!photo->loading(PhotoSize::Thumbnail)) {
@@ -451,9 +473,11 @@ void GifsListWidget::selectInlineResult(
 		const auto media = document->activeMediaView();
 		const auto preview = Data::VideoPreviewState(media.get());
 		if (forceSend || (media && preview.loaded())) {
-			_fileChosen.fire_copy({
+			_fileChosen.fire({
 				.document = document,
-				.options = options });
+				.options = options,
+				.messageSendingFrom = messageSendingFrom(),
+			});
 		} else if (!preview.usingThumbnail()) {
 			if (preview.loading()) {
 				document->cancel();
@@ -465,7 +489,13 @@ void GifsListWidget::selectInlineResult(
 		}
 	} else if (const auto inlineResult = item->getResult()) {
 		if (inlineResult->onChoose(item)) {
-			_inlineResultChosen.fire({ inlineResult, _searchBot, options });
+			options.hideViaBot = true;
+			_inlineResultChosen.fire({
+				.result = inlineResult,
+				.bot = _searchBot,
+				.options = options,
+				.messageSendingFrom = messageSendingFrom(),
+			});
 		}
 	}
 }
@@ -494,7 +524,7 @@ void GifsListWidget::clearSelection() {
 		setCursor(style::cur_default);
 	}
 	_selected = _pressed = -1;
-	update();
+	repaintItems();
 }
 
 TabbedSelector::InnerFooter *GifsListWidget::getFooter() const {
@@ -540,7 +570,7 @@ void GifsListWidget::refreshSavedGifs() {
 		deleteUnusedGifLayouts();
 
 		resizeToWidth(width());
-		update();
+		repaintItems();
 	}
 
 	if (isVisible()) {
@@ -668,7 +698,7 @@ int GifsListWidget::refreshInlineRows(const InlineCacheEntry *entry, bool result
 	}
 
 	resizeToWidth(width());
-	update();
+	repaintItems();
 
 	_lastMousePos = QCursor::pos();
 	updateSelected();
@@ -707,16 +737,13 @@ void GifsListWidget::inlineItemLayoutChanged(const InlineBots::Layout::ItemBase 
 	}
 }
 
-void GifsListWidget::inlineItemRepaint(const InlineBots::Layout::ItemBase *layout) {
-	auto ms = crl::now();
-	if (_lastScrolled + 100 <= ms) {
-		update();
-	} else {
-		_updateInlineItems.callOnce(_lastScrolled + 100 - ms);
-	}
+void GifsListWidget::inlineItemRepaint(
+		const InlineBots::Layout::ItemBase *layout) {
+	updateInlineItems();
 }
 
-bool GifsListWidget::inlineItemVisible(const InlineBots::Layout::ItemBase *layout) {
+bool GifsListWidget::inlineItemVisible(
+		const InlineBots::Layout::ItemBase *layout) {
 	auto position = layout->position();
 	if (position < 0 || !isVisible()) {
 		return false;
@@ -926,12 +953,22 @@ void GifsListWidget::showPreview() {
 }
 
 void GifsListWidget::updateInlineItems() {
-	auto ms = crl::now();
-	if (_lastScrolled + 100 <= ms) {
-		update();
-	} else {
-		_updateInlineItems.callOnce(_lastScrolled + 100 - ms);
+	const auto now = crl::now();
+
+	const auto delay = std::max(
+		_lastScrolledAt + kMinAfterScrollDelay - now,
+		_lastUpdatedAt + kMinRepaintDelay - now);
+	if (delay <= 0) {
+		repaintItems(now);
+	} else if (!_updateInlineItems.isActive()
+		|| _updateInlineItems.remainingTime() > kMinRepaintDelay) {
+		_updateInlineItems.callOnce(std::max(delay, kMinRepaintDelay));
 	}
+}
+
+void GifsListWidget::repaintItems(crl::time now) {
+	_lastUpdatedAt = now ? now : crl::now();
+	update();
 }
 
 } // namespace ChatHelpers

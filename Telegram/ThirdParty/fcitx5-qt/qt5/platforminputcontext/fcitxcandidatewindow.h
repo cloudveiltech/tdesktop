@@ -16,6 +16,8 @@
 #include <QPointer>
 #include <QTextLayout>
 #include <QWindow>
+#include <memory>
+#include <vector>
 
 namespace fcitx {
 
@@ -26,7 +28,7 @@ class MultilineText;
 class FcitxCandidateWindow : public QWindow {
     Q_OBJECT
 public:
-    explicit FcitxCandidateWindow(FcitxQtICData *data, FcitxTheme *theme);
+    explicit FcitxCandidateWindow(QWindow *window, FcitxTheme *theme);
     ~FcitxCandidateWindow();
 
     void render(QPainter *painter);
@@ -87,7 +89,6 @@ private:
     QRect nextRegion_;
     std::vector<QRect> candidateRegions_;
     QPointer<QWindow> parent_;
-    QPointer<QWindow> dummyParent_;
 };
 
 } // namespace fcitx

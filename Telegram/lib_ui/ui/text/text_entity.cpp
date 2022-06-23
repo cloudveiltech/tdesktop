@@ -12,7 +12,7 @@
 #include "ui/text/text.h"
 #include "ui/widgets/input_fields.h"
 #include "ui/emoji_config.h"
-#include "base/qt_adapters.h"
+#include "base/qt/qt_common_adapters.h"
 
 #include <QtCore/QStack>
 #include <QtCore/QMimeData>
@@ -21,6 +21,8 @@
 
 namespace TextUtilities {
 namespace {
+
+constexpr auto kTagSeparator = '\\';
 
 using namespace Ui::Text;
 
@@ -66,6 +68,10 @@ QString SeparatorsStrikeOut() {
 
 QString SeparatorsMono() {
 	return Separators(QString::fromUtf8("*~/"));
+}
+
+QString SeparatorsSpoiler() {
+	return Separators(QString::fromUtf8("|*~/"));
 }
 
 QString ExpressionHashtag() {
@@ -1269,6 +1275,14 @@ QString MarkdownPreBadAfter() {
 	return QString::fromLatin1("`");
 }
 
+QString MarkdownSpoilerGoodBefore() {
+	return SeparatorsSpoiler();
+}
+
+QString MarkdownSpoilerBadAfter() {
+	return QString::fromLatin1("|");
+}
+
 bool IsValidProtocol(const QString &protocol) {
 	static const auto list = CreateValidProtocols();
 	return list.contains(base::crc32(protocol.constData(), protocol.size() * sizeof(QChar)));
@@ -1279,27 +1293,17 @@ bool IsValidTopDomain(const QString &protocol) {
 	return list.contains(base::crc32(protocol.constData(), protocol.size() * sizeof(QChar)));
 }
 
-QString Clean(const QString &text) {
-	auto result = text;
-	for (auto s = text.unicode(), ch = s, e = text.unicode() + text.size(); ch != e; ++ch) {
-		if (*ch == TextCommand) {
-			result[int(ch - s)] = QChar::Space;
-		}
-	}
-	return result;
-}
-
 QString EscapeForRichParsing(const QString &text) {
 	QString result;
 	result.reserve(text.size());
 	auto s = text.constData(), ch = s;
 	for (const QChar *e = s + text.size(); ch != e; ++ch) {
-		if (*ch == TextCommand) {
-			if (ch > s) result.append(s, ch - s);
-			result.append(QChar::Space);
-			s = ch + 1;
-			continue;
-		}
+		// if (*ch == TextCommand) {
+		// 	if (ch > s) result.append(s, ch - s);
+		// 	result.append(QChar::Space);
+		// 	s = ch + 1;
+		// 	continue;
+		// }
 		if (ch->unicode() == '\\' || ch->unicode() == '[') {
 			if (ch > s) result.append(s, ch - s);
 			result.append('\\');
@@ -1327,7 +1331,7 @@ QString SingleLine(const QString &text) {
 	}
 
 	for (auto ch = s; ch != e; ++ch) {
-		if (IsNewline(*ch) || *ch == TextCommand) {
+		if (IsNewline(*ch)/* || *ch == TextCommand*/) {
 			result[int(ch - s)] = QChar::Space;
 		}
 	}
@@ -1523,56 +1527,14 @@ bool CutPart(TextWithEntities &sending, TextWithEntities &left, int32 limit) {
 	return true;
 }
 
-bool textcmdStartsLink(const QChar *start, int32 len, int32 commandOffset) {
-	if (commandOffset + 2 < len) {
-		if (*(start + commandOffset + 1) == TextCommandLinkIndex) {
-			return (*(start + commandOffset + 2) != 0);
-		}
-		return (*(start + commandOffset + 1) != TextCommandLinkText);
-	}
-	return false;
-}
-
-bool checkTagStartInCommand(const QChar *start, int32 len, int32 tagStart, int32 &commandOffset, bool &commandIsLink, bool &inLink) {
-	bool inCommand = false;
-	const QChar *commandEnd = start + commandOffset;
-	while (commandOffset < len && tagStart > commandOffset) { // skip commands, evaluating are we in link or not
-		commandEnd = textSkipCommand(start + commandOffset, start + len);
-		if (commandEnd > start + commandOffset) {
-			if (tagStart < (commandEnd - start)) {
-				inCommand = true;
-				break;
-			}
-			for (commandOffset = commandEnd - start; commandOffset < len; ++commandOffset) {
-				if (*(start + commandOffset) == TextCommand) {
-					inLink = commandIsLink;
-					commandIsLink = textcmdStartsLink(start, len, commandOffset);
-					break;
-				}
-			}
-			if (commandOffset >= len) {
-				inLink = commandIsLink;
-				commandIsLink = false;
-			}
-		} else {
-			break;
-		}
-	}
-	if (inCommand) {
-		commandOffset = commandEnd - start;
-	}
-	return inCommand;
-}
-
 TextWithEntities ParseEntities(const QString &text, int32 flags) {
-	const auto rich = ((flags & TextParseRichText) != 0);
 	auto result = TextWithEntities{ text, EntitiesInText() };
-	ParseEntities(result, flags, rich);
+	ParseEntities(result, flags);
 	return result;
 }
 
 // Some code is duplicated in message_field.cpp!
-void ParseEntities(TextWithEntities &result, int32 flags, bool rich) {
+void ParseEntities(TextWithEntities &result, int32 flags) {
 	constexpr auto kNotFound = std::numeric_limits<int>::max();
 
 	auto newEntities = EntitiesInText();
@@ -1583,20 +1545,10 @@ void ParseEntities(TextWithEntities &result, int32 flags, bool rich) {
 	int existingEntityIndex = 0, existingEntitiesCount = result.entities.size();
 	int existingEntityEnd = 0;
 
-	int32 len = result.text.size(), commandOffset = rich ? 0 : len;
-	bool inLink = false, commandIsLink = false;
+	int32 len = result.text.size();
 	const auto start = result.text.constData();
 	const auto end = start + result.text.size();
 	for (int32 offset = 0, matchOffset = offset, mentionSkip = 0; offset < len;) {
-		if (commandOffset <= offset) {
-			for (commandOffset = offset; commandOffset < len; ++commandOffset) {
-				if (*(start + commandOffset) == TextCommand) {
-					inLink = commandIsLink;
-					commandIsLink = textcmdStartsLink(start, len, commandOffset);
-					break;
-				}
-			}
-		}
 		auto mDomain = qthelp::RegExpDomain().match(result.text, matchOffset);
 		auto mExplicitDomain = qthelp::RegExpDomainExplicit().match(result.text, matchOffset);
 		auto mHashtag = withHashtags ? RegExpHashtag().match(result.text, matchOffset) : QRegularExpressionMatch();
@@ -1684,17 +1636,6 @@ void ParseEntities(TextWithEntities &result, int32 flags, bool rich) {
 				offset = matchOffset = mentionEnd;
 				continue;
 			}
-			const auto inCommand = checkTagStartInCommand(
-				start,
-				len,
-				mentionStart,
-				commandOffset,
-				commandIsLink,
-				inLink);
-			if (inCommand || inLink) {
-				offset = matchOffset = commandOffset;
-				continue;
-			}
 
 			lnkType = EntityType::Mention;
 			lnkStart = mentionStart;
@@ -1705,50 +1646,15 @@ void ParseEntities(TextWithEntities &result, int32 flags, bool rich) {
 				offset = matchOffset = hashtagEnd;
 				continue;
 			}
-			const auto inCommand = checkTagStartInCommand(
-				start,
-				len,
-				hashtagStart,
-				commandOffset,
-				commandIsLink,
-				inLink);
-			if (inCommand || inLink) {
-				offset = matchOffset = commandOffset;
-				continue;
-			}
 
 			lnkType = EntityType::Hashtag;
 			lnkStart = hashtagStart;
 			lnkLength = hashtagEnd - hashtagStart;
 		} else if (botCommandStart < domainStart) {
-			const auto inCommand = checkTagStartInCommand(
-				start,
-				len,
-				botCommandStart,
-				commandOffset,
-				commandIsLink,
-				inLink);
-			if (inCommand || inLink) {
-				offset = matchOffset = commandOffset;
-				continue;
-			}
-
 			lnkType = EntityType::BotCommand;
 			lnkStart = botCommandStart;
 			lnkLength = botCommandEnd - botCommandStart;
 		} else {
-			const auto inCommand = checkTagStartInCommand(
-				start,
-				len,
-				domainStart,
-				commandOffset,
-				commandIsLink,
-				inLink);
-			if (inCommand || inLink) {
-				offset = matchOffset = commandOffset;
-				continue;
-			}
-
 			auto protocol = mDomain.captured(1).toLower();
 			auto topDomain = mDomain.captured(3).toLower();
 			auto isProtocolValid = protocol.isEmpty() || IsValidProtocol(protocol);
@@ -2041,17 +1947,21 @@ QString JoinTag(const QList<QStringView> &list) {
 	result.append(list.front());
 	for (auto i = 1, count = int(list.size()); i != count; ++i) {
 		if (!IsSeparateTag(list[i])) {
-			result.append('|').append(list[i]);
+			result.append(kTagSeparator).append(list[i]);
 		}
 	}
 	return result;
+}
+
+QList<QStringView> SplitTags(const QString &tag) {
+	return QStringView(tag).split(kTagSeparator);
 }
 
 QString TagWithRemoved(const QString &tag, const QString &removed) {
 	if (tag == removed) {
 		return QString();
 	}
-	auto list = QStringView(tag).split('|');
+	auto list = SplitTags(tag);
 	list.erase(ranges::remove(list, QStringView(removed)), list.end());
 	return JoinTag(list);
 }
@@ -2060,7 +1970,7 @@ QString TagWithAdded(const QString &tag, const QString &added) {
 	if (tag.isEmpty() || tag == added) {
 		return added;
 	}
-	auto list = QStringView(tag).split('|');
+	auto list = SplitTags(tag);
 	const auto ref = QStringView(added);
 	if (list.contains(ref)) {
 		return tag;
@@ -2081,6 +1991,7 @@ EntitiesInText ConvertTextTagsToEntities(const TextWithTags::Tags &tags) {
 		EntityType::Italic,
 		EntityType::Underline,
 		EntityType::StrikeOut,
+		EntityType::Spoiler,
 		EntityType::Code,
 		EntityType::Pre,
 	};
@@ -2173,7 +2084,7 @@ EntitiesInText ConvertTextTagsToEntities(const TextWithTags::Tags &tags) {
 	};
 	const auto stateForTag = [&](const QString &tag) {
 		auto result = State();
-		const auto list = QStringView(tag).split('|');
+		const auto list = SplitTags(tag);
 		for (const auto &single : list) {
 			if (single == Ui::InputField::kTagBold) {
 				result.set(EntityType::Bold);
@@ -2187,6 +2098,8 @@ EntitiesInText ConvertTextTagsToEntities(const TextWithTags::Tags &tags) {
 				result.set(EntityType::Code);
 			} else if (single == Ui::InputField::kTagPre) {
 				result.set(EntityType::Pre);
+			} else if (single == Ui::InputField::kTagSpoiler) {
+				result.set(EntityType::Spoiler);
 			} else {
 				result.link = single.toString();
 			}
@@ -2275,6 +2188,7 @@ TextWithTags::Tags ConvertEntitiesToTextTags(
 			break;
 		case EntityType::Code: push(Ui::InputField::kTagCode); break; // #TODO entities
 		case EntityType::Pre: push(Ui::InputField::kTagPre); break;
+		case EntityType::Spoiler: push(Ui::InputField::kTagSpoiler); break;
 		}
 	}
 	if (!toRemove.empty()) {

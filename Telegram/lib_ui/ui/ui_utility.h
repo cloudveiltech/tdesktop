@@ -10,7 +10,9 @@
 #include "ui/rect_part.h"
 #include "ui/integration.h"
 
+#include <crl/crl.h>
 #include <QtCore/QEvent>
+#include <QtWidgets/QWidget>
 
 class QPixmap;
 class QImage;
@@ -191,8 +193,6 @@ QPointer<const Widget> MakeWeak(not_null<const Widget*> object) {
 [[nodiscard]] bool IsContentVisible(
     not_null<QWidget*> widget,
     const QRect &rect = QRect());
-
-void DisableCustomScaling();
 
 int WheelDirection(not_null<QWheelEvent*> e);
 

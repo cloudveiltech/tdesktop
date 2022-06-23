@@ -33,16 +33,6 @@
 namespace tgcalls {
 namespace {
 
-DesktopSize AspectFitted(DesktopSize from, DesktopSize to) {
-    double scale = std::min(
-        from.width / std::max(1., double(to.width)),
-        from.height / std::max(1., double(to.height)));
-    return {
-        int(std::ceil(to.width * scale)),
-        int(std::ceil(to.height * scale))
-    };
-}
-
 #ifdef WEBRTC_MAC
 class CaptureScheduler {
 public:
@@ -77,10 +67,10 @@ public:
     }
 
     void runAsync(std::function<void()> method) {
-        _thread->PostTask(RTC_FROM_HERE, std::move(method));
+        _thread->PostTask(std::move(method));
     }
     void runDelayed(int delayMs, std::function<void()> method) {
-        _thread->PostDelayedTask(RTC_FROM_HERE, std::move(method), delayMs);
+        _thread->PostDelayedTask(std::move(method), delayMs);
     }
 
 private:
@@ -149,6 +139,7 @@ void SourceFrameCallbackImpl::OnCaptureResult(
 	    std::unique_ptr<webrtc::DesktopFrame> frame) {
 
     const auto failed = (result != webrtc::DesktopCapturer::Result::SUCCESS)
+        || !frame
         || frame->size().equals({ 1, 1 });
     if (failed) {
         if (result == webrtc::DesktopCapturer::Result::ERROR_PERMANENT) {
@@ -164,9 +155,10 @@ void SourceFrameCallbackImpl::OnCaptureResult(
     }
 
     const auto frameSize = frame->size();
-    DesktopSize fittedSize = AspectFitted(
-        size_,
-        { frameSize.width(), frameSize.height() });
+    auto fittedSize = (frameSize.width() >= size_.width * 2
+        || frameSize.height() >= size_.height * 2)
+        ? DesktopSize{ frameSize.width() / 2, frameSize.height() / 2 }
+        : DesktopSize{ frameSize.width(), frameSize.height() };
 
     fittedSize.width -= (fittedSize.width % 4);
     fittedSize.height -= (fittedSize.height % 4);

@@ -74,6 +74,10 @@ QByteArray SerializeDate(TimeId date) {
 		QDateTime::fromSecsSinceEpoch(date).toString(Qt::ISODate).toUtf8());
 }
 
+QByteArray SerializeDateRaw(TimeId date) {
+	return SerializeString(QString::number(date).toUtf8());
+}
+
 QByteArray StringAllowEmpty(const Data::Utf8String &data) {
 	return data.isEmpty() ? data : SerializeString(data);
 }
@@ -176,6 +180,7 @@ QByteArray SerializeText(
 			case Type::Strike: return "strikethrough";
 			case Type::Blockquote: return "blockquote";
 			case Type::BankCard: return "bank_card";
+			case Type::Spoiler: return "spoiler";
 			}
 			Unexpected("Type in SerializeText.");
 		}();
@@ -252,6 +257,7 @@ QByteArray SerializeMessage(
 			: "message")
 	},
 	{ "date", SerializeDate(message.date) },
+	{ "date_unixtime", SerializeDateRaw(message.date) },
 	};
 	context.nesting.push_back(Context::kObject);
 	const auto serialized = [&] {
@@ -268,6 +274,7 @@ QByteArray SerializeMessage(
 	};
 	if (message.edited) {
 		pushBare("edited", SerializeDate(message.edited));
+		pushBare("edited_unixtime", SerializeDateRaw(message.edited));
 	}
 
 	const auto push = [&](const QByteArray &key, const auto &value) {
@@ -429,7 +436,13 @@ QByteArray SerializeMessage(
 		pushAction("send_payment");
 		push("amount", data.amount);
 		push("currency", data.currency);
+		const auto amount = FormatMoneyAmount(data.amount, data.currency);
 		pushReplyToMsgId("invoice_message_id");
+		if (data.recurringUsed) {
+			push("recurring", "used");
+		} else if (data.recurringInit) {
+			push("recurring", "init");
+		}
 	}, [&](const ActionPhoneCall &data) {
 		pushActor();
 		pushAction("phone_call");
@@ -526,6 +539,9 @@ QByteArray SerializeMessage(
 	}, [&](const ActionChatJoinedByRequest &data) {
 		pushActor();
 		pushAction("join_group_by_request");
+	}, [&](const ActionWebViewDataSent &data) {
+		pushAction("send_webview_data");
+		push("text", data.text);
 	}, [](v::null_t) {});
 
 	if (v::is_null(message.action.content)) {
@@ -797,6 +813,10 @@ Result JsonWriter::writeUserpicsSlice(const Data::UserpicsSlice &data) {
 				userpic.date ? SerializeDate(userpic.date) : QByteArray()
 			},
 			{
+				"date_unixtime",
+				userpic.date ? SerializeDateRaw(userpic.date) : QByteArray()
+			},
+			{
 				"photo",
 				SerializeString(path)
 			},
@@ -839,7 +859,8 @@ Result JsonWriter::writeSavedContacts(const Data::ContactsList &data) {
 			&& contact.lastName.isEmpty()
 			&& contact.phoneNumber.isEmpty()) {
 			block.append(SerializeObject(_context, {
-				{ "date", SerializeDate(contact.date) }
+				{ "date", SerializeDate(contact.date) },
+				{ "date_unixtime", SerializeDateRaw(contact.date) },
 			}));
 		} else {
 			block.append(SerializeObject(_context, {
@@ -856,7 +877,8 @@ Result JsonWriter::writeSavedContacts(const Data::ContactsList &data) {
 					SerializeString(
 						Data::FormatPhoneNumber(contact.phoneNumber))
 				},
-				{ "date", SerializeDate(contact.date) }
+				{ "date", SerializeDate(contact.date) },
+				{ "date_unixtime", SerializeDateRaw(contact.date) },
 			}));
 		}
 	}
@@ -1003,6 +1025,7 @@ Result JsonWriter::writeSessions(const Data::SessionsList &data) {
 		block.append(prepareArrayItemStart());
 		block.append(SerializeObject(_context, {
 			{ "last_active", SerializeDate(session.lastActive) },
+			{ "last_active_unixtime", SerializeDateRaw(session.lastActive) },
 			{ "last_ip", SerializeString(session.ip) },
 			{ "last_country", SerializeString(session.country) },
 			{ "last_region", SerializeString(session.region) },
@@ -1018,6 +1041,7 @@ Result JsonWriter::writeSessions(const Data::SessionsList &data) {
 			{ "platform", SerializeString(session.platform) },
 			{ "system_version", SerializeString(session.systemVersion) },
 			{ "created", SerializeDate(session.created) },
+			{ "created_unixtime", SerializeDateRaw(session.created) },
 		}));
 	}
 	block.append(popNesting());
@@ -1037,6 +1061,7 @@ Result JsonWriter::writeWebSessions(const Data::SessionsList &data) {
 		block.append(prepareArrayItemStart());
 		block.append(SerializeObject(_context, {
 			{ "last_active", SerializeDate(session.lastActive) },
+			{ "last_active_unixtime", SerializeDateRaw(session.lastActive) },
 			{ "last_ip", SerializeString(session.ip) },
 			{ "last_region", SerializeString(session.region) },
 			{ "bot_username", StringAllowNull(session.botUsername) },
@@ -1044,6 +1069,7 @@ Result JsonWriter::writeWebSessions(const Data::SessionsList &data) {
 			{ "browser", SerializeString(session.browser) },
 			{ "platform", SerializeString(session.platform) },
 			{ "created", SerializeDate(session.created) },
+			{ "created_unixtime", SerializeDateRaw(session.created) },
 		}));
 	}
 	block.append(popNesting());

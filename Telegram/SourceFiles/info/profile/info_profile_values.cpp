@@ -9,20 +9,25 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "core/application.h"
 #include "core/click_handler_types.h"
+#include "countries/countries_instance.h"
 #include "main/main_session.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/text/format_values.h" // Ui::FormatPhone
 #include "ui/text/text_utilities.h"
 #include "lang/lang_keys.h"
+#include "data/notify/data_notify_settings.h"
 #include "data/data_peer_values.h"
 #include "data/data_shared_media.h"
+#include "data/data_message_reactions.h"
 #include "data/data_folder.h"
 #include "data/data_changes.h"
 #include "data/data_channel.h"
 #include "data/data_chat.h"
 #include "data/data_user.h"
 #include "data/data_session.h"
+#include "data/data_premium_limits.h"
 #include "boxes/peers/edit_peer_permissions_box.h"
+#include "base/unixtime.h"
 #include "cloudveil/GlobalSecuritySettings.h"
 
 namespace Info {
@@ -88,9 +93,11 @@ rpl::producer<TextWithEntities> NameValue(not_null<PeerData*> peer) {
 }
 
 rpl::producer<TextWithEntities> PhoneValue(not_null<UserData*> user) {
-	return user->session().changes().peerFlagsValue(
-		user,
-		UpdateFlag::PhoneNumber
+	return rpl::merge(
+		Countries::Instance().updated(),
+		user->session().changes().peerFlagsValue(
+			user,
+			UpdateFlag::PhoneNumber) | rpl::to_empty
 	) | rpl::map([=] {
 		return Ui::FormatPhone(user->phone());
 	}) | Ui::Text::ToWithEntities();
@@ -129,6 +136,7 @@ TextWithEntities AboutWithEntities(
 	auto flags = TextParseLinks | TextParseMentions;
 	const auto user = peer->asUser();
 	const auto isBot = user && user->isBot();
+	const auto isPremium = user && user->isPremium();
 	if (!user) {
 		flags |= TextParseHashtags;
 	} else if (isBot) {
@@ -136,7 +144,12 @@ TextWithEntities AboutWithEntities(
 	}
 	const auto stripExternal = peer->isChat()
 		|| peer->isMegagroup()
-		|| (user && !isBot);
+		|| (user && !isBot && !isPremium);
+	const auto limit = Data::PremiumLimits(&peer->session())
+		.aboutLengthDefault();
+	const auto used = (!user || isPremium || value.size() <= limit)
+		? value
+		: value.mid(0, limit) + "...";
 	auto result = TextWithEntities{ value };
 	TextUtilities::ParseEntities(result, flags);
 	if (stripExternal) {
@@ -179,9 +192,9 @@ rpl::producer<bool> NotificationsEnabledValue(not_null<PeerData*> peer) {
 			peer,
 			UpdateFlag::Notifications
 		) | rpl::to_empty,
-		peer->owner().defaultNotifyUpdates(peer)
+		peer->owner().notifySettings().defaultUpdates(peer)
 	) | rpl::map([=] {
-		return !peer->owner().notifyIsMuted(peer);
+		return !peer->owner().notifySettings().isMuted(peer);
 	}) | rpl::distinct_until_changed();
 }
 
@@ -194,15 +207,45 @@ rpl::producer<bool> IsContactValue(not_null<UserData*> user) {
 	});
 }
 
-rpl::producer<bool> CanInviteBotToGroupValue(not_null<UserData*> user) {
-	if (!user->isBot() || user->isSupport()) {
-		return rpl::single(false);
+[[nodiscard]] rpl::producer<QString> InviteToChatButton(
+		not_null<UserData*> user) {
+	if (!user->isBot() || user->isRepliesChat() || user->isSupport()) {
+		return rpl::single(QString());
 	}
+	using Flag = Data::PeerUpdate::Flag;
 	return user->session().changes().peerFlagsValue(
 		user,
-		UpdateFlag::BotCanBeInvited
+		Flag::BotCanBeInvited | Flag::Rights
 	) | rpl::map([=] {
-		return !user->botInfo->cantJoinGroups;
+		const auto info = user->botInfo.get();
+		return info->cantJoinGroups
+			? (info->channelAdminRights
+				? tr::lng_profile_invite_to_channel(tr::now)
+				: QString())
+			: (info->channelAdminRights
+				? tr::lng_profile_add_bot_as_admin(tr::now)
+				: tr::lng_profile_invite_to_group(tr::now));
+	});
+}
+
+[[nodiscard]] rpl::producer<QString> InviteToChatAbout(
+		not_null<UserData*> user) {
+	if (!user->isBot() || user->isRepliesChat() || user->isSupport()) {
+		return rpl::single(QString());
+	}
+	using Flag = Data::PeerUpdate::Flag;
+	return user->session().changes().peerFlagsValue(
+		user,
+		Flag::BotCanBeInvited | Flag::Rights
+	) | rpl::map([=] {
+		const auto info = user->botInfo.get();
+		return (info->cantJoinGroups || !info->groupAdminRights)
+			? (info->channelAdminRights
+				? tr::lng_profile_invite_to_channel_about(tr::now)
+				: QString())
+			: (info->channelAdminRights
+				? tr::lng_profile_add_bot_as_admin_about(tr::now)
+				: tr::lng_profile_invite_to_group_about(tr::now));
 	});
 }
 
@@ -411,14 +454,45 @@ rpl::producer<bool> CanAddMemberValue(not_null<PeerData*> peer) {
 	return rpl::single(false);
 }
 
+rpl::producer<int> FullReactionsCountValue(
+		not_null<Main::Session*> session) {
+	const auto reactions = &session->data().reactions();
+	return rpl::single(rpl::empty) | rpl::then(
+		reactions->updates()
+	) | rpl::map([=] {
+		return int(reactions->list(Data::Reactions::Type::Active).size());
+	}) | rpl::distinct_until_changed();
+}
+
+rpl::producer<int> AllowedReactionsCountValue(not_null<PeerData*> peer) {
+	if (peer->isUser()) {
+		return FullReactionsCountValue(&peer->session());
+	}
+	return peer->session().changes().peerFlagsValue(
+		peer,
+		UpdateFlag::Reactions
+	) | rpl::map([=] {
+		if (const auto chat = peer->asChat()) {
+			return int(chat->allowedReactions().size());
+		} else if (const auto channel = peer->asChannel()) {
+			return int(channel->allowedReactions().size());
+		}
+		Unexpected("Peer type in AllowedReactionsCountValue.");
+	});
+}
+
 template <typename Flag, typename Peer>
 rpl::producer<Badge> BadgeValueFromFlags(Peer peer) {
-	return Data::PeerFlagsValue(
-		peer,
-		Flag::Verified | Flag::Scam | Flag::Fake
-	) | rpl::map([=](base::flags<Flag> value) {
+	return rpl::combine(
+		Data::PeerFlagsValue(
+			peer,
+			Flag::Verified | Flag::Scam | Flag::Fake),
+		Data::PeerPremiumValue(peer)
+	) | rpl::map([=](base::flags<Flag> value, bool premium) {
 		return (value & Flag::Verified)
 			? Badge::Verified
+			: premium
+			? Badge::Premium
 			: (value & Flag::Scam)
 			? Badge::Scam
 			: (value & Flag::Fake)

@@ -9,12 +9,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "api/api_common.h"
 #include "chat_helpers/gifs_list_widget.h" // ChatHelpers::AddGifAction
-#include "chat_helpers/send_context_menu.h" // SendMenu::FillSendMenu
+#include "menu/menu_send.h" // SendMenu::FillSendMenu
 #include "core/click_handler_types.h"
+#include "data/data_document.h"
 #include "data/data_file_origin.h"
 #include "data/data_user.h"
 #include "data/data_changes.h"
 #include "data/data_chat_participant_status.h"
+#include "data/data_session.h"
 #include "inline_bots/inline_bot_result.h"
 #include "inline_bots/inline_bot_layout_item.h"
 #include "lang/lang_keys.h"
@@ -29,11 +31,18 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/path_shift_gradient.h"
 #include "history/view/history_view_cursor_state.h"
 #include "styles/style_chat_helpers.h"
+#include "styles/style_menu_icons.h"
 
 #include <QtWidgets/QApplication>
 
 namespace InlineBots {
 namespace Layout {
+namespace {
+
+constexpr auto kMinRepaintDelay = crl::time(33);
+constexpr auto kMinAfterScrollDelay = crl::time(33);
+
+} // namespace
 
 Inner::Inner(
 	QWidget *parent,
@@ -43,7 +52,7 @@ Inner::Inner(
 , _pathGradient(std::make_unique<Ui::PathShiftGradient>(
 	st::windowBgRipple,
 	st::windowBgOver,
-	[=] { update(); }))
+	[=] { repaintItems(); }))
 , _updateInlineItems([=] { updateInlineItems(); })
 , _mosaic(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft)
 , _previewTimer([=] { showPreview(); }) {
@@ -54,14 +63,14 @@ Inner::Inner(
 
 	_controller->session().downloaderTaskFinished(
 	) | rpl::start_with_next([=] {
-		update();
+		updateInlineItems();
 	}, lifetime());
 
 	controller->gifPauseLevelChanged(
 	) | rpl::start_with_next([=] {
 		if (!_controller->isGifPausedAtLeastFor(
 				Window::GifPauseReason::InlineResults)) {
-			update();
+			updateInlineItems();
 		}
 	}, lifetime());
 
@@ -91,7 +100,8 @@ void Inner::visibleTopBottomUpdated(
 	_visibleBottom = visibleBottom;
 	if (_visibleTop != visibleTop) {
 		_visibleTop = visibleTop;
-		_lastScrolled = crl::now();
+		_lastScrolledAt = crl::now();
+		update();
 	}
 }
 
@@ -109,7 +119,7 @@ void Inner::checkRestrictedPeer() {
 				if (_switchPmButton) {
 					_switchPmButton->hide();
 				}
-				update();
+				repaintItems();
 			}
 			return;
 		}
@@ -119,7 +129,7 @@ void Inner::checkRestrictedPeer() {
 		if (_switchPmButton) {
 			_switchPmButton->show();
 		}
-		update();
+		repaintItems();
 	}
 }
 
@@ -256,6 +266,31 @@ void Inner::selectInlineResult(
 	if (!item) {
 		return;
 	}
+	const auto messageSendingFrom = [&]() -> Ui::MessageSendingAnimationFrom {
+		const auto document = item->getDocument()
+			? item->getDocument()
+			: item->getPreviewDocument();
+		if (options.scheduled
+			|| item->isFullLine()
+			|| !document
+			|| (!document->sticker() && !document->isGifv())) {
+			return {};
+		}
+		using Type = Ui::MessageSendingAnimationFrom::Type;
+		const auto type = document->sticker()
+			? Type::Sticker
+			: document->isGifv()
+			? Type::Gif
+			: Type::None;
+		const auto rect = item->innerContentRect().translated(
+			_mosaic.findRect(index).topLeft());
+		return {
+			.type = type,
+			.localId = _controller->session().data().nextLocalMessageId(),
+			.globalStartGeometry = mapToGlobal(rect),
+			.crop = document->isGifv(),
+		};
+	};
 
 	if (const auto inlineResult = item->getResult()) {
 		if (inlineResult->onChoose(item)) {
@@ -263,6 +298,7 @@ void Inner::selectInlineResult(
 				.result = inlineResult,
 				.bot = _inlineBot,
 				.options = std::move(options),
+				.messageSendingFrom = messageSendingFrom(),
 				.open = open,
 			});
 		}
@@ -296,7 +332,9 @@ void Inner::contextMenuEvent(QContextMenuEvent *e) {
 		? _sendMenuType()
 		: SendMenu::Type::Disabled;
 
-	_menu = base::make_unique_q<Ui::PopupMenu>(this);
+	_menu = base::make_unique_q<Ui::PopupMenu>(
+		this,
+		st::popupMenuWithIcons);
 
 	const auto send = [=, selected = _selected](Api::SendOptions options) {
 		selectInlineResult(selected, options, false);
@@ -309,10 +347,16 @@ void Inner::contextMenuEvent(QContextMenuEvent *e) {
 
 	const auto item = _mosaic.itemAt(_selected);
 	if (const auto previewDocument = item->getPreviewDocument()) {
-		auto callback = [&](const QString &text, Fn<void()> &&done) {
-			_menu->addAction(text, std::move(done));
+		auto callback = [&](
+				const QString &text,
+				Fn<void()> &&done,
+				const style::icon *icon) {
+			_menu->addAction(text, std::move(done), icon);
 		};
-		ChatHelpers::AddGifAction(std::move(callback), previewDocument);
+		ChatHelpers::AddGifAction(
+			std::move(callback),
+			_controller,
+			previewDocument);
 	}
 
 	if (!_menu->empty()) {
@@ -326,7 +370,7 @@ void Inner::clearSelection() {
 		setCursor(style::cur_default);
 	}
 	_selected = _pressed = -1;
-	update();
+	updateInlineItems();
 }
 
 void Inner::hideFinished() {
@@ -427,7 +471,7 @@ void Inner::refreshSwitchPmButton(const CacheEntry *entry) {
 			_switchPmButton->hide();
 		}
 	}
-	update();
+	repaintItems();
 }
 
 int Inner::refreshInlineRows(PeerData *queryPeer, UserData *bot, const CacheEntry *entry, bool resultsDeleted) {
@@ -479,7 +523,7 @@ int Inner::refreshInlineRows(PeerData *queryPeer, UserData *bot, const CacheEntr
 
 	auto h = countHeight();
 	if (h != height()) resize(width(), h);
-	update();
+	repaintItems();
 
 	_lastMousePos = QCursor::pos();
 	updateSelected();
@@ -519,12 +563,7 @@ void Inner::inlineItemLayoutChanged(const ItemBase *layout) {
 }
 
 void Inner::inlineItemRepaint(const ItemBase *layout) {
-	auto ms = crl::now();
-	if (_lastScrolled + 100 <= ms) {
-		update();
-	} else {
-		_updateInlineItems.callOnce(_lastScrolled + 100 - ms);
-	}
+	updateInlineItems();
 }
 
 bool Inner::inlineItemVisible(const ItemBase *layout) {
@@ -612,12 +651,22 @@ void Inner::showPreview() {
 }
 
 void Inner::updateInlineItems() {
-	auto ms = crl::now();
-	if (_lastScrolled + 100 <= ms) {
-		update();
-	} else {
-		_updateInlineItems.callOnce(_lastScrolled + 100 - ms);
+	const auto now = crl::now();
+
+	const auto delay = std::max(
+		_lastScrolledAt + kMinAfterScrollDelay - now,
+		_lastUpdatedAt + kMinRepaintDelay - now);
+	if (delay <= 0) {
+		repaintItems();
+	} else if (!_updateInlineItems.isActive()
+		|| _updateInlineItems.remainingTime() > kMinRepaintDelay) {
+		_updateInlineItems.callOnce(std::max(delay, kMinRepaintDelay));
 	}
+}
+
+void Inner::repaintItems(crl::time now) {
+	_lastUpdatedAt = now ? now : crl::now();
+	update();
 }
 
 void Inner::switchPm() {

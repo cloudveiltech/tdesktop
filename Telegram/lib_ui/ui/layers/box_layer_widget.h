@@ -10,29 +10,24 @@
 #include "base/flags.h"
 #include "ui/layers/layer_widget.h"
 #include "ui/layers/box_content.h"
-#include "ui/wrap/padding_wrap.h"
-#include "ui/widgets/labels.h"
-#include "ui/effects/animation_value.h"
-#include "ui/text/text_entity.h"
 #include "ui/round_rect.h"
 #include "ui/rp_widget.h"
 
 class Painter;
+struct TextWithEntities;
+
+namespace anim {
+enum class type : uchar;
+} // namespace anim
 
 namespace style {
-struct RoundButton;
-struct IconButton;
-struct ScrollArea;
 struct Box;
 } // namespace style
 
 namespace Ui {
 
-class RoundButton;
-class IconButton;
-class ScrollArea;
+class AbstractButton;
 class FlatLabel;
-class FadeShadow;
 
 class BoxLayerWidget : public LayerWidget, public BoxContentDelegate {
 public:
@@ -58,17 +53,9 @@ public:
 	}
 
 	void clearButtons() override;
-	QPointer<RoundButton> addButton(
-		rpl::producer<QString> text,
-		Fn<void()> clickCallback,
-		const style::RoundButton &st) override;
-	QPointer<RoundButton> addLeftButton(
-		rpl::producer<QString> text,
-		Fn<void()> clickCallback,
-		const style::RoundButton &st) override;
-	QPointer<IconButton> addTopButton(
-		const style::IconButton &st,
-		Fn<void()> clickCallback) override;
+	void addButton(object_ptr<AbstractButton> button) override;
+	void addLeftButton(object_ptr<AbstractButton> button) override;
+	void addTopButton(object_ptr<AbstractButton> button) override;
 	void showLoading(bool show) override;
 	void updateButtonsPositions() override;
 	QPointer<QWidget> outerContainer() override;
@@ -91,6 +78,7 @@ public:
 	void closeBox() override {
 		closeLayer();
 	}
+	void hideLayer() override;
 	void triggerButton(int index) override;
 
 	void setCloseByOutsideClick(bool close) override;
@@ -127,6 +115,7 @@ private:
 
 	const style::Box *_st = nullptr;
 	not_null<LayerStackWidget*> _layer;
+	bool _layerType = false;
 	int _fullHeight = 0;
 
 	bool _noContentMargin = false;
@@ -139,12 +128,11 @@ private:
 	rpl::variable<QString> _additionalTitle;
 	int _titleLeft = 0;
 	int _titleTop = 0;
-	bool _layerType = false;
 	bool _closeByOutsideClick = true;
 
-	std::vector<object_ptr<RoundButton>> _buttons;
-	object_ptr<RoundButton> _leftButton = { nullptr };
-	base::unique_qptr<IconButton> _topButton = { nullptr };
+	std::vector<object_ptr<AbstractButton>> _buttons;
+	object_ptr<AbstractButton> _leftButton = { nullptr };
+	base::unique_qptr<AbstractButton> _topButton = { nullptr };
 	std::unique_ptr<LoadingProgress> _loadingProgress;
 
 };

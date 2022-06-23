@@ -7,6 +7,7 @@
 #include "lottie/lottie_icon.h"
 
 #include "lottie/lottie_common.h"
+#include "ui/image/image_prepare.h"
 #include "ui/style/style_core.h"
 
 #include <QtGui/QPainter>
@@ -21,7 +22,7 @@ namespace {
 [[nodiscard]] std::unique_ptr<rlottie::Animation> CreateFromContent(
 		const QByteArray &content,
 		QColor replacement) {
-	auto string = ReadUtf8(content);
+	auto string = ReadUtf8(Images::UnpackGzip(content));
 #ifndef DESKTOP_APP_USE_PACKAGED_RLOTTIE
 	auto list = std::vector<std::pair<std::uint32_t, std::uint32_t>>();
 	if (replacement != Qt::white) {
@@ -54,10 +55,23 @@ namespace {
 #endif
 }
 
+[[nodiscard]] QByteArray ReadIconContent(
+		const QString &name,
+		const QByteArray &json,
+		const QString &path) {
+	return !json.isEmpty()
+		? json
+		: !path.isEmpty()
+		? ReadContent(json, path)
+		: Images::UnpackGzip(
+			ReadContent({}, u":/animations/"_q + name + u".tgs"_q));
+}
+
 } // namespace
 
 struct Icon::Frame {
 	int index = 0;
+	QImage resizedImage;
 	QImage renderedImage;
 	QImage colorizedImage;
 	QColor renderedColor;
@@ -69,6 +83,7 @@ public:
 	Inner(int frameIndex, base::weak_ptr<Icon> weak);
 
 	void prepareFromAsync(
+		const QString &name,
 		const QString &path,
 		const QByteArray &json,
 		QSize sizeOverride,
@@ -84,7 +99,7 @@ public:
 	[[nodiscard]] crl::time animationDuration(
 		int frameFrom,
 		int frameTo) const;
-	void moveToFrame(int frame, QColor color);
+	void moveToFrame(int frame, QColor color, QSize updatedDesiredSize);
 
 private:
 	enum class PreloadState {
@@ -92,10 +107,18 @@ private:
 		Preloading,
 		Ready,
 	};
+
+	// Called from crl::async.
+	void renderPreloadFrame(const QColor &color);
+
 	std::unique_ptr<rlottie::Animation> _rlottie;
 	Frame _current;
-	Frame _preloaded;
+	QSize _desiredSize;
 	std::atomic<PreloadState> _preloadState = PreloadState::None;
+
+	Frame _preloaded; // Changed on main or async depending on _preloadState.
+	QSize _preloadImageSize;
+
 	base::weak_ptr<Icon> _weak;
 	int _framesCount = 0;
 	mutable crl::semaphore _semaphore;
@@ -109,6 +132,7 @@ Icon::Inner::Inner(int frameIndex, base::weak_ptr<Icon> weak)
 }
 
 void Icon::Inner::prepareFromAsync(
+		const QString &name,
 		const QString &path,
 		const QByteArray &json,
 		QSize sizeOverride,
@@ -117,13 +141,23 @@ void Icon::Inner::prepareFromAsync(
 	if (!_weak) {
 		return;
 	}
-	_rlottie = CreateFromContent(ReadContent(json, path), color);
-	if (!_rlottie || !_weak) {
+	auto rlottie = CreateFromContent(
+		ReadIconContent(name, json, path),
+		color);
+	if (!rlottie || !_weak) {
 		return;
 	}
 	auto width = size_t();
 	auto height = size_t();
-	_rlottie->size(width, height);
+	rlottie->size(width, height);
+	_framesCount = rlottie->totalFrame();
+	if (!_framesCount || !width || !height) {
+		return;
+	}
+	_rlottie = std::move(rlottie);
+	while (_current.index < 0) {
+		_current.index += _framesCount;
+	}
 	const auto size = sizeOverride.isEmpty()
 		? style::ConvertScale(QSize{ int(width), int(height) })
 		: sizeOverride;
@@ -136,9 +170,9 @@ void Icon::Inner::prepareFromAsync(
 		image.height(),
 		image.bytesPerLine());
 	_rlottie->renderSync(_current.index, std::move(surface));
-	_framesCount = _rlottie->totalFrame();
 	_current.renderedColor = RealRenderedColor(color);
 	_current.renderedImage = std::move(image);
+	_desiredSize = size;
 }
 
 void Icon::Inner::waitTillPrepared() const {
@@ -150,13 +184,12 @@ void Icon::Inner::waitTillPrepared() const {
 
 bool Icon::Inner::valid() const {
 	waitTillPrepared();
-	return (_rlottie != nullptr) && (_framesCount > 0);
+	return (_rlottie != nullptr);
 }
 
 QSize Icon::Inner::size() const {
-	return valid()
-		? (_current.renderedImage.size() / style::DevicePixelRatio())
-		: QSize();
+	waitTillPrepared();
+	return _desiredSize;
 }
 
 int Icon::Inner::framesCount() const {
@@ -183,50 +216,72 @@ crl::time Icon::Inner::animationDuration(int frameFrom, int frameTo) const {
 		: 0;
 }
 
-void Icon::Inner::moveToFrame(int frame, QColor color) {
+void Icon::Inner::moveToFrame(
+		int frame,
+		QColor color,
+		QSize updatedDesiredSize) {
 	waitTillPrepared();
+	if (frame < 0) {
+		frame += _framesCount;
+	}
 	const auto state = _preloadState.load();
 	const auto shown = _current.index;
-	if (shown == frame || !_rlottie || state == PreloadState::Preloading) {
+	if (!updatedDesiredSize.isEmpty()) {
+		_desiredSize = updatedDesiredSize;
+	}
+	const auto desiredImageSize = _desiredSize * style::DevicePixelRatio();
+	if (!_rlottie
+		|| state == PreloadState::Preloading
+		|| (shown == frame
+			&& (_current.renderedImage.size() == desiredImageSize))) {
 		return;
 	} else if (state == PreloadState::Ready) {
-		if (_preloaded.index == frame) {
+		if (_preloaded.index == frame
+			&& (shown != frame
+				|| _preloaded.renderedImage.size() == desiredImageSize)) {
 			std::swap(_current, _preloaded);
-			return;
+			if (_current.renderedImage.size() == desiredImageSize) {
+				return;
+			}
 		} else if ((shown < _preloaded.index && _preloaded.index < frame)
 			|| (shown > _preloaded.index && _preloaded.index > frame)) {
 			std::swap(_current, _preloaded);
 		}
 	}
+	_preloadImageSize = desiredImageSize;
 	_preloaded.index = frame;
 	_preloadState = PreloadState::Preloading;
 	crl::async([
-		this,
 		guard = shared_from_this(),
 		color = RealRenderedColor(color)
 	] {
-		if (!_weak) {
-			return;
-		}
-		const auto size = _current.renderedImage.size();
+		guard->renderPreloadFrame(color);
+	});
+}
 
-		auto &image = _preloaded.renderedImage;
-		if (!GoodStorageForFrame(image, size)) {
-			image = CreateFrameStorage(size);
-		}
-		image.fill(Qt::transparent);
-		auto surface = rlottie::Surface(
-			reinterpret_cast<uint32_t*>(image.bits()),
-			image.width(),
-			image.height(),
-			image.bytesPerLine());
-		_rlottie->renderSync(_preloaded.index, std::move(surface));
-		_preloaded.renderedColor = color;
-		_preloaded.renderedImage = std::move(image);
-		_preloadState = PreloadState::Ready;
-		crl::on_main(_weak, [=] {
-			_weak->frameJumpFinished();
-		});
+void Icon::Inner::renderPreloadFrame(const QColor &color) {
+	if (!_weak) {
+		return;
+	}
+	auto &image = _preloaded.renderedImage;
+	const auto &size = _preloadImageSize;
+	if (!GoodStorageForFrame(image, size)) {
+		image = GoodStorageForFrame(_preloaded.resizedImage, size)
+			? base::take(_preloaded.resizedImage)
+			: CreateFrameStorage(size);
+	}
+	image.fill(Qt::black);
+	auto surface = rlottie::Surface(
+		reinterpret_cast<uint32_t*>(image.bits()),
+		image.width(),
+		image.height(),
+		image.bytesPerLine());
+	_rlottie->renderSync(_preloaded.index, std::move(surface));
+	_preloaded.renderedColor = color;
+	_preloaded.resizedImage = QImage();
+	_preloadState = PreloadState::Ready;
+	crl::on_main(_weak, [=] {
+		_weak->frameJumpFinished();
 	});
 }
 
@@ -236,12 +291,13 @@ Icon::Icon(IconDescriptor &&descriptor)
 , _animationFrameTo(descriptor.frame) {
 	crl::async([
 		inner = _inner,
+		name = descriptor.name,
 		path = descriptor.path,
 		bytes = descriptor.json,
 		sizeOverride = descriptor.sizeOverride,
-		color = _color->c
+		color = (_color ? (*_color)->c : Qt::white)
 	] {
-		inner->prepareFromAsync(path, bytes, sizeOverride, color);
+		inner->prepareFromAsync(name, path, bytes, sizeOverride, color);
 	});
 }
 
@@ -263,25 +319,46 @@ int Icon::framesCount() const {
 }
 
 QImage Icon::frame() const {
-	preloadNextFrame();
+	return frame(QSize(), nullptr).image;
+}
+
+Icon::ResizedFrame Icon::frame(
+		QSize desiredSize,
+		Fn<void()> updateWithPerfect) const {
+	preloadNextFrame(desiredSize);
+
+	const auto desired = size() * style::DevicePixelRatio();
 	auto &frame = _inner->frame();
 	if (frame.renderedImage.isNull()) {
-		return frame.renderedImage;
+		return { frame.renderedImage };
+	} else if (!_color) {
+		if (frame.renderedImage.size() == desired) {
+			return { frame.renderedImage };
+		} else if (frame.resizedImage.size() != desired) {
+			frame.resizedImage = frame.renderedImage.scaled(
+				desired,
+				Qt::IgnoreAspectRatio,
+				Qt::SmoothTransformation);
+		}
+		if (updateWithPerfect) {
+			_repaint = std::move(updateWithPerfect);
+		}
+		return { frame.resizedImage, true };
 	}
-	const auto color = _color->c;
+	Assert(frame.renderedImage.size() == desired);
+	const auto color = (*_color)->c;
 	if (color == frame.renderedColor) {
-		return frame.renderedImage;
+		return { frame.renderedImage };
 	} else if (!frame.colorizedImage.isNull()
 		&& color == frame.colorizedColor) {
-		return frame.colorizedImage;
+		return { frame.colorizedImage };
 	}
 	if (frame.colorizedImage.isNull()) {
-		frame.colorizedImage = CreateFrameStorage(
-			frame.renderedImage.size());
+		frame.colorizedImage = CreateFrameStorage(desired);
 	}
 	frame.colorizedColor = color;
 	style::colorizeImage(frame.renderedImage, color, &frame.colorizedImage);
-	return frame.colorizedImage;
+	return { frame.colorizedImage };
 }
 
 int Icon::width() const {
@@ -303,12 +380,13 @@ void Icon::paint(
 		std::optional<QColor> colorOverride) {
 	preloadNextFrame();
 	auto &frame = _inner->frame();
-	const auto color = colorOverride.value_or(_color->c);
+	const auto color = colorOverride.value_or(
+		_color ? (*_color)->c : Qt::white);
 	if (frame.renderedImage.isNull() || color.alpha() == 0) {
 		return;
 	}
 	const auto rect = QRect{ QPoint(x, y), size() };
-	if (color == frame.renderedColor) {
+	if (color == frame.renderedColor || !_color) {
 		p.drawImage(rect, frame.renderedImage);
 	} else if (color.alphaF() < 1.
 		&& (QColor(color.red(), color.green(), color.blue())
@@ -390,12 +468,22 @@ int Icon::wantedFrameIndex() const {
 	return int(base::SafeRound(_animation.value(_animationFrameTo)));
 }
 
-void Icon::preloadNextFrame() const {
-	_inner->moveToFrame(wantedFrameIndex(), _color->c);
+void Icon::preloadNextFrame(QSize updatedDesiredSize) const {
+	_inner->moveToFrame(
+		wantedFrameIndex(),
+		_color ? (*_color)->c : Qt::white,
+		updatedDesiredSize);
+	if (_animationFrameTo < 0) {
+		_animationFrameTo += framesCount();
+	}
 }
 
 bool Icon::animating() const {
 	return _animation.animating();
+}
+
+std::unique_ptr<Icon> MakeIcon(IconDescriptor &&descriptor) {
+	return std::make_unique<Icon>(std::move(descriptor));
 }
 
 } // namespace Lottie

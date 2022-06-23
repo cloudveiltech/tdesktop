@@ -18,12 +18,17 @@
 #include "styles/style_layers.h"
 #include "styles/palette.h"
 
-#include <QtCore/QTimer>
-
 namespace Ui {
 
 void BoxContent::setTitle(rpl::producer<QString> title) {
 	getDelegate()->setTitle(std::move(title) | Text::ToWithEntities());
+}
+
+QPointer<AbstractButton> BoxContent::addButton(
+		object_ptr<AbstractButton> button) {
+	auto result = QPointer<AbstractButton>(button.data());
+	getDelegate()->addButton(std::move(button));
+	return result;
 }
 
 QPointer<RoundButton> BoxContent::addButton(
@@ -35,20 +40,76 @@ QPointer<RoundButton> BoxContent::addButton(
 		getDelegate()->style().button);
 }
 
+QPointer<RoundButton> BoxContent::addButton(
+		rpl::producer<QString> text,
+		const style::RoundButton &st) {
+	return addButton(std::move(text), nullptr, st);
+}
+
+QPointer<RoundButton> BoxContent::addButton(
+		rpl::producer<QString> text,
+		Fn<void()> clickCallback,
+		const style::RoundButton &st) {
+	auto button = object_ptr<RoundButton>(this, std::move(text), st);
+	auto result = QPointer<RoundButton>(button.data());
+	result->setTextTransform(RoundButton::TextTransform::NoTransform);
+	result->setClickedCallback(std::move(clickCallback));
+	getDelegate()->addButton(std::move(button));
+	return result;
+}
+
+QPointer<AbstractButton> BoxContent::addLeftButton(
+		object_ptr<AbstractButton> button) {
+	auto result = QPointer<AbstractButton>(button.data());
+	getDelegate()->addLeftButton(std::move(button));
+	return result;
+}
+
 QPointer<RoundButton> BoxContent::addLeftButton(
 		rpl::producer<QString> text,
 		Fn<void()> clickCallback) {
-	return getDelegate()->addLeftButton(
+	return addLeftButton(
 		std::move(text),
 		std::move(clickCallback),
 		getDelegate()->style().button);
+}
+
+QPointer<RoundButton> BoxContent::addLeftButton(
+		rpl::producer<QString> text,
+		Fn<void()> clickCallback,
+		const style::RoundButton &st) {
+	auto button = object_ptr<RoundButton>(this, std::move(text), st);
+	const auto result = QPointer<RoundButton>(button.data());
+	result->setTextTransform(RoundButton::TextTransform::NoTransform);
+	result->setClickedCallback(std::move(clickCallback));
+	getDelegate()->addLeftButton(std::move(button));
+	return result;
+}
+
+QPointer<AbstractButton> BoxContent::addTopButton(
+		object_ptr<AbstractButton> button) {
+	auto result = QPointer<AbstractButton>(button.data());
+	getDelegate()->addTopButton(std::move(button));
+	return result;
+}
+
+QPointer<IconButton> BoxContent::addTopButton(
+		const style::IconButton &st,
+		Fn<void()> clickCallback) {
+	auto button = object_ptr<IconButton>(this, st);
+	const auto result = QPointer<IconButton>(button.data());
+	result->setClickedCallback(std::move(clickCallback));
+	getDelegate()->addTopButton(std::move(button));
+	return result;
 }
 
 void BoxContent::setInner(object_ptr<TWidget> inner) {
 	setInner(std::move(inner), st::boxScroll);
 }
 
-void BoxContent::setInner(object_ptr<TWidget> inner, const style::ScrollArea &st) {
+void BoxContent::setInner(
+		object_ptr<TWidget> inner,
+		const style::ScrollArea &st) {
 	if (inner) {
 		getDelegate()->setLayerType(true);
 		_scroll.create(this, st);
@@ -90,11 +151,19 @@ void BoxContent::finishScrollCreate() {
 	updateScrollAreaGeometry();
 	_scroll->scrolls(
 	) | rpl::start_with_next([=] {
-		onScroll();
+		updateInnerVisibleTopBottom();
+		updateShadowsVisibility();
 	}, lifetime());
 	_scroll->innerResizes(
 	) | rpl::start_with_next([=] {
-		onInnerResize();
+		updateInnerVisibleTopBottom();
+		updateShadowsVisibility();
+	}, lifetime());
+	_draggingScroll.scrolls(
+	) | rpl::start_with_next([=](int delta) {
+		if (_scroll) {
+			_scroll->scrollToY(_scroll->scrollTop() + delta);
+		}
 	}, lifetime());
 }
 
@@ -108,58 +177,38 @@ RectParts BoxContent::customCornersFilling() {
 	return {};
 }
 
-void BoxContent::onScrollToY(int top, int bottom) {
+void BoxContent::scrollToY(int top, int bottom) {
 	if (_scroll) {
 		_scroll->scrollToY(top, bottom);
 	}
 }
 
 void BoxContent::scrollByDraggingDelta(int delta) {
-	_draggingScrollDelta = _scroll ? delta : 0;
-	if (_draggingScrollDelta) {
-		if (!_draggingScrollTimer) {
-			_draggingScrollTimer.create(this);
-			_draggingScrollTimer->setSingleShot(false);
-			connect(_draggingScrollTimer, SIGNAL(timeout()), this, SLOT(onDraggingScrollTimer()));
-		}
-		_draggingScrollTimer->start(15);
-	} else {
-		_draggingScrollTimer.destroy();
-	}
-}
-
-void BoxContent::onDraggingScrollTimer() {
-	auto delta = (_draggingScrollDelta > 0) ? qMin(_draggingScrollDelta * 3 / 20 + 1, int32(kMaxScrollSpeed)) : qMax(_draggingScrollDelta * 3 / 20 - 1, -int32(kMaxScrollSpeed));
-	_scroll->scrollToY(_scroll->scrollTop() + delta);
+	_draggingScroll.checkDeltaScroll(_scroll ? delta : 0);
 }
 
 void BoxContent::updateInnerVisibleTopBottom() {
-	if (auto widget = static_cast<TWidget*>(_scroll ? _scroll->widget() : nullptr)) {
-		auto top = _scroll->scrollTop();
+	const auto widget = static_cast<TWidget*>(_scroll
+		? _scroll->widget()
+		: nullptr);
+	if (widget) {
+		const auto top = _scroll->scrollTop();
 		widget->setVisibleTopBottom(top, top + _scroll->height());
 	}
 }
 
 void BoxContent::updateShadowsVisibility() {
-	if (!_scroll) return;
+	if (!_scroll) {
+		return;
+	}
 
-	auto top = _scroll->scrollTop();
+	const auto top = _scroll->scrollTop();
 	_topShadow->toggle(
 		(top > 0 || _innerTopSkip > 0),
 		anim::type::normal);
 	_bottomShadow->toggle(
 		(top < _scroll->scrollTopMax() || _innerBottomSkip > 0),
 		anim::type::normal);
-}
-
-void BoxContent::onScroll() {
-	updateInnerVisibleTopBottom();
-	updateShadowsVisibility();
-}
-
-void BoxContent::onInnerResize() {
-	updateInnerVisibleTopBottom();
-	updateShadowsVisibility();
 }
 
 void BoxContent::setDimensionsToContent(
@@ -174,7 +223,7 @@ void BoxContent::setDimensionsToContent(
 
 void BoxContent::setInnerTopSkip(int innerTopSkip, bool scrollBottomFixed) {
 	if (_innerTopSkip != innerTopSkip) {
-		auto delta = innerTopSkip - _innerTopSkip;
+		const auto delta = innerTopSkip - _innerTopSkip;
 		_innerTopSkip = innerTopSkip;
 		if (_scroll && width() > 0) {
 			auto scrollTopWas = _scroll->scrollTop();
@@ -202,13 +251,21 @@ void BoxContent::setInnerVisible(bool scrollAreaVisible) {
 }
 
 QPixmap BoxContent::grabInnerCache() {
-	auto isTopShadowVisible = !_topShadow->isHidden();
-	auto isBottomShadowVisible = !_bottomShadow->isHidden();
-	if (isTopShadowVisible) _topShadow->setVisible(false);
-	if (isBottomShadowVisible) _bottomShadow->setVisible(false);
-	auto result = GrabWidget(this, _scroll->geometry());
-	if (isTopShadowVisible) _topShadow->setVisible(true);
-	if (isBottomShadowVisible) _bottomShadow->setVisible(true);
+	const auto isTopShadowVisible = !_topShadow->isHidden();
+	const auto isBottomShadowVisible = !_bottomShadow->isHidden();
+	if (isTopShadowVisible) {
+		_topShadow->setVisible(false);
+	}
+	if (isBottomShadowVisible) {
+		_bottomShadow->setVisible(false);
+	}
+	const auto result = GrabWidget(this, _scroll->geometry());
+	if (isTopShadowVisible) {
+		_topShadow->setVisible(true);
+	}
+	if (isBottomShadowVisible) {
+		_bottomShadow->setVisible(true);
+	}
 	return result;
 }
 
@@ -227,8 +284,8 @@ void BoxContent::keyPressEvent(QKeyEvent *e) {
 }
 
 void BoxContent::updateScrollAreaGeometry() {
-	auto newScrollHeight = height() - _innerTopSkip - _innerBottomSkip;
-	auto changed = (_scroll->height() != newScrollHeight);
+	const auto newScrollHeight = height() - _innerTopSkip - _innerBottomSkip;
+	const auto changed = (_scroll->height() != newScrollHeight);
 	_scroll->setGeometryToLeft(0, _innerTopSkip, width(), newScrollHeight);
 	_topShadow->entity()->resize(width(), st::lineWidth);
 	_topShadow->moveToLeft(0, _innerTopSkip);
@@ -239,7 +296,7 @@ void BoxContent::updateScrollAreaGeometry() {
 	if (changed) {
 		updateInnerVisibleTopBottom();
 
-		auto top = _scroll->scrollTop();
+		const auto top = _scroll->scrollTop();
 		_topShadow->toggle(
 			(top > 0 || _innerTopSkip > 0),
 			anim::type::instant);
@@ -262,6 +319,43 @@ void BoxContent::paintEvent(QPaintEvent *e) {
 			p.fillRect(rect, color);
 		}
 	}
+}
+
+BoxShow::BoxShow(not_null<Ui::BoxContent*> box)
+: Show()
+, _weak(Ui::MakeWeak(box.get())) {
+}
+
+BoxShow::~BoxShow() = default;
+
+void BoxShow::showBox(
+		object_ptr<BoxContent> content,
+		LayerOptions options) const {
+	if (_weak && _weak->isBoxShown()) {
+		_weak->getDelegate()->show(std::move(content), options);
+	}
+}
+
+void BoxShow::hideLayer() const {
+	if (_weak && _weak->isBoxShown()) {
+		_weak->getDelegate()->hideLayer();
+	}
+}
+
+not_null<QWidget*> BoxShow::toastParent() const {
+	if (!_toastParent) {
+		Assert(_weak != nullptr);
+		_toastParent = Ui::MakeWeak(_weak->window()); // =(
+	}
+	return _toastParent.data();
+}
+
+bool BoxShow::valid() const {
+	return _weak;
+}
+
+BoxShow::operator bool() const {
+	return valid();
 }
 
 } // namespace Ui

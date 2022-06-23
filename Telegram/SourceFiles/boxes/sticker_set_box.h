@@ -16,7 +16,6 @@ class SessionController;
 } // namespace Window
 
 namespace Ui {
-class ConfirmBox;
 class PlainShadow;
 } // namespace Ui
 
@@ -54,3 +53,5 @@ private:
 	QPointer<Inner> _inner;
 
 };
+
+void ValidatePremiumLockBg(QImage &image, const QImage &frame);

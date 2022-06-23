@@ -96,27 +96,32 @@ private:
 class FlatLabel : public RpWidget, public ClickHandlerHost {
 
 public:
-	FlatLabel(QWidget *parent, const style::FlatLabel &st = st::defaultFlatLabel);
+	FlatLabel(
+		QWidget *parent,
+		const style::FlatLabel &st = st::defaultFlatLabel,
+		const style::PopupMenu &stMenu = st::defaultPopupMenu);
 
 	FlatLabel(
 		QWidget *parent,
 		const QString &text,
-		const style::FlatLabel &st = st::defaultFlatLabel);
+		const style::FlatLabel &st = st::defaultFlatLabel,
+		const style::PopupMenu &stMenu = st::defaultPopupMenu);
 
 	FlatLabel(
 		QWidget *parent,
 		rpl::producer<QString> &&text,
-		const style::FlatLabel &st = st::defaultFlatLabel);
+		const style::FlatLabel &st = st::defaultFlatLabel,
+		const style::PopupMenu &stMenu = st::defaultPopupMenu);
 	FlatLabel(
 		QWidget *parent,
 		rpl::producer<TextWithEntities> &&text,
-		const style::FlatLabel &st = st::defaultFlatLabel);
+		const style::FlatLabel &st = st::defaultFlatLabel,
+		const style::PopupMenu &stMenu = st::defaultPopupMenu);
 
 	void setOpacity(float64 o);
 	void setTextColorOverride(std::optional<QColor> color);
 
 	void setText(const QString &text);
-	void setRichText(const QString &text);
 	void setMarkedText(const TextWithEntities &textWithEntities);
 	void setSelectable(bool selectable);
 	void setDoubleClickSelectsParagraph(bool doubleClickSelectsParagraph);
@@ -195,6 +200,7 @@ private:
 
 	Text::String _text;
 	const style::FlatLabel &_st;
+	const style::PopupMenu &_stMenu;
 	std::optional<QColor> _textColorOverride;
 	float64 _opacity = 1.;
 
@@ -241,7 +247,11 @@ private:
 
 class DividerLabel : public PaddingWrap<FlatLabel> {
 public:
-	using PaddingWrap::PaddingWrap;
+	DividerLabel(
+		QWidget *parent,
+		object_ptr<FlatLabel> &&child,
+		const style::margins &padding,
+		RectParts parts = RectPart::Top | RectPart::Bottom);
 
 	int naturalWidth() const override;
 
@@ -249,8 +259,7 @@ protected:
 	void resizeEvent(QResizeEvent *e) override;
 
 private:
-	object_ptr<BoxContentDivider> _background
-		= object_ptr<BoxContentDivider>(this);
+	object_ptr<BoxContentDivider> _background;
 
 };
 

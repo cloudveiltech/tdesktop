@@ -7,8 +7,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_file_click_handler.h"
 
+#include "core/click_handler_types.h"
 #include "core/file_utilities.h"
+#include "core/application.h"
 #include "data/data_document.h"
+#include "data/data_session.h"
+#include "data/data_download_manager.h"
 #include "data/data_photo.h"
 
 FileClickHandler::FileClickHandler(FullMsgId context)
@@ -44,6 +48,9 @@ DocumentClickHandler::DocumentClickHandler(
 	FullMsgId context)
 : FileClickHandler(context)
 , _document(document) {
+	setProperty(
+		kDocumentLinkMediaProperty,
+		reinterpret_cast<qulonglong>(_document.get()));
 }
 
 DocumentOpenClickHandler::DocumentOpenClickHandler(
@@ -93,8 +100,23 @@ void DocumentSaveClickHandler::Save(
 	data->save(origin, savename);
 }
 
+void DocumentSaveClickHandler::SaveAndTrack(
+		FullMsgId itemId,
+		not_null<DocumentData*> document,
+		Mode mode) {
+	Save(itemId ? itemId : Data::FileOrigin(), document, mode);
+	if (document->loading() && !document->loadingFilePath().isEmpty()) {
+		if (const auto item = document->owner().message(itemId)) {
+			Core::App().downloadManager().addLoading({
+				.item = item,
+				.document = document,
+			});
+		}
+	}
+}
+
 void DocumentSaveClickHandler::onClickImpl() const {
-	Save(context(), document());
+	SaveAndTrack(context(), document());
 }
 
 DocumentCancelClickHandler::DocumentCancelClickHandler(
@@ -146,6 +168,9 @@ PhotoClickHandler::PhotoClickHandler(
 : FileClickHandler(context)
 , _photo(photo)
 , _peer(peer) {
+	setProperty(
+		kPhotoLinkMediaProperty,
+		reinterpret_cast<qulonglong>(_photo.get()));
 }
 
 not_null<PhotoData*> PhotoClickHandler::photo() const {

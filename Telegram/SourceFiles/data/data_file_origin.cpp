@@ -149,6 +149,17 @@ struct FileReferenceAccumulator {
 		}, [](const MTPDmessages_savedGifsNotModified &data) {
 		});
 	}
+	void push(const MTPaccount_SavedRingtones &data) {
+		data.match([&](const MTPDaccount_savedRingtones &data) {
+			push(data.vringtones());
+		}, [](const MTPDaccount_savedRingtonesNotModified &data) {
+		});
+	}
+	void push(const MTPhelp_PremiumPromo &data) {
+		data.match([&](const MTPDhelp_premiumPromo &data) {
+			push(data.vvideos());
+		});
+	}
 
 	UpdatedFileReferences result;
 };
@@ -194,6 +205,19 @@ UpdatedFileReferences GetFileReferences(const MTPWallPaper &data) {
 }
 
 UpdatedFileReferences GetFileReferences(const MTPTheme &data) {
+	return GetFileReferencesHelper(data);
+}
+
+UpdatedFileReferences GetFileReferences(
+		const MTPaccount_SavedRingtones &data) {
+	return GetFileReferencesHelper(data);
+}
+
+UpdatedFileReferences GetFileReferences(const MTPhelp_PremiumPromo &data) {
+	return GetFileReferencesHelper(data);
+}
+
+UpdatedFileReferences GetFileReferences(const MTPMessageMedia &data) {
 	return GetFileReferencesHelper(data);
 }
 

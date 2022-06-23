@@ -163,8 +163,10 @@ MimeDataState ComputeMimeDataState(const QMimeData *data) {
 		}
 
 		const auto filesize = info.size();
-		if (filesize > kFileSizeLimit) {
+		if (filesize > kFileSizePremiumLimit) {
 			return MimeDataState::None;
+		} else if (filesize > kFileSizeLimit) {
+			return MimeDataState::PremiumFile;
 		} else if (allAreSmallImages) {
 			if (filesize > Images::kReadBytesLimit) {
 				allAreSmallImages = false;
@@ -178,7 +180,10 @@ MimeDataState ComputeMimeDataState(const QMimeData *data) {
 		: MimeDataState::Files;
 }
 
-PreparedList PrepareMediaList(const QList<QUrl> &files, int previewWidth) {
+PreparedList PrepareMediaList(
+		const QList<QUrl> &files,
+		int previewWidth,
+		bool premium) {
 	auto locals = QStringList();
 	locals.reserve(files.size());
 	for (const auto &url : files) {
@@ -190,10 +195,13 @@ PreparedList PrepareMediaList(const QList<QUrl> &files, int previewWidth) {
 		}
 		locals.push_back(Platform::File::UrlToLocal(url));
 	}
-	return PrepareMediaList(locals, previewWidth);
+	return PrepareMediaList(locals, previewWidth, premium);
 }
 
-PreparedList PrepareMediaList(const QStringList &files, int previewWidth) {
+PreparedList PrepareMediaList(
+		const QStringList &files,
+		int previewWidth,
+		bool premium) {
 	auto result = PreparedList();
 	result.files.reserve(files.size());
 	for (const auto &file : files) {
@@ -209,11 +217,14 @@ PreparedList PrepareMediaList(const QStringList &files, int previewWidth) {
 				PreparedList::Error::EmptyFile,
 				file
 			};
-		} else if (filesize > kFileSizeLimit) {
-			return {
+		} else if (filesize > kFileSizePremiumLimit
+			|| (filesize > kFileSizeLimit && !premium)) {
+			auto errorResult = PreparedList(
 				PreparedList::Error::TooLargeFile,
-				file
-			};
+				QString());
+			errorResult.files.emplace_back(file);
+			errorResult.files.back().size = filesize;
+			return errorResult;
 		}
 		if (result.files.size() < Ui::MaxAlbumItems()) {
 			result.files.emplace_back(file);
@@ -253,13 +264,14 @@ std::optional<PreparedList> PreparedFileFromFilesDialog(
 		FileDialog::OpenResult &&result,
 		Fn<bool(const Ui::PreparedList&)> checkResult,
 		Fn<void(tr::phrase<>)> errorCallback,
-		int previewWidth) {
+		int previewWidth,
+		bool premium) {
 	if (result.paths.isEmpty() && result.remoteContent.isEmpty()) {
 		return std::nullopt;
 	}
 
 	auto list = result.remoteContent.isEmpty()
-		? PrepareMediaList(result.paths, previewWidth)
+		? PrepareMediaList(result.paths, previewWidth, premium)
 		: PrepareMediaFromImage(
 			QImage(),
 			std::move(result.remoteContent),
@@ -298,13 +310,14 @@ void PrepareDetails(PreparedFile &file, int previewWidth) {
 			UpdateImageDetails(file, previewWidth);
 			file.type = PreparedFile::Type::Photo;
 		} else if (Core::IsMimeSticker(file.information->filemime)
-				|| image->animated) {
+			|| image->animated) {
 			file.type = PreparedFile::Type::None;
 		}
 	} else if (const auto video = std::get_if<Video>(
 			&file.information->media)) {
 		if (ValidVideoForAlbum(*video)) {
-			auto blurred = Images::prepareBlur(Images::prepareOpaque(video->thumbnail));
+			auto blurred = Images::Blur(
+				Images::Opaque(base::duplicate(video->thumbnail)));
 			file.shownDimensions = PrepareShownDimensions(video->thumbnail);
 			file.preview = std::move(blurred).scaledToWidth(
 				previewWidth * cIntRetinaFactor(),
@@ -333,7 +346,7 @@ void UpdateImageDetails(PreparedFile &file, int previewWidth) {
 		previewWidth,
 		style::ConvertScale(preview.width())
 	) * cIntRetinaFactor();
-	const auto scaled = preview.scaledToWidth(
+	auto scaled = preview.scaledToWidth(
 		toWidth,
 		Qt::SmoothTransformation);
 	if (scaled.isNull()) {
@@ -345,7 +358,7 @@ void UpdateImageDetails(PreparedFile &file, int previewWidth) {
 		Unexpected("Scaled is null.");
 	}
 	Assert(!scaled.isNull());
-	file.preview = Images::prepareOpaque(scaled);
+	file.preview = Images::Opaque(std::move(scaled));
 	Assert(!file.preview.isNull());
 	file.preview.setDevicePixelRatio(cRetinaFactor());
 }

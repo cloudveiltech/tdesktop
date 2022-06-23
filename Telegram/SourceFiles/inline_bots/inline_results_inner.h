@@ -49,8 +49,6 @@ enum class Type;
 namespace InlineBots {
 namespace Layout {
 
-constexpr int kInlineItemsMaxPerRow = 5;
-
 class ItemBase;
 using Results = std::vector<std::unique_ptr<Result>>;
 
@@ -135,6 +133,7 @@ private:
 
 	void showPreview();
 	void updateInlineItems();
+	void repaintItems(crl::time now = 0);
 	void clearInlineRows(bool resultsDeleted);
 	ItemBase *layoutPrepareInlineResult(Result *result);
 
@@ -154,7 +153,8 @@ private:
 
 	UserData *_inlineBot = nullptr;
 	PeerData *_inlineQueryPeer = nullptr;
-	crl::time _lastScrolled = 0;
+	crl::time _lastScrolledAt = 0;
+	crl::time _lastUpdatedAt = 0;
 	base::Timer _updateInlineItems;
 	bool _inlineWithThumb = false;
 

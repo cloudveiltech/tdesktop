@@ -8,7 +8,7 @@
 
 #include "ui/painter.h"
 #include "ui/ui_utility.h"
-#include "base/qt_adapters.h"
+#include "base/qt/qt_common_adapters.h"
 
 #include <QtWidgets/QScrollBar>
 #include <QtWidgets/QApplication>
@@ -282,6 +282,10 @@ void ScrollBar::mouseReleaseEvent(QMouseEvent *e) {
 
 void ScrollBar::resizeEvent(QResizeEvent *e) {
 	updateBar();
+}
+
+void ScrollBar::wheelEvent(QWheelEvent *e) {
+	static_cast<ScrollArea*>(parentWidget())->viewportEvent(e);
 }
 
 auto ScrollBar::shadowVisibilityChanged() const

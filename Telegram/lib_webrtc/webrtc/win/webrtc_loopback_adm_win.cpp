@@ -6,10 +6,10 @@
 //
 #include "webrtc/win/webrtc_loopback_adm_win.h"
 
-#include "rtc_base/logging.h"
-#include "modules/audio_processing/include/audio_processing.h"
-#include "modules/audio_processing/include/audio_frame_proxies.h"
-#include "api/audio/audio_frame.h"
+#include <rtc_base/logging.h>
+#include <modules/audio_processing/include/audio_processing.h>
+#include <modules/audio_processing/include/audio_frame_proxies.h>
+#include <api/audio/audio_frame.h>
 
 extern "C" {
 #include <libswresample/swresample.h>
@@ -71,7 +71,7 @@ void SetStringToArray(const std::string &string, char *array, int size) {
 
 [[nodiscard]] auto CreateAudioProcessing()
 -> rtc::scoped_refptr<webrtc::AudioProcessing> {
-	auto result = webrtc::AudioProcessingBuilder().Create(webrtc::Config());
+	auto result = webrtc::AudioProcessingBuilder().Create();
 
 	auto config = webrtc::AudioProcessing::Config();
 	config.echo_canceller.enabled = true;

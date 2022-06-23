@@ -221,14 +221,11 @@ bool WebPageData::applyChanges(
 		return false;
 	}
 
-	const auto resultUrl = TextUtilities::Clean(newUrl);
-	const auto resultDisplayUrl = TextUtilities::Clean(
-		newDisplayUrl);
-	const auto possibleSiteName = TextUtilities::Clean(
-		newSiteName);
-	const auto resultTitle = TextUtilities::SingleLine(
-		newTitle);
-	const auto resultAuthor = TextUtilities::Clean(newAuthor);
+	const auto resultUrl = newUrl;
+	const auto resultDisplayUrl = newDisplayUrl;
+	const auto possibleSiteName = newSiteName;
+	const auto resultTitle = TextUtilities::SingleLine(newTitle);
+	const auto resultAuthor = newAuthor;
 
 	const auto viewTitleText = resultTitle.isEmpty()
 		? TextUtilities::SingleLine(resultAuthor)
@@ -264,15 +261,15 @@ bool WebPageData::applyChanges(
 	type = newType;
 	//CloudVeil start
 	url = resultUrl;
-//	displayUrl = resultDisplayUrl;
+	//displayUrl = resultDisplayUrl;
 	siteName = resultSiteName;
-//	title = resultTitle;
-//	description = newDescription;
-//	photo = newPhoto;
-//	document = newDocument;
-//	collage = std::move(newCollage);
-//	duration = newDuration;
-//	author = resultAuthor;
+	//title = resultTitle;
+	//description = newDescription;
+	//photo = newPhoto;
+	//document = newDocument;
+	//collage = std::move(newCollage);
+	//duration = newDuration;
+	//author = resultAuthor;
 	//CloudVeil end
 	pendingTill = newPendingTill;
 	++version;

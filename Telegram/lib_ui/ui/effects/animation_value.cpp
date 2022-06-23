@@ -14,11 +14,17 @@ namespace anim {
 namespace {
 
 rpl::variable<bool> AnimationsDisabled = false;
+int SlowMultiplierMinusOne/* = 0*/;
 
 } // namespace
 
 transition linear = [](const float64 &delta, const float64 &dt) {
-	return delta * dt;
+	Expects(!std::isnan(delta));
+	Expects(!std::isnan(dt));
+
+	const auto result = delta * dt;
+	Ensures(!std::isnan(result));
+	return result;
 };
 
 transition sineInOut = [](const float64 &delta, const float64 &dt) {
@@ -76,10 +82,20 @@ void SetDisabled(bool disabled) {
 	AnimationsDisabled = disabled;
 }
 
+int SlowMultiplier() {
+	return (SlowMultiplierMinusOne + 1);
+}
+
+void SetSlowMultiplier(int multiplier) {
+	Expects(multiplier > 0);
+
+	SlowMultiplierMinusOne = multiplier - 1;
+}
+
 void DrawStaticLoading(
 		QPainter &p,
 		QRectF rect,
-		int stroke,
+		float64 stroke,
 		QPen pen,
 		QBrush brush) {
 	PainterHighQualityEnabler hq(p);

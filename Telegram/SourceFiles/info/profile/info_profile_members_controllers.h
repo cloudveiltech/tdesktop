@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "boxes/peer_list_box.h"
+#include "boxes/peer_list_controllers.h"
 
 namespace Window {
 class SessionNavigation;
@@ -16,7 +16,9 @@ class SessionNavigation;
 namespace Info {
 namespace Profile {
 
-class MemberListRow final : public PeerListRow {
+enum class Badge;
+
+class MemberListRow final : public PeerListRowWithLink {
 public:
 	enum class Rights {
 		Normal,
@@ -24,21 +26,16 @@ public:
 		Creator,
 	};
 	struct Type {
+		Badge badge;
 		Rights rights;
-		bool canRemove = false;
+		QString adminRank;
 	};
 
 	MemberListRow(not_null<UserData*> user, Type type);
 
 	void setType(Type type);
-	QSize rightActionSize() const override;
-	void rightActionPaint(
-		Painter &p,
-		int x,
-		int y,
-		int outerWidth,
-		bool selected,
-		bool actionSelected) override;
+	bool rightActionDisabled() const override;
+	QMargins rightActionMargins() const override;
 	int nameIconWidth() const override;
 	void paintNameIcon(
 		Painter &p,
@@ -49,12 +46,10 @@ public:
 	void refreshStatus() override;
 
 	not_null<UserData*> user() const;
-	bool canRemove() const {
-		return _type.canRemove;
-	}
 
 private:
 	Type _type;
+	QSize _fakeScamSize;
 
 };
 

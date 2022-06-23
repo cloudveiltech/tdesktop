@@ -50,10 +50,10 @@ CXXFLAGS += -std=c++11 -O
 
 # ---- Targets to build ----
 
-LIB = qrcodegen
+LIB = qrcodegencpp
 LIBFILE = lib$(LIB).a
-LIBOBJ = BitBuffer.o QrCode.o QrSegment.o
-MAINS = QrCodeGeneratorDemo QrCodeGeneratorWorker
+LIBOBJ = qrcodegen.o
+MAINS = QrCodeGeneratorDemo
 
 # Build all binaries
 all: $(LIBFILE) $(MAINS)
@@ -65,7 +65,7 @@ clean:
 
 # Executable files
 %: %.o $(LIBFILE)
-	$(CXX) $(CXXFLAGS) -o $@ $< -L . -l $(LIB)
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $< -L . -l $(LIB)
 
 # The library
 $(LIBFILE): $(LIBOBJ)

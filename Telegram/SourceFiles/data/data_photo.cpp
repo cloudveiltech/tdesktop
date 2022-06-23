@@ -36,7 +36,7 @@ using Data::kPhotoSizeCount;
 		const Data::CloudFile &file) {
 	return (v::is<WebFileLocation>(file.location.file().data)
 		&& image.format() == QImage::Format_ARGB32)
-		? Images::prepareOpaque(std::move(image))
+		? Images::Opaque(std::move(image))
 		: image;
 }
 
@@ -51,7 +51,7 @@ PhotoData::~PhotoData() {
 	for (auto &image : _images) {
 		base::take(image.loader).reset();
 	}
-	base::take(_video.loader).reset();
+	base::take(_videoSizes);
 }
 
 Data::Session &PhotoData::owner() const {
@@ -296,7 +296,7 @@ void PhotoData::load(
 		}
 		return true;
 	};
-	const auto done = [=](QImage result) {
+	const auto done = [=](QImage result, QByteArray bytes) {
 		Expects(_images[valid].loader != nullptr);
 
 		// Find out what progressive photo size have we loaded exactly.
@@ -316,7 +316,8 @@ void PhotoData::load(
 			active->set(
 				validSize,
 				goodFor,
-				ValidatePhotoImage(std::move(result), _images[valid]));
+				ValidatePhotoImage(std::move(result), _images[valid]),
+				std::move(bytes));
 		}
 		if (validSize == PhotoSize::Large && goodFor == validSize) {
 			_owner->photoLoadDone(this);
@@ -368,7 +369,8 @@ void PhotoData::updateImages(
 		const ImageWithLocation &small,
 		const ImageWithLocation &thumbnail,
 		const ImageWithLocation &large,
-		const ImageWithLocation &video,
+		const ImageWithLocation &videoSmall,
+		const ImageWithLocation &videoLarge,
 		crl::time videoStartTime) {
 	if (!inlineThumbnailBytes.isEmpty()
 		&& _inlineThumbnailBytes.isEmpty()) {
@@ -382,14 +384,15 @@ void PhotoData::updateImages(
 			owner().cache(),
 			Data::kImageCacheTag,
 			[=](Data::FileOrigin origin) { load(size, origin); },
-			[=](QImage preloaded) {
+			[=](QImage preloaded, QByteArray bytes) {
 				if (const auto media = activeMediaView()) {
 					media->set(
 						size,
 						size,
 						ValidatePhotoImage(
 							std::move(preloaded),
-							_images[index]));
+							_images[index]),
+						std::move(bytes));
 				}
 			});
 	};
@@ -397,15 +400,28 @@ void PhotoData::updateImages(
 	update(PhotoSize::Thumbnail, thumbnail);
 	update(PhotoSize::Large, large);
 
-	if (video.location.valid()) {
-		_videoStartTime = videoStartTime;
+	if (!videoLarge.location.valid()) {
+		_videoSizes = nullptr;
+	} else {
+		if (!_videoSizes) {
+			_videoSizes = std::make_unique<VideoSizes>();
+		}
+		_videoSizes->startTime = videoStartTime;
+		constexpr auto large = PhotoSize::Large;
+		constexpr auto small = PhotoSize::Small;
+		Data::UpdateCloudFile(
+			_videoSizes->large,
+			videoLarge,
+			owner().cache(),
+			Data::kAnimationCacheTag,
+			[&](Data::FileOrigin origin) { loadVideo(large, origin); });
+		Data::UpdateCloudFile(
+			_videoSizes->small,
+			videoSmall,
+			owner().cache(),
+			Data::kAnimationCacheTag,
+			[&](Data::FileOrigin origin) { loadVideo(small, origin); });
 	}
-	Data::UpdateCloudFile(
-		_video,
-		video,
-		owner().cache(),
-		Data::kAnimationCacheTag,
-		[&](Data::FileOrigin origin) { loadVideo(origin); });
 }
 
 [[nodiscard]] bool PhotoData::hasAttachedStickers() const {
@@ -424,46 +440,80 @@ int PhotoData::height() const {
 	return _images[PhotoSizeIndex(PhotoSize::Large)].location.height();
 }
 
+Data::CloudFile &PhotoData::videoFile(PhotoSize size) {
+	Expects(_videoSizes != nullptr);
+
+	return (size == PhotoSize::Small && hasVideoSmall())
+		? _videoSizes->small
+		: _videoSizes->large;
+}
+
+const Data::CloudFile &PhotoData::videoFile(PhotoSize size) const {
+	Expects(_videoSizes != nullptr);
+
+	return (size == PhotoSize::Small && hasVideoSmall())
+		? _videoSizes->small
+		: _videoSizes->large;
+}
+
+
 bool PhotoData::hasVideo() const {
 	//CloudVeil start
 	if (GlobalSecuritySettings::getSettings().disableProfileVideo) {
 		return false;
 	}
-	//CloudVeil end
 
 	return hasVideoUnfiltered();
+	//CloudVeil end
+}
+
+bool PhotoData::hasVideoSmall() const {
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableProfileVideo) {
+		return false;
+	}
+	return hasVideoSmallUnfiltered();
+	//CloudVeil end
 }
 
 //CloudVeil start
 bool PhotoData::hasVideoUnfiltered() const {
-	return _video.location.valid();
+	return _videoSizes != nullptr;
+}
+
+bool PhotoData::hasVideoSmallUnfiltered() const {
+	return hasVideo() && _videoSizes->small.location.valid();
 }
 //CloudVeil end
 
-bool PhotoData::videoLoading() const {
-	return _video.loader != nullptr;
+bool PhotoData::videoLoading(Data::PhotoSize size) const {
+	return _videoSizes && videoFile(size).loader != nullptr;
 }
 
-bool PhotoData::videoFailed() const {
-	return (_video.flags & Data::CloudFile::Flag::Failed);
+bool PhotoData::videoFailed(Data::PhotoSize size) const {
+	return _videoSizes
+		&& (videoFile(size).flags & Data::CloudFile::Flag::Failed);
 }
 
-void PhotoData::loadVideo(Data::FileOrigin origin) {
+void PhotoData::loadVideo(Data::PhotoSize size, Data::FileOrigin origin) {
+	if (!_videoSizes) {
+		return;
+	}
 	const auto autoLoading = false;
 	const auto finalCheck = [=] {
 		if (const auto active = activeMediaView()) {
-			return active->videoContent().isEmpty();
+			return active->videoContent(size).isEmpty();
 		}
 		return true;
 	};
 	const auto done = [=](QByteArray result) {
 		if (const auto active = activeMediaView()) {
-			active->setVideo(std::move(result));
+			active->setVideo(size, std::move(result));
 		}
 	};
 	Data::LoadCloudFile(
 		&session(),
-		_video,
+		videoFile(size),
 		origin,
 		LoadFromCloudOrLocal,
 		autoLoading,
@@ -472,12 +522,27 @@ void PhotoData::loadVideo(Data::FileOrigin origin) {
 		done);
 }
 
-const ImageLocation &PhotoData::videoLocation() const {
-	return _video.location;
+const ImageLocation &PhotoData::videoLocation(Data::PhotoSize size) const {
+	static const auto empty = ImageLocation();
+	return _videoSizes ? videoFile(size).location : empty;
 }
 
-int PhotoData::videoByteSize() const {
-	return _video.byteSize;
+int PhotoData::videoByteSize(Data::PhotoSize size) const {
+	return _videoSizes ? videoFile(size).byteSize : 0;
+}
+
+crl::time PhotoData::videoStartPosition() const {
+	return _videoSizes ? _videoSizes->startTime : crl::time(0);
+}
+
+void PhotoData::setVideoPlaybackFailed() {
+	if (_videoSizes) {
+		_videoSizes->playbackFailed = true;
+	}
+}
+
+bool PhotoData::videoPlaybackFailed() const {
+	return _videoSizes && _videoSizes->playbackFailed;
 }
 
 bool PhotoData::videoCanBePlayed() const {
@@ -491,17 +556,19 @@ auto PhotoData::createStreamingLoader(
 	if (!hasVideo()) {
 		return nullptr;
 	}
+	constexpr auto large = PhotoSize::Large;
 	if (!forceRemoteLoader) {
 		const auto media = activeMediaView();
-		if (media && !media->videoContent().isEmpty()) {
-			return Media::Streaming::MakeBytesLoader(media->videoContent());
+		const auto bytes = media ? media->videoContent(large) : QByteArray();
+		if (media && !bytes.isEmpty()) {
+			return Media::Streaming::MakeBytesLoader(bytes);
 		}
 	}
-	return v::is<StorageFileLocation>(videoLocation().file().data)
+	return v::is<StorageFileLocation>(videoLocation(large).file().data)
 		? std::make_unique<Media::Streaming::LoaderMtproto>(
 			&session().downloader(),
-			v::get<StorageFileLocation>(videoLocation().file().data),
-			videoByteSize(),
+			v::get<StorageFileLocation>(videoLocation(large).file().data),
+			videoByteSize(large),
 			origin)
 		: nullptr;
 }

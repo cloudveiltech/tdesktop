@@ -38,6 +38,9 @@ inline void BringToBack(not_null<QWidget*> widget) {
 inline void ClearTransientParent(not_null<QWidget*> widget) {
 }
 
+inline void DisableSystemWindowResize(not_null<QWidget*> widget, QSize ratio) {
+}
+
 inline constexpr bool UseMainQueueGeneric() {
 	return true;
 }
@@ -46,10 +49,10 @@ inline bool WindowExtentsSupported() {
 	return false;
 }
 
-inline void SetWindowExtents(QWindow *window, const QMargins &extents) {
+inline void SetWindowExtents(not_null<QWidget*> widget, const QMargins &extents) {
 }
 
-inline void UnsetWindowExtents(QWindow *window) {
+inline void UnsetWindowExtents(not_null<QWidget*> widget) {
 }
 
 } // namespace Platform

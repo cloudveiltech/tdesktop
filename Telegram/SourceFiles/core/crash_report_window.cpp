@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/crash_report_window.h"
 
 #include "core/crash_reports.h"
+#include "core/application.h"
 #include "core/launcher.h"
 #include "core/sandbox.h"
 #include "core/update_checker.h"
@@ -15,7 +16,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/main_window.h"
 #include "platform/platform_specific.h"
 #include "base/zlib_help.h"
-#include "app.h"
 
 #include <QtWidgets/QFileDialog>
 #include <QtGui/QScreen>
@@ -43,9 +43,7 @@ PreLaunchWindow::PreLaunchWindow(QString title) {
 	p.setColor(QPalette::Window, QColor(255, 255, 255));
 	setPalette(p);
 
-	QLabel tmp(this);
-	tmp.setText(qsl("Tmp"));
-	_size = tmp.sizeHint().height();
+	_size = QFontMetrics(font()).height();
 
 	int paddingVertical = (_size / 2);
 	int paddingHorizontal = _size;
@@ -100,11 +98,11 @@ PreLaunchInput::PreLaunchInput(QWidget *parent, bool password) : QLineEdit(paren
 	setFont(logFont);
 
 	QPalette p(palette());
+	p.setColor(QPalette::Window, QColor(255, 255, 255));
+	p.setColor(QPalette::Base, QColor(255, 255, 255));
 	p.setColor(QPalette::WindowText, QColor(0, 0, 0));
 	p.setColor(QPalette::Text, QColor(0, 0, 0));
 	setPalette(p);
-
-	setStyleSheet("QLineEdit { background-color: white; }");
 
 	QLineEdit::setTextMargins(0, 0, 0, 0);
 	setContentsMargins(0, 0, 0, 0);
@@ -210,7 +208,7 @@ void NotStartedWindow::updateControls() {
 
 void NotStartedWindow::closeEvent(QCloseEvent *e) {
 	deleteLater();
-	App::quit();
+	Core::Quit();
 }
 
 void NotStartedWindow::resizeEvent(QResizeEvent *e) {
@@ -908,7 +906,7 @@ void LastCrashedWindow::setUpdatingState(UpdatingState state, bool force) {
 		case UpdatingReady:
 			if (Core::checkReadyUpdate()) {
 				cSetRestartingUpdate(true);
-				App::quit();
+				Core::Quit();
 				return;
 			} else {
 				setUpdatingState(UpdatingFail);

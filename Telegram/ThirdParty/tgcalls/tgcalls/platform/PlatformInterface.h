@@ -9,6 +9,7 @@
 #include "modules/audio_device/include/audio_device.h"
 #include "rtc_base/ref_counted_object.h"
 #include <string>
+#include <map>
 
 namespace tgcalls {
 
@@ -297,23 +298,25 @@ public:
 	static PlatformInterface *SharedInstance();
 	virtual ~PlatformInterface() = default;
 
-	virtual void configurePlatformAudio() {
+	virtual void configurePlatformAudio(int numChannels = 1) {
 	}
 
     virtual std::unique_ptr<rtc::NetworkMonitorFactory> createNetworkMonitorFactory() {
         return nullptr;
     }
     
-	virtual std::unique_ptr<webrtc::VideoEncoderFactory> makeVideoEncoderFactory(bool preferHardwareEncoding = false) = 0;
+	virtual std::unique_ptr<webrtc::VideoEncoderFactory> makeVideoEncoderFactory(bool preferHardwareEncoding = false, bool isScreencast = false) = 0;
 	virtual std::unique_ptr<webrtc::VideoDecoderFactory> makeVideoDecoderFactory() = 0;
 	virtual bool supportsEncoding(const std::string &codecName) = 0;
 	virtual rtc::scoped_refptr<webrtc::VideoTrackSourceInterface> makeVideoSource(rtc::Thread *signalingThread, rtc::Thread *workerThread) = 0;
     virtual void adaptVideoSource(rtc::scoped_refptr<webrtc::VideoTrackSourceInterface> videoSource, int width, int height, int fps) = 0;
 	virtual std::unique_ptr<VideoCapturerInterface> makeVideoCapturer(rtc::scoped_refptr<webrtc::VideoTrackSourceInterface> source, std::string deviceId, std::function<void(VideoState)> stateUpdated, std::function<void(PlatformCaptureInfo)> captureInfoUpdated, std::shared_ptr<PlatformContext> platformContext, std::pair<int, int> &outResolution) = 0;
     virtual rtc::scoped_refptr<WrappedAudioDeviceModule> wrapAudioDeviceModule(rtc::scoped_refptr<webrtc::AudioDeviceModule> module) {
-        return new rtc::RefCountedObject<DefaultWrappedAudioDeviceModule>(module);
+        return rtc::make_ref_counted<DefaultWrappedAudioDeviceModule>(module);
     }
 
+public:
+    bool preferX264 = false;
 };
 
 std::unique_ptr<PlatformInterface> CreatePlatformInterface();

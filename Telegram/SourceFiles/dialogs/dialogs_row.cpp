@@ -9,7 +9,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "ui/effects/ripple_animation.h"
 #include "ui/text/text_options.h"
+#include "ui/text/text_utilities.h"
 #include "dialogs/dialogs_entry.h"
+#include "dialogs/ui/dialogs_video_userpic.h"
 #include "data/data_folder.h"
 #include "data/data_peer_values.h"
 #include "history/history.h"
@@ -20,10 +22,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace Dialogs {
 namespace {
 
-QString ComposeFolderListEntryText(not_null<Data::Folder*> folder) {
+[[nodiscard]] TextWithEntities ComposeFolderListEntryText(
+		not_null<Data::Folder*> folder) {
 	const auto &list = folder->lastHistories();
 	if (list.empty()) {
-		return QString();
+		return {};
 	}
 
 	const auto count = std::max(
@@ -38,12 +41,16 @@ QString ComposeFolderListEntryText(not_null<Data::Folder*> folder) {
 		list.size() - (throwAwayLastName ? 1 : 0)
 	);
 	const auto wrapName = [](not_null<History*> history) {
-		const auto name = TextUtilities::Clean(history->peer->name);
-		return (history->unreadCount() > 0)
-			? (textcmdStartSemibold()
-				+ textcmdLink(1, name)
-				+ textcmdStopSemibold())
-			: name;
+		const auto name = history->peer->name;
+		return TextWithEntities{
+			.text = name,
+			.entities = (history->unreadCount() > 0)
+				? EntitiesInText{
+					{ EntityType::Semibold, 0, int(name.size()), QString() },
+					{ EntityType::PlainLink, 0, int(name.size()), QString() },
+				}
+				: EntitiesInText{}
+		};
 	};
 	const auto shown = int(peers.size());
 	const auto accumulated = [&] {
@@ -57,12 +64,19 @@ QString ComposeFolderListEntryText(not_null<Data::Folder*> folder) {
 				lt_accumulated,
 				result,
 				lt_chat,
-				wrapName(*i));
+				wrapName(*i),
+				Ui::Text::WithEntities);
 		}
 		return result;
 	}();
 	return (shown < count)
-		? tr::lng_archived_last(tr::now, lt_count, (count - shown), lt_chats, accumulated)
+		? tr::lng_archived_last(
+			tr::now,
+			lt_count,
+			(count - shown),
+			lt_chats,
+			accumulated,
+			Ui::Text::WithEntities)
 		: accumulated;
 }
 
@@ -70,32 +84,6 @@ QString ComposeFolderListEntryText(not_null<Data::Folder*> folder) {
 
 BasicRow::BasicRow() = default;
 BasicRow::~BasicRow() = default;
-
-void BasicRow::setCornerBadgeShown(
-		bool shown,
-		Fn<void()> updateCallback) const {
-	if (_cornerBadgeShown == shown) {
-		return;
-	}
-	_cornerBadgeShown = shown;
-	if (_cornerBadgeUserpic && _cornerBadgeUserpic->animation.animating()) {
-		_cornerBadgeUserpic->animation.change(
-			_cornerBadgeShown ? 1. : 0.,
-			st::dialogsOnlineBadgeDuration);
-	} else if (updateCallback) {
-		ensureCornerBadgeUserpic();
-		_cornerBadgeUserpic->animation.start(
-			std::move(updateCallback),
-			_cornerBadgeShown ? 0. : 1.,
-			_cornerBadgeShown ? 1. : 0.,
-			st::dialogsOnlineBadgeDuration);
-	}
-	if (!_cornerBadgeShown
-		&& _cornerBadgeUserpic
-		&& !_cornerBadgeUserpic->animation.animating()) {
-		_cornerBadgeUserpic = nullptr;
-	}
-}
 
 void BasicRow::addRipple(
 		QPoint origin,
@@ -131,7 +119,81 @@ void BasicRow::paintRipple(
 	}
 }
 
-void BasicRow::updateCornerBadgeShown(
+void BasicRow::paintUserpic(
+		Painter &p,
+		not_null<PeerData*> peer,
+		Ui::VideoUserpic *videoUserpic,
+		History *historyForCornerBadge,
+		crl::time now,
+		bool active,
+		int fullWidth,
+		bool paused) const {
+	PaintUserpic(
+		p,
+		peer,
+		videoUserpic,
+		_userpic,
+		st::dialogsPadding.x(),
+		st::dialogsPadding.y(),
+		fullWidth,
+		st::dialogsPhotoSize,
+		paused);
+}
+
+Row::Row(Key key, int pos) : _id(key), _pos(pos) {
+	if (const auto history = key.history()) {
+		updateCornerBadgeShown(history->peer);
+	}
+}
+
+uint64 Row::sortKey(FilterId filterId) const {
+	return _id.entry()->sortKeyInChatList(filterId);
+}
+
+void Row::validateListEntryCache() const {
+	const auto folder = _id.folder();
+	if (!folder) {
+		return;
+	}
+	const auto version = folder->chatListViewVersion();
+	if (_listEntryCacheVersion == version) {
+		return;
+	}
+	_listEntryCacheVersion = version;
+	_listEntryCache.setMarkedText(
+		st::dialogsTextStyle,
+		ComposeFolderListEntryText(folder),
+		// Use rich options as long as the entry text does not have user text.
+		Ui::ItemTextDefaultOptions());
+}
+
+void Row::setCornerBadgeShown(
+		bool shown,
+		Fn<void()> updateCallback) const {
+	if (_cornerBadgeShown == shown) {
+		return;
+	}
+	_cornerBadgeShown = shown;
+	if (_cornerBadgeUserpic && _cornerBadgeUserpic->animation.animating()) {
+		_cornerBadgeUserpic->animation.change(
+			_cornerBadgeShown ? 1. : 0.,
+			st::dialogsOnlineBadgeDuration);
+	} else if (updateCallback) {
+		ensureCornerBadgeUserpic();
+		_cornerBadgeUserpic->animation.start(
+			std::move(updateCallback),
+			_cornerBadgeShown ? 0. : 1.,
+			_cornerBadgeShown ? 1. : 0.,
+			st::dialogsOnlineBadgeDuration);
+	}
+	if (!_cornerBadgeShown
+		&& _cornerBadgeUserpic
+		&& !_cornerBadgeUserpic->animation.animating()) {
+		_cornerBadgeUserpic = nullptr;
+	}
+}
+
+void Row::updateCornerBadgeShown(
 		not_null<PeerData*> peer,
 		Fn<void()> updateCallback) const {
 	const auto shown = [&] {
@@ -145,26 +207,32 @@ void BasicRow::updateCornerBadgeShown(
 	setCornerBadgeShown(shown, std::move(updateCallback));
 }
 
-void BasicRow::ensureCornerBadgeUserpic() const {
+void Row::ensureCornerBadgeUserpic() const {
 	if (_cornerBadgeUserpic) {
 		return;
 	}
 	_cornerBadgeUserpic = std::make_unique<CornerBadgeUserpic>();
 }
 
-void BasicRow::PaintCornerBadgeFrame(
+void Row::PaintCornerBadgeFrame(
 		not_null<CornerBadgeUserpic*> data,
 		not_null<PeerData*> peer,
-		std::shared_ptr<Data::CloudImageView> &view) {
+		Ui::VideoUserpic *videoUserpic,
+		std::shared_ptr<Data::CloudImageView> &view,
+		bool paused) {
 	data->frame.fill(Qt::transparent);
 
 	Painter q(&data->frame);
-	peer->paintUserpic(
+	PaintUserpic(
 		q,
+		peer,
+		videoUserpic,
 		view,
 		0,
 		0,
-		st::dialogsPhotoSize);
+		data->frame.width() / data->frame.devicePixelRatio(),
+		st::dialogsPhotoSize,
+		paused);
 
 	PainterHighQualityEnabler hq(q);
 	q.setCompositionMode(QPainter::CompositionMode_Source);
@@ -192,26 +260,30 @@ void BasicRow::PaintCornerBadgeFrame(
 	).marginsRemoved({ shrink, shrink, shrink, shrink }));
 }
 
-void BasicRow::paintUserpic(
+void Row::paintUserpic(
 		Painter &p,
 		not_null<PeerData*> peer,
+		Ui::VideoUserpic *videoUserpic,
 		History *historyForCornerBadge,
 		crl::time now,
 		bool active,
-		int fullWidth) const {
+		int fullWidth,
+		bool paused) const {
 	updateCornerBadgeShown(peer);
 
 	const auto shown = _cornerBadgeUserpic
 		? _cornerBadgeUserpic->animation.value(_cornerBadgeShown ? 1. : 0.)
 		: (_cornerBadgeShown ? 1. : 0.);
 	if (!historyForCornerBadge || shown == 0.) {
-		peer->paintUserpicLeft(
+		BasicRow::paintUserpic(
 			p,
-			_userpic,
-			st::dialogsPadding.x(),
-			st::dialogsPadding.y(),
+			peer,
+			videoUserpic,
+			historyForCornerBadge,
+			now,
+			active,
 			fullWidth,
-			st::dialogsPhotoSize);
+			paused);
 		if (!historyForCornerBadge || !_cornerBadgeShown) {
 			_cornerBadgeUserpic = nullptr;
 		}
@@ -225,14 +297,23 @@ void BasicRow::paintUserpic(
 			QImage::Format_ARGB32_Premultiplied);
 		_cornerBadgeUserpic->frame.setDevicePixelRatio(cRetinaFactor());
 	}
-	const auto key = peer->userpicUniqueKey(_userpic);
+	const auto key = peer->userpicUniqueKey(userpicView());
+	const auto frameIndex = videoUserpic ? videoUserpic->frameIndex() : -1;
 	if (_cornerBadgeUserpic->shown != shown
 		|| _cornerBadgeUserpic->key != key
-		|| _cornerBadgeUserpic->active != active) {
+		|| _cornerBadgeUserpic->active != active
+		|| _cornerBadgeUserpic->frameIndex != frameIndex
+		|| videoUserpic) {
 		_cornerBadgeUserpic->shown = shown;
 		_cornerBadgeUserpic->key = key;
 		_cornerBadgeUserpic->active = active;
-		PaintCornerBadgeFrame(_cornerBadgeUserpic.get(), peer, _userpic);
+		_cornerBadgeUserpic->frameIndex = frameIndex;
+		PaintCornerBadgeFrame(
+			_cornerBadgeUserpic.get(),
+			peer,
+			videoUserpic,
+			userpicView(),
+			paused);
 	}
 	p.drawImage(st::dialogsPadding, _cornerBadgeUserpic->frame);
 	if (historyForCornerBadge->peer->isUser()) {
@@ -255,32 +336,6 @@ void BasicRow::paintUserpic(
 		now);
 	p.translate(-st::dialogsPadding);
 	p.setOpacity(1.);
-}
-
-Row::Row(Key key, int pos) : _id(key), _pos(pos) {
-	if (const auto history = key.history()) {
-		updateCornerBadgeShown(history->peer);
-	}
-}
-
-uint64 Row::sortKey(FilterId filterId) const {
-	return _id.entry()->sortKeyInChatList(filterId);
-}
-
-void Row::validateListEntryCache() const {
-	const auto folder = _id.folder();
-	if (!folder) {
-		return;
-	}
-	const auto version = folder->chatListViewVersion();
-	if (_listEntryCacheVersion == version) {
-		return;
-	}
-	_listEntryCacheVersion = version;
-	_listEntryCache.setText(
-		st::dialogsTextStyle,
-		ComposeFolderListEntryText(folder),
-		Ui::DialogTextOptions());
 }
 
 FakeRow::FakeRow(Key searchInChat, not_null<HistoryItem*> item)

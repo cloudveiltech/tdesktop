@@ -16,7 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_file_origin.h"
 #include "data/data_session.h"
 #include "data/stickers/data_stickers.h"
-#include "chat_helpers/send_context_menu.h" // SendMenu::FillSendMenu
+#include "menu/menu_send.h" // SendMenu::FillSendMenu
 #include "chat_helpers/stickers_lottie.h"
 #include "chat_helpers/message_field.h" // PrepareMentionTag.
 #include "mainwindow.h"
@@ -27,6 +27,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "lottie/lottie_single_player.h"
+#include "media/clip/media_clip_reader.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/input_fields.h"
@@ -37,12 +38,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/cached_round_corners.h"
 #include "base/unixtime.h"
 #include "base/random.h"
+#include "base/qt/qt_common_adapters.h"
 #include "window/window_adaptive.h"
 #include "window/window_session_controller.h"
 #include "styles/style_chat.h"
 #include "styles/style_widgets.h"
 #include "styles/style_chat_helpers.h"
-#include "base/qt_adapters.h"
+#include "styles/style_menu_icons.h"
 
 #include <QtWidgets/QApplication>
 #include "cloudveil/GlobalSecuritySettings.h"
@@ -95,6 +97,7 @@ private:
 	void mouseReleaseEvent(QMouseEvent *e) override;
 	void contextMenuEvent(QContextMenuEvent *e) override;
 
+	QRect selectedRect(int index) const;
 	void updateSelectedRow();
 	void setSel(int sel, bool scroll = false);
 	void showPreview();
@@ -102,8 +105,13 @@ private:
 
 	QSize stickerBoundingBox() const;
 	void setupLottie(StickerSuggestion &suggestion);
+	void setupWebm(StickerSuggestion &suggestion);
 	void repaintSticker(not_null<DocumentData*> document);
+	void repaintStickerAtIndex(int index);
 	std::shared_ptr<Lottie::FrameRenderer> getLottieRenderer();
+	void clipCallback(
+		Media::Clip::Notification notification,
+		not_null<DocumentData*> document);
 
 	const not_null<Window::SessionController*> _controller;
 	const not_null<FieldAutocomplete*> _parent;
@@ -139,6 +147,13 @@ private:
 
 	base::Timer _previewTimer;
 
+};
+
+struct FieldAutocomplete::StickerSuggestion {
+	not_null<DocumentData*> document;
+	std::shared_ptr<Data::DocumentMedia> documentMedia;
+	std::unique_ptr<Lottie::SinglePlayer> lottie;
+	Media::Clip::ReaderPointer webm;
 };
 
 FieldAutocomplete::FieldAutocomplete(
@@ -340,7 +355,7 @@ FieldAutocomplete::StickerRows FieldAutocomplete::getStickerSuggestions() {
 		};
 	}) | ranges::to_vector;
 	for (auto &suggestion : _srows) {
-		if (!suggestion.animated) {
+		if (!suggestion.lottie && !suggestion.webm) {
 			continue;
 		}
 		const auto i = ranges::find(
@@ -348,7 +363,8 @@ FieldAutocomplete::StickerRows FieldAutocomplete::getStickerSuggestions() {
 			suggestion.document,
 			&StickerSuggestion::document);
 		if (i != end(result)) {
-			i->animated = std::move(suggestion.animated);
+			i->lottie = std::move(suggestion.lottie);
+			i->webm = std::move(suggestion.webm);
 		}
 	}
 	return result;
@@ -400,6 +416,7 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 						&& filterNotPassedByUsername(user))) {
 					continue;
 				}
+
 				//CloudVeil start
 				if (!GlobalSecuritySettings::getSettings().isDialogAllowed(user)) {
 					continue;
@@ -471,7 +488,7 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 		bool hasUsername = _filter.indexOf('@') > 0;
 		base::flat_map<
 			not_null<UserData*>,
-			not_null<const std::vector<BotCommand>*>> bots;
+			not_null<const std::vector<Data::BotCommand>*>> bots;
 		int32 cnt = 0;
 		if (_chat) {
 			if (_chat->noParticipantInfo()) {
@@ -518,7 +535,7 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 		if (cnt) {
 			const auto make = [&](
 					not_null<UserData*> user,
-					const BotCommand &command) {
+					const Data::BotCommand &command) {
 				return BotCommandRow{
 					user,
 					command.command,
@@ -818,6 +835,7 @@ void FieldAutocomplete::Inner::paintEvent(QPaintEvent *e) {
 			width(),
 			std::min(st::msgMaxWidth / 2, width() / 2));
 
+		const auto now = crl::now();
 		int32 rows = rowscount(_srows->size(), _stickersPerRow);
 		int32 fromrow = floorclamp(r.y() - st::stickerPanPadding, st::stickerPanSize.height(), 0, rows);
 		int32 torow = ceilclamp(r.y() + r.height() - st::stickerPanPadding, st::stickerPanSize.height(), 0, rows);
@@ -831,12 +849,15 @@ void FieldAutocomplete::Inner::paintEvent(QPaintEvent *e) {
 				auto &sticker = (*_srows)[index];
 				const auto document = sticker.document;
 				const auto &media = sticker.documentMedia;
-				if (!document->sticker()) continue;
+				const auto info = document->sticker();
+				if (!info) continue;
 
-				if (document->sticker()->animated
-					&& !sticker.animated
-					&& media->loaded()) {
-					setupLottie(sticker);
+				if (media->loaded()) {
+					if (info->isLottie() && !sticker.lottie) {
+						setupLottie(sticker);
+					} else if (info->isWebm() && !sticker.webm) {
+						setupWebm(sticker);
+					}
 				}
 
 				QPoint pos(st::stickerPanPadding + col * st::stickerPanSize.width(), st::stickerPanPadding + row * st::stickerPanSize.height());
@@ -847,46 +868,34 @@ void FieldAutocomplete::Inner::paintEvent(QPaintEvent *e) {
 				}
 
 				media->checkStickerSmall();
-				auto w = 1;
-				auto h = 1;
-				if (sticker.animated && !document->dimensions.isEmpty()) {
-					const auto request = Lottie::FrameRequest{ stickerBoundingBox() * cIntRetinaFactor() };
-					const auto size = request.size(document->dimensions, true) / cIntRetinaFactor();
-					w = std::max(size.width(), 1);
-					h = std::max(size.height(), 1);
-				} else {
-					const auto coef = std::min(
-						std::min(
-							(st::stickerPanSize.width() - st::roundRadiusSmall * 2) / float64(document->dimensions.width()),
-							(st::stickerPanSize.height() - st::roundRadiusSmall * 2) / float64(document->dimensions.height())),
-						1.);
-					w = std::max(qRound(coef * document->dimensions.width()), 1);
-					h = std::max(qRound(coef * document->dimensions.height()), 1);
-				}
-
-				if (sticker.animated && sticker.animated->ready()) {
-					const auto frame = sticker.animated->frame();
-					const auto size = frame.size() / cIntRetinaFactor();
-					const auto ppos = pos + QPoint(
-						(st::stickerPanSize.width() - size.width()) / 2,
-						(st::stickerPanSize.height() - size.height()) / 2);
+				const auto paused = _controller->isGifPausedAtLeastFor(
+					Window::GifPauseReason::SavedGifs);
+				const auto size = ChatHelpers::ComputeStickerSize(
+					document,
+					stickerBoundingBox());
+				const auto ppos = pos + QPoint(
+					(st::stickerPanSize.width() - size.width()) / 2,
+					(st::stickerPanSize.height() - size.height()) / 2);
+				if (sticker.lottie && sticker.lottie->ready()) {
+					const auto frame = sticker.lottie->frame();
 					p.drawImage(
-						QRect(ppos, size),
+						QRect(ppos, frame.size() / cIntRetinaFactor()),
 						frame);
-					const auto paused = _controller->isGifPausedAtLeastFor(
-						Window::GifPauseReason::SavedGifs);
 					if (!paused) {
-						sticker.animated->markFrameShown();
+						sticker.lottie->markFrameShown();
 					}
+				} else if (sticker.webm && sticker.webm->started()) {
+					p.drawPixmap(ppos, sticker.webm->current({
+						.frame = size,
+						.keepAlpha = true,
+					}, paused ? 0 : now));
 				} else if (const auto image = media->getStickerSmall()) {
-					QPoint ppos = pos + QPoint((st::stickerPanSize.width() - w) / 2, (st::stickerPanSize.height() - h) / 2);
-					p.drawPixmapLeft(ppos, width(), image->pix(w, h));
+					p.drawPixmapLeft(ppos, width(), image->pix(size));
 				} else {
-					QPoint ppos = pos + QPoint((st::stickerPanSize.width() - w) / 2, (st::stickerPanSize.height() - h) / 2);
 					ChatHelpers::PaintStickerThumbnailPath(
 						p,
 						media.get(),
-						QRect(ppos, QSize(w, h)),
+						QRect(ppos, size),
 						_pathGradient.get());
 				}
 			}
@@ -1089,7 +1098,26 @@ bool FieldAutocomplete::Inner::chooseAtIndex(
 	if (!_srows->empty()) {
 		if (index < _srows->size()) {
 			const auto document = (*_srows)[index].document;
-			_stickerChosen.fire({ document, options, method });
+
+			const auto from = [&]() -> Ui::MessageSendingAnimationFrom {
+				if (options.scheduled) {
+					return {};
+				}
+				const auto bounding = selectedRect(index);
+				auto contentRect = QRect(
+					QPoint(),
+					ChatHelpers::ComputeStickerSize(
+						document,
+						stickerBoundingBox()));
+				contentRect.moveCenter(bounding.center());
+				return {
+					Ui::MessageSendingAnimationFrom::Type::Sticker,
+					_controller->session().data().nextLocalMessageId(),
+					mapToGlobal(std::move(contentRect)),
+				};
+			};
+
+			_stickerChosen.fire({ document, options, method, from() });
 			return true;
 		}
 	} else if (!_mrows->empty()) {
@@ -1197,7 +1225,9 @@ void FieldAutocomplete::Inner::contextMenuEvent(QContextMenuEvent *e) {
 		? _sendMenuType()
 		: SendMenu::Type::Disabled;
 	const auto method = FieldAutocomplete::ChooseMethod::ByClick;
-	_menu = base::make_unique_q<Ui::PopupMenu>(this);
+	_menu = base::make_unique_q<Ui::PopupMenu>(
+		this,
+		st::popupMenuWithIcons);
 
 	const auto send = [=](Api::SendOptions options) {
 		chooseAtIndex(method, index, options);
@@ -1226,14 +1256,28 @@ void FieldAutocomplete::Inner::leaveEventHook(QEvent *e) {
 	}
 }
 
+QRect FieldAutocomplete::Inner::selectedRect(int index) const {
+	if (index < 0) {
+		return QRect();
+	}
+	if (_srows->empty()) {
+		return { 0, index * st::mentionHeight, width(), st::mentionHeight };
+	} else {
+		const auto row = int(index / _stickersPerRow);
+		const auto col = int(index % _stickersPerRow);
+		return {
+			st::stickerPanPadding + col * st::stickerPanSize.width(),
+			st::stickerPanPadding + row * st::stickerPanSize.height(),
+			st::stickerPanSize.width(),
+			st::stickerPanSize.height()
+		};
+	}
+}
+
 void FieldAutocomplete::Inner::updateSelectedRow() {
-	if (_sel >= 0) {
-		if (_srows->empty()) {
-			update(0, _sel * st::mentionHeight, width(), st::mentionHeight);
-		} else {
-			int32 row = _sel / _stickersPerRow, col = _sel % _stickersPerRow;
-			update(st::stickerPanPadding + col * st::stickerPanSize.width(), st::stickerPanPadding + row * st::stickerPanSize.height(), st::stickerPanSize.width(), st::stickerPanSize.height());
-		}
+	const auto rect = selectedRect(_sel);
+	if (rect.isValid()) {
+		update(rect);
 	}
 }
 
@@ -1275,17 +1319,28 @@ auto FieldAutocomplete::Inner::getLottieRenderer()
 
 void FieldAutocomplete::Inner::setupLottie(StickerSuggestion &suggestion) {
 	const auto document = suggestion.document;
-	suggestion.animated = ChatHelpers::LottiePlayerFromDocument(
+	suggestion.lottie = ChatHelpers::LottiePlayerFromDocument(
 		suggestion.documentMedia.get(),
 		ChatHelpers::StickerLottieSize::InlineResults,
 		stickerBoundingBox() * cIntRetinaFactor(),
 		Lottie::Quality::Default,
 		getLottieRenderer());
 
-	suggestion.animated->updates(
+	suggestion.lottie->updates(
 	) | rpl::start_with_next([=] {
 		repaintSticker(document);
 	}, _stickersLifetime);
+}
+
+void FieldAutocomplete::Inner::setupWebm(StickerSuggestion &suggestion) {
+	const auto document = suggestion.document;
+	auto callback = [=](Media::Clip::Notification notification) {
+		clipCallback(notification, document);
+	};
+	suggestion.webm = Media::Clip::MakeReader(
+		suggestion.documentMedia->owner()->location(),
+		suggestion.documentMedia->bytes(),
+		std::move(callback));
 }
 
 QSize FieldAutocomplete::Inner::stickerBoundingBox() const {
@@ -1303,7 +1358,10 @@ void FieldAutocomplete::Inner::repaintSticker(
 	if (i == end(*_srows)) {
 		return;
 	}
-	const auto index = (i - begin(*_srows));
+	repaintStickerAtIndex(i - begin(*_srows));
+}
+
+void FieldAutocomplete::Inner::repaintStickerAtIndex(int index) {
 	const auto row = (index / _stickersPerRow);
 	const auto col = (index % _stickersPerRow);
 	update(
@@ -1311,6 +1369,36 @@ void FieldAutocomplete::Inner::repaintSticker(
 		st::stickerPanPadding + row * st::stickerPanSize.height(),
 		st::stickerPanSize.width(),
 		st::stickerPanSize.height());
+}
+
+void FieldAutocomplete::Inner::clipCallback(
+		Media::Clip::Notification notification,
+		not_null<DocumentData*> document) {
+	const auto i = ranges::find(
+		*_srows,
+		document,
+		&StickerSuggestion::document);
+	if (i == end(*_srows)) {
+		return;
+	}
+	using namespace Media::Clip;
+	switch (notification) {
+	case Notification::Reinit: {
+		if (!i->webm) {
+			break;
+		} else if (i->webm->state() == State::Error) {
+			i->webm.setBad();
+		} else if (i->webm->ready() && !i->webm->started()) {
+			const auto size = ChatHelpers::ComputeStickerSize(
+				i->document,
+				stickerBoundingBox());
+			i->webm->start({ .frame = size, .keepAlpha = true });
+		}
+	} break;
+
+	case Notification::Repaint: break;
+	}
+	repaintStickerAtIndex(i - begin(*_srows));
 }
 
 void FieldAutocomplete::Inner::selectByMouse(QPoint globalPosition) {

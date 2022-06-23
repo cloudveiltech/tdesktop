@@ -12,14 +12,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/sender.h"
 #include "data/stickers/data_stickers_set.h"
 #include "ui/effects/animations.h"
-#include "ui/special_fields.h"
+#include "ui/widgets/fields/special_fields.h"
 
 namespace style {
 struct RippleAnimation;
 } // namespace style
 
 namespace Ui {
-class ConfirmBox;
 class PlainShadow;
 class RippleAnimation;
 class SettingsSlider;
@@ -143,6 +142,7 @@ private:
 
 	object_ptr<Ui::SettingsSlider> _tabs = { nullptr };
 	QList<Section> _tabIndices;
+	bool _ignoreTabActivation = false;
 
 	class CounterWidget;
 	object_ptr<CounterWidget> _unreadBadge = { nullptr };

@@ -14,7 +14,6 @@ PRIVATE
 )
 
 target_link_libraries(linux_wayland_helper
-PUBLIC
+PRIVATE
     desktop-app::external_gsl
-    ${CMAKE_DL_LIBS}
 )

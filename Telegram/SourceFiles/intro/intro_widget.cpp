@@ -41,10 +41,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/section_widget.h"
 #include "base/platform/base_platform_info.h"
 #include "api/api_text_entities.h"
-#include "app.h"
 #include "styles/style_layers.h"
 #include "styles/style_intro.h"
-#include "base/qt_adapters.h"
+#include "base/qt/qt_common_adapters.h"
 
 namespace Intro {
 namespace {
@@ -150,7 +149,7 @@ Widget::Widget(
 		Core::UpdateChecker checker;
 		checker.start();
 		rpl::merge(
-			rpl::single(rpl::empty_value()),
+			rpl::single(rpl::empty),
 			checker.isLatest(),
 			checker.failed(),
 			checker.ready()
@@ -195,7 +194,8 @@ bool Widget::floatPlayerIsVisible(not_null<HistoryItem*> item) {
 void Widget::floatPlayerDoubleClickEvent(not_null<const HistoryItem*> item) {
 	getData()->controller->invokeForSessionController(
 		&item->history()->peer->session().account(),
-		[=](not_null<Window::SessionController*> controller) {
+		item->history()->peer,
+		[&](not_null<Window::SessionController*> controller) {
 			controller->showPeerHistoryAtItem(item);
 		});
 }
@@ -238,7 +238,7 @@ void Widget::handleUpdate(const MTPUpdate &update) {
 			qs(data.vmessage()),
 			Api::EntitiesFromMTP(nullptr, data.ventities().v)
 		};
-		Ui::show(Box<Ui::InformBox>(text));
+		Ui::show(Ui::MakeInformBox(text));
 	}, [](const auto &) {});
 }
 
@@ -304,7 +304,7 @@ void Widget::checkUpdateStatus() {
 		_update->toggle(!stepHasCover, anim::type::instant);
 		_update->entity()->setClickedCallback([] {
 			Core::checkReadyUpdate();
-			App::restart();
+			Core::Restart();
 		});
 	} else {
 		if (!_update) return;
@@ -519,16 +519,13 @@ void Widget::resetAccount() {
 				const auto days = (seconds + 59) / 86400;
 				const auto hours = ((seconds + 59) % 86400) / 3600;
 				const auto minutes = ((seconds + 59) % 3600) / 60;
-				auto when = tr::lng_signin_reset_minutes(
-					tr::now,
-					lt_count,
-					minutes);
+				auto when = tr::lng_minutes(tr::now, lt_count, minutes);
 				if (days > 0) {
-					const auto daysCount = tr::lng_signin_reset_days(
+					const auto daysCount = tr::lng_days(
 						tr::now,
 						lt_count,
 						days);
-					const auto hoursCount = tr::lng_signin_reset_hours(
+					const auto hoursCount = tr::lng_hours(
 						tr::now,
 						lt_count,
 						hours);
@@ -541,7 +538,7 @@ void Widget::resetAccount() {
 						lt_minutes_count,
 						when);
 				} else if (hours > 0) {
-					const auto hoursCount = tr::lng_signin_reset_hours(
+					const auto hoursCount = tr::lng_hours(
 						tr::now,
 						lt_count,
 						hours);
@@ -552,15 +549,15 @@ void Widget::resetAccount() {
 						lt_minutes_count,
 						when);
 				}
-				Ui::show(Box<Ui::InformBox>(tr::lng_signin_reset_wait(
+				Ui::show(Ui::MakeInformBox(tr::lng_signin_reset_wait(
 					tr::now,
 					lt_phone_number,
 					Ui::FormatPhone(getData()->phone),
 					lt_when,
 					when)));
 			} else if (type == qstr("2FA_RECENT_CONFIRM")) {
-				Ui::show(Box<Ui::InformBox>(
-					tr::lng_signin_reset_cancelled(tr::now)));
+				Ui::show(Ui::MakeInformBox(
+					tr::lng_signin_reset_cancelled()));
 			} else {
 				Ui::hideLayer();
 				getStep()->showError(rpl::single(Lang::Hard::ServerError()));
@@ -568,11 +565,12 @@ void Widget::resetAccount() {
 		}).send();
 	});
 
-	Ui::show(Box<Ui::ConfirmBox>(
-		tr::lng_signin_sure_reset(tr::now),
-		tr::lng_signin_reset(tr::now),
-		st::attentionBoxButton,
-		callback));
+	Ui::show(Ui::MakeConfirmBox({
+		.text = tr::lng_signin_sure_reset(),
+		.confirmed = callback,
+		.confirmText = tr::lng_signin_reset(),
+		.confirmStyle = &st::attentionBoxButton,
+	}));
 }
 
 void Widget::getNearestDC() {

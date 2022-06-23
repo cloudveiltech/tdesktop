@@ -141,6 +141,8 @@ public:
 	not_null<Ui::ChatTheme*> listChatTheme() override;
 	CopyRestrictionType listCopyRestrictionType(HistoryItem *item) override;
 	CopyRestrictionType listSelectRestrictionType() override;
+	auto listAllowedReactionsValue()
+		-> rpl::producer<std::optional<base::flat_set<QString>>> override;
 
 protected:
 	void resizeEvent(QResizeEvent *e) override;
@@ -243,7 +245,8 @@ private:
 	void sendExistingDocument(not_null<DocumentData*> document);
 	bool sendExistingDocument(
 		not_null<DocumentData*> document,
-		Api::SendOptions options);
+		Api::SendOptions options,
+		std::optional<MsgId> localId);
 	void sendExistingPhoto(not_null<PhotoData*> photo);
 	bool sendExistingPhoto(
 		not_null<PhotoData*> photo,
@@ -254,8 +257,10 @@ private:
 	void sendInlineResult(
 		not_null<InlineBots::Result*> result,
 		not_null<UserData*> bot,
-		Api::SendOptions options);
+		Api::SendOptions options,
+		std::optional<MsgId> localMessageId);
 
+	void refreshJoinGroupButton();
 	[[nodiscard]] bool showSlowmodeError();
 	[[nodiscard]] std::optional<QString> writeRestriction() const;
 
@@ -270,6 +275,7 @@ private:
 	object_ptr<TopBarWidget> _topBar;
 	object_ptr<Ui::PlainShadow> _topBarShadow;
 	std::unique_ptr<ComposeControls> _composeControls;
+	std::unique_ptr<Ui::FlatButton> _joinGroup;
 	bool _skipScrollEvent = false;
 
 	std::unique_ptr<Ui::PinnedBar> _rootView;

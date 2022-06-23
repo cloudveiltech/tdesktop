@@ -45,6 +45,7 @@ typedef struct _WebKitUserContentManager WebKitUserContentManager;
 typedef struct _WebKitUserScript WebKitUserScript;
 typedef struct _WebKitWebView WebKitWebView;
 typedef struct _WebKitSettings WebKitSettings;
+typedef struct _WebKitScriptDialog WebKitScriptDialog;
 
 typedef enum {
 	GTK_WINDOW_TOPLEVEL,
@@ -73,6 +74,13 @@ typedef enum {
 	WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START,
 	WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_END,
 } WebKitUserScriptInjectionTime;
+
+typedef enum {
+    WEBKIT_SCRIPT_DIALOG_ALERT,
+    WEBKIT_SCRIPT_DIALOG_CONFIRM,
+    WEBKIT_SCRIPT_DIALOG_PROMPT,
+    WEBKIT_SCRIPT_DIALOG_BEFORE_UNLOAD_CONFIRM
+} WebKitScriptDialogType;
 
 namespace Webview::WebkitGtk {
 
@@ -133,6 +141,19 @@ inline WebKitURIRequest *(*webkit_navigation_policy_decision_get_request)(
 inline const gchar *(*webkit_uri_request_get_uri)(WebKitURIRequest *request);
 inline void (*webkit_policy_decision_ignore)(WebKitPolicyDecision *decision);
 
+inline WebKitScriptDialogType (*webkit_script_dialog_get_dialog_type)(
+	WebKitScriptDialog *dialog);
+inline const gchar *(*webkit_script_dialog_get_message)(
+	WebKitScriptDialog *dialog);
+inline void (*webkit_script_dialog_confirm_set_confirmed)(
+	WebKitScriptDialog *dialog,
+	gboolean confirmed);
+inline const gchar *(*webkit_script_dialog_prompt_get_default_text)(
+	WebKitScriptDialog *dialog);
+inline void (*webkit_script_dialog_prompt_set_text)(
+	WebKitScriptDialog *dialog,
+	const gchar *text);
+
 inline GtkWidget *(*webkit_web_view_new)(void);
 inline GType (*webkit_web_view_get_type)(void);
 inline WebKitUserContentManager *(*webkit_web_view_get_user_content_manager)(
@@ -148,6 +169,7 @@ inline void (*webkit_settings_set_javascript_can_access_clipboard)(
 inline void (*webkit_web_view_load_uri)(
 	WebKitWebView *web_view,
 	const gchar *uri);
+inline void (*webkit_web_view_reload_bypass_cache)(WebKitWebView *web_view);
 inline WebKitUserScript *(*webkit_user_script_new)(
 	const gchar *source,
 	WebKitUserContentInjectedFrames injected_frames,

@@ -7,7 +7,7 @@
 #pragma once
 
 #include "base/platform/linux/base_linux_xcb_utilities.h"
-#include "base/qt_adapters.h"
+#include "base/qt/qt_common_adapters.h"
 
 #include <QtCore/QAbstractNativeEventFilter>
 
@@ -34,16 +34,14 @@ public:
 	void removeCallbackForHandle(const QByteArray &property, void *handle);
 	void removeCallbackForHandle(void *handle);
 
-	bool nativeEventFilter(
-		const QByteArray &eventType,
-		void *message,
-		NativeEventResult *result) override;
-
 private:
 	XSettings();
 	~XSettings();
 
-	void handlePropertyNotifyEvent(const xcb_property_notify_event_t *event);
+	bool nativeEventFilter(
+		const QByteArray &eventType,
+		void *message,
+		NativeEventResult *result) override;
 
 	enum class Type {
 		Integer,

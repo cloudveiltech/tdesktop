@@ -29,6 +29,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_basic.h"
 #include "styles/style_settings.h"
 #include "ui/widgets/input_fields.h"
+#include "window/section_widget.h"
 #include "window/window_controller.h"
 #include "window/window_session_controller.h"
 
@@ -106,11 +107,8 @@ struct PickerScrubberItem {
 		const auto size = sticker->size()
 			.scaled(kCircleDiameter, kCircleDiameter, Qt::KeepAspectRatio);
 		image = sticker->pixSingle(
-			size.width(),
-			size.height(),
-			kCircleDiameter,
-			kCircleDiameter,
-			ImageRoundRadius::None).toImage();
+			size,
+			{ .outer = { kCircleDiameter, kCircleDiameter } }).toImage();
 	}
 
 	bool isStickerLoaded() const {
@@ -463,7 +461,9 @@ void AppendEmojiPacks(
 	auto callback = [=] {
 		if (document) {
 			if (const auto error = RestrictionToSendStickers(_controller)) {
-				_controller->show(Box<Ui::InformBox>(*error));
+				_controller->show(Ui::MakeInformBox(*error));
+				return true;
+			} else if (Window::ShowSendPremiumError(_controller->sessionController(), document)) {
 				return true;
 			}
 			Api::SendExistingDocument(

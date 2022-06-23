@@ -14,7 +14,7 @@ init_target(lib_base_crash_report_writer)
 
 get_filename_component(src_loc . REALPATH)
 
-target_precompile_headers(lib_base PRIVATE ${src_loc}/base/base_pch.h)
+target_precompile_headers(lib_base PRIVATE $<$<COMPILE_LANGUAGE:CXX,OBJCXX>:${src_loc}/base/base_pch.h>)
 nice_target_sources(lib_base ${src_loc}
 PRIVATE
     base/platform/linux/base_file_utilities_linux.cpp
@@ -34,6 +34,9 @@ PRIVATE
     base/platform/linux/base_linux_glibmm_helper.h
     base/platform/linux/base_linux_library.cpp
     base/platform/linux/base_linux_library.h
+    base/platform/linux/base_linux_wayland_integration.cpp
+    base/platform/linux/base_linux_wayland_integration_dummy.cpp
+    base/platform/linux/base_linux_wayland_integration.h
     base/platform/linux/base_linux_xcb_utilities.cpp
     base/platform/linux/base_linux_xcb_utilities.h
     base/platform/linux/base_linux_xdp_utilities.cpp
@@ -41,12 +44,18 @@ PRIVATE
     base/platform/linux/base_linux_xsettings.cpp
     base/platform/linux/base_linux_xsettings.h
     base/platform/linux/base_network_reachability_linux.cpp
+    base/platform/linux/base_power_save_blocker_linux.cpp
+    base/platform/linux/base_power_save_blocker_linux.h
     base/platform/linux/base_process_linux.cpp
     base/platform/linux/base_process_linux.h
     base/platform/linux/base_system_media_controls_linux_dummy.cpp
     base/platform/linux/base_system_media_controls_linux.cpp
     base/platform/linux/base_url_scheme_linux.cpp
     base/platform/linux/base_url_scheme_linux.h
+    base/platform/mac/base_confirm_quit.h
+    base/platform/mac/base_confirm_quit.mm
+    base/platform/mac/base_custom_app_icon_mac.h
+    base/platform/mac/base_custom_app_icon_mac.mm
     base/platform/mac/base_file_utilities_mac.h
     base/platform/mac/base_file_utilities_mac.mm
     base/platform/mac/base_global_shortcuts_mac.mm
@@ -58,6 +67,8 @@ PRIVATE
     base/platform/mac/base_layout_switch_mac.h
     base/platform/mac/base_layout_switch_mac.mm
     base/platform/mac/base_network_reachability_mac.mm
+    base/platform/mac/base_power_save_blocker_mac.h
+    base/platform/mac/base_power_save_blocker_mac.mm
     base/platform/mac/base_process_mac.h
     base/platform/mac/base_process_mac.mm
     base/platform/mac/base_system_media_controls_mac.mm
@@ -76,6 +87,8 @@ PRIVATE
     base/platform/win/base_layout_switch_win.cpp
     base/platform/win/base_layout_switch_win.h
     base/platform/win/base_network_reachability_win.cpp
+    base/platform/win/base_power_save_blocker_win.cpp
+    base/platform/win/base_power_save_blocker_win.h
     base/platform/win/base_process_win.cpp
     base/platform/win/base_process_win.h
     base/platform/win/base_system_media_controls_win.cpp
@@ -91,6 +104,7 @@ PRIVATE
     base/platform/win/base_windows_wrl.h
     base/platform/win/wrl/wrl_implements_h.h
     base/platform/win/wrl/wrl_module_h.h
+    base/platform/base_platform_custom_app_icon.h
     base/platform/base_platform_global_shortcuts.h
     base/platform/base_platform_info.h
     base/platform/base_platform_last_input.h
@@ -98,6 +112,7 @@ PRIVATE
     base/platform/base_platform_network_reachability.cpp
     base/platform/base_platform_network_reachability.h
     base/platform/base_platform_file_utilities.h
+    base/platform/base_platform_power_save_blocker.h
     base/platform/base_platform_process.h
     base/platform/base_platform_url_scheme.h
     base/platform/base_platform_system_media_controls.h
@@ -119,6 +134,7 @@ PRIVATE
     base/concurrent_timer.cpp
     base/concurrent_timer.h
     base/const_string.h
+    base/custom_app_icon.h
     base/debug_log.cpp
     base/debug_log.h
     base/enum_mask.h
@@ -151,9 +167,13 @@ PRIVATE
     base/ordered_set.h
     base/openssl_help.h
     base/optional.h
+    base/options.cpp
+    base/options.h
     base/overload.h
     base/parse_helper.cpp
     base/parse_helper.h
+    base/power_save_blocker.cpp
+    base/power_save_blocker.h
     base/qthelp_regex.h
     base/qthelp_url.cpp
     base/qthelp_url.h
@@ -209,6 +229,16 @@ if (DESKTOP_APP_DISABLE_X11_INTEGRATION)
     )
 endif()
 
+if (DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
+    remove_target_sources(lib_base ${src_loc}
+        base/platform/linux/base_linux_wayland_integration.cpp
+    )
+else()
+    remove_target_sources(lib_base ${src_loc}
+        base/platform/linux/base_linux_wayland_integration_dummy.cpp
+    )
+endif()
+
 target_include_directories(lib_base
 PUBLIC
     ${src_loc}
@@ -224,6 +254,8 @@ PUBLIC
     desktop-app::external_ranges
     desktop-app::external_gsl
     desktop-app::external_expected
+PRIVATE
+    desktop-app::external_xxhash
 )
 
 if (WIN32)
@@ -244,6 +276,23 @@ elseif (LINUX)
             desktop-app::external_xcb_record
             desktop-app::external_xcb_screensaver
             desktop-app::external_xcb
+        )
+    endif()
+
+    if (NOT DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
+        if (DESKTOP_APP_QT6)
+            qt6_generate_wayland_protocol_client_sources(lib_base
+            FILES
+                ${third_party_loc}/wayland-protocols/unstable/xdg-foreign/xdg-foreign-unstable-v2.xml
+                ${third_party_loc}/wayland-protocols/unstable/idle-inhibit/idle-inhibit-unstable-v1.xml
+            )
+        else()
+            message(FATAL_ERROR "This piece of cmake code is not ported to Qt 5")
+        endif()
+
+        target_link_libraries(lib_base
+        PUBLIC
+            desktop-app::external_wayland_client
         )
     endif()
 endif()

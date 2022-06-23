@@ -40,7 +40,7 @@ namespace {
 }
 
 TextParseOptions MenuTextOptions = {
-	TextParseLinks | TextParseRichText, // flags
+	TextParseLinks, // flags
 	0, // maxw
 	0, // maxh
 	Qt::LayoutDirectionAuto, // dir
@@ -68,12 +68,6 @@ Action::Action(
 	initResizeHook(parent->sizeValue());
 	processAction();
 
-	paintRequest(
-	) | rpl::start_with_next([=] {
-		Painter p(this);
-		paint(p);
-	}, lifetime());
-
 	enableMouseSelecting();
 
 	connect(_action, &QAction::changed, [=] { processAction(); });
@@ -83,21 +77,41 @@ bool Action::hasSubmenu() const {
 	return _action->menu() != nullptr;
 }
 
-void Action::paint(Painter &p) {
-	const auto enabled = isEnabled();
-	const auto selected = isSelected();
+void Action::paintEvent(QPaintEvent *e) {
+	Painter p(this);
+	paint(p);
+}
+
+void Action::paintBackground(Painter &p, bool selected) {
 	if (selected && _st.itemBgOver->c.alpha() < 255) {
 		p.fillRect(0, 0, width(), _height, _st.itemBg);
 	}
-	p.fillRect(0, 0, width(), _height, selected ? _st.itemBgOver : _st.itemBg);
+	p.fillRect(
+		QRect(0, 0, width(), _height),
+		selected ? _st.itemBgOver : _st.itemBg);
+}
+
+void Action::paintText(Painter &p) {
+	_text.drawLeftElided(
+		p,
+		_st.itemPadding.left(),
+		_st.itemPadding.top(),
+		_textWidth,
+		width());
+}
+
+void Action::paint(Painter &p) {
+	const auto enabled = isEnabled();
+	const auto selected = isSelected();
+	paintBackground(p, selected);
 	if (enabled) {
-		paintRipple(p, 0, 0);
+		RippleButton::paintRipple(p, 0, 0);
 	}
 	if (const auto icon = (selected ? _iconOver : _icon)) {
 		icon->paint(p, _st.itemIconPosition, width());
 	}
 	p.setPen(selected ? _st.itemFgOver : (enabled ? _st.itemFg : _st.itemFgDisabled));
-	_text.drawLeftElided(p, _st.itemPadding.left(), _st.itemPadding.top(), _textWidth, width());
+	paintText(p);
 	if (hasSubmenu()) {
 		const auto left = width() - _st.itemPadding.right() - _st.arrow.width();
 		const auto top = (_height - _st.arrow.height()) / 2;

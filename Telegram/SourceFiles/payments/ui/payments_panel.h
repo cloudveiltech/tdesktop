@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/object_ptr.h"
 
 namespace Ui {
+class Show;
 class RpWidget;
 class SeparatePanel;
 class BoxContent;
@@ -18,6 +19,7 @@ class Checkbox;
 
 namespace Webview {
 struct Available;
+struct ThemeParams;
 } // namespace Webview
 
 namespace Payments::Ui {
@@ -71,17 +73,20 @@ public:
 	void askSetPassword();
 	void showCloseConfirm();
 	void showWarning(const QString &bot, const QString &provider);
+	void requestTermsAcceptance(const QString &username, const QString &url);
 
 	bool showWebview(
 		const QString &url,
 		bool allowBack,
 		rpl::producer<QString> bottomText);
+	void updateThemeParams(const Webview::ThemeParams &params);
 
 	[[nodiscard]] rpl::producer<> backRequests() const;
 
 	void showBox(object_ptr<Ui::BoxContent> box);
 	void showToast(const TextWithEntities &text);
 	void showCriticalError(const TextWithEntities &text);
+	[[nodiscard]] std::shared_ptr<Show> uiShow();
 
 	[[nodiscard]] rpl::lifetime &lifetime();
 

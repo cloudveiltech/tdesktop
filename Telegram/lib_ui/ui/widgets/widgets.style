@@ -338,6 +338,18 @@ IconButton {
 	ripple: RippleAnimation;
 }
 
+IconButtonWithText {
+	iconButton: IconButton;
+	height: pixels;
+
+	textFg: color;
+	textFgOver: color;
+	textPadding: margins;
+	textAlign: align;
+
+	font: font;
+}
+
 MediaSlider {
 	width: pixels;
 	activeFg: color;
@@ -386,7 +398,7 @@ CrossAnimation {
 	fg: color;
 	size: pixels;
 	skip: pixels;
-	stroke: pixels;
+	stroke: double;
 	minScale: double;
 }
 
@@ -520,11 +532,12 @@ SettingsButton {
 	textBg: color;
 	textBgOver: color;
 
-	font: font;
+	style: TextStyle;
 	rightLabel: FlatLabel;
 
 	height: pixels;
 	padding: margins;
+	iconLeft: pixels;
 
 	toggle: Toggle;
 	toggleOver: Toggle;
@@ -857,7 +870,7 @@ defaultMenu: Menu {
 
 	arrow: defaultMenuArrow;
 
-	widthMin: 180px;
+	widthMin: 156px;
 	widthMax: 300px;
 
 	ripple: defaultRippleAnimation;
@@ -878,7 +891,7 @@ defaultPopupMenu: PopupMenu {
 defaultInputField: InputField {
 	textBg: windowBg;
 	textFg: windowFg;
-	textMargins: margins(0px, 26px, 0px, 4px);
+	textMargins: margins(0px, 28px, 0px, 4px);
 	textAlign: align(topleft);
 
 	placeholderFg: windowSubTextFg;
@@ -901,7 +914,7 @@ defaultInputField: InputField {
 	font: boxTextFont;
 	menu: defaultPopupMenu;
 
-	heightMin: 52px;
+	heightMin: 55px;
 	heightMax: 148px;
 }
 
@@ -922,7 +935,7 @@ defaultMultiSelectItem: MultiSelectItem {
 	deleteCross: CrossAnimation {
 		size: 32px;
 		skip: 10px;
-		stroke: 2px;
+		stroke: 1.5;
 		minScale: 0.3;
 	}
 	duration: 150;
@@ -958,7 +971,7 @@ defaultMultiSelectSearchCancel: CrossButton {
 	cross: CrossAnimation {
 		size: 36px;
 		skip: 12px;
-		stroke: 2px;
+		stroke: 1.5;
 		minScale: 0.3;
 	}
 	crossFg: boxTitleCloseFg;
@@ -1004,6 +1017,7 @@ SettingsSlider {
 	barTop: pixels;
 	barSkip: pixels;
 	barStroke: pixels;
+	barRadius: pixels;
 	barFg: color;
 	barFgActive: color;
 	labelTop: pixels;
@@ -1022,6 +1036,7 @@ defaultSettingsSlider: SettingsSlider {
 	barTop: 5px;
 	barSkip: 3px;
 	barStroke: 3px;
+	barRadius: 1px;
 	barFg: sliderBgInactive;
 	barFgActive: sliderBgActive;
 	labelTop: 17px;
@@ -1319,6 +1334,7 @@ InfoTopBar {
 	searchRow: SearchFieldRow;
 	highlightBg: color;
 	highlightDuration: int;
+	radius: pixels;
 }
 
 LevelMeter {
@@ -1389,7 +1405,7 @@ defaultSettingsButton: SettingsButton {
 	textBg: windowBg;
 	textBgOver: windowBgOver;
 
-	font: boxTextFont;
+	style: boxTextStyle;
 	rightLabel: defaultSettingsRightLabel;
 
 	height: 20px;
@@ -1429,94 +1445,101 @@ defaultToast: Toast {
 	durationSlide: 160;
 }
 
+defaultMultilineToast: Toast(defaultToast) {
+	minWidth: msgMinWidth;
+}
+
 shakeShift: 4px;
 
 // Windows specific title
 
+windowTitleButtonWidth: 36px;
+windowTitleHeight: 24px;
 windowTitleButton: IconButton {
-	width: 24px;
-	height: 21px;
+	width: windowTitleButtonWidth;
+	height: windowTitleHeight;
 	iconPosition: point(0px, 0px);
 }
 windowTitleButtonClose: IconButton(windowTitleButton) {
-	width: 25px;
+	width: windowTitleButtonWidth;
 }
 
+windowTitleButtonSize: size(windowTitleButtonWidth, windowTitleHeight);
 defaultWindowTitle: WindowTitle {
-	height: 21px;
+	height: windowTitleHeight;
 	bg: titleBg;
 	bgActive: titleBgActive;
 	fg: titleFg;
 	fgActive: titleFgActive;
 	minimize: IconButton(windowTitleButton) {
 		icon: icon {
-			{ size(24px, 21px), titleButtonBg },
-			{ "title_button_minimize", titleButtonFg, point(4px, 4px) },
+			{ windowTitleButtonSize, titleButtonBg },
+			{ "title_button_minimize", titleButtonFg },
 		};
 		iconOver: icon {
-			{ size(24px, 21px), titleButtonBgOver },
-			{ "title_button_minimize", titleButtonFgOver, point(4px, 4px) },
+			{ windowTitleButtonSize, titleButtonBgOver },
+			{ "title_button_minimize", titleButtonFgOver },
 		};
 	}
 	minimizeIconActive: icon {
-		{ size(24px, 21px), titleButtonBgActive },
-		{ "title_button_minimize", titleButtonFgActive, point(4px, 4px) },
+		{ windowTitleButtonSize, titleButtonBgActive },
+		{ "title_button_minimize", titleButtonFgActive },
 	};
 	minimizeIconActiveOver: icon {
-		{ size(24px, 21px), titleButtonBgActiveOver },
-		{ "title_button_minimize", titleButtonFgActiveOver, point(4px, 4px) },
+		{ windowTitleButtonSize, titleButtonBgActiveOver },
+		{ "title_button_minimize", titleButtonFgActiveOver },
 	};
 	maximize: IconButton(windowTitleButton) {
 		icon: icon {
-			{ size(24px, 21px), titleButtonBg },
-			{ "title_button_maximize", titleButtonFg, point(4px, 4px) },
+			{ windowTitleButtonSize, titleButtonBg },
+			{ "title_button_maximize", titleButtonFg },
 		};
 		iconOver: icon {
-			{ size(24px, 21px), titleButtonBgOver },
-			{ "title_button_maximize", titleButtonFgOver, point(4px, 4px) },
+			{ windowTitleButtonSize, titleButtonBgOver },
+			{ "title_button_maximize", titleButtonFgOver },
 		};
 	}
 	maximizeIconActive: icon {
-		{ size(24px, 21px), titleButtonBgActive },
-		{ "title_button_maximize", titleButtonFgActive, point(4px, 4px) },
+		{ windowTitleButtonSize, titleButtonBgActive },
+		{ "title_button_maximize", titleButtonFgActive },
 	};
 	maximizeIconActiveOver: icon {
-		{ size(24px, 21px), titleButtonBgActiveOver },
-		{ "title_button_maximize", titleButtonFgActiveOver, point(4px, 4px) },
+		{ windowTitleButtonSize, titleButtonBgActiveOver },
+		{ "title_button_maximize", titleButtonFgActiveOver },
 	};
 	restoreIcon: icon {
-		{ size(24px, 21px), titleButtonBg },
-		{ "title_button_restore", titleButtonFg, point(4px, 4px) },
+		{ windowTitleButtonSize, titleButtonBg },
+		{ "title_button_restore", titleButtonFg },
 	};
 	restoreIconOver: icon {
-		{ size(24px, 21px), titleButtonBgOver },
-		{ "title_button_restore", titleButtonFgOver, point(4px, 4px) },
+		{ windowTitleButtonSize, titleButtonBgOver },
+		{ "title_button_restore", titleButtonFgOver },
 	};
 	restoreIconActive: icon {
-		{ size(24px, 21px), titleButtonBgActive },
-		{ "title_button_restore", titleButtonFgActive, point(4px, 4px) },
+		{ windowTitleButtonSize, titleButtonBgActive },
+		{ "title_button_restore", titleButtonFgActive },
 	};
 	restoreIconActiveOver: icon {
-		{ size(24px, 21px), titleButtonBgActiveOver },
-		{ "title_button_restore", titleButtonFgActiveOver, point(4px, 4px) },
+		{ windowTitleButtonSize, titleButtonBgActiveOver },
+		{ "title_button_restore", titleButtonFgActiveOver },
 	};
 	close: IconButton(windowTitleButtonClose) {
 		icon: icon {
-			{ size(25px, 21px), titleButtonCloseBg },
-			{ "title_button_close", titleButtonCloseFg, point(5px, 4px) },
+			{ windowTitleButtonSize, titleButtonCloseBg },
+			{ "title_button_close", titleButtonCloseFg },
 		};
 		iconOver: icon {
-			{ size(25px, 21px), titleButtonCloseBgOver },
-			{ "title_button_close", titleButtonCloseFgOver, point(5px, 4px) },
+			{ windowTitleButtonSize, titleButtonCloseBgOver },
+			{ "title_button_close", titleButtonCloseFgOver },
 		};
 	}
 	closeIconActive: icon {
-		{ size(25px, 21px), titleButtonCloseBgActive },
-		{ "title_button_close", titleButtonCloseFgActive, point(5px, 4px) },
+		{ windowTitleButtonSize, titleButtonCloseBgActive },
+		{ "title_button_close", titleButtonCloseFgActive },
 	};
 	closeIconActiveOver: icon {
-		{ size(25px, 21px), titleButtonCloseBgActiveOver },
-		{ "title_button_close", titleButtonCloseFgActiveOver, point(5px, 4px) },
+		{ windowTitleButtonSize, titleButtonCloseBgActiveOver },
+		{ "title_button_close", titleButtonCloseFgActiveOver },
 	};
 }
 
@@ -1535,4 +1558,38 @@ callShadow: Shadow {
 	bottomLeft: icon {{ "calls/call_shadow_top_left-flip_vertical", windowShadowFg }};
 	extend: margins(9px, 8px, 9px, 10px);
 	fallback: windowShadowFgFallback;
+}
+
+sideBarButtonLockArcOffset: 2px;
+sideBarButtonLockSize: size(9px, 10px);
+sideBarButtonLockArcHeight: 3px;
+sideBarButtonLockBlockHeight: 5px;
+sideBarButtonLockLineHeight: 1px;
+sideBarButtonLockPenWidth: 3px;
+sideBarButtonLockPenWidthDivider: 2;
+
+menuIconColor: windowBoldFg;
+menuIconAttentionColor: attentionButtonFg;
+
+menuIconSubmenuArrow: icon {{ "menu/submenu_arrow", menuIconColor }};
+
+menuWithIcons: Menu(defaultMenu) {
+	itemIconPosition: point(15px, 5px);
+	itemPadding: margins(54px, 8px, 17px, 8px);
+
+	arrow: menuIconSubmenuArrow;
+}
+menuWithIconsAttention: Menu(menuWithIcons) {
+	itemFg: attentionButtonFg;
+	itemFgOver: attentionButtonFgOver;
+}
+popupMenuWithIcons: PopupMenu(defaultPopupMenu) {
+	scrollPadding: margins(0px, 5px, 0px, 5px);
+	menu: menuWithIcons;
+}
+dropdownMenuWithIcons: DropdownMenu(defaultDropdownMenu) {
+	wrap: InnerDropdown(defaultInnerDropdown) {
+		scrollPadding: margins(0px, 5px, 0px, 5px);
+	}
+	menu: menuWithIcons;
 }

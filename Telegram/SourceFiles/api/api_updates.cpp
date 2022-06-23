@@ -9,13 +9,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "api/api_authorizations.h"
 #include "api/api_chat_participants.h"
+#include "api/api_ringtones.h"
 #include "api/api_text_entities.h"
 #include "api/api_user_privacy.h"
+#include "api/api_unread_things.h"
+#include "api/api_transcribes.h"
 #include "main/main_session.h"
 #include "main/main_account.h"
 #include "mtproto/mtp_instance.h"
 #include "mtproto/mtproto_config.h"
 #include "mtproto/mtproto_dc_options.h"
+#include "data/notify/data_notify_settings.h"
 #include "data/stickers/data_stickers.h"
 #include "data/data_session.h"
 #include "data/data_user.h"
@@ -30,10 +34,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_folder.h"
 #include "data/data_scheduled_messages.h"
 #include "data/data_send_action.h"
+#include "data/data_message_reactions.h"
+#include "inline_bots/bot_attach_web_view.h"
 #include "chat_helpers/emoji_interactions.h"
 #include "lang/lang_cloud_manager.h"
 #include "history/history.h"
 #include "history/history_item.h"
+#include "history/history_unread_things.h"
 #include "core/application.h"
 #include "storage/storage_account.h"
 #include "storage/storage_facade.h"
@@ -46,7 +53,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/boxes/confirm_box.h"
 #include "apiwrap.h"
 #include "ui/text/format_values.h" // Ui::FormatPhone
-#include "app.h" // App::quitting
 
 namespace Api {
 namespace {
@@ -730,7 +736,7 @@ void Updates::addActiveChat(rpl::producer<PeerData*> chat) {
 }
 
 void Updates::requestChannelRangeDifference(not_null<History*> history) {
-	Expects(history->isChannel());
+	Expects(history->peer->isChannel());
 
 	const auto channel = history->peer->asChannel();
 	if (const auto requestId = _rangeDifferenceRequests.take(channel)) {
@@ -912,7 +918,7 @@ void Updates::updateOnline(crl::time lastNonIdleTime, bool gotOtherOffline) {
 
 		_lastWasOnline = isOnline;
 		_lastSetOnline = ms;
-		if (!App::quitting()) {
+		if (!Core::Quitting()) {
 			_onlineRequest = api().request(MTPaccount_UpdateStatus(
 				MTP_bool(!isOnline)
 			)).send();
@@ -1109,7 +1115,7 @@ void Updates::applyUpdatesNoPtsCheck(const MTPUpdates &updates) {
 				MTPint(), // edit_date
 				MTPstring(),
 				MTPlong(),
-				//MTPMessageReactions(),
+				MTPMessageReactions(),
 				MTPVector<MTPRestrictionReason>(),
 				MTP_int(d.vttl_period().value_or_empty())),
 			MessageFlags(),
@@ -1140,7 +1146,7 @@ void Updates::applyUpdatesNoPtsCheck(const MTPUpdates &updates) {
 				MTPint(), // edit_date
 				MTPstring(),
 				MTPlong(),
-				//MTPMessageReactions(),
+				MTPMessageReactions(),
 				MTPVector<MTPRestrictionReason>(),
 				MTP_int(d.vttl_period().value_or_empty())),
 			MessageFlags(),
@@ -1163,7 +1169,7 @@ void Updates::applyUpdateNoPtsCheck(const MTPUpdate &update) {
 		auto needToAdd = true;
 		if (d.vmessage().type() == mtpc_message) { // index forwarded messages to links _overview
 			const auto &data = d.vmessage().c_message();
-			if (_session->data().checkEntitiesAndViewsUpdate(data)) { // already in blocks
+			if (_session->data().updateExistingMessage(data)) { // already in blocks
 				LOG(("Skipping message, because it is already in blocks!"));
 				needToAdd = false;
 			}
@@ -1179,25 +1185,26 @@ void Updates::applyUpdateNoPtsCheck(const MTPUpdate &update) {
 
 	case mtpc_updateReadMessagesContents: {
 		const auto &d = update.c_updateReadMessagesContents();
-		auto possiblyReadMentions = base::flat_set<MsgId>();
+		auto unknownReadIds = base::flat_set<MsgId>();
 		for (const auto &msgId : d.vmessages().v) {
-			if (const auto item = _session->data().message(NoChannel, msgId.v)) {
+			if (const auto item = _session->data().nonChannelMessage(msgId.v)) {
 				if (item->isUnreadMedia() || item->isUnreadMention()) {
-					item->markMediaRead();
+					item->markMediaAndMentionRead();
 					_session->data().requestItemRepaint(item);
 
 					if (item->out()
 						&& item->history()->peer->isUser()
 						&& !requestingDifference()) {
-						item->history()->peer->asUser()->madeAction(base::unixtime::now());
+						item->history()->peer->asUser()->madeAction(
+							base::unixtime::now());
 					}
 				}
 			} else {
 				// Perhaps it was an unread mention!
-				possiblyReadMentions.insert(msgId.v);
+				unknownReadIds.insert(msgId.v);
 			}
 		}
-		session().api().checkForUnreadMentions(possiblyReadMentions);
+		session().api().unreadThings().mediaAndMentionsRead(unknownReadIds);
 	} break;
 
 	case mtpc_updateReadHistoryInbox: {
@@ -1249,7 +1256,7 @@ void Updates::applyUpdateNoPtsCheck(const MTPUpdate &update) {
 
 	case mtpc_updateDeleteMessages: {
 		auto &d = update.c_updateDeleteMessages();
-		_session->data().processMessagesDeleted(NoChannel, d.vmessages().v);
+		_session->data().processNonChannelMessagesDeleted(d.vmessages().v);
 	} break;
 
 	case mtpc_updateNewChannelMessage: {
@@ -1257,7 +1264,7 @@ void Updates::applyUpdateNoPtsCheck(const MTPUpdate &update) {
 		auto needToAdd = true;
 		if (d.vmessage().type() == mtpc_message) { // index forwarded messages to links _overview
 			const auto &data = d.vmessage().c_message();
-			if (_session->data().checkEntitiesAndViewsUpdate(data)) { // already in blocks
+			if (_session->data().updateExistingMessage(data)) { // already in blocks
 				LOG(("Skipping message, because it is already in blocks!"));
 				needToAdd = false;
 			}
@@ -1278,9 +1285,9 @@ void Updates::applyUpdateNoPtsCheck(const MTPUpdate &update) {
 
 	case mtpc_updatePinnedChannelMessages: {
 		const auto &d = update.c_updatePinnedChannelMessages();
-		const auto channelId = d.vchannel_id().v;
+		const auto peerId = peerFromChannel(d.vchannel_id());
 		for (const auto &msgId : d.vmessages().v) {
-			const auto item = session().data().message(channelId, msgId.v);
+			const auto item = session().data().message(peerId, msgId.v);
 			if (item) {
 				item->setIsPinned(d.is_pinned());
 			}
@@ -1299,13 +1306,16 @@ void Updates::applyUpdateNoPtsCheck(const MTPUpdate &update) {
 
 	case mtpc_updateDeleteChannelMessages: {
 		auto &d = update.c_updateDeleteChannelMessages();
-		_session->data().processMessagesDeleted(d.vchannel_id().v, d.vmessages().v);
+		_session->data().processMessagesDeleted(
+			peerFromChannel(d.vchannel_id().v),
+			d.vmessages().v);
 	} break;
 
 	case mtpc_updatePinnedMessages: {
 		const auto &d = update.c_updatePinnedMessages();
+		const auto peerId = peerFromMTP(d.vpeer());
 		for (const auto &msgId : d.vmessages().v) {
-			const auto item = session().data().message(0, msgId.v);
+			const auto item = session().data().message(peerId, msgId.v);
 			if (item) {
 				item->setIsPinned(d.is_pinned());
 			}
@@ -1424,7 +1434,7 @@ void Updates::applyUpdates(
 			const auto sent = owner.messageSentData(randomId);
 			const auto lookupMessage = [&] {
 				return sent.peerId
-					? owner.message(peerToChannel(sent.peerId), d.vid().v)
+					? owner.message(sent.peerId, d.vid().v)
 					: nullptr;
 			};
 			if (const auto id = owner.messageIdByRandomId(randomId)) {
@@ -1439,9 +1449,9 @@ void Updates::applyUpdates(
 				const auto list = d.ventities();
 				if (list && !MentionUsersLoaded(&session(), *list)) {
 					session().api().requestMessageData(
-						item->history()->peer->asChannel(),
+						item->history()->peer,
 						item->id,
-						ApiWrap::RequestMessageDataCallback());
+						nullptr);
 				}
 				item->applySentMessage(sent.text, d, wasAlready);
 			}
@@ -1527,9 +1537,8 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 				if (local->isScheduled()) {
 					session().data().scheduledMessages().apply(d, local);
 				} else {
-					const auto channel = id.channel;
 					const auto existing = session().data().message(
-						channel,
+						id.peer,
 						newId);
 					if (existing && !local->mainView()) {
 						const auto history = local->history();
@@ -1564,19 +1573,21 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 			}
 			return;
 		}
-		auto possiblyReadMentions = base::flat_set<MsgId>();
+		auto unknownReadIds = base::flat_set<MsgId>();
 		for (const auto &msgId : d.vmessages().v) {
-			if (auto item = session().data().message(channel, msgId.v)) {
+			if (auto item = session().data().message(channel->id, msgId.v)) {
 				if (item->isUnreadMedia() || item->isUnreadMention()) {
-					item->markMediaRead();
+					item->markMediaAndMentionRead();
 					session().data().requestItemRepaint(item);
 				}
 			} else {
 				// Perhaps it was an unread mention!
-				possiblyReadMentions.insert(msgId.v);
+				unknownReadIds.insert(msgId.v);
 			}
 		}
-		session().api().checkForUnreadMentions(possiblyReadMentions, channel);
+		session().api().unreadThings().mediaAndMentionsRead(
+			unknownReadIds,
+			channel);
 	} break;
 
 	// Edited messages.
@@ -1612,6 +1623,29 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 			}
 		} else {
 			applyUpdateNoPtsCheck(update);
+		}
+	} break;
+
+	case mtpc_updateMessageReactions: {
+		const auto &d = update.c_updateMessageReactions();
+		const auto peer = peerFromMTP(d.vpeer());
+		if (const auto history = session().data().historyLoaded(peer)) {
+			const auto item = session().data().message(
+				peer,
+				d.vmsg_id().v);
+			if (item) {
+				item->updateReactions(&d.vreactions());
+			} else {
+				const auto hasUnreadReaction = Data::Reactions::HasUnread(
+					d.vreactions());
+				if (hasUnreadReaction || history->unreadReactions().has()) {
+					// The unread reactions count could change.
+					history->owner().histories().requestDialogEntry(history);
+				}
+				if (hasUnreadReaction) {
+					history->unreadReactions().checkAdd(d.vmsg_id().v);
+				}
+			}
 		}
 	} break;
 
@@ -1876,7 +1910,9 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 
 	case mtpc_updateNotifySettings: {
 		auto &d = update.c_updateNotifySettings();
-		session().data().applyNotifySetting(d.vpeer(), d.vnotify_settings());
+		session().data().notifySettings().apply(
+			d.vpeer(),
+			d.vnotify_settings());
 	} break;
 
 	case mtpc_updateDcOptions: {
@@ -1951,17 +1987,50 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 		const auto &d = update.c_updateBotCommands();
 		if (const auto peer = session().data().peerLoaded(peerFromMTP(d.vpeer()))) {
 			const auto botId = UserId(d.vbot_id().v);
+			const auto commands = Data::BotCommands{
+				.userId = UserId(d.vbot_id().v),
+				.commands = ranges::views::all(
+					d.vcommands().v
+				) | ranges::views::transform(
+					Data::BotCommandFromTL
+				) | ranges::to_vector,
+			};
+
 			if (const auto user = peer->asUser()) {
 				if (user->isBot() && user->id == peerFromUser(botId)) {
-					if (Data::UpdateBotCommands(user->botInfo->commands, d.vcommands())) {
+					const auto equal = ranges::equal(
+						user->botInfo->commands,
+						commands.commands);
+					user->botInfo->commands = commands.commands;
+					if (!equal) {
 						session().data().botCommandsChanged(user);
 					}
 				}
 			} else if (const auto chat = peer->asChat()) {
-				chat->setBotCommands(botId, d.vcommands());
+				chat->setBotCommands({ commands });
 			} else if (const auto megagroup = peer->asMegagroup()) {
-				if (megagroup->mgInfo->updateBotCommands(botId, d.vcommands())) {
+				if (megagroup->mgInfo->setBotCommands({ commands })) {
 					session().data().botCommandsChanged(megagroup);
+				}
+			}
+		}
+	} break;
+
+	case mtpc_updateAttachMenuBots: {
+		session().attachWebView().requestBots();
+	} break;
+
+	case mtpc_updateWebViewResultSent: {
+		const auto &d = update.c_updateWebViewResultSent();
+		session().data().webViewResultSent({ .queryId = d.vquery_id().v });
+	} break;
+
+	case mtpc_updateBotMenuButton: {
+		const auto &d = update.c_updateBotMenuButton();
+		if (const auto bot = session().data().userLoaded(d.vbot_id())) {
+			if (const auto info = bot->botInfo.get(); info && info->inited) {
+				if (Data::ApplyBotMenuButton(info, &d.vbutton())) {
+					session().data().botCommandsChanged(bot);
 				}
 			}
 		}
@@ -1991,7 +2060,7 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 		} else if (d.is_popup()) {
 			const auto &windows = session().windows();
 			if (!windows.empty()) {
-				windows.front()->window().show(Box<Ui::InformBox>(text));
+				windows.front()->window().show(Ui::MakeInformBox(text));
 			}
 		} else {
 			session().data().serviceNotification(text, d.vmedia());
@@ -2146,24 +2215,28 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 
 	case mtpc_updateChannelMessageViews: {
 		const auto &d = update.c_updateChannelMessageViews();
-		if (const auto item = session().data().message(d.vchannel_id().v, d.vid().v)) {
-			item->setViewsCount(d.vviews().v);
+		const auto peerId = peerFromChannel(d.vchannel_id());
+		if (const auto item = session().data().message(peerId, d.vid().v)) {
+			if (item->changeViewsCount(d.vviews().v)) {
+				session().data().notifyItemDataChange(item);
+			}
 		}
 	} break;
 
 	case mtpc_updateChannelMessageForwards: {
 		const auto &d = update.c_updateChannelMessageForwards();
-		if (const auto item = session().data().message(d.vchannel_id().v, d.vid().v)) {
+		const auto peerId = peerFromChannel(d.vchannel_id());
+		if (const auto item = session().data().message(peerId, d.vid().v)) {
 			item->setForwardsCount(d.vforwards().v);
 		}
 	} break;
 
 	case mtpc_updateReadChannelDiscussionInbox: {
 		const auto &d = update.c_updateReadChannelDiscussionInbox();
-		const auto channelId = d.vchannel_id().v;
+		const auto peerId = peerFromChannel(d.vchannel_id());
 		const auto msgId = d.vtop_msg_id().v;
 		const auto readTillId = d.vread_max_id().v;
-		const auto item = session().data().message(channelId, msgId);
+		const auto item = session().data().message(peerId, msgId);
 		const auto unreadCount = item
 			? session().data().countUnreadRepliesLocally(item, readTillId)
 			: std::nullopt;
@@ -2175,7 +2248,7 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 		}
 		if (const auto broadcastId = d.vbroadcast_id()) {
 			if (const auto post = session().data().message(
-					broadcastId->v,
+					peerFromChannel(*broadcastId),
 					d.vbroadcast_post()->v)) {
 				post->setRepliesInboxReadTill(readTillId, unreadCount);
 			}
@@ -2184,10 +2257,10 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 
 	case mtpc_updateReadChannelDiscussionOutbox: {
 		const auto &d = update.c_updateReadChannelDiscussionOutbox();
-		const auto channelId = d.vchannel_id().v;
+		const auto peerId = peerFromChannel(d.vchannel_id());
 		const auto msgId = d.vtop_msg_id().v;
 		const auto readTillId = d.vread_max_id().v;
-		const auto item = session().data().message(channelId, msgId);
+		const auto item = session().data().message(peerId, msgId);
 		if (item) {
 			item->setRepliesOutboxReadTill(readTillId);
 			if (const auto post = item->lookupDiscussionPostOriginal()) {
@@ -2323,6 +2396,15 @@ void Updates::feedUpdate(const MTPUpdate &update) {
 		const auto &data = update.c_updateTheme();
 		session().data().cloudThemes().applyUpdate(data.vtheme());
 	} break;
+
+	case mtpc_updateSavedRingtones: {
+		session().api().ringtones().applyUpdate();
+	} break;
+
+	case mtpc_updateTranscribedAudio: {
+		const auto &data = update.c_updateTranscribedAudio();
+		_session->api().transcribes().apply(data);
+	}
 
 	}
 }

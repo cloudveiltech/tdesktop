@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "api/api_bot.h"
 #include "info/info_memento.h"
+#include "inline_bots/bot_attach_web_view.h"
 #include "core/click_handler_types.h"
 #include "core/application.h"
 #include "media/clip/media_clip_reader.h"
@@ -27,7 +28,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/url_auth_box.h"
 #include "ui/layers/layer_widget.h"
 #include "lang/lang_keys.h"
-#include "base/observer.h"
 #include "history/history.h"
 #include "history/history_item.h"
 #include "history/view/media/history_view_media.h"
@@ -72,7 +72,7 @@ bool insertBotCommand(const QString &cmd) {
 }
 
 void activateBotCommand(
-		Window::SessionController *sessionController,
+		not_null<Window::SessionController*> sessionController,
 		not_null<const HistoryItem*> msg,
 		int row,
 		int column) {
@@ -90,20 +90,19 @@ void activateBotCommand(
 	case ButtonType::Default: {
 		// Copy string before passing it to the sending method
 		// because the original button can be destroyed inside.
-		if (sessionController) {
-			MsgId replyTo = msg->isRegular() ? msg->id : 0;
-			sessionController->content()->sendBotCommand({
-				.peer = msg->history()->peer,
-				.command = QString(button->text),
-				.context = msg->fullId(),
-				.replyTo = replyTo,
-			});
-		}
+		const auto replyTo = msg->isRegular() ? msg->id : 0;
+		sessionController->content()->sendBotCommand({
+			.peer = msg->history()->peer,
+			.command = QString(button->text),
+			.context = msg->fullId(),
+			.replyTo = replyTo,
+		});
 	} break;
 
 	case ButtonType::Callback:
 	case ButtonType::Game: {
 		Api::SendBotCallbackData(
+			sessionController,
 			const_cast<HistoryItem*>(msg.get()),
 			row,
 			column);
@@ -111,6 +110,7 @@ void activateBotCommand(
 
 	case ButtonType::CallbackWithPassword: {
 		Api::SendBotCallbackDataWithPassword(
+			sessionController,
 			const_cast<HistoryItem*>(msg.get()),
 			row,
 			column);
@@ -118,7 +118,7 @@ void activateBotCommand(
 
 	case ButtonType::Buy: {
 		//CloudVeil start
-		Ui::show(Box<Ui::InformBox>(tr::lng_blocked_for_protection(tr::now)));
+		Ui::show(Ui::MakeInformBox(tr::lng_blocked_for_protection(tr::now)));
 		//CloudVeil end
 	} break;
 
@@ -130,27 +130,29 @@ void activateBotCommand(
 				skipConfirmation = true;
 			}
 		}
+		const auto context = QVariant::fromValue(ClickHandlerContext{
+			.sessionWindow = sessionController.get(),
+		});
 		if (skipConfirmation) {
-			UrlClickHandler::Open(url);
+			UrlClickHandler::Open(url, context);
 		} else {
-			HiddenUrlClickHandler::Open(url);
+			HiddenUrlClickHandler::Open(url, context);
 		}
 	} break;
 
 	case ButtonType::RequestLocation: {
 		hideSingleUseKeyboard(msg);
-		Ui::show(Box<Ui::InformBox>(
-			tr::lng_bot_share_location_unavailable(tr::now)));
+		sessionController->show(
+			Ui::MakeInformBox(tr::lng_bot_share_location_unavailable()));
 	} break;
 
 	case ButtonType::RequestPhone: {
 		hideSingleUseKeyboard(msg);
 		const auto msgId = msg->id;
 		const auto history = msg->history();
-		Ui::show(Box<Ui::ConfirmBox>(
-			tr::lng_bot_share_phone(tr::now),
-			tr::lng_bot_share_phone_confirm(tr::now),
-			[=] {
+		sessionController->show(Ui::MakeConfirmBox({
+			.text = tr::lng_bot_share_phone(),
+			.confirmed = [=] {
 				Ui::showPeerHistory(history, ShowAtTheEndMsgId);
 				auto action = Api::SendAction(history);
 				action.clearDraft = false;
@@ -158,7 +160,9 @@ void activateBotCommand(
 				history->session().api().shareContact(
 					history->session().user(),
 					action);
-			}));
+			},
+			.confirmText = tr::lng_bot_share_phone_confirm(),
+		}));
 	} break;
 
 	case ButtonType::RequestPoll: {
@@ -220,35 +224,31 @@ void activateBotCommand(
 			}
 		}
 	} break;
+
+	case ButtonType::WebView: {
+		if (const auto bot = msg->getMessageBot()) {
+			bot->session().attachWebView().request(
+				sessionController,
+				bot,
+				bot,
+				{ .text = button->text, .url = button->data });
+		}
+	} break;
+
+	case ButtonType::SimpleWebView: {
+		if (const auto bot = msg->getMessageBot()) {
+			bot->session().attachWebView().requestSimple(
+				sessionController,
+				bot,
+				{ .text = button->text, .url = button->data });
+		}
+	} break;
 	}
 }
 
 } // namespace App
 
 namespace Ui {
-
-void showPeerProfile(not_null<PeerData*> peer) {
-	if (const auto window = App::wnd()) { // multi good
-		if (const auto controller = window->sessionController()) {
-			if (&controller->session() == &peer->session()) {
-				controller->showPeerInfo(peer);
-				return;
-			}
-		}
-		if (&Core::App().domain().active() != &peer->session().account()) {
-			Core::App().domain().activate(&peer->session().account());
-		}
-		if (const auto controller = window->sessionController()) {
-			if (&controller->session() == &peer->session()) {
-				controller->showPeerInfo(peer);
-			}
-		}
-	}
-}
-
-void showPeerProfile(not_null<const History*> history) {
-	showPeerProfile(history->peer);
-}
 
 void showChatsList(not_null<Main::Session*> session) {
 	if (const auto m = CheckMainWidget(session)) {

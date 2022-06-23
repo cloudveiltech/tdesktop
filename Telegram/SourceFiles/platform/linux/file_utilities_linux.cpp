@@ -8,11 +8,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/linux/file_utilities_linux.h"
 
 #ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
-#include "platform/linux/linux_xdp_file_dialog.h"
 #include "platform/linux/linux_xdp_open_with_dialog.h"
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
-#include <QtCore/QProcess>
 #include <QtGui/QDesktopServices>
 
 #ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
@@ -34,11 +32,7 @@ void UnsafeOpenUrl(const QString &url) {
 	}
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
-	if (QDesktopServices::openUrl(url)) {
-		return;
-	}
-
-	QProcess::startDetached(qsl("xdg-open"), { url });
+	QDesktopServices::openUrl(url);
 }
 
 void UnsafeOpenEmailLink(const QString &email) {
@@ -71,12 +65,7 @@ void UnsafeLaunch(const QString &filepath) {
 	}
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
-	const auto qUrlPath = QUrl::fromLocalFile(filepath);
-	if (QDesktopServices::openUrl(qUrlPath)) {
-		return;
-	}
-
-	QProcess::startDetached(qsl("xdg-open"), { qUrlPath.toEncoded() });
+	QDesktopServices::openUrl(QUrl::fromLocalFile(filepath));
 }
 
 } // namespace File
@@ -94,22 +83,11 @@ bool Get(
 	if (parent) {
 		parent = parent->window();
 	}
-#ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
-	{
-		const auto result = XDP::Get(
-			parent,
-			files,
-			remoteContent,
-			caption,
-			filter,
-			type,
-			startFile);
-
-		if (result.has_value()) {
-			return *result;
-		}
+	// Workaround for sandboxed paths
+	static const auto docRegExp = QRegularExpression("^/run/user/\\d+/doc");
+	if (cDialogLastPath().contains(docRegExp)) {
+		InitLastPath();
 	}
-#endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 	return ::FileDialog::internal::GetDefault(
 		parent,
 		files,

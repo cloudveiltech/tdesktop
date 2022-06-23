@@ -38,15 +38,15 @@ Location::Location(
 	if (!title.isEmpty()) {
 		_title.setText(
 			st::webPageTitleStyle,
-			TextUtilities::Clean(title),
+			title,
 			Ui::WebpageTextTitleOptions());
 	}
 	if (!description.isEmpty()) {
 		_description.setMarkedText(
 			st::webPageDescriptionStyle,
 			TextUtilities::ParseEntities(
-				TextUtilities::Clean(description),
-				TextParseLinks | TextParseMultiline | TextParseRichText),
+				description,
+				TextParseLinks | TextParseMultiline),
 			Ui::WebpageTextDescriptionOptions());
 	}
 }
@@ -82,7 +82,10 @@ QSize Location::countOptimalSize() {
 		th = (st::maxMediaSize * th) / tw;
 		tw = st::maxMediaSize;
 	}
-	auto minWidth = qMax(st::minPhotoSize, _parent->minWidthForMedia());
+	auto minWidth = std::clamp(
+		_parent->minWidthForMedia(),
+		st::minPhotoSize,
+		st::maxMediaSize);
 	auto maxWidth = qMax(tw, minWidth);
 	auto minHeight = qMax(th, st::minPhotoSize);
 
@@ -118,7 +121,10 @@ QSize Location::countCurrentSize(int newWidth) {
 	} else {
 		newWidth = tw;
 	}
-	auto minWidth = qMax(st::minPhotoSize, _parent->minWidthForMedia());
+	auto minWidth = std::clamp(
+		_parent->minWidthForMedia(),
+		st::minPhotoSize,
+		std::min(newWidth, st::maxMediaSize));
 	accumulate_max(newWidth, minWidth);
 	accumulate_max(newHeight, st::minPhotoSize);
 	if (_parent->hasBubble()) {
@@ -188,8 +194,12 @@ void Location::draw(Painter &p, const PaintContext &context) const {
 	auto rthumb = QRect(paintx, painty, paintw, painth);
 	ensureMediaCreated();
 	if (const auto thumbnail = _media->image()) {
-		const auto &pix = thumbnail->pixSingle(paintw, painth, paintw, painth, roundRadius, roundCorners);
-		p.drawPixmap(rthumb.topLeft(), pix);
+		p.drawPixmap(rthumb.topLeft(), thumbnail->pixSingle(
+			rthumb.size(),
+			{
+				.options = Images::RoundOptions(roundRadius, roundCorners),
+				.outer = rthumb.size(),
+			}));
 	} else {
 		Ui::FillComplexLocationRect(p, st, rthumb, roundRadius, roundCorners);
 	}
@@ -281,8 +291,14 @@ TextState Location::textState(QPoint point, StateRequest request) const {
 	if (_parent->media() == this) {
 		auto fullRight = paintx + paintw;
 		auto fullBottom = height();
-		if (_parent->pointInTime(fullRight, fullBottom, point, InfoDisplayType::Image)) {
-			result.cursor = CursorState::Date;
+		const auto bottomInfoResult = _parent->bottomInfoTextState(
+			fullRight,
+			fullBottom,
+			point,
+			InfoDisplayType::Image);
+		if (bottomInfoResult.link
+			|| bottomInfoResult.cursor != CursorState::None) {
+			return bottomInfoResult;
 		}
 		if (const auto size = bubble ? std::nullopt : _parent->rightActionSize()) {
 			auto fastShareLeft = (fullRight + st::historyFastShareLeft);
@@ -331,6 +347,12 @@ bool Location::needsBubble() const {
 		|| _parent->displayedReply()
 		|| _parent->displayForwardedFrom()
 		|| _parent->displayFromName();
+}
+
+QPoint Location::resolveCustomInfoRightBottom() const {
+	const auto skipx = (st::msgDateImgDelta + st::msgDateImgPadding.x());
+	const auto skipy = (st::msgDateImgDelta + st::msgDateImgPadding.y());
+	return QPoint(width() - skipx, height() - skipy);
 }
 
 int Location::fullWidth() const {

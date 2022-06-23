@@ -27,11 +27,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/animations.h"
 #include "ui/effects/radial_animation.h"
 #include "ui/text/text_options.h"
+#include "ui/text/text_utilities.h"
 #include "ui/basic_click_handlers.h"
+#include "boxes/abstract_box.h" // Ui::show().
 #include "styles/style_layers.h"
 #include "styles/style_boxes.h"
 #include "styles/style_chat_helpers.h"
 #include "styles/style_info.h"
+#include "styles/style_menu_icons.h"
 
 #include <QtGui/QGuiApplication>
 #include <QtGui/QClipboard>
@@ -311,9 +314,12 @@ void ProxyRow::updateFields(View &&view) {
 	}
 	_view = std::move(view);
 	const auto endpoint = _view.host + ':' + QString::number(_view.port);
-	_title.setText(
+	_title.setMarkedText(
 		st::proxyRowTitleStyle,
-		_view.type + ' ' + textcmdLink(1, endpoint),
+		TextWithEntities()
+			.append(_view.type)
+			.append(' ')
+			.append(Ui::Text::Link(endpoint, QString())),
 		Ui::ItemTextDefaultOptions());
 
 	const auto state = _view.state;
@@ -496,7 +502,9 @@ void ProxyRow::showMenu() {
 	if (_menu) {
 		return;
 	}
-	_menu = base::make_unique_q<Ui::DropdownMenu>(window());
+	_menu = base::make_unique_q<Ui::DropdownMenu>(
+		window(),
+		st::dropdownMenuWithIcons);
 	const auto weak = _menu.get();
 	_menu->setHiddenCallback([=] {
 		weak->deleteLater();
@@ -517,25 +525,26 @@ void ProxyRow::showMenu() {
 	_menuToggle->installEventFilter(_menu);
 	const auto addAction = [&](
 			const QString &text,
-			Fn<void()> callback) {
-		return _menu->addAction(text, std::move(callback));
+			Fn<void()> callback,
+			const style::icon *icon) {
+		return _menu->addAction(text, std::move(callback), icon);
 	};
 	addAction(tr::lng_proxy_menu_edit(tr::now), [=] {
 		_editClicks.fire({});
-	});
+	}, &st::menuIconEdit);
 	if (_view.supportsShare) {
 		addAction(tr::lng_proxy_edit_share(tr::now), [=] {
 			_shareClicks.fire({});
-		});
+		}, &st::menuIconShare);
 	}
 	if (_view.deleted) {
 		addAction(tr::lng_proxy_menu_restore(tr::now), [=] {
 			_restoreClicks.fire({});
-		});
+		}, &st::menuIconRestore);
 	} else {
 		addAction(tr::lng_proxy_menu_delete(tr::now), [=] {
 			_deleteClicks.fire({});
-		});
+		}, &st::menuIconDelete);
 	}
 	const auto parentTopLeft = window()->mapToGlobal(QPoint());
 	const auto buttonTopLeft = _menuToggle->mapToGlobal(QPoint());
@@ -1131,13 +1140,14 @@ void ProxiesBoxController::ShowApplyConfirmation(
 			close();
 		};
 		Ui::show(
-			Box<Ui::ConfirmBox>(
-				text,
-				tr::lng_sure_enable(tr::now),
-				std::move(callback)),
+			Ui::MakeConfirmBox({
+				.text = text,
+				.confirmed = std::move(callback),
+				.confirmText = tr::lng_sure_enable(),
+			}),
 			Ui::LayerOption::KeepOther);
 	} else {
-		Ui::show(Box<Ui::InformBox>(
+		Ui::show(Ui::MakeInformBox(
 			(proxy.status() == ProxyData::Status::Unsupported
 				? tr::lng_proxy_unsupported(tr::now)
 				: tr::lng_proxy_invalid(tr::now))));
@@ -1254,6 +1264,7 @@ object_ptr<Ui::BoxContent> ProxiesBoxController::CreateOwningBox(
 
 object_ptr<Ui::BoxContent> ProxiesBoxController::create() {
 	auto result = Box<ProxiesBox>(this, _settings);
+	_toastParent = Ui::BoxShow(result.data()).toastParent();
 	for (const auto &item : _list) {
 		updateView(item);
 	}
@@ -1539,7 +1550,9 @@ void ProxiesBoxController::share(const ProxyData &proxy) {
 		+ ((proxy.type == Type::Mtproto && !proxy.password.isEmpty())
 			? "&secret=" + proxy.password : "");
 	QGuiApplication::clipboard()->setText(link);
-	Ui::Toast::Show(tr::lng_username_copied(tr::now));
+	if (_toastParent) {
+		Ui::Toast::Show(_toastParent, tr::lng_username_copied(tr::now));
+	}
 }
 
 ProxiesBoxController::~ProxiesBoxController() {

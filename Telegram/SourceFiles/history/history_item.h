@@ -16,7 +16,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <any>
 
-enum class UnreadMentionType;
 struct HistoryMessageReplyMarkup;
 class ReplyKeyboard;
 class HistoryMessage;
@@ -42,46 +41,26 @@ struct RippleAnimation;
 
 namespace Data {
 struct MessagePosition;
+struct RecentReaction;
 class Media;
+class MessageReactions;
 } // namespace Data
 
 namespace Window {
 class SessionController;
 } // namespace Window
 
-namespace HistoryView {
+namespace HistoryUnreadThings {
+enum class AddType;
+} // namespace HistoryUnreadThings
 
+namespace HistoryView {
 struct TextState;
 struct StateRequest;
 enum class CursorState : char;
 enum class PointState : char;
 enum class Context : char;
 class ElementDelegate;
-
-struct ItemPreviewImage {
-	QImage data;
-	uint64 cacheKey = 0;
-
-	explicit operator bool() const {
-		return !data.isNull();
-	}
-};
-
-struct ItemPreview {
-	QString text;
-	std::vector<ItemPreviewImage> images;
-	int imagesInTextPosition = 0;
-	std::any loadingContext;
-};
-
-struct ToPreviewOptions {
-	const std::vector<ItemPreviewImage> *existing = nullptr;
-	bool hideSender = false;
-	bool hideCaption = false;
-	bool generateImages = true;
-	bool ignoreGroup = false;
-};
-
 } // namespace HistoryView
 
 struct HiddenSenderInfo;
@@ -165,25 +144,20 @@ public:
 	void markClientSideAsRead();
 	[[nodiscard]] bool mentionsMe() const;
 	[[nodiscard]] bool isUnreadMention() const;
+	[[nodiscard]] bool hasUnreadReaction() const;
 	[[nodiscard]] bool isUnreadMedia() const;
+	[[nodiscard]] bool isIncomingUnreadMedia() const;
 	[[nodiscard]] bool hasUnreadMediaFlag() const;
-	void markMediaRead();
+	void markReactionsRead();
+	void markMediaAndMentionRead();
+	bool markContentsRead(bool fromThisClient = false);
 	void setIsPinned(bool isPinned);
 
 	// For edit media in history_message.
-	virtual void returnSavedMedia() {};
-	void savePreviousMedia() {
-		_savedLocalEditMediaData = {
-			originalText(),
-			_media->clone(this),
-		};
-	}
-	[[nodiscard]] bool isEditingMedia() const {
-		return _savedLocalEditMediaData.media != nullptr;
-	}
-	void clearSavedMedia() {
-		_savedLocalEditMediaData = {};
-	}
+	virtual void returnSavedMedia();
+	void savePreviousMedia();
+	[[nodiscard]] bool isEditingMedia() const;
+	void clearSavedMedia();
 
 	// Zero result means this message is not self-destructing right now.
 	virtual crl::time getSelfDestructIn(crl::time now) {
@@ -308,7 +282,7 @@ public:
 	virtual void contributeToSlowmode(TimeId realDate = 0) {
 	}
 
-	virtual void addToUnreadMentions(UnreadMentionType type);
+	virtual void addToUnreadThings(HistoryUnreadThings::AddType type);
 	virtual void destroyHistoryEntry() {
 	}
 	[[nodiscard]] virtual Storage::SharedMediaTypesMask sharedMediaTypes() const = 0;
@@ -324,7 +298,7 @@ public:
 	[[nodiscard]] virtual QString notificationHeader() const {
 		return QString();
 	}
-	[[nodiscard]] virtual QString notificationText() const;
+	[[nodiscard]] virtual TextWithEntities notificationText() const;
 
 	using ToPreviewOptions = HistoryView::ToPreviewOptions;
 	using ItemPreview = HistoryView::ItemPreview;
@@ -333,12 +307,7 @@ public:
 	// Example: "[link1-start]You:[link1-end] [link1-start]Photo,[link1-end] caption text"
 	[[nodiscard]] virtual ItemPreview toPreview(
 		ToPreviewOptions options) const;
-	[[nodiscard]] virtual QString inReplyText() const {
-		return toPreview({
-			.hideSender = true,
-			.generateImages = false,
-		}).text;
-	}
+	[[nodiscard]] virtual TextWithEntities inReplyText() const;
 	[[nodiscard]] virtual Ui::Text::IsolatedEmoji isolatedEmoji() const;
 	[[nodiscard]] virtual TextWithEntities originalText() const {
 		return TextWithEntities();
@@ -351,7 +320,8 @@ public:
 		return TextForMimeData();
 	}
 
-	virtual void setViewsCount(int count) {
+	virtual bool changeViewsCount(int count) {
+		return false;
 	}
 	virtual void setForwardsCount(int count) {
 	}
@@ -371,6 +341,8 @@ public:
 	virtual void setRealId(MsgId newId);
 	virtual void incrementReplyToTopCounter() {
 	}
+	virtual void hideSpoilers() {
+	}
 
 	[[nodiscard]] bool emptyText() const {
 		return _text.isEmpty();
@@ -389,12 +361,26 @@ public:
 	[[nodiscard]] bool suggestBanReport() const;
 	[[nodiscard]] bool suggestDeleteAllReport() const;
 
+	[[nodiscard]] bool canReact() const;
+	void addReaction(const QString &reaction);
+	void toggleReaction(const QString &reaction);
+	void updateReactions(const MTPMessageReactions *reactions);
+	void updateReactionsUnknown();
+	[[nodiscard]] const base::flat_map<QString, int> &reactions() const;
+	[[nodiscard]] auto recentReactions() const
+	-> const base::flat_map<
+		QString,
+		std::vector<Data::RecentReaction>> &;
+	[[nodiscard]] bool canViewReactions() const;
+	[[nodiscard]] QString chosenReaction() const;
+	[[nodiscard]] QString lookupUnreadReaction(
+		not_null<UserData*> from) const;
+	[[nodiscard]] crl::time lastReactionsRefreshTime() const;
+
 	[[nodiscard]] bool hasDirectLink() const;
 
-	[[nodiscard]] ChannelId channelId() const;
-	[[nodiscard]] FullMsgId fullId() const {
-		return FullMsgId(channelId(), id);
-	}
+	[[nodiscard]] FullMsgId fullId() const;
+	[[nodiscard]] GlobalMsgId globalId() const;
 	[[nodiscard]] Data::MessagePosition position() const;
 	[[nodiscard]] TimeId date() const;
 
@@ -416,7 +402,7 @@ public:
 
 	[[nodiscard]] TimeId dateOriginal() const;
 	[[nodiscard]] PeerData *senderOriginal() const;
-	[[nodiscard]] const HiddenSenderInfo *hiddenForwardedInfo() const;
+	[[nodiscard]] const HiddenSenderInfo *hiddenSenderInfo() const;
 	[[nodiscard]] not_null<PeerData*> fromOriginal() const;
 	[[nodiscard]] QString authorOriginal() const;
 	[[nodiscard]] MsgId idOriginal() const;
@@ -469,8 +455,11 @@ protected:
 	void finishEdition(int oldKeyboardTop);
 	void finishEditionToEmpty();
 
+	void setReactions(const MTPMessageReactions *reactions);
+	[[nodiscard]] bool changeReactions(const MTPMessageReactions *reactions);
+
 	const not_null<History*> _history;
-	not_null<PeerData*> _from;
+	const not_null<PeerData*> _from;
 	MessageFlags _flags = 0;
 
 	void invalidateChatListEntry();
@@ -490,11 +479,12 @@ protected:
 		std::unique_ptr<Data::Media> media;
 	};
 
-	SavedMediaData _savedLocalEditMediaData;
+	std::unique_ptr<SavedMediaData> _savedLocalEditMediaData;
 	std::unique_ptr<Data::Media> _media;
+	std::unique_ptr<Data::MessageReactions> _reactions;
+	crl::time _reactionsLastRefreshed = 0;
 
 private:
-
 	TimeId _date = 0;
 	TimeId _ttlDestroyAt = 0;
 
@@ -505,9 +495,15 @@ private:
 
 };
 
-QDateTime ItemDateTime(not_null<const HistoryItem*> item);
-QString ItemDateText(not_null<const HistoryItem*> item, bool isUntilOnline);
-bool IsItemScheduledUntilOnline(not_null<const HistoryItem*> item);
+[[nodiscard]] Main::Session *SessionByUniqueId(uint64 sessionUniqueId);
+[[nodiscard]] HistoryItem *MessageByGlobalId(GlobalMsgId globalId);
+
+[[nodiscard]] QDateTime ItemDateTime(not_null<const HistoryItem*> item);
+[[nodiscard]] QString ItemDateText(
+	not_null<const HistoryItem*> item,
+	bool isUntilOnline);
+[[nodiscard]] bool IsItemScheduledUntilOnline(
+	not_null<const HistoryItem*> item);
 
 ClickHandlerPtr goToMessageClickHandler(
 	not_null<PeerData*> peer,

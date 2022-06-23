@@ -17,6 +17,8 @@
 #include <QtWidgets/QTextEdit>
 #include <QtCore/QTimer>
 
+#include <rpl/variable.h>
+
 class QTouchEvent;
 class Painter;
 
@@ -26,6 +28,7 @@ const auto kClearFormatSequence = QKeySequence("ctrl+shift+n");
 const auto kStrikeOutSequence = QKeySequence("ctrl+shift+x");
 const auto kMonospaceSequence = QKeySequence("ctrl+shift+m");
 const auto kEditLinkSequence = QKeySequence("ctrl+k");
+const auto kSpoilerSequence = QKeySequence("ctrl+shift+p");
 
 class PopupMenu;
 
@@ -55,7 +58,6 @@ enum class InputSubmitSettings {
 };
 
 class FlatInput : public RpWidgetBase<QLineEdit> {
-	// The Q_OBJECT meta info is used for qobject_cast!
 	Q_OBJECT
 
 	using Parent = RpWidgetBase<QLineEdit>;
@@ -73,7 +75,6 @@ public:
 	void finishAnimations();
 
 	void setTextMrg(const QMargins &textMrg);
-	QRect getTextRect() const;
 
 	QSize sizeHint() const override;
 	QSize minimumSizeHint() const override;
@@ -137,6 +138,9 @@ private:
 	QTimer _touchTimer;
 	bool _touchPress, _touchRightButton, _touchMove;
 	QPoint _touchStart;
+
+	base::unique_qptr<PopupMenu> _contextMenu;
+
 };
 
 class InputField : public RpWidget {
@@ -168,6 +172,7 @@ public:
 	static const QString kTagStrikeOut;
 	static const QString kTagCode;
 	static const QString kTagPre;
+	static const QString kTagSpoiler;
 
 	InputField(
 		QWidget *parent,
@@ -552,7 +557,6 @@ private:
 };
 
 class MaskedInputField : public RpWidgetBase<QLineEdit> {
-	// The Q_OBJECT meta info is used for qobject_cast!
 	Q_OBJECT
 
 	using Parent = RpWidgetBase<QLineEdit>;
@@ -566,8 +570,6 @@ public:
 	void showError();
 	void showErrorNoFocus();
 	void hideError();
-
-	QRect getTextRect() const;
 
 	QSize sizeHint() const override;
 	QSize minimumSizeHint() const override;
@@ -696,6 +698,9 @@ private:
 	bool _touchRightButton = false;
 	bool _touchMove = false;
 	QPoint _touchStart;
+
+	base::unique_qptr<PopupMenu> _contextMenu;
+
 };
 
 class PasswordInput : public MaskedInputField {

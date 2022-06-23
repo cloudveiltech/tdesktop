@@ -124,6 +124,7 @@ ChatStyle::ChatStyle() {
 	make(_msgBotKbUrlIcon, st::msgBotKbUrlIcon);
 	make(_msgBotKbPaymentIcon, st::msgBotKbPaymentIcon);
 	make(_msgBotKbSwitchPmIcon, st::msgBotKbSwitchPmIcon);
+	make(_msgBotKbWebviewIcon, st::msgBotKbWebviewIcon);
 	make(_historyFastCommentsIcon, st::historyFastCommentsIcon);
 	make(_historyFastShareIcon, st::historyFastShareIcon);
 	make(_historyGoToOriginalIcon, st::historyGoToOriginalIcon);
@@ -398,6 +399,18 @@ ChatStyle::ChatStyle() {
 		st::historyPollOutChoiceRight,
 		st::historyPollOutChoiceRightSelected);
 	make(
+		&MessageStyle::historyTranscribeIcon,
+		st::historyTranscribeInIcon,
+		st::historyTranscribeInIconSelected,
+		st::historyTranscribeOutIcon,
+		st::historyTranscribeOutIconSelected);
+	make(
+		&MessageStyle::historyTranscribeHide,
+		st::historyTranscribeInHide,
+		st::historyTranscribeInHideSelected,
+		st::historyTranscribeOutHide,
+		st::historyTranscribeOutHideSelected);
+	make(
 		&MessageImageStyle::msgDateImgBg,
 		st::msgDateImgBg,
 		st::msgDateImgBgSelected);
@@ -618,6 +631,9 @@ void ChatStyle::make(
 	make(my.selectLinkFg, original.selectLinkFg);
 	make(my.selectMonoFg, original.selectMonoFg);
 	make(my.selectOverlay, original.selectOverlay);
+	make(my.spoilerBg, original.spoilerBg);
+	make(my.spoilerActiveBg, original.spoilerActiveBg);
+	make(my.spoilerActiveFg, original.spoilerActiveFg);
 }
 
 void ChatStyle::make(

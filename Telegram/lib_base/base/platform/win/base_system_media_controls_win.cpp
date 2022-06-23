@@ -6,7 +6,7 @@
 //
 #include "base/platform/base_platform_system_media_controls.h"
 
-#include "unknwn.h" // Conversion from winrt::guid_of to GUID.
+#include <unknwn.h> // Conversion from winrt::guid_of to GUID.
 
 #include "base/integration.h"
 #include "base/platform/win/base_info_win.h"
@@ -18,11 +18,9 @@
 
 #include <systemmediatransportcontrolsinterop.h>
 
-#include <qpa/qplatformnativeinterface.h>
-
 #include <QtCore/QBuffer>
-#include <QtGui/QGuiApplication>
 #include <QtGui/QImage>
+#include <QtGui/QWindow>
 #include <QtWidgets/QWidget>
 
 namespace winrt {
@@ -119,15 +117,12 @@ bool SystemMediaControls::init(std::optional<QWidget*> parent) {
 		return false;
 	}
 	const auto window = (*parent)->window()->windowHandle();
-	const auto native = QGuiApplication::platformNativeInterface();
-	if (!window || !native) {
+	if (!window) {
 		return false;
 	}
 
 	// Should be moved to separated file.
-	const auto hwnd = static_cast<HWND>(native->nativeResourceForWindow(
-		QByteArrayLiteral("handle"),
-		window));
+	const auto hwnd = reinterpret_cast<HWND>(window->winId());
 	if (!hwnd) {
 		return false;
 	}
@@ -217,6 +212,12 @@ void SystemMediaControls::setPlaybackStatus(
 	WinRT::Try([&] {
 		_private->controls.PlaybackStatus(SmtcPlaybackStatus(status));
 	});
+}
+
+void SystemMediaControls::setLoopStatus(LoopStatus status) {
+}
+
+void SystemMediaControls::setShuffle(bool value) {
 }
 
 void SystemMediaControls::setTitle(const QString &title) {

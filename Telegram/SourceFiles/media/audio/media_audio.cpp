@@ -13,13 +13,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/audio/media_audio_track.h"
 #include "media/audio/media_openal_functions.h"
 #include "media/streaming/media_streaming_utility.h"
+#include "webrtc/webrtc_media_devices.h"
 #include "data/data_document.h"
 #include "data/data_file_origin.h"
 #include "data/data_session.h"
 #include "platform/platform_audio.h"
 #include "core/application.h"
+#include "core/core_settings.h"
 #include "main/main_session.h"
-#include "app.h"
 
 #include <al.h>
 #include <alc.h>
@@ -196,6 +197,10 @@ void Start(not_null<Instance*> instance) {
 	qRegisterMetaType<AudioMsgId>();
 	qRegisterMetaType<VoiceWaveform>();
 
+	if (!Webrtc::InitPipewireStubs()) {
+		LOG(("Audio Info: Failed to load pipewire 0.3 stubs."));
+	}
+
 	auto loglevel = getenv("ALSOFT_LOGLEVEL");
 	LOG(("OpenAL Logging Level: %1").arg(loglevel ? loglevel : "(not set)"));
 
@@ -244,7 +249,7 @@ bool AttachToDevice() {
 	}
 
 	crl::on_main([] {
-		if (!App::quitting()) {
+		if (!Core::Quitting()) {
 			Current().reattachTracks();
 		}
 	});
@@ -253,7 +258,7 @@ bool AttachToDevice() {
 
 void ScheduleDetachFromDeviceSafe() {
 	crl::on_main([] {
-		if (!App::quitting()) {
+		if (!Core::Quitting()) {
 			Current().scheduleDetachFromDevice();
 		}
 	});
@@ -261,7 +266,7 @@ void ScheduleDetachFromDeviceSafe() {
 
 void ScheduleDetachIfNotUsedSafe() {
 	crl::on_main([] {
-		if (!App::quitting()) {
+		if (!Core::Quitting()) {
 			Current().scheduleDetachIfNotUsed();
 		}
 	});
@@ -269,7 +274,7 @@ void ScheduleDetachIfNotUsedSafe() {
 
 void StopDetachIfNotUsedSafe() {
 	crl::on_main([] {
-		if (!App::quitting()) {
+		if (!Core::Quitting()) {
 			Current().stopDetachIfNotUsed();
 		}
 	});

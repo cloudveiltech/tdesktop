@@ -14,10 +14,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_account.h"
 #include "main/main_domain.h"
 #include "main/main_session_settings.h"
+#include "main/main_app_config.h"
 #include "main/session/send_as_peers.h"
 #include "mtproto/mtproto_config.h"
 #include "chat_helpers/stickers_emoji_pack.h"
 #include "chat_helpers/stickers_dice_pack.h"
+#include "inline_bots/bot_attach_web_view.h"
 #include "storage/file_download.h"
 #include "storage/download_manager_mtproto.h"
 #include "storage/file_upload.h"
@@ -27,17 +29,23 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "data/data_changes.h"
 #include "data/data_user.h"
+#include "data/data_download_manager.h"
 #include "data/stickers/data_stickers.h"
 #include "window/window_session_controller.h"
+#include "window/window_controller.h"
 #include "window/window_lock_widgets.h"
 #include "base/unixtime.h"
 #include "calls/calls_instance.h"
 #include "support/support_helper.h"
+#include "lang/lang_keys.h"
+#include "core/application.h"
+#include "ui/text/text_utilities.h"
+#include "ui/layers/generic_box.h"
+#include "styles/style_layers.h"
 
 #ifndef TDESKTOP_DISABLE_SPELLCHECK
 #include "chat_helpers/spellchecker_common.h"
 #endif // TDESKTOP_DISABLE_SPELLCHECK
-#include <mainwidget.h>
 
 namespace Main {
 namespace {
@@ -84,6 +92,7 @@ Session::Session(
 , _emojiStickersPack(std::make_unique<Stickers::EmojiPack>(this))
 , _diceStickersPacks(std::make_unique<Stickers::DicePacks>(this))
 , _sendAsPeers(std::make_unique<SendAsPeers>(this))
+, _attachWebView(std::make_unique<InlineBots::AttachWebView>(this))
 , _supportHelper(Support::Helper::Create(this))
 , _saveSettingsTimer([=] { saveSettings(); }) {
 	Expects(_settings != nullptr);
@@ -124,6 +133,15 @@ Session::Session(
 			}
 		}, _lifetime);
 
+#ifndef OS_MAC_STORE
+		_account->appConfig().value(
+		) | rpl::start_with_next([=] {
+			_premiumPossible = !_account->appConfig().get<bool>(
+				"premium_purchase_blocked",
+				true);
+		}, _lifetime);
+#endif // OS_MAC_STORE
+
 		if (_settings->hadLegacyCallsPeerToPeerNobody()) {
 			api().userPrivacy().save(
 				Api::UserPrivacy::Key::CallsPeer2Peer,
@@ -142,7 +160,6 @@ Session::Session(
 		local().readRecentMasks();
 		local().readFavedStickers();
 		local().readSavedGifs();
-		
 		data().stickers().notifyUpdated();
 		data().stickers().notifySavedGifsUpdated();
 	});
@@ -154,6 +171,8 @@ Session::Session(
 	_api->requestNotifySettings(MTP_inputNotifyUsers());
 	_api->requestNotifySettings(MTP_inputNotifyChats());
 	_api->requestNotifySettings(MTP_inputNotifyBroadcasts());
+
+	Core::App().downloadManager().trackSession(this);
 }
 
 void Session::setTmpPassword(const QByteArray &password, TimeId validUntil) {
@@ -205,8 +224,35 @@ void Session::notifyDownloaderTaskFinished() {
 	downloader().notifyTaskFinished();
 }
 
-rpl::producer<> Session::downloaderTaskFinished() const {	
+rpl::producer<> Session::downloaderTaskFinished() const {
 	return downloader().taskFinished();
+}
+
+bool Session::premium() const {
+	return _user->isPremium();
+}
+
+bool Session::premiumPossible() const {
+	return premium() || _premiumPossible.current();
+}
+
+bool Session::premiumBadgesShown() const {
+	return supportMode() || premiumPossible();
+}
+
+rpl::producer<bool> Session::premiumPossibleValue() const {
+	using namespace rpl::mappers;
+
+	auto premium = _user->flagsValue(
+	) | rpl::filter([=](UserData::Flags::Change change) {
+		return (change.diff & UserDataFlag::Premium);
+	}) | rpl::map([=] {
+		return _user->isPremium();
+	});
+	return rpl::combine(
+		std::move(premium),
+		_premiumPossible.value(),
+		_1 || _2);
 }
 
 uint64 Session::uniqueId() const {
@@ -294,22 +340,33 @@ rpl::producer<bool> Session::termsLockValue() const {
 }
 
 QString Session::createInternalLink(const QString &query) const {
-	auto result = createInternalLinkFull(query);
-	auto prefixes = {
+	return createInternalLink(TextWithEntities{ .text = query }).text;
+}
+
+QString Session::createInternalLinkFull(const QString &query) const {
+	return createInternalLinkFull(TextWithEntities{ .text = query }).text;
+}
+
+TextWithEntities Session::createInternalLink(
+		const TextWithEntities &query) const {
+	const auto result = createInternalLinkFull(query);
+	const auto prefixes = {
 		qstr("https://"),
 		qstr("http://"),
 	};
 	for (auto &prefix : prefixes) {
-		if (result.startsWith(prefix, Qt::CaseInsensitive)) {
-			return result.mid(prefix.size());
+		if (result.text.startsWith(prefix, Qt::CaseInsensitive)) {
+			return Ui::Text::Mid(result, prefix.size());
 		}
 	}
-	LOG(("Warning: bad internal url '%1'").arg(result));
+	LOG(("Warning: bad internal url '%1'").arg(result.text));
 	return result;
 }
 
-QString Session::createInternalLinkFull(const QString &query) const {
-	return ValidatedInternalLinksDomain(this) + query;
+TextWithEntities Session::createInternalLinkFull(
+		TextWithEntities query) const {
+	return TextWithEntities::Simple(ValidatedInternalLinksDomain(this))
+		.append(std::move(query));
 }
 
 bool Session::supportMode() const {
@@ -337,9 +394,67 @@ void Session::addWindow(not_null<Window::SessionController*> controller) {
 	}) | rpl::distinct_until_changed());
 }
 
+bool Session::uploadsInProgress() const {
+	return !!_uploader->currentUploadId();
+}
+
+void Session::uploadsStopWithConfirmation(Fn<void()> done) {
+	const auto window = Core::App().primaryWindow();
+	if (!window) {
+		return;
+	}
+	const auto id = _uploader->currentUploadId();
+	const auto exists = !!data().message(id);
+	auto box = Box([=](not_null<Ui::GenericBox*> box) {
+		box->addRow(
+			object_ptr<Ui::FlatLabel>(
+				box.get(),
+				tr::lng_upload_sure_stop(),
+				st::boxLabel),
+			st::boxPadding + QMargins(0, 0, 0, st::boxPadding.bottom()));
+		box->setStyle(st::defaultBox);
+		box->addButton(tr::lng_selected_upload_stop(), [=] {
+			box->closeBox();
+
+			uploadsStop();
+			if (done) {
+				done();
+			}
+		}, st::attentionBoxButton);
+		box->addButton(tr::lng_cancel(), [=] { box->closeBox(); });
+		if (exists) {
+			box->addLeftButton(tr::lng_upload_show_file(), [=] {
+				box->closeBox();
+
+				if (const auto item = data().message(id)) {
+					if (const auto window = tryResolveWindow()) {
+						window->showPeerHistoryAtItem(item);
+					}
+				}
+			});
+		}
+	});
+	window->show(std::move(box));
+	window->activate();
+}
+
+void Session::uploadsStop() {
+	_uploader->cancelAll();
+}
+
 auto Session::windows() const
 -> const base::flat_set<not_null<Window::SessionController*>> & {
 	return _windows;
+}
+
+Window::SessionController *Session::tryResolveWindow() const {
+	if (_windows.empty()) {
+		domain().activate(_account);
+		if (_windows.empty()) {
+			return nullptr;
+		}
+	}
+	return _windows.front();
 }
 
 } // namespace Main

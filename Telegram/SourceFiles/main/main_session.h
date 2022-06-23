@@ -53,6 +53,10 @@ class EmojiPack;
 class DicePacks;
 } // namespace Stickers;
 
+namespace InlineBots {
+class AttachWebView;
+} // namespace InlineBots
+
 namespace Main {
 
 class Account;
@@ -75,6 +79,11 @@ public:
 	[[nodiscard]] Storage::Account &local() const;
 	[[nodiscard]] Domain &domain() const;
 	[[nodiscard]] Storage::Domain &domainLocal() const;
+
+	[[nodiscard]] bool premium() const;
+	[[nodiscard]] bool premiumPossible() const;
+	[[nodiscard]] rpl::producer<bool> premiumPossibleValue() const;
+	[[nodiscard]] bool premiumBadgesShown() const;
 
 	[[nodiscard]] uint64 uniqueId() const; // userId() with TestDC shift.
 	[[nodiscard]] UserId userId() const;
@@ -117,6 +126,9 @@ public:
 	[[nodiscard]] SendAsPeers &sendAsPeers() const {
 		return *_sendAsPeers;
 	}
+	[[nodiscard]] InlineBots::AttachWebView &attachWebView() const {
+		return *_attachWebView;
+	}
 
 	void saveSettings();
 	void saveSettingsDelayed(crl::time delay = kDefaultSaveDelay);
@@ -125,6 +137,7 @@ public:
 	void addWindow(not_null<Window::SessionController*> controller);
 	[[nodiscard]] auto windows() const
 		-> const base::flat_set<not_null<Window::SessionController*>> &;
+	[[nodiscard]] Window::SessionController *tryResolveWindow() const;
 
 	// Shortcuts.
 	void notifyDownloaderTaskFinished();
@@ -146,6 +159,10 @@ public:
 
 	[[nodiscard]] QString createInternalLink(const QString &query) const;
 	[[nodiscard]] QString createInternalLinkFull(const QString &query) const;
+	[[nodiscard]] TextWithEntities createInternalLink(
+		const TextWithEntities &query) const;
+	[[nodiscard]] TextWithEntities createInternalLinkFull(
+		TextWithEntities query) const;
 
 	void setTmpPassword(const QByteArray &password, TimeId validUntil);
 	[[nodiscard]] QByteArray validTmpPassword() const;
@@ -153,15 +170,18 @@ public:
 	// Can be called only right before ~Session.
 	void finishLogout();
 
+	// Uploads cancel with confirmation.
+	[[nodiscard]] bool uploadsInProgress() const;
+	void uploadsStopWithConfirmation(Fn<void()> done);
+	void uploadsStop();
+
 	[[nodiscard]] rpl::lifetime &lifetime() {
 		return _lifetime;
 	}
 
-	base::Observable<DocumentData*> documentUpdated;
-
-	bool supportMode() const;
-	Support::Helper &supportHelper() const;
-	Support::Templates &supportTemplates() const;
+	[[nodiscard]] bool supportMode() const;
+	[[nodiscard]] Support::Helper &supportHelper() const;
+	[[nodiscard]] Support::Templates &supportTemplates() const;
 
 private:
 	static constexpr auto kDefaultSaveDelay = crl::time(1000);
@@ -186,10 +206,12 @@ private:
 	const std::unique_ptr<Stickers::EmojiPack> _emojiStickersPack;
 	const std::unique_ptr<Stickers::DicePacks> _diceStickersPacks;
 	const std::unique_ptr<SendAsPeers> _sendAsPeers;
+	const std::unique_ptr<InlineBots::AttachWebView> _attachWebView;
 
 	const std::unique_ptr<Support::Helper> _supportHelper;
 
 	std::shared_ptr<Data::CloudImageView> _selfUserpicView;
+	rpl::variable<bool> _premiumPossible = false;
 
 	rpl::event_stream<bool> _termsLockChanges;
 	std::unique_ptr<Window::TermsLock> _termsLock;

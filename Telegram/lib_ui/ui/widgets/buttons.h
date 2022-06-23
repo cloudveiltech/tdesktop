@@ -9,9 +9,12 @@
 #include "ui/abstract_button.h"
 #include "ui/round_rect.h"
 #include "ui/effects/animations.h"
+#include "ui/text/text.h"
 #include "styles/style_widgets.h"
 
 #include <memory>
+
+class Painter;
 
 namespace Ui {
 
@@ -193,6 +196,8 @@ protected:
 	QImage prepareRippleMask() const override;
 	QPoint prepareRippleStartPosition() const override;
 
+	[[nodiscard]] float64 iconOverOpacity() const;
+
 private:
 	const style::IconButton &_st;
 	const style::icon *_iconOverride = nullptr;
@@ -258,12 +263,17 @@ public:
 		const style::SettingsButton &st);
 	~SettingsButton();
 
-	SettingsButton *toggleOn(rpl::producer<bool> &&toggled);
+	SettingsButton *toggleOn(
+		rpl::producer<bool> &&toggled,
+		bool ignoreClick = false);
 	bool toggled() const;
 	rpl::producer<bool> toggledChanges() const;
 	rpl::producer<bool> toggledValue() const;
 
 	void setColorOverride(std::optional<QColor> textColorOverride);
+	void setPaddingOverride(style::margins padding);
+
+	[[nodiscard]] const style::SettingsButton &st() const;
 
 protected:
 	int resizeGetHeight(int newWidth) override;
@@ -273,16 +283,17 @@ protected:
 
 	void paintEvent(QPaintEvent *e) override;
 
+	void paintBg(Painter &p, const QRect &rect, bool over) const;
+	void paintText(Painter &p, bool over, int outerw) const;
+	void paintToggle(Painter &p, int outerw) const;
+
 private:
 	void setText(QString &&text);
 	QRect toggleRect() const;
-	void updateVisibleText(int newWidth);
 
 	const style::SettingsButton &_st;
-	QString _original;
-	QString _text;
-	int _originalWidth = 0;
-	int _textWidth = 0;
+	style::margins _padding;
+	Ui::Text::String _text;
 	std::unique_ptr<Ui::ToggleView> _toggle;
 	std::optional<QColor> _textColorOverride;
 

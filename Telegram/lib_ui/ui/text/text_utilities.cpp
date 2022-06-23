@@ -7,7 +7,7 @@
 #include "ui/text/text_utilities.h"
 
 #include "base/algorithm.h"
-#include "base/qt_adapters.h"
+#include "base/qt/qt_string_view.h"
 
 #include <QtCore/QRegularExpression>
 
@@ -42,6 +42,24 @@ TextWithEntities Link(const QString &text, const QString &url) {
 	return WithSingleEntity(text, EntityType::CustomUrl, url);
 }
 
+TextWithEntities Link(const QString &text, int index) {
+	return Link(text, QString("internal:index") + QChar(index));
+}
+
+TextWithEntities PlainLink(const QString &text) {
+	return WithSingleEntity(text, EntityType::PlainLink);
+}
+
+TextWithEntities Wrapped(
+		TextWithEntities text,
+		EntityType type,
+		const QString &data) {
+	text.entities.insert(
+		text.entities.begin(),
+		{ type, 0, int(text.text.size()), data });
+	return text;
+}
+
 TextWithEntities RichLangValue(const QString &text) {
 	static const auto kStart = QRegularExpression("(\\*\\*|__)");
 
@@ -72,6 +90,49 @@ TextWithEntities RichLangValue(const QString &text) {
 		offset = till + tag.size();
 	}
 	return result;
+}
+
+TextWithEntities Mid(const TextWithEntities &text, int position, int n) {
+	if (n == -1) {
+		n = int(text.text.size()) - position;
+	}
+	const auto midEnd = (position + n);
+	auto entities = ranges::views::all(
+		text.entities
+	) | ranges::views::filter([&](const EntityInText &entity) {
+		// Intersects of ranges.
+		const auto l1 = entity.offset();
+		const auto r1 = entity.offset() + entity.length() - 1;
+		const auto l2 = position;
+		const auto r2 = midEnd - 1;
+		return !(l1 > r2 || l2 > r1);
+	}) | ranges::views::transform([&](const EntityInText &entity) {
+		if ((entity.offset() == position) && (entity.length() == n)) {
+			return entity;
+		}
+		const auto start = std::max(entity.offset(), position);
+		const auto end = std::min(entity.offset() + entity.length(), midEnd);
+		return EntityInText(
+			entity.type(),
+			start - position,
+			end - start,
+			entity.data());
+	}) | ranges::to<EntitiesInText>();
+	return {
+		.text = text.text.mid(position, n),
+		.entities = std::move(entities),
+	};
+}
+
+TextWithEntities Filtered(
+		const TextWithEntities &text,
+		const std::vector<EntityType> &types) {
+	auto result = ranges::views::all(
+		text.entities
+	) | ranges::views::filter([&](const EntityInText &entity) {
+		return ranges::contains(types, entity.type());
+	}) | ranges::to<EntitiesInText>();
+	return { .text = text.text, .entities = std::move(result) };
 }
 
 } // namespace Text

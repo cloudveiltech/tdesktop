@@ -12,7 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_file_origin.h"
 #include "data/data_document_media.h"
 #include "data/stickers/data_stickers.h"
-#include "chat_helpers/send_context_menu.h"
+#include "menu/menu_send.h"
 #include "lang/lang_keys.h"
 #include "ui/boxes/confirm_box.h"
 #include "core/application.h"
@@ -32,7 +32,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lottie/lottie_multi_player.h"
 #include "lottie/lottie_animation.h"
 #include "chat_helpers/stickers_lottie.h"
+#include "media/clip/media_clip_reader.h"
 #include "window/window_session_controller.h"
+#include "window/window_controller.h"
 #include "base/unixtime.h"
 #include "main/main_session.h"
 #include "apiwrap.h"
@@ -43,6 +45,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_layers.h"
 #include "styles/style_chat_helpers.h"
 #include "styles/style_info.h"
+#include "styles/style_menu_icons.h"
 
 #include <QtWidgets/QApplication>
 #include <QtGui/QClipboard>
@@ -50,11 +53,55 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 namespace {
 
 constexpr auto kStickersPanelPerRow = 5;
+constexpr auto kMinRepaintDelay = crl::time(33);
+constexpr auto kMinAfterScrollDelay = crl::time(33);
+constexpr auto kGrayLockOpacity = 0.3;
 
 using Data::StickersSet;
 using Data::StickersPack;
 using Data::StickersByEmojiMap;
 using SetFlag = Data::StickersSetFlag;
+
+[[nodiscard]] std::optional<QColor> ComputeImageColor(const QImage &frame) {
+	if (frame.isNull()
+		|| frame.format() != QImage::Format_ARGB32_Premultiplied) {
+		return {};
+	}
+	auto sr = int64();
+	auto sg = int64();
+	auto sb = int64();
+	auto sa = int64();
+	const auto factor = frame.devicePixelRatio();
+	const auto size = st::stickersPremiumLock.size() * factor;
+	const auto width = std::min(frame.width(), size.width());
+	const auto height = std::min(frame.height(), size.height());
+	const auto skipx = (frame.width() - width) / 2;
+	const auto radius = st::roundRadiusSmall;
+	const auto skipy = std::max(frame.height() - height - radius, 0);
+	const auto perline = frame.bytesPerLine();
+	const auto addperline = perline - (width * 4);
+	auto bits = static_cast<const uchar*>(frame.bits())
+		+ perline * skipy
+		+ sizeof(uint32) * skipx;
+	for (auto y = 0; y != height; ++y) {
+		for (auto x = 0; x != width; ++x) {
+			sb += int(*bits++);
+			sg += int(*bits++);
+			sr += int(*bits++);
+			sa += int(*bits++);
+		}
+		bits += addperline;
+	}
+	if (!sa) {
+		return {};
+	}
+	return QColor(sr * 255 / sa, sg * 255 / sa, sb * 255 / sa, 255);
+
+}
+
+[[nodiscard]] QColor ComputeLockColor(const QImage &frame) {
+	return ComputeImageColor(frame).value_or(st::windowSubTextFg->c);
+}
 
 } // namespace
 
@@ -98,16 +145,28 @@ private:
 	struct Element {
 		not_null<DocumentData*> document;
 		std::shared_ptr<Data::DocumentMedia> documentMedia;
-		Lottie::Animation *animated = nullptr;
+		Lottie::Animation *lottie = nullptr;
+		Media::Clip::ReaderPointer webm;
 		Ui::Animations::Simple overAnimation;
+		mutable QImage premiumLock;
 	};
 
 	void visibleTopBottomUpdated(int visibleTop, int visibleBottom) override;
 
 	QSize boundingBoxSize() const;
 
-	void paintSticker(Painter &p, int index, QPoint position) const;
+	void paintSticker(
+		Painter &p,
+		int index,
+		QPoint position,
+		bool paused,
+		crl::time now) const;
 	void setupLottie(int index);
+	void setupWebm(int index);
+	void clipCallback(
+		Media::Clip::Notification notification,
+		not_null<DocumentData*> document,
+		int index);
 
 	void updateSelected();
 	void setSelected(int selected);
@@ -122,6 +181,9 @@ private:
 	not_null<Lottie::MultiPlayer*> getLottiePlayer();
 
 	void showPreview();
+	const QImage &validatePremiumLock(int index, const QImage &frame) const;
+	void updateItems();
+	void repaintItems(crl::time now = 0);
 
 	not_null<Window::SessionController*> _controller;
 	MTP::Sender _api;
@@ -140,6 +202,13 @@ private:
 	ImageWithLocation _setThumbnail;
 
 	const std::unique_ptr<Ui::PathShiftGradient> _pathGradient;
+	mutable QImage _premiumLockGray;
+
+	int _visibleTop = 0;
+	int _visibleBottom = 0;
+	crl::time _lastScrolledAt = 0;
+	crl::time _lastUpdatedAt = 0;
+	base::Timer _updateItemsTimer;
 
 	StickerSetIdentifier _input;
 
@@ -203,7 +272,9 @@ void StickerSetBox::prepare() {
 	_inner->setInstalled(
 	) | rpl::start_with_next([=](uint64 setId) {
 		if (_inner->isMasksSet()) {
-			Ui::Toast::Show(tr::lng_masks_installed(tr::now));
+			Ui::Toast::Show(
+				Ui::BoxShow(this).toastParent(),
+				tr::lng_masks_installed(tr::now));
 		} else {
 			auto &stickers = _controller->session().data().stickers();
 			stickers.notifyStickerSetInstalled(setId);
@@ -220,9 +291,11 @@ void StickerSetBox::prepare() {
 	) | rpl::start_with_next([=](uint64 setId) {
 		const auto isMasks = _inner->isMasksSet();
 
-		Ui::Toast::Show(isMasks
-			? tr::lng_masks_has_been_archived(tr::now)
-			: tr::lng_stickers_has_been_archived(tr::now));
+		Ui::Toast::Show(
+			Ui::BoxShow(this).toastParent(),
+			isMasks
+				? tr::lng_masks_has_been_archived(tr::now)
+				: tr::lng_stickers_has_been_archived(tr::now));
 
 		auto &order = isMasks
 			? _controller->session().data().stickers().maskSetsOrderRef()
@@ -265,7 +338,7 @@ void StickerSetBox::handleError(Error error) {
 	switch (error) {
 	case Error::NotFound:
 		_controller->show(
-			Box<Ui::InformBox>(tr::lng_stickers_not_found(tr::now)));
+			Ui::MakeInformBox(tr::lng_stickers_not_found(tr::now)));
 		break;
 	default: Unexpected("Error in StickerSetBox::handleError.");
 	}
@@ -291,18 +364,23 @@ void StickerSetBox::updateButtons() {
 				const auto top = addTopButton(st::infoTopBarMenu);
 				const auto share = [=] {
 					copyStickersLink();
-					Ui::Toast::Show(tr::lng_stickers_copied(tr::now));
+					Ui::Toast::Show(
+						Ui::BoxShow(this).toastParent(),
+						tr::lng_stickers_copied(tr::now));
 					closeBox();
 				};
 				const auto menu =
 					std::make_shared<base::unique_qptr<Ui::PopupMenu>>();
 				top->setClickedCallback([=] {
-					*menu = base::make_unique_q<Ui::PopupMenu>(top);
+					*menu = base::make_unique_q<Ui::PopupMenu>(
+						top,
+						st::popupMenuWithIcons);
 					(*menu)->addAction(
 						(isMasks
 							? tr::lng_stickers_share_masks
 							: tr::lng_stickers_share_pack)(tr::now),
-						share);
+						share,
+						&st::menuIconShare);
 					(*menu)->popup(QCursor::pos());
 					return true;
 				});
@@ -312,7 +390,9 @@ void StickerSetBox::updateButtons() {
 		} else {
 			auto share = [=] {
 				copyStickersLink();
-				Ui::Toast::Show(tr::lng_stickers_copied(tr::now));
+				Ui::Toast::Show(
+					Ui::BoxShow(this).toastParent(),
+					tr::lng_stickers_copied(tr::now));
 			};
 			auto shareText = isMasks
 				? tr::lng_stickers_share_masks()
@@ -328,12 +408,15 @@ void StickerSetBox::updateButtons() {
 				const auto menu =
 					std::make_shared<base::unique_qptr<Ui::PopupMenu>>();
 				top->setClickedCallback([=] {
-					*menu = base::make_unique_q<Ui::PopupMenu>(top);
+					*menu = base::make_unique_q<Ui::PopupMenu>(
+						top,
+						st::popupMenuWithIcons);
 					(*menu)->addAction(
 						isMasks
 							? tr::lng_masks_archive_pack(tr::now)
 							: tr::lng_stickers_archive_pack(tr::now),
-						archive);
+						archive,
+						&st::menuIconArchive);
 					(*menu)->popup(QCursor::pos());
 					return true;
 				});
@@ -363,9 +446,12 @@ StickerSetBox::Inner::Inner(
 , _pathGradient(std::make_unique<Ui::PathShiftGradient>(
 	st::windowBgRipple,
 	st::windowBgOver,
-	[=] { update(); }))
+	[=] { repaintItems(); }))
+, _updateItemsTimer([=] { updateItems(); })
 , _input(set)
 , _previewTimer([=] { showPreview(); }) {
+	setAttribute(Qt::WA_OpaquePaintEvent);
+
 	_api.request(MTPmessages_GetStickerSet(
 		Data::InputStickerSet(_input),
 		MTP_int(0) // hash
@@ -380,7 +466,12 @@ StickerSetBox::Inner::Inner(
 
 	_controller->session().downloaderTaskFinished(
 	) | rpl::start_with_next([=] {
-		update();
+		updateItems();
+	}, lifetime());
+
+	style::PaletteChanged(
+	) | rpl::start_with_next([=] {
+		_premiumLockGray = QImage();
 	}, lifetime());
 
 	setMouseTracking(true);
@@ -392,18 +483,25 @@ void StickerSetBox::Inner::gotSet(const MTPmessages_StickerSet &set) {
 	_elements.clear();
 	_selected = -1;
 	setCursor(style::cur_default);
+	const auto owner = &_controller->session().data();
+	const auto premiumPossible = _controller->session().premiumPossible();
 	set.match([&](const MTPDmessages_stickerSet &data) {
 		const auto &v = data.vdocuments().v;
 		_pack.reserve(v.size());
 		_elements.reserve(v.size());
 		for (const auto &item : v) {
-			const auto document = _controller->session().data().processDocument(item);
+			const auto document = owner->processDocument(item);
 			const auto sticker = document->sticker();
 			if (!sticker) {
 				continue;
 			}
 			_pack.push_back(document);
-			_elements.push_back({ document, document->createMediaView() });
+			if (!document->isPremiumSticker() || premiumPossible) {
+				_elements.push_back({
+					document,
+					document->createMediaView(),
+				});
+			}
 		}
 		for (const auto &pack : data.vpacks().v) {
 			pack.match([&](const MTPDstickerPack &pack) {
@@ -637,7 +735,7 @@ void StickerSetBox::Inner::send(
 	const auto controller = _controller;
 	Ui::PostponeCall(controller, [=] {
 		if (controller->content()->sendExistingDocument(sticker, options)) {
-			Ui::hideSettingsAndLayer();
+			controller->window().hideSettingsAndLayer();
 		}
 	});
 }
@@ -652,7 +750,9 @@ void StickerSetBox::Inner::contextMenuEvent(QContextMenuEvent *e) {
 		return;
 	}
 	_previewTimer.cancel();
-	_menu = base::make_unique_q<Ui::PopupMenu>(this);
+	_menu = base::make_unique_q<Ui::PopupMenu>(
+		this,
+		st::popupMenuWithIcons);
 
 	const auto document = _pack[index];
 	const auto sendSelected = [=](Api::SendOptions options) {
@@ -664,16 +764,22 @@ void StickerSetBox::Inner::contextMenuEvent(QContextMenuEvent *e) {
 		SendMenu::DefaultSilentCallback(sendSelected),
 		SendMenu::DefaultScheduleCallback(this, type, sendSelected));
 
+	const auto controller = _controller;
 	const auto toggleFavedSticker = [=] {
 		Api::ToggleFavedSticker(
+			controller,
 			document,
 			Data::FileOriginStickerSet(Data::Stickers::FavedSetId, 0));
 	};
+	const auto isFaved = document->owner().stickers().isFaved(document);
 	_menu->addAction(
-		(document->owner().stickers().isFaved(document)
+		(isFaved
 			? tr::lng_faved_stickers_remove
 			: tr::lng_faved_stickers_add)(tr::now),
-		toggleFavedSticker);
+		toggleFavedSticker,
+		(isFaved
+			? &st::menuIconUnfave
+			: &st::menuIconFave));
 
 	_menu->popup(QCursor::pos());
 }
@@ -715,6 +821,15 @@ void StickerSetBox::Inner::showPreview() {
 	}
 }
 
+const QImage &StickerSetBox::Inner::validatePremiumLock(
+		int index,
+		const QImage &frame) const {
+	auto &element = _elements[index];
+	auto &image = frame.isNull() ? _premiumLockGray : element.premiumLock;
+	ValidatePremiumLockBg(image, frame);
+	return image;
+}
+
 not_null<Lottie::MultiPlayer*> StickerSetBox::Inner::getLottiePlayer() {
 	if (!_lottiePlayer) {
 		_lottiePlayer = std::make_unique<Lottie::MultiPlayer>(
@@ -722,7 +837,7 @@ not_null<Lottie::MultiPlayer*> StickerSetBox::Inner::getLottiePlayer() {
 			Lottie::MakeFrameRenderer());
 		_lottiePlayer->updates(
 		) | rpl::start_with_next([=] {
-			update();
+			updateItems();
 		}, lifetime());
 	}
 	return _lottiePlayer.get();
@@ -743,6 +858,7 @@ int32 StickerSetBox::Inner::stickerFromGlobalPos(const QPoint &p) const {
 void StickerSetBox::Inner::paintEvent(QPaintEvent *e) {
 	Painter p(this);
 
+	p.fillRect(e->rect(), st::boxBg);
 	if (_elements.empty()) {
 		return;
 	}
@@ -751,6 +867,9 @@ void StickerSetBox::Inner::paintEvent(QPaintEvent *e) {
 
 	_pathGradient->startFrame(0, width(), width() / 2);
 
+	const auto now = crl::now();
+	const auto paused = _controller->isGifPausedAtLeastFor(
+		Window::GifPauseReason::Layer);
 	for (int32 i = from; i < to; ++i) {
 		for (int32 j = 0; j < kStickersPanelPerRow; ++j) {
 			int32 index = i * kStickersPanelPerRow + j;
@@ -758,16 +877,12 @@ void StickerSetBox::Inner::paintEvent(QPaintEvent *e) {
 				break;
 			}
 			const auto pos = QPoint(st::stickersPadding.left() + j * st::stickersSize.width(), st::stickersPadding.top() + i * st::stickersSize.height());
-			paintSticker(p, index, pos);
+			paintSticker(p, index, pos, paused, now);
 		}
 	}
 
-	if (_lottiePlayer) {
-		const auto paused = _controller->isGifPausedAtLeastFor(
-			Window::GifPauseReason::Layer);
-		if (!paused) {
-			_lottiePlayer->markFrameShown();
-		}
+	if (_lottiePlayer && !paused) {
+		_lottiePlayer->markFrameShown();
 	}
 }
 
@@ -780,6 +895,12 @@ QSize StickerSetBox::Inner::boundingBoxSize() const {
 void StickerSetBox::Inner::visibleTopBottomUpdated(
 		int visibleTop,
 		int visibleBottom) {
+	if (_visibleTop != visibleTop || _visibleBottom != visibleBottom) {
+		_visibleTop = visibleTop;
+		_visibleBottom = visibleBottom;
+		_lastScrolledAt = crl::now();
+		update();
+	}
 	const auto pauseInRows = [&](int fromRow, int tillRow) {
 		Expects(fromRow <= tillRow);
 
@@ -789,8 +910,10 @@ void StickerSetBox::Inner::visibleTopBottomUpdated(
 				if (index >= _elements.size()) {
 					break;
 				}
-				if (const auto animated = _elements[index].animated) {
-					_lottiePlayer->pause(animated);
+				if (const auto lottie = _elements[index].lottie) {
+					_lottiePlayer->pause(lottie);
+				} else if (auto &webm = _elements[index].webm) {
+					webm = nullptr;
 				}
 			}
 		}
@@ -821,17 +944,63 @@ void StickerSetBox::Inner::visibleTopBottomUpdated(
 void StickerSetBox::Inner::setupLottie(int index) {
 	auto &element = _elements[index];
 
-	element.animated = ChatHelpers::LottieAnimationFromDocument(
+	element.lottie = ChatHelpers::LottieAnimationFromDocument(
 		getLottiePlayer(),
 		element.documentMedia.get(),
 		ChatHelpers::StickerLottieSize::StickerSet,
 		boundingBoxSize() * cIntRetinaFactor());
 }
 
+void StickerSetBox::Inner::setupWebm(int index) {
+	auto &element = _elements[index];
+
+	const auto document = element.document;
+	auto callback = [=](Media::Clip::Notification notification) {
+		clipCallback(notification, document, index);
+	};
+	element.webm = Media::Clip::MakeReader(
+		element.documentMedia->owner()->location(),
+		element.documentMedia->bytes(),
+		std::move(callback));
+}
+
+void StickerSetBox::Inner::clipCallback(
+		Media::Clip::Notification notification,
+		not_null<DocumentData*> document,
+		int index) {
+	const auto i = (index < _elements.size()
+		&& _elements[index].document == document)
+		? (_elements.begin() + index)
+		: ranges::find(_elements, document, &Element::document);
+	if (i == end(_elements)) {
+		return;
+	}
+	using namespace Media::Clip;
+	switch (notification) {
+	case Notification::Reinit: {
+		auto &webm = i->webm;
+		if (webm->state() == State::Error) {
+			webm.setBad();
+		} else if (webm->ready() && !webm->started()) {
+			const auto size = ChatHelpers::ComputeStickerSize(
+				i->document,
+				boundingBoxSize());
+			webm->start({ .frame = size, .keepAlpha = true });
+		}
+	} break;
+
+	case Notification::Repaint: break;
+	}
+
+	updateItems();
+}
+
 void StickerSetBox::Inner::paintSticker(
 		Painter &p,
 		int index,
-		QPoint position) const {
+		QPoint position,
+		bool paused,
+		crl::time now) const {
 	if (const auto over = _elements[index].overAnimation.value((index == _selected) ? 1. : 0.)) {
 		p.setOpacity(over);
 		auto tl = position;
@@ -843,48 +1012,63 @@ void StickerSetBox::Inner::paintSticker(
 	const auto &element = _elements[index];
 	const auto document = element.document;
 	const auto &media = element.documentMedia;
+	const auto sticker = document->sticker();
+	const auto locked = document->isPremiumSticker()
+		&& !_controller->session().premium();
 	media->checkStickerSmall();
 
-	const auto isAnimated = document->sticker()->animated;
-	if (isAnimated
-		&& !element.animated
-		&& media->loaded()) {
-		const_cast<Inner*>(this)->setupLottie(index);
+	if (media->loaded()) {
+		if (sticker->isLottie() && !element.lottie) {
+			const_cast<Inner*>(this)->setupLottie(index);
+		} else if (sticker->isWebm() && !element.webm) {
+			const_cast<Inner*>(this)->setupWebm(index);
+		}
 	}
 
-	auto w = 1;
-	auto h = 1;
-	if (isAnimated && !document->dimensions.isEmpty()) {
-		const auto request = Lottie::FrameRequest{ boundingBoxSize() * cIntRetinaFactor() };
-		const auto size = request.size(document->dimensions, true) / cIntRetinaFactor();
-		w = std::max(size.width(), 1);
-		h = std::max(size.height(), 1);
-	} else {
-		auto coef = qMin((st::stickersSize.width() - st::roundRadiusSmall * 2) / float64(document->dimensions.width()), (st::stickersSize.height() - st::roundRadiusSmall * 2) / float64(document->dimensions.height()));
-		if (coef > 1) coef = 1;
-		w = std::max(qRound(coef * document->dimensions.width()), 1);
-		h = std::max(qRound(coef * document->dimensions.height()), 1);
-	}
-	QPoint ppos = position + QPoint((st::stickersSize.width() - w) / 2, (st::stickersSize.height() - h) / 2);
-
-	if (element.animated && element.animated->ready()) {
-		const auto frame = element.animated->frame();
+	const auto size = ChatHelpers::ComputeStickerSize(
+		document,
+		boundingBoxSize());
+	const auto ppos = position + QPoint(
+		(st::stickersSize.width() - size.width()) / 2,
+		(st::stickersSize.height() - size.height()) / 2);
+	auto lottieFrame = QImage();
+	if (element.lottie && element.lottie->ready()) {
+		lottieFrame = element.lottie->frame();
 		p.drawImage(
-			QRect(ppos, frame.size() / cIntRetinaFactor()),
-			frame);
+			QRect(ppos, lottieFrame.size() / cIntRetinaFactor()),
+			lottieFrame);
 
-		_lottiePlayer->unpause(element.animated);
+		_lottiePlayer->unpause(element.lottie);
+	} else if (element.webm && element.webm->started()) {
+		p.drawPixmap(ppos, element.webm->current({
+			.frame = size,
+			.keepAlpha = true,
+		}, paused ? 0 : now));
 	} else if (const auto image = media->getStickerSmall()) {
 		p.drawPixmapLeft(
 			ppos,
 			width(),
-			image->pix(w, h));
+			image->pix(size));
 	} else {
 		ChatHelpers::PaintStickerThumbnailPath(
 			p,
 			media.get(),
-			QRect(ppos, QSize(w, h)),
+			QRect(ppos, size),
 			_pathGradient.get());
+	}
+	if (locked) {
+		validatePremiumLock(index, lottieFrame);
+		const auto &bg = lottieFrame.isNull()
+			? _premiumLockGray
+			: element.premiumLock;
+		const auto factor = style::DevicePixelRatio();
+		const auto radius = st::roundRadiusSmall;
+		const auto point = position + QPoint(
+			(st::stickersSize.width() - (bg.width() / factor)) / 2,
+			st::stickersSize.height() - (bg.height() / factor) - radius);
+		p.drawImage(point, bg);
+
+		st::stickersPremiumLock.paint(p, point, width());
 	}
 }
 
@@ -947,9 +1131,48 @@ void StickerSetBox::Inner::archiveStickers() {
 		if (result.type() == mtpc_messages_stickerSetInstallResultSuccess) {
 			_setArchived.fire_copy(_setId);
 		}
-	}).fail([] {
-		Ui::Toast::Show(Lang::Hard::ServerError());
+	}).fail([toastParent = Window::Show(_controller).toastParent()] {
+		Ui::Toast::Show(toastParent, Lang::Hard::ServerError());
 	}).send();
 }
 
+void StickerSetBox::Inner::updateItems() {
+	const auto now = crl::now();
+
+	const auto delay = std::max(
+		_lastScrolledAt + kMinAfterScrollDelay - now,
+		_lastUpdatedAt + kMinRepaintDelay - now);
+	if (delay <= 0) {
+		repaintItems(now);
+	} else if (!_updateItemsTimer.isActive()
+		|| _updateItemsTimer.remainingTime() > kMinRepaintDelay) {
+		_updateItemsTimer.callOnce(std::max(delay, kMinRepaintDelay));
+	}
+}
+
+void StickerSetBox::Inner::repaintItems(crl::time now) {
+	_lastUpdatedAt = now ? now : crl::now();
+	update();
+}
+
 StickerSetBox::Inner::~Inner() = default;
+
+void ValidatePremiumLockBg(QImage &image, const QImage &frame) {
+	if (!image.isNull()) {
+		return;
+	}
+	const auto factor = style::DevicePixelRatio();
+	const auto size = st::stickersPremiumLock.size();
+	image = QImage(
+		size * factor,
+		QImage::Format_ARGB32_Premultiplied);
+	image.setDevicePixelRatio(factor);
+	auto p = QPainter(&image);
+	const auto color = ComputeLockColor(frame);
+	p.fillRect(
+		QRect(QPoint(), size),
+		anim::color(color, st::windowSubTextFg, kGrayLockOpacity));
+	p.end();
+
+	image = Images::Circle(std::move(image));
+}

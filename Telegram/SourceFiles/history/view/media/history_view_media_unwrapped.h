@@ -40,6 +40,16 @@ public:
 		virtual std::unique_ptr<Lottie::SinglePlayer> stickerTakeLottie(
 			not_null<DocumentData*> data,
 			const Lottie::ColorReplacements *replacements);
+
+		//virtual void externalLottieProgressing(bool external) {
+		//}
+		//virtual bool externalLottieTill(ExternalLottieInfo info) {
+		//	return true;
+		//}
+		//virtual ExternalLottieInfo externalLottieInfo() const {
+		//	return {};
+		//}
+
 		virtual bool hasHeavyPart() const {
 			return false;
 		}
@@ -81,12 +91,20 @@ public:
 	bool customInfoLayout() const override {
 		return true;
 	}
+	QRect contentRectForReactions() const override;
+	std::optional<int> reactionButtonCenterOverride() const override;
+	QPoint resolveCustomInfoRightBottom() const override;
+
 	void stickerClearLoopPlayed() override {
 		_content->stickerClearLoopPlayed();
 	}
 	std::unique_ptr<Lottie::SinglePlayer> stickerTakeLottie(
 		not_null<DocumentData*> data,
 		const Lottie::ColorReplacements *replacements) override;
+
+	//void externalLottieProgressing(bool external) override;
+	//bool externalLottieTill(ExternalLottieInfo info) override;
+	//ExternalLottieInfo externalLottieInfo() const override;
 
 	bool hasHeavyPart() const override {
 		return _content->hasHeavyPart();

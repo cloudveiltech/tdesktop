@@ -8,15 +8,21 @@
 
 #include "base/unique_qptr.h"
 #include "base/flags.h"
+#include "ui/dragging_scroll_manager.h"
 #include "ui/wrap/padding_wrap.h"
 #include "ui/widgets/labels.h"
 #include "ui/layers/layer_widget.h"
+#include "ui/layers/show.h"
 #include "ui/effects/animation_value.h"
 #include "ui/text/text_entity.h"
 #include "ui/rp_widget.h"
 
 enum class RectPart;
 using RectParts = base::flags<RectPart>;
+
+namespace base {
+class Timer;
+} // namespace base
 
 namespace style {
 struct RoundButton;
@@ -37,6 +43,7 @@ inline object_ptr<BoxType> Box(Args &&...args) {
 
 namespace Ui {
 
+class AbstractButton;
 class RoundButton;
 class IconButton;
 class ScrollArea;
@@ -54,17 +61,9 @@ public:
 	virtual void setCloseByOutsideClick(bool close) = 0;
 
 	virtual void clearButtons() = 0;
-	virtual QPointer<RoundButton> addButton(
-		rpl::producer<QString> text,
-		Fn<void()> clickCallback,
-		const style::RoundButton &st) = 0;
-	virtual QPointer<RoundButton> addLeftButton(
-		rpl::producer<QString> text,
-		Fn<void()> clickCallback,
-		const style::RoundButton &st) = 0;
-	virtual QPointer<IconButton> addTopButton(
-		const style::IconButton &st,
-		Fn<void()> clickCallback) = 0;
+	virtual void addButton(object_ptr<AbstractButton> button) = 0;
+	virtual void addLeftButton(object_ptr<AbstractButton> button) = 0;
+	virtual void addTopButton(object_ptr<AbstractButton> button) = 0;
 	virtual void showLoading(bool show) = 0;
 	virtual void updateButtonsPositions() = 0;
 
@@ -79,6 +78,7 @@ public:
 	virtual void setNoContentMargin(bool noContentMargin) = 0;
 	virtual bool isBoxShown() const = 0;
 	virtual void closeBox() = 0;
+	virtual void hideLayer() = 0;
 	virtual void triggerButton(int index) = 0;
 
 	template <typename BoxType>
@@ -96,7 +96,6 @@ public:
 };
 
 class BoxContent : public RpWidget {
-	Q_OBJECT
 
 public:
 	BoxContent() {
@@ -135,40 +134,31 @@ public:
 	void clearButtons() {
 		getDelegate()->clearButtons();
 	}
+	QPointer<AbstractButton> addButton(object_ptr<AbstractButton> button);
 	QPointer<RoundButton> addButton(
+		rpl::producer<QString> text,
+		Fn<void()> clickCallback = nullptr);
+	QPointer<RoundButton> addButton(
+		rpl::producer<QString> text,
+		const style::RoundButton &st);
+	QPointer<RoundButton> addButton(
+		rpl::producer<QString> text,
+		Fn<void()> clickCallback,
+		const style::RoundButton &st);
+	QPointer<AbstractButton> addLeftButton(
+		object_ptr<AbstractButton> button);
+	QPointer<RoundButton> addLeftButton(
 		rpl::producer<QString> text,
 		Fn<void()> clickCallback = nullptr);
 	QPointer<RoundButton> addLeftButton(
 		rpl::producer<QString> text,
-		Fn<void()> clickCallback = nullptr);
+		Fn<void()> clickCallback,
+		const style::RoundButton& st);
+	QPointer<AbstractButton> addTopButton(
+		object_ptr<AbstractButton> button);
 	QPointer<IconButton> addTopButton(
-			const style::IconButton &st,
-			Fn<void()> clickCallback = nullptr) {
-		return getDelegate()->addTopButton(st, std::move(clickCallback));
-	}
-	QPointer<RoundButton> addButton(
-			rpl::producer<QString> text,
-			const style::RoundButton &st) {
-		return getDelegate()->addButton(std::move(text), nullptr, st);
-	}
-	QPointer<RoundButton> addButton(
-			rpl::producer<QString> text,
-			Fn<void()> clickCallback,
-			const style::RoundButton &st) {
-		return getDelegate()->addButton(
-			std::move(text),
-			std::move(clickCallback),
-			st);
-	}
-	QPointer<RoundButton> addLeftButton(
-			rpl::producer<QString> text,
-			Fn<void()> clickCallback,
-			const style::RoundButton& st) {
-		return getDelegate()->addLeftButton(
-			std::move(text),
-			std::move(clickCallback),
-			st);
-	}
+		const style::IconButton &st,
+		Fn<void()> clickCallback = nullptr);
 	void showLoading(bool show) {
 		getDelegate()->showLoading(show);
 	}
@@ -210,8 +200,7 @@ public:
 
 	void scrollByDraggingDelta(int delta);
 
-public Q_SLOTS:
-	void onScrollToY(int top, int bottom = -1);
+	void scrollToY(int top, int bottom = -1);
 
 protected:
 	virtual void prepare() = 0;
@@ -273,12 +262,6 @@ protected:
 	void paintEvent(QPaintEvent *e) override;
 	void keyPressEvent(QKeyEvent *e) override;
 
-private Q_SLOTS:
-	void onScroll();
-	void onInnerResize();
-
-	void onDraggingScrollTimer();
-
 private:
 	void finishPrepare();
 	void finishScrollCreate();
@@ -300,8 +283,7 @@ private:
 	object_ptr<FadeShadow> _topShadow = { nullptr };
 	object_ptr<FadeShadow> _bottomShadow = { nullptr };
 
-	object_ptr<QTimer> _draggingScrollTimer = { nullptr };
-	int _draggingScrollDelta = 0;
+	Ui::DraggingScrollManager _draggingScroll;
 
 	rpl::event_stream<> _boxClosingStream;
 
@@ -362,6 +344,22 @@ private:
 
 	QPointer<BoxContent> _value;
 
+};
+
+class BoxShow : public Show {
+public:
+	explicit BoxShow(not_null<Ui::BoxContent*> box);
+	~BoxShow();
+	void showBox(
+		object_ptr<BoxContent> content,
+		LayerOptions options = LayerOption::KeepOther) const override;
+	void hideLayer() const override;
+	[[nodiscard]] not_null<QWidget*> toastParent() const override;
+	[[nodiscard]] bool valid() const override;
+	operator bool() const override;
+private:
+	mutable QPointer<QWidget> _toastParent;
+	const QPointer<Ui::BoxContent> _weak;
 };
 
 } // namespace Ui

@@ -36,7 +36,7 @@ namespace qrcodegen {
 	/* 
 	 * A QR Code symbol, which is a type of two-dimension barcode.
 	 * Invented by Denso Wave and described in the ISO/IEC 18004 standard.
-	 * Instances of this class represent an immutable square grid of black and white cells.
+	 * Instances of this class represent an immutable square grid of dark and light cells.
 	 * The class provides static factory functions to create a QR Code from text or binary data.
 	 * The class covers the QR Code Model 2 specification, supporting all versions (sizes)
 	 * from 1 to 40, all 4 error correction levels, and 4 character encoding modes.
@@ -155,7 +155,7 @@ namespace qrcodegen {
 		// 21 and 177 (inclusive). This is equal to version * 4 + 17.
 		public readonly size: int;
 		
-		// The modules of this QR Code (false = white, true = black).
+		// The modules of this QR Code (false = light, true = dark).
 		// Immutable after constructor finishes. Accessed through getModule().
 		private readonly modules   : Array<Array<boolean>> = [];
 		
@@ -196,7 +196,7 @@ namespace qrcodegen {
 			for (let i = 0; i < this.size; i++)
 				row.push(false);
 			for (let i = 0; i < this.size; i++) {
-				this.modules   .push(row.slice());  // Initially all white
+				this.modules   .push(row.slice());  // Initially all light
 				this.isFunction.push(row.slice());
 			}
 			
@@ -232,54 +232,10 @@ namespace qrcodegen {
 		/*-- Accessor methods --*/
 		
 		// Returns the color of the module (pixel) at the given coordinates, which is false
-		// for white or true for black. The top left corner has the coordinates (x=0, y=0).
-		// If the given coordinates are out of bounds, then false (white) is returned.
+		// for light or true for dark. The top left corner has the coordinates (x=0, y=0).
+		// If the given coordinates are out of bounds, then false (light) is returned.
 		public getModule(x: int, y: int): boolean {
 			return 0 <= x && x < this.size && 0 <= y && y < this.size && this.modules[y][x];
-		}
-		
-		
-		/*-- Public instance methods --*/
-		
-		// Draws this QR Code, with the given module scale and border modules, onto the given HTML
-		// canvas element. The canvas's width and height is resized to (this.size + border * 2) * scale.
-		// The drawn image is be purely black and white, and fully opaque.
-		// The scale must be a positive integer and the border must be a non-negative integer.
-		public drawCanvas(scale: int, border: int, canvas: HTMLCanvasElement): void {
-			if (scale <= 0 || border < 0)
-				throw "Value out of range";
-			const width: int = (this.size + border * 2) * scale;
-			canvas.width = width;
-			canvas.height = width;
-			let ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
-			for (let y = -border; y < this.size + border; y++) {
-				for (let x = -border; x < this.size + border; x++) {
-					ctx.fillStyle = this.getModule(x, y) ? "#000000" : "#FFFFFF";
-					ctx.fillRect((x + border) * scale, (y + border) * scale, scale, scale);
-				}
-			}
-		}
-		
-		
-		// Returns a string of SVG code for an image depicting this QR Code, with the given number
-		// of border modules. The string always uses Unix newlines (\n), regardless of the platform.
-		public toSvgString(border: int): string {
-			if (border < 0)
-				throw "Border must be non-negative";
-			let parts: Array<string> = [];
-			for (let y = 0; y < this.size; y++) {
-				for (let x = 0; x < this.size; x++) {
-					if (this.getModule(x, y))
-						parts.push(`M${x + border},${y + border}h1v1h-1z`);
-				}
-			}
-			return `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
-<svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 ${this.size + border * 2} ${this.size + border * 2}" stroke="none">
-	<rect width="100%" height="100%" fill="#FFFFFF"/>
-	<path d="${parts.join(" ")}" fill="#000000"/>
-</svg>
-`
 		}
 		
 		
@@ -341,7 +297,7 @@ namespace qrcodegen {
 				this.setFunctionModule(this.size - 1 - i, 8, getBit(bits, i));
 			for (let i = 8; i < 15; i++)
 				this.setFunctionModule(8, this.size - 15 + i, getBit(bits, i));
-			this.setFunctionModule(8, this.size - 8, true);  // Always black
+			this.setFunctionModule(8, this.size - 8, true);  // Always dark
 		}
 		
 		
@@ -397,8 +353,8 @@ namespace qrcodegen {
 		
 		// Sets the color of a module and marks it as a function module.
 		// Only used by the constructor. Coordinates must be in bounds.
-		private setFunctionModule(x: int, y: int, isBlack: boolean): void {
-			this.modules[y][x] = isBlack;
+		private setFunctionModule(x: int, y: int, isDark: boolean): void {
+			this.modules[y][x] = isDark;
 			this.isFunction[y][x] = true;
 		}
 		
@@ -467,7 +423,7 @@ namespace qrcodegen {
 							i++;
 						}
 						// If this QR Code has any remainder bits (0 to 7), they were assigned as
-						// 0/false/white by the constructor and are left unchanged by this method
+						// 0/false/light by the constructor and are left unchanged by this method
 					}
 				}
 			}
@@ -515,7 +471,6 @@ namespace qrcodegen {
 				let runColor = false;
 				let runX = 0;
 				let runHistory = [0,0,0,0,0,0,0];
-				let padRun = this.size;
 				for (let x = 0; x < this.size; x++) {
 					if (this.modules[y][x] == runColor) {
 						runX++;
@@ -524,22 +479,20 @@ namespace qrcodegen {
 						else if (runX > 5)
 							result++;
 					} else {
-						QrCode.finderPenaltyAddHistory(runX + padRun, runHistory);
-						padRun = 0;
+						this.finderPenaltyAddHistory(runX, runHistory);
 						if (!runColor)
 							result += this.finderPenaltyCountPatterns(runHistory) * QrCode.PENALTY_N3;
 						runColor = this.modules[y][x];
 						runX = 1;
 					}
 				}
-				result += this.finderPenaltyTerminateAndCount(runColor, runX + padRun, runHistory) * QrCode.PENALTY_N3;
+				result += this.finderPenaltyTerminateAndCount(runColor, runX, runHistory) * QrCode.PENALTY_N3;
 			}
 			// Adjacent modules in column having same color, and finder-like patterns
 			for (let x = 0; x < this.size; x++) {
 				let runColor = false;
 				let runY = 0;
 				let runHistory = [0,0,0,0,0,0,0];
-				let padRun = this.size;
 				for (let y = 0; y < this.size; y++) {
 					if (this.modules[y][x] == runColor) {
 						runY++;
@@ -548,15 +501,14 @@ namespace qrcodegen {
 						else if (runY > 5)
 							result++;
 					} else {
-						QrCode.finderPenaltyAddHistory(runY + padRun, runHistory);
-						padRun = 0;
+						this.finderPenaltyAddHistory(runY, runHistory);
 						if (!runColor)
 							result += this.finderPenaltyCountPatterns(runHistory) * QrCode.PENALTY_N3;
 						runColor = this.modules[y][x];
 						runY = 1;
 					}
 				}
-				result += this.finderPenaltyTerminateAndCount(runColor, runY + padRun, runHistory) * QrCode.PENALTY_N3;
+				result += this.finderPenaltyTerminateAndCount(runColor, runY, runHistory) * QrCode.PENALTY_N3;
 			}
 			
 			// 2*2 blocks of modules having same color
@@ -570,17 +522,13 @@ namespace qrcodegen {
 				}
 			}
 			
-			// Balance of black and white modules
-			let black: int = 0;
-			for (const row of this.modules) {
-				for (const color of row) {
-					if (color)
-						black++;
-				}
-			}
-			const total: int = this.size * this.size;  // Note that size is odd, so black/total != 1/2
-			// Compute the smallest integer k >= 0 such that (45-5k)% <= black/total <= (55+5k)%
-			const k: int = Math.ceil(Math.abs(black * 20 - total * 10) / total) - 1;
+			// Balance of dark and light modules
+			let dark: int = 0;
+			for (const row of this.modules)
+				dark = row.reduce((sum, color) => sum + (color ? 1 : 0), dark);
+			const total: int = this.size * this.size;  // Note that size is odd, so dark/total != 1/2
+			// Compute the smallest integer k >= 0 such that (45-5k)% <= dark/total <= (55+5k)%
+			const k: int = Math.ceil(Math.abs(dark * 20 - total * 10) / total) - 1;
 			result += k * QrCode.PENALTY_N4;
 			return result;
 		}
@@ -597,7 +545,7 @@ namespace qrcodegen {
 			else {
 				const numAlign: int = Math.floor(this.version / 7) + 2;
 				const step: int = (this.version == 32) ? 26 :
-					Math.ceil((this.size - 13) / (numAlign*2 - 2)) * 2;
+					Math.ceil((this.version * 4 + 4) / (numAlign * 2 - 2)) * 2;
 				let result: Array<int> = [6];
 				for (let pos = this.size - 7; result.length < numAlign; pos -= step)
 					result.splice(1, 0, pos);
@@ -694,7 +642,7 @@ namespace qrcodegen {
 		}
 		
 		
-		// Can only be called immediately after a white run is added, and
+		// Can only be called immediately after a light run is added, and
 		// returns either 0, 1, or 2. A helper function for getPenaltyScore().
 		private finderPenaltyCountPatterns(runHistory: Array<int>): int {
 			const n: int = runHistory[1];
@@ -708,18 +656,20 @@ namespace qrcodegen {
 		
 		// Must be called at the end of a line (row or column) of modules. A helper function for getPenaltyScore().
 		private finderPenaltyTerminateAndCount(currentRunColor: boolean, currentRunLength: int, runHistory: Array<int>): int {
-			if (currentRunColor) {  // Terminate black run
-				QrCode.finderPenaltyAddHistory(currentRunLength, runHistory);
+			if (currentRunColor) {  // Terminate dark run
+				this.finderPenaltyAddHistory(currentRunLength, runHistory);
 				currentRunLength = 0;
 			}
-			currentRunLength += this.size;  // Add white border to final run
-			QrCode.finderPenaltyAddHistory(currentRunLength, runHistory);
+			currentRunLength += this.size;  // Add light border to final run
+			this.finderPenaltyAddHistory(currentRunLength, runHistory);
 			return this.finderPenaltyCountPatterns(runHistory);
 		}
 		
 		
 		// Pushes the given value to the front and drops the last value. A helper function for getPenaltyScore().
-		private static finderPenaltyAddHistory(currentRunLength: int, runHistory: Array<int>): void {
+		private finderPenaltyAddHistory(currentRunLength: int, runHistory: Array<int>): void {
+			if (runHistory[0] == 0)
+				currentRunLength += this.size;  // Add light border to initial run
 			runHistory.pop();
 			runHistory.unshift(currentRunLength);
 		}
@@ -806,7 +756,7 @@ namespace qrcodegen {
 		
 		// Returns a segment representing the given string of decimal digits encoded in numeric mode.
 		public static makeNumeric(digits: string): QrSegment {
-			if (!this.NUMERIC_REGEX.test(digits))
+			if (!QrSegment.isNumeric(digits))
 				throw "String contains non-numeric characters";
 			let bb: Array<bit> = []
 			for (let i = 0; i < digits.length; ) {  // Consume up to 3 digits per iteration
@@ -822,7 +772,7 @@ namespace qrcodegen {
 		// The characters allowed are: 0 to 9, A to Z (uppercase only), space,
 		// dollar, percent, asterisk, plus, hyphen, period, slash, colon.
 		public static makeAlphanumeric(text: string): QrSegment {
-			if (!this.ALPHANUMERIC_REGEX.test(text))
+			if (!QrSegment.isAlphanumeric(text))
 				throw "String contains unencodable characters in alphanumeric mode";
 			let bb: Array<bit> = []
 			let i: int;
@@ -843,9 +793,9 @@ namespace qrcodegen {
 			// Select the most efficient segment encoding automatically
 			if (text == "")
 				return [];
-			else if (this.NUMERIC_REGEX.test(text))
+			else if (QrSegment.isNumeric(text))
 				return [QrSegment.makeNumeric(text)];
-			else if (this.ALPHANUMERIC_REGEX.test(text))
+			else if (QrSegment.isAlphanumeric(text))
 				return [QrSegment.makeAlphanumeric(text)];
 			else
 				return [QrSegment.makeBytes(QrSegment.toUtf8ByteArray(text))];
@@ -869,6 +819,21 @@ namespace qrcodegen {
 			} else
 				throw "ECI assignment value out of range";
 			return new QrSegment(QrSegment.Mode.ECI, 0, bb);
+		}
+		
+		
+		// Tests whether the given string can be encoded as a segment in numeric mode.
+		// A string is encodable iff each character is in the range 0 to 9.
+		public static isNumeric(text: string): boolean {
+			return QrSegment.NUMERIC_REGEX.test(text);
+		}
+		
+		
+		// Tests whether the given string can be encoded as a segment in alphanumeric mode.
+		// A string is encodable iff each character is in the following set: 0 to 9, A to Z
+		// (uppercase only), space, dollar, percent, asterisk, plus, hyphen, period, slash, colon.
+		public static isAlphanumeric(text: string): boolean {
+			return QrSegment.ALPHANUMERIC_REGEX.test(text);
 		}
 		
 		
@@ -935,16 +900,11 @@ namespace qrcodegen {
 		
 		/*-- Constants --*/
 		
-		// Describes precisely all strings that are encodable in numeric mode. To test
-		// whether a string s is encodable: let ok: boolean = NUMERIC_REGEX.test(s);
-		// A string is encodable iff each character is in the range 0 to 9.
-		public static readonly NUMERIC_REGEX: RegExp = /^[0-9]*$/;
+		// Describes precisely all strings that are encodable in numeric mode.
+		private static readonly NUMERIC_REGEX: RegExp = /^[0-9]*$/;
 		
-		// Describes precisely all strings that are encodable in alphanumeric mode. To test
-		// whether a string s is encodable: let ok: boolean = ALPHANUMERIC_REGEX.test(s);
-		// A string is encodable iff each character is in the following set: 0 to 9, A to Z
-		// (uppercase only), space, dollar, percent, asterisk, plus, hyphen, period, slash, colon.
-		public static readonly ALPHANUMERIC_REGEX: RegExp = /^[A-Z0-9 $%*+.\/:-]*$/;
+		// Describes precisely all strings that are encodable in alphanumeric mode.
+		private static readonly ALPHANUMERIC_REGEX: RegExp = /^[A-Z0-9 $%*+.\/:-]*$/;
 		
 		// The set of all legal characters in alphanumeric mode,
 		// where each character value maps to the index in the string.

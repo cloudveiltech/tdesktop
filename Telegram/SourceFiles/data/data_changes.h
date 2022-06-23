@@ -32,7 +32,7 @@ inline constexpr int CountBit(Flag Last = Flag::LastUsedBit) {
 		++i;
 		Assert(i != 64);
 	}
-	return (i + 1);
+	return i;
 }
 
 } // namespace details
@@ -86,17 +86,18 @@ struct PeerUpdate {
 		BannedUsers       = (1ULL << 25),
 		Rights            = (1ULL << 26),
 		PendingRequests   = (1ULL << 27),
+		Reactions         = (1ULL << 28),
 
 		// For channels
-		ChannelAmIn       = (1ULL << 28),
-		StickersSet       = (1ULL << 29),
-		ChannelLinkedChat = (1ULL << 30),
-		ChannelLocation   = (1ULL << 31),
-		Slowmode          = (1ULL << 32),
-		GroupCall         = (1ULL << 33),
+		ChannelAmIn       = (1ULL << 29),
+		StickersSet       = (1ULL << 30),
+		ChannelLinkedChat = (1ULL << 31),
+		ChannelLocation   = (1ULL << 32),
+		Slowmode          = (1ULL << 33),
+		GroupCall         = (1ULL << 34),
 
 		// For iteration
-		LastUsedBit       = (1ULL << 33),
+		LastUsedBit       = (1ULL << 34),
 	};
 	using Flags = base::flags<Flag>;
 	friend inline constexpr auto is_flag_type(Flag) { return true; }
@@ -115,18 +116,19 @@ struct HistoryUpdate {
 		TopPromoted        = (1U << 2),
 		Folder             = (1U << 3),
 		UnreadMentions     = (1U << 4),
-		ClientSideMessages = (1U << 5),
-		ChatOccupied       = (1U << 6),
-		MessageSent        = (1U << 7),
-		ScheduledSent      = (1U << 8),
-		ForwardDraft       = (1U << 9),
-		OutboxRead         = (1U << 10),
-		BotKeyboard        = (1U << 11),
-		CloudDraft         = (1U << 12),
-		LocalDraftSet      = (1U << 13),
-		PinnedMessages     = (1U << 14),
+		UnreadReactions    = (1U << 5),
+		ClientSideMessages = (1U << 6),
+		ChatOccupied       = (1U << 7),
+		MessageSent        = (1U << 8),
+		ScheduledSent      = (1U << 9),
+		ForwardDraft       = (1U << 10),
+		OutboxRead         = (1U << 11),
+		BotKeyboard        = (1U << 12),
+		CloudDraft         = (1U << 13),
+		LocalDraftSet      = (1U << 14),
+		PinnedMessages     = (1U << 15),
 
-		LastUsedBit        = (1U << 14),
+		LastUsedBit        = (1U << 15),
 	};
 	using Flags = base::flags<Flag>;
 	friend inline constexpr auto is_flag_type(Flag) { return true; }
@@ -149,8 +151,9 @@ struct MessageUpdate {
 		BotCallbackSent    = (1U << 6),
 		NewMaybeAdded      = (1U << 7),
 		RepliesUnreadCount = (1U << 8),
+		NewUnreadReaction  = (1U << 9),
 
-		LastUsedBit        = (1U << 8),
+		LastUsedBit        = (1U << 9),
 	};
 	using Flags = base::flags<Flag>;
 	friend inline constexpr auto is_flag_type(Flag) { return true; }
@@ -269,9 +272,11 @@ private:
 		void sendNotifications();
 
 	private:
-		static constexpr auto kCount = details::CountBit<Flag>();
+		static constexpr auto kCount = details::CountBit<Flag>() + 1;
 
-		void sendRealtimeNotifications(not_null<DataType*> data, Flags flags);
+		void sendRealtimeNotifications(
+			not_null<DataType*> data,
+			Flags flags);
 
 		std::array<rpl::event_stream<UpdateType>, kCount> _realtimeStreams;
 		base::flat_map<not_null<DataType*>, Flags> _updates;

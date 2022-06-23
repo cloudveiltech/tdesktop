@@ -13,7 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/timer.h"
 #include "base/bytes.h"
 #include "base/unixtime.h"
-#include "base/qt_adapters.h"
+#include "base/qt/qt_common_adapters.h"
 #include "storage/localstorage.h"
 #include "core/application.h"
 #include "core/changelogs.h"
@@ -23,11 +23,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "main/main_domain.h"
 #include "info/info_memento.h"
-#include "info/settings/info_settings_widget.h"
+#include "info/info_controller.h"
 #include "window/window_session_controller.h"
+#include "settings/settings_advanced.h"
 #include "settings/settings_intro.h"
 #include "ui/layers/box_content.h"
-#include "app.h"
 
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
@@ -1048,7 +1048,7 @@ Fn<void(const MTP::Error &error)> MtpChecker::failHandler() {
 
 } // namespace
 
-bool UpdaterDisabled() {	
+bool UpdaterDisabled() {
 	//CloudVeil start
 	return true;// UpdaterIsDisabled;
 	//CloudVeil end
@@ -1177,7 +1177,7 @@ void Updater::check() {
 void Updater::handleReady() {
 	stop();
 	_action = Action::Ready;
-	if (!App::quitting()) {
+	if (!Quitting()) {
 		cSetLastUpdateCheck(base::unixtime::now());
 		Local::writeSettings();
 	}
@@ -1205,7 +1205,7 @@ void Updater::handleProgress() {
 
 void Updater::scheduleNext() {
 	stop();
-	if (!App::quitting()) {
+	if (!Quitting()) {
 		cSetLastUpdateCheck(base::unixtime::now());
 		Local::writeSettings();
 		start(true);
@@ -1655,7 +1655,7 @@ void UpdateApplication() {
 				controller->showSection(
 					std::make_shared<Info::Memento>(
 						Info::Settings::Tag{ controller->session().user() },
-						Info::Section::SettingsType::Advanced),
+						::Settings::Advanced::Id()),
 					Window::SectionShow());
 			} else {
 				window->showSpecialLayer(

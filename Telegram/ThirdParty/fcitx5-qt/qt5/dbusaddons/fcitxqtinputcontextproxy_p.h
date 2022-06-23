@@ -65,6 +65,9 @@ public:
         icproxy_ = nullptr;
         delete createInputContextWatcher_;
         createInputContextWatcher_ = nullptr;
+        delete introspectWatcher_;
+        introspectWatcher_ = nullptr;
+        supportInvokeAction_ = false;
     }
 
     void createInputContext() {
@@ -145,6 +148,37 @@ public:
         delete createInputContextWatcher_;
         createInputContextWatcher_ = nullptr;
         Q_EMIT q->inputContextCreated(reply.argumentAt<1>());
+
+        introspect();
+    }
+
+    void introspect() {
+        Q_Q(FcitxQtInputContextProxy);
+        if (introspectWatcher_) {
+            delete introspectWatcher_;
+            introspectWatcher_ = nullptr;
+        }
+        QDBusMessage call = QDBusMessage::createMethodCall(
+            icproxy_->service(), icproxy_->path(),
+            "org.freedesktop.DBus.Introspectable", "Introspect");
+
+        introspectWatcher_ = new QDBusPendingCallWatcher(
+            fcitxWatcher_->connection().asyncCall(call));
+        QObject::connect(introspectWatcher_, &QDBusPendingCallWatcher::finished,
+                         q, [this]() { introspectFinished(); });
+    }
+
+    void introspectFinished() {
+        if (introspectWatcher_->isFinished() &&
+            !introspectWatcher_->isError()) {
+            QDBusPendingReply<QString> reply = *introspectWatcher_;
+
+            if (reply.value().contains("InvokeAction")) {
+                supportInvokeAction_ = true;
+            }
+        }
+        delete introspectWatcher_;
+        introspectWatcher_ = nullptr;
     }
 
     FcitxQtInputContextProxy *q_ptr;
@@ -154,7 +188,9 @@ public:
     QDBusServiceWatcher watcher_;
     FcitxQtInputMethodProxy *improxy_ = nullptr;
     FcitxQtInputContextProxyImpl *icproxy_ = nullptr;
+    bool supportInvokeAction_ = false;
     QDBusPendingCallWatcher *createInputContextWatcher_ = nullptr;
+    QDBusPendingCallWatcher *introspectWatcher_ = nullptr;
     QString display_;
     bool portal_ = false;
 };

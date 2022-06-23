@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "data/data_cloud_file.h"
 #include "history/history_item.h"
 #include "ui/empty_userpic.h"
 #include "ui/effects/animations.h"
@@ -26,6 +27,7 @@ class Session;
 namespace HistoryView {
 class Element;
 class Document;
+class TranscribeButton;
 } // namespace HistoryView
 
 struct HistoryMessageVia : public RuntimeComponent<HistoryMessageVia, HistoryItem> {
@@ -60,30 +62,12 @@ struct HistoryMessageViews : public RuntimeComponent<HistoryMessageViews, Histor
 };
 
 struct HistoryMessageSigned : public RuntimeComponent<HistoryMessageSigned, HistoryItem> {
-	void refresh(const QString &date);
-	int maxWidth() const;
-
 	QString author;
-	Ui::Text::String signature;
-	bool isElided = false;
 	bool isAnonymousRank = false;
 };
 
 struct HistoryMessageEdited : public RuntimeComponent<HistoryMessageEdited, HistoryItem> {
-	void refresh(const QString &date, bool displayed);
-	int maxWidth() const;
-
 	TimeId date = 0;
-	Ui::Text::String text;
-};
-
-struct HistoryMessageSponsored : public RuntimeComponent<
-		HistoryMessageSponsored,
-		HistoryItem> {
-	HistoryMessageSponsored();
-	int maxWidth() const;
-
-	Ui::Text::String text;
 };
 
 struct HiddenSenderInfo {
@@ -93,8 +77,18 @@ struct HiddenSenderInfo {
 	QString firstName;
 	QString lastName;
 	PeerId colorPeerId = 0;
-	Ui::EmptyUserpic userpic;
 	Ui::Text::String nameText;
+	Ui::EmptyUserpic emptyUserpic;
+	mutable Data::CloudImage customUserpic;
+
+	[[nodiscard]] static ClickHandlerPtr ForwardClickHandler();
+
+	[[nodiscard]] bool paintCustomUserpic(
+		Painter &p,
+		int x,
+		int y,
+		int outerWidth,
+		int size) const;
 
 	inline bool operator==(const HiddenSenderInfo &other) const {
 		return name == other.name;
@@ -118,6 +112,19 @@ struct HistoryMessageForwarded : public RuntimeComponent<HistoryMessageForwarded
 	PeerData *savedFromPeer = nullptr;
 	MsgId savedFromMsgId = 0;
 	bool imported = false;
+};
+
+struct HistoryMessageSponsored : public RuntimeComponent<HistoryMessageSponsored, HistoryItem> {
+	enum class Type : uchar {
+		User,
+		Group,
+		Broadcast,
+		Post,
+		Bot,
+	};
+	std::unique_ptr<HiddenSenderInfo> sender;
+	Type type = Type::User;
+	bool recommended = false;
 };
 
 struct HistoryMessageReply : public RuntimeComponent<HistoryMessageReply, HistoryItem> {
@@ -151,8 +158,13 @@ struct HistoryMessageReply : public RuntimeComponent<HistoryMessageReply, Histor
 	// Must be called before destructor.
 	void clearData(not_null<HistoryMessage*> holder);
 
-	bool isNameUpdated() const;
-	void updateName() const;
+	[[nodiscard]] PeerData *replyToFrom(
+		not_null<HistoryMessage*> holder) const;
+	[[nodiscard]] QString replyToFromName(
+		not_null<HistoryMessage*> holder) const;
+	[[nodiscard]] QString replyToFromName(not_null<PeerData*> peer) const;
+	[[nodiscard]] bool isNameUpdated(not_null<HistoryMessage*> holder) const;
+	void updateName(not_null<HistoryMessage*> holder) const;
 	void resize(int width) const;
 	void itemRemoved(HistoryMessage *holder, HistoryItem *removed);
 
@@ -435,23 +447,16 @@ public:
 	std::shared_ptr<VoiceSeekClickHandler> _seekl;
 	mutable int _lastDurationMs = 0;
 
-	bool seeking() const {
-		return _seeking;
-	}
+	[[nodiscard]] bool seeking() const;
 	void startSeeking();
 	void stopSeeking();
-	float64 seekingStart() const {
-		return _seekingStart / kFloatToIntMultiplier;
-	}
-	void setSeekingStart(float64 seekingStart) const {
-		_seekingStart = qRound(seekingStart * kFloatToIntMultiplier);
-	}
-	float64 seekingCurrent() const {
-		return _seekingCurrent / kFloatToIntMultiplier;
-	}
-	void setSeekingCurrent(float64 seekingCurrent) {
-		_seekingCurrent = qRound(seekingCurrent * kFloatToIntMultiplier);
-	}
+	[[nodiscard]] float64 seekingStart() const;
+	void setSeekingStart(float64 seekingStart) const;
+	[[nodiscard]] float64 seekingCurrent() const;
+	void setSeekingCurrent(float64 seekingCurrent);
+
+	std::unique_ptr<HistoryView::TranscribeButton> transcribe;
+	Ui::Text::String transcribeText;
 
 private:
 	bool _seeking = false;

@@ -10,25 +10,31 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "mainwidget.h"
 #include "history/view/history_view_element.h"
+#include "history/view/history_view_item_preview.h"
 #include "history/view/history_view_service_message.h"
-#include "history/history_item_components.h"
 #include "history/view/media/history_view_media_grouped.h"
+#include "history/history_item_components.h"
 #include "history/history_service.h"
 #include "history/history_message.h"
+#include "history/history_unread_things.h"
 #include "history/history.h"
 #include "mtproto/mtproto_config.h"
 #include "media/clip/media_clip_reader.h"
 #include "ui/effects/ripple_animation.h"
 #include "ui/text/text_isolated_emoji.h"
 #include "ui/text/text_options.h"
+#include "ui/text/text_utilities.h"
 #include "storage/file_upload.h"
 #include "storage/storage_facade.h"
 #include "storage/storage_shared_media.h"
+#include "main/main_account.h"
+#include "main/main_domain.h"
 #include "main/main_session.h"
 #include "apiwrap.h"
 #include "media/audio/media_audio.h"
 #include "core/application.h"
 #include "mainwindow.h"
+#include "window/window_controller.h"
 #include "window/window_session_controller.h"
 #include "core/crash_reports.h"
 #include "base/unixtime.h"
@@ -37,18 +43,21 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_scheduled_messages.h" // kScheduledUntilOnlineTimestamp
 #include "data/data_changes.h"
 #include "data/data_session.h"
+#include "data/data_message_reactions.h"
 #include "data/data_messages.h"
 #include "data/data_media_types.h"
 #include "data/data_folder.h"
 #include "data/data_channel.h"
 #include "data/data_chat.h"
 #include "data/data_user.h"
+#include "data/data_sponsored_messages.h"
 #include "styles/style_dialogs.h"
 #include "styles/style_chat.h"
 
 namespace {
 
 constexpr auto kNotificationTextLimit = 255;
+constexpr auto kMaxUnreadReactions = 5; // Now 3, but just in case.
 
 using ItemPreview = HistoryView::ItemPreview;
 
@@ -173,6 +182,61 @@ MediaCheckResult CheckMessageMedia(const MTPMessageMedia &media) {
 	return flags;
 }
 
+using OnStackUsers = std::array<UserData*, kMaxUnreadReactions>;
+[[nodiscard]] OnStackUsers LookupRecentUnreadReactedUsers(
+		not_null<HistoryItem*> item) {
+	auto result = OnStackUsers();
+	auto index = 0;
+	for (const auto &[emoji, reactions] : item->recentReactions()) {
+		for (const auto &reaction : reactions) {
+			if (!reaction.unread) {
+				continue;
+			}
+			if (const auto user = reaction.peer->asUser()) {
+				result[index++] = user;
+				if (index == result.size()) {
+					return result;
+				}
+			}
+		}
+	}
+	return result;
+}
+
+void CheckReactionNotificationSchedule(
+		not_null<HistoryItem*> item,
+		const OnStackUsers &wasUsers) {
+	// Call to addToUnreadThings may have read the reaction already.
+	if (!item->hasUnreadReaction()) {
+		return;
+	}
+	for (const auto &[emoji, reactions] : item->recentReactions()) {
+		for (const auto &reaction : reactions) {
+			if (!reaction.unread) {
+				continue;
+			}
+			const auto user = reaction.peer->asUser();
+			if (!user
+				|| !user->isContact()
+				|| ranges::contains(wasUsers, user)) {
+				continue;
+			}
+			using Status = PeerData::BlockStatus;
+			if (user->blockStatus() == Status::Unknown) {
+				user->updateFull();
+			}
+			const auto notification = ItemNotification{
+				.item = item,
+				.reactionSender = user,
+				.type = ItemNotificationType::Reaction,
+			};
+			item->history()->pushNotification(notification);
+			Core::App().notifications().schedule(notification);
+			return;
+		}
+	}
+}
+
 } // namespace
 
 void HistoryItem::HistoryItem::Destroyer::operator()(HistoryItem *value) {
@@ -285,13 +349,17 @@ HistoryItem *HistoryItem::lookupDiscussionPostOriginal() const {
 		return nullptr;
 	}
 	return _history->owner().message(
-		forwarded->savedFromPeer->asChannel(),
+		forwarded->savedFromPeer->id,
 		forwarded->savedFromMsgId);
 }
 
 PeerData *HistoryItem::displayFrom() const {
 	if (const auto sender = discussionPostOriginalSender()) {
 		return sender;
+	} else if (const auto sponsored = Get<HistoryMessageSponsored>()) {
+		if (sponsored->sender) {
+			return nullptr;
+		}
 	} else if (const auto forwarded = Get<HistoryMessageForwarded>()) {
 		if (history()->peer->isSelf() || history()->peer->isRepliesChat() || forwarded->imported) {
 			return forwarded->originalSender;
@@ -324,7 +392,11 @@ bool HistoryItem::hasUnreadMediaFlag() const {
 }
 
 bool HistoryItem::isUnreadMention() const {
-	return mentionsMe() && (_flags & MessageFlag::MediaIsUnread);
+	return !out() && mentionsMe() && (_flags & MessageFlag::MediaIsUnread);
+}
+
+bool HistoryItem::hasUnreadReaction() const {
+	return (_flags & MessageFlag::HasUnreadReaction);
 }
 
 bool HistoryItem::mentionsMe() const {
@@ -348,13 +420,40 @@ bool HistoryItem::isUnreadMedia() const {
 	return false;
 }
 
-void HistoryItem::markMediaRead() {
+bool HistoryItem::isIncomingUnreadMedia() const {
+	return !out() && isUnreadMedia();
+}
+
+void HistoryItem::markMediaAndMentionRead() {
 	_flags &= ~MessageFlag::MediaIsUnread;
 
 	if (mentionsMe()) {
 		history()->updateChatListEntry();
-		history()->eraseFromUnreadMentions(id);
+		history()->unreadMentions().erase(id);
 	}
+}
+
+void HistoryItem::markReactionsRead() {
+	if (_reactions) {
+		_reactions->markRead();
+	}
+	_flags &= ~MessageFlag::HasUnreadReaction;
+	history()->updateChatListEntry();
+	history()->unreadReactions().erase(id);
+}
+
+bool HistoryItem::markContentsRead(bool fromThisClient) {
+	if (hasUnreadReaction()) {
+		if (fromThisClient) {
+			history()->owner().requestUnreadReactionsAnimation(this);
+		}
+		markReactionsRead();
+		return true;
+	} else if (isUnreadMention() || isIncomingUnreadMedia()) {
+		markMediaAndMentionRead();
+		return true;
+	}
+	return false;
 }
 
 void HistoryItem::setIsPinned(bool pinned) {
@@ -375,8 +474,29 @@ void HistoryItem::setIsPinned(bool pinned) {
 			id));
 	}
 	if (changed) {
-		history()->owner().requestItemResize(this);
+		history()->owner().notifyItemDataChange(this);
 	}
+}
+
+void HistoryItem::returnSavedMedia() {
+}
+
+void HistoryItem::savePreviousMedia() {
+	Expects(_media != nullptr);
+
+	using Data = SavedMediaData;
+	_savedLocalEditMediaData = std::make_unique<Data>(Data{
+		.text = originalText(),
+		.media = _media->clone(this),
+	});
+}
+
+bool HistoryItem::isEditingMedia() const {
+	return _savedLocalEditMediaData != nullptr;
+}
+
+void HistoryItem::clearSavedMedia() {
+	_savedLocalEditMediaData = nullptr;
 }
 
 bool HistoryItem::definesReplyKeyboard() const {
@@ -461,7 +581,7 @@ bool HistoryItem::isScheduled() const {
 }
 
 bool HistoryItem::isSponsored() const {
-	return (_flags & MessageFlag::IsSponsored);
+	return Has<HistoryMessageSponsored>();
 }
 
 bool HistoryItem::skipNotification() const {
@@ -497,7 +617,7 @@ void HistoryItem::clearMainView() {
 	_mainView = nullptr;
 }
 
-void HistoryItem::addToUnreadMentions(UnreadMentionType type) {
+void HistoryItem::addToUnreadThings(HistoryUnreadThings::AddType type) {
 }
 
 void HistoryItem::applyEditionToHistoryCleared() {
@@ -523,7 +643,7 @@ void HistoryItem::applySentMessage(const MTPDmessage &data) {
 	}, data.vmedia());
 	updateReplyMarkup(HistoryMessageMarkupData(data.vreply_markup()));
 	updateForwardedInfo(data.vfwd_from());
-	setViewsCount(data.vviews().value_or(-1));
+	changeViewsCount(data.vviews().value_or(-1));
 	if (const auto replies = data.vreplies()) {
 		setReplies(HistoryMessageRepliesData(replies));
 	} else {
@@ -540,6 +660,7 @@ void HistoryItem::applySentMessage(const MTPDmessage &data) {
 	setPostAuthor(data.vpost_author().value_or_empty());
 	contributeToSlowmode(data.vdate().v);
 	indexAsNewItem();
+	history()->owner().notifyItemDataChange(this);
 	history()->owner().requestItemTextRefresh(this);
 	history()->owner().updateDependentMessages(this);
 }
@@ -562,7 +683,7 @@ void HistoryItem::applySentMessage(
 
 void HistoryItem::indexAsNewItem() {
 	if (isRegular()) {
-		addToUnreadMentions(UnreadMentionType::New);
+		addToUnreadThings(HistoryUnreadThings::AddType::New);
 		if (const auto types = sharedMediaTypes()) {
 			_history->session().storage().add(Storage::SharedMediaAddNew(
 				_history->peer->id,
@@ -595,6 +716,7 @@ void HistoryItem::setRealId(MsgId newId) {
 		}
 	}
 
+	_history->owner().notifyItemDataChange(this);
 	_history->owner().requestItemRepaint(this);
 }
 
@@ -741,12 +863,165 @@ bool HistoryItem::suggestDeleteAllReport() const {
 	return !isPost() && !out();
 }
 
+bool HistoryItem::canReact() const {
+	if (!isRegular() || isService()) {
+		return false;
+	} else if (const auto media = this->media()) {
+		if (media->call()) {
+			return false;
+		}
+	}
+	return true;
+}
+
+void HistoryItem::addReaction(const QString &reaction) {
+	if (!_reactions) {
+		_reactions = std::make_unique<Data::MessageReactions>(this);
+	}
+	_reactions->add(reaction);
+	history()->owner().notifyItemDataChange(this);
+}
+
+void HistoryItem::toggleReaction(const QString &reaction) {
+	if (!_reactions) {
+		_reactions = std::make_unique<Data::MessageReactions>(this);
+		const auto canViewReactions = !isDiscussionPost()
+			&& (history()->peer->isChat() || history()->peer->isMegagroup());
+		if (canViewReactions) {
+			_flags |= MessageFlag::CanViewReactions;
+		}
+		_reactions->add(reaction);
+	} else if (_reactions->chosen() == reaction) {
+		_reactions->remove();
+		if (_reactions->empty()) {
+			_reactions = nullptr;
+			_flags &= ~MessageFlag::CanViewReactions;
+			history()->owner().notifyItemDataChange(this);
+		}
+	} else {
+		_reactions->add(reaction);
+	}
+	history()->owner().notifyItemDataChange(this);
+}
+
+void HistoryItem::setReactions(const MTPMessageReactions *reactions) {
+	Expects(!_reactions);
+
+	if (changeReactions(reactions) && _reactions->hasUnread()) {
+		_flags |= MessageFlag::HasUnreadReaction;
+	}
+}
+
+void HistoryItem::updateReactions(const MTPMessageReactions *reactions) {
+	const auto wasRecentUsers = LookupRecentUnreadReactedUsers(this);
+	const auto hadUnread = hasUnreadReaction();
+	const auto changed = changeReactions(reactions);
+	if (!changed) {
+		return;
+	}
+	const auto hasUnread = _reactions && _reactions->hasUnread();
+	if (hasUnread && !hadUnread) {
+		_flags |= MessageFlag::HasUnreadReaction;
+
+		addToUnreadThings(HistoryUnreadThings::AddType::New);
+	} else if (!hasUnread && hadUnread) {
+		markReactionsRead();
+	}
+	CheckReactionNotificationSchedule(this, wasRecentUsers);
+	history()->owner().notifyItemDataChange(this);
+}
+
+bool HistoryItem::changeReactions(const MTPMessageReactions *reactions) {
+	if (reactions || _reactionsLastRefreshed) {
+		_reactionsLastRefreshed = crl::now();
+	}
+	if (!reactions) {
+		_flags &= ~MessageFlag::CanViewReactions;
+		return (base::take(_reactions) != nullptr);
+	}
+	return reactions->match([&](const MTPDmessageReactions &data) {
+		if (data.is_can_see_list()) {
+			_flags |= MessageFlag::CanViewReactions;
+		} else {
+			_flags &= ~MessageFlag::CanViewReactions;
+		}
+		if (data.vresults().v.isEmpty()) {
+			return (base::take(_reactions) != nullptr);
+		} else if (!_reactions) {
+			_reactions = std::make_unique<Data::MessageReactions>(this);
+		}
+		const auto min = data.is_min();
+		const auto &list = data.vresults().v;
+		const auto &recent = data.vrecent_reactions().value_or_empty();
+		if (min && hasUnreadReaction()) {
+			// We can't update reactions from min if we have unread.
+			if (_reactions->checkIfChanged(list, recent)) {
+				updateReactionsUnknown();
+			}
+			return false;
+		}
+		return _reactions->change(list, recent, min);
+	});
+}
+
+void HistoryItem::updateReactionsUnknown() {
+	_reactionsLastRefreshed = 1;
+}
+
+const base::flat_map<QString, int> &HistoryItem::reactions() const {
+	static const auto kEmpty = base::flat_map<QString, int>();
+	return _reactions ? _reactions->list() : kEmpty;
+}
+
+auto HistoryItem::recentReactions() const
+-> const base::flat_map<QString, std::vector<Data::RecentReaction>> & {
+	static const auto kEmpty = base::flat_map<
+		QString,
+		std::vector<Data::RecentReaction>>();
+	return _reactions ? _reactions->recent() : kEmpty;
+}
+
+bool HistoryItem::canViewReactions() const {
+	return (_flags & MessageFlag::CanViewReactions)
+		&& _reactions
+		&& !_reactions->list().empty();
+}
+
+QString HistoryItem::chosenReaction() const {
+	return _reactions ? _reactions->chosen() : QString();
+}
+
+QString HistoryItem::lookupUnreadReaction(not_null<UserData*> from) const {
+	if (!_reactions) {
+		return QString();
+	}
+	const auto recent = _reactions->recent();
+	for (const auto &[emoji, list] : _reactions->recent()) {
+		const auto i = ranges::find(
+			list,
+			from,
+			&Data::RecentReaction::peer);
+		if (i != end(list) && i->unread) {
+			return emoji;
+		}
+	}
+	return QString();
+}
+
+crl::time HistoryItem::lastReactionsRefreshTime() const {
+	return _reactionsLastRefreshed;
+}
+
 bool HistoryItem::hasDirectLink() const {
 	return isRegular() && _history->peer->isChannel();
 }
 
-ChannelId HistoryItem::channelId() const {
-	return _history->channelId();
+FullMsgId HistoryItem::fullId() const {
+	return FullMsgId(_history->peer->id, id);
+}
+
+GlobalMsgId HistoryItem::globalId() const {
+	return { fullId(), _history->session().uniqueId() };
 }
 
 Data::MessagePosition HistoryItem::position() const {
@@ -786,8 +1061,10 @@ PeerData *HistoryItem::senderOriginal() const {
 	return (peer->isChannel() && !peer->isMegagroup()) ? peer : from();
 }
 
-const HiddenSenderInfo *HistoryItem::hiddenForwardedInfo() const {
-	if (const auto forwarded = Get<HistoryMessageForwarded>()) {
+const HiddenSenderInfo *HistoryItem::hiddenSenderInfo() const {
+	if (const auto sponsored = Get<HistoryMessageSponsored>()) {
+		return sponsored->sender.get();
+	} else if (const auto forwarded = Get<HistoryMessageForwarded>()) {
 		return forwarded->hiddenSenderInfo.get();
 	}
 	return nullptr;
@@ -881,6 +1158,7 @@ void HistoryItem::sendFailed() {
 	Expects(!(_flags & MessageFlag::SendingFailed));
 
 	_flags = (_flags | MessageFlag::SendingFailed) & ~MessageFlag::BeingSent;
+	_history->owner().notifyItemDataChange(this);
 	history()->session().changes().historyUpdated(
 		history(),
 		Data::HistoryUpdate::Flag::ClientSideMessages);
@@ -952,18 +1230,20 @@ bool HistoryItem::isEmpty() const {
 		&& !Has<HistoryMessageLogEntryOriginal>();
 }
 
-QString HistoryItem::notificationText() const {
+TextWithEntities HistoryItem::notificationText() const {
 	const auto result = [&] {
 		if (_media && !isService()) {
 			return _media->notificationText();
 		} else if (!emptyText()) {
-			return _text.toString();
+			return _text.toTextWithEntities();
 		}
-		return QString();
+		return TextWithEntities();
 	}();
-	return (result.size() <= kNotificationTextLimit)
-		? result
-		: result.mid(0, kNotificationTextLimit) + qsl("...");
+	if (result.text.size() <= kNotificationTextLimit) {
+		return result;
+	}
+	return Ui::Text::Mid(result, 0, kNotificationTextLimit).append(
+		Ui::kQEllipsis);
 }
 
 ItemPreview HistoryItem::toPreview(ToPreviewOptions options) const {
@@ -971,7 +1251,9 @@ ItemPreview HistoryItem::toPreview(ToPreviewOptions options) const {
 		if (_media) {
 			return _media->toPreview(options);
 		} else if (!emptyText()) {
-			return { .text = TextUtilities::Clean(_text.toString()) };
+			return {
+				.text = _text.toTextWithEntities()
+			};
 		}
 		return {};
 	}();
@@ -991,6 +1273,8 @@ ItemPreview HistoryItem::toPreview(ToPreviewOptions options) const {
 	const auto sender = [&]() -> std::optional<QString> {
 		if (options.hideSender || isPost() || isEmpty()) {
 			return {};
+		} else if (const auto sponsored = Get<HistoryMessageSponsored>()) {
+			return sponsored->sender->name;
 		} else if (!_history->peer->isUser()) {
 			if (const auto from = displayFrom()) {
 				return fromSender(from);
@@ -1004,13 +1288,16 @@ ItemPreview HistoryItem::toPreview(ToPreviewOptions options) const {
 	if (!sender) {
 		return result;
 	}
-	const auto fromWrapped = textcmdLink(
-		1,
-		tr::lng_dialogs_text_from_wrapped(
-			tr::now,
-			lt_from,
-			TextUtilities::Clean(*sender)));
+	const auto fromWrapped = Ui::Text::PlainLink(
+		tr::lng_dialogs_text_from_wrapped(tr::now, lt_from, *sender));
 	return Dialogs::Ui::PreviewWithSender(std::move(result), fromWrapped);
+}
+
+TextWithEntities HistoryItem::inReplyText() const {
+	return toPreview({
+		.hideSender = true,
+		.generateImages = false,
+	}).text;
 }
 
 Ui::Text::IsolatedEmoji HistoryItem::isolatedEmoji() const {
@@ -1019,6 +1306,28 @@ Ui::Text::IsolatedEmoji HistoryItem::isolatedEmoji() const {
 
 HistoryItem::~HistoryItem() {
 	applyTTL(0);
+}
+
+Main::Session *SessionByUniqueId(uint64 sessionUniqueId) {
+	if (!sessionUniqueId) {
+		return nullptr;
+	}
+	for (const auto &[index, account] : Core::App().domain().accounts()) {
+		if (const auto session = account->maybeSession()) {
+			if (session->uniqueId() == sessionUniqueId) {
+				return session;
+			}
+		}
+	}
+	return nullptr;
+}
+
+HistoryItem *MessageByGlobalId(GlobalMsgId globalId) {
+	const auto sessionId = globalId.itemId ? globalId.sessionUniqueId : 0;
+	if (const auto session = SessionByUniqueId(sessionId)) {
+		return session->data().message(globalId.itemId);
+	}
+	return nullptr;
 }
 
 QDateTime ItemDateTime(not_null<const HistoryItem*> item) {
@@ -1054,16 +1363,18 @@ ClickHandlerPtr goToMessageClickHandler(
 		MsgId msgId,
 		FullMsgId returnToId) {
 	return std::make_shared<LambdaClickHandler>([=] {
-		if (const auto main = App::main()) { // multi good
-			if (&main->session() == &peer->session()) {
-				auto params = Window::SectionShow{
-					Window::SectionShow::Way::Forward
-				};
-				params.origin = Window::SectionShow::OriginMessage{
-					returnToId
-				};
-				main->controller()->showPeerHistory(peer, params, msgId);
-			}
+		const auto separate = Core::App().separateWindowForPeer(peer);
+		const auto controller = separate
+			? separate->sessionController()
+			: peer->session().tryResolveWindow();
+		if (controller) {
+			auto params = Window::SectionShow{
+				Window::SectionShow::Way::Forward
+			};
+			params.origin = Window::SectionShow::OriginMessage{
+				returnToId
+			};
+			controller->showPeerHistory(peer, params, msgId);
 		}
 	});
 }
@@ -1085,7 +1396,6 @@ MessageFlags FlagsFromMTP(
 		| ((flags & MTP::f_edit_hide) ? Flag::HideEdited : Flag())
 		| ((flags & MTP::f_pinned) ? Flag::Pinned : Flag())
 		| ((flags & MTP::f_from_id) ? Flag::HasFromId : Flag())
-		| ((flags & MTP::f_via_bot_id) ? Flag::HasViaBot : Flag())
 		| ((flags & MTP::f_reply_to) ? Flag::HasReplyInfo : Flag())
 		| ((flags & MTP::f_reply_markup) ? Flag::HasReplyMarkup : Flag())
 		| ((flags & MTP::f_from_scheduled) ? Flag::IsOrWasScheduled : Flag())
@@ -1132,7 +1442,7 @@ not_null<HistoryItem*> HistoryItem::Create(
 				data.vfrom_id() ? peerFromMTP(*data.vfrom_id()) : PeerId(0));
 		} else if (checked == MediaCheckResult::Empty) {
 			const auto text = HistoryService::PreparedText{
-				tr::lng_message_empty(tr::now)
+				tr::lng_message_empty(tr::now, Ui::Text::WithEntities)
 			};
 			return history->makeServiceMessage(
 				id,
@@ -1151,7 +1461,7 @@ not_null<HistoryItem*> HistoryItem::Create(
 		return history->makeServiceMessage(id, data, localFlags);
 	}, [&](const MTPDmessageEmpty &data) -> HistoryItem* {
 		const auto text = HistoryService::PreparedText{
-			tr::lng_message_empty(tr::now)
+			tr::lng_message_empty(tr::now, Ui::Text::WithEntities)
 		};
 		return history->makeServiceMessage(id, localFlags, TimeId(0), text);
 	});

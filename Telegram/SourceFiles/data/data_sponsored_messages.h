@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "history/history_item.h"
 #include "base/timer.h"
+#include "ui/image/image_location.h"
 
 class History;
 
@@ -20,16 +21,35 @@ namespace Data {
 
 class Session;
 
-struct SponsoredMessage final {
+struct SponsoredFrom {
+	PeerData *peer = nullptr;
+	QString title;
+	bool isBroadcast = false;
+	bool isMegagroup = false;
+	bool isChannel = false;
+	bool isPublic = false;
+	bool isBot = false;
+	bool isExactPost = false;
+	bool isRecommended = false;
+	ImageWithLocation userpic;
+};
+
+struct SponsoredMessage {
 	QByteArray randomId;
-	PeerId fromId;
+	SponsoredFrom from;
 	TextWithEntities textWithEntities;
 	History *history = nullptr;
 	MsgId msgId;
+	QString chatInviteHash;
 };
 
 class SponsoredMessages final {
 public:
+	struct Details {
+		std::optional<QString> hash;
+		PeerData *peer = nullptr;
+		MsgId msgId;
+	};
 	using RandomId = QByteArray;
 	explicit SponsoredMessages(not_null<Session*> owner);
 	SponsoredMessages(const SponsoredMessages &other) = delete;
@@ -40,7 +60,7 @@ public:
 	void request(not_null<History*> history);
 	[[nodiscard]] bool append(not_null<History*> history);
 	void clearItems(not_null<History*> history);
-	[[nodiscard]] MsgId channelPost(const FullMsgId &fullId) const;
+	[[nodiscard]] Details lookupDetails(const FullMsgId &fullId) const;
 
 	void view(const FullMsgId &fullId);
 

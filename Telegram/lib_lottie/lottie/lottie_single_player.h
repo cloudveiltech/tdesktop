@@ -83,6 +83,8 @@ public:
 	[[nodiscard]] QImage frame(const FrameRequest &request) const;
 	[[nodiscard]] Animation::FrameInfo frameInfo(
 		const FrameRequest &request) const;
+	[[nodiscard]] int frameIndex() const;
+	[[nodiscard]] int framesCount() const;
 	[[nodiscard]] Information information() const;
 
 	[[nodiscard]] rpl::lifetime &lifetime() {

@@ -68,10 +68,12 @@ not_null<QAction*> Menu::addAction(
 
 not_null<QAction*> Menu::addAction(
 		const QString &text,
-		std::unique_ptr<QMenu> submenu) {
+		std::unique_ptr<QMenu> submenu,
+		const style::icon *icon,
+		const style::icon *iconOver) {
 	const auto action = new QAction(text, this);
 	action->setMenu(submenu.release());
-	return addAction(action, nullptr, nullptr);
+	return addAction(action, icon, iconOver);
 }
 
 not_null<QAction*> Menu::addAction(
@@ -365,8 +367,19 @@ void Menu::mouseReleaseEvent(QMouseEvent *e) {
 
 void Menu::handleMousePress(QPoint globalPosition) {
 	handleMouseMove(globalPosition);
-	if (_mousePressDelegate) {
-		_mousePressDelegate(globalPosition);
+	const auto margins = style::margins(0, _st.skip, 0, _st.skip);
+	const auto inner = rect().marginsRemoved(margins);
+	const auto localPosition = mapFromGlobal(globalPosition);
+	const auto pressed = (inner.contains(localPosition)
+		&& _lastSelectedByMouse)
+		? findSelectedAction()
+		: nullptr;
+	if (pressed) {
+		pressed->setClicked();
+	} else {
+		if (_mousePressDelegate) {
+			_mousePressDelegate(globalPosition);
+		}
 	}
 }
 

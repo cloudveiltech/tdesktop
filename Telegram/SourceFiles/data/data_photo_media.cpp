@@ -49,16 +49,31 @@ Image *PhotoMedia::thumbnailInline() const {
 }
 
 Image *PhotoMedia::image(PhotoSize size) const {
+	if (const auto resolved = resolveLoadedImage(size)) {
+		return resolved->data.get();
+	}
+	return nullptr;
+}
+
+QByteArray PhotoMedia::imageBytes(PhotoSize size) const {
+	if (const auto resolved = resolveLoadedImage(size)) {
+		return resolved->bytes;
+	}
+	return QByteArray();
+}
+
+auto PhotoMedia::resolveLoadedImage(PhotoSize size) const
+-> const PhotoImage * {
 	const auto &original = _images[PhotoSizeIndex(size)];
 	if (const auto image = original.data.get()) {
 		if (original.goodFor >= size) {
-			return image;
+			return &original;
 		}
 	}
 	const auto &valid = _images[_owner->validSizeIndex(size)];
 	if (const auto image = valid.data.get()) {
 		if (valid.goodFor >= size) {
-			return image;
+			return &valid;
 		}
 	}
 	return nullptr;
@@ -80,7 +95,11 @@ QSize PhotoMedia::size(PhotoSize size) const {
 	return { location.width(), location.height() };
 }
 
-void PhotoMedia::set(PhotoSize size, PhotoSize goodFor, QImage image) {
+void PhotoMedia::set(
+		PhotoSize size,
+		PhotoSize goodFor,
+		QImage image,
+		QByteArray bytes) {
 	const auto index = PhotoSizeIndex(size);
 	const auto limit = PhotoData::SideLimit();
 	if (image.width() > limit || image.height() > limit) {
@@ -92,28 +111,31 @@ void PhotoMedia::set(PhotoSize size, PhotoSize goodFor, QImage image) {
 	}
 	_images[index] = PhotoImage{
 		.data = std::make_unique<Image>(std::move(image)),
+		.bytes = std::move(bytes),
 		.goodFor = goodFor,
 	};
 	_owner->session().notifyDownloaderTaskFinished();
 }
 
-QByteArray PhotoMedia::videoContent() const {
-	return _videoBytes;
+QByteArray PhotoMedia::videoContent(PhotoSize size) const {
+	const auto small = (size == PhotoSize::Small) && _owner->hasVideoSmall();
+	return small ? _videoBytesSmall : _videoBytesLarge;
 }
 
-QSize PhotoMedia::videoSize() const {
-	const auto &location = _owner->videoLocation();
+QSize PhotoMedia::videoSize(PhotoSize size) const {
+	const auto &location = _owner->videoLocation(size);
 	return { location.width(), location.height() };
 }
 
-void PhotoMedia::videoWanted(Data::FileOrigin origin) {
-	if (_videoBytes.isEmpty()) {
-		_owner->loadVideo(origin);
+void PhotoMedia::videoWanted(PhotoSize size, Data::FileOrigin origin) {
+	if (videoContent(size).isEmpty()) {
+		_owner->loadVideo(size, origin);
 	}
 }
 
-void PhotoMedia::setVideo(QByteArray content) {
-	_videoBytes = std::move(content);
+void PhotoMedia::setVideo(PhotoSize size, QByteArray content) {
+	const auto small = (size == PhotoSize::Small) && _owner->hasVideoSmall();
+	(small ? _videoBytesSmall : _videoBytesLarge) = std::move(content);
 }
 
 bool PhotoMedia::loaded() const {
@@ -168,6 +190,24 @@ void PhotoMedia::collectLocalData(not_null<PhotoMedia*> local) {
 			};
 		}
 	}
+}
+
+bool PhotoMedia::saveToFile(const QString &path) {
+	constexpr auto large = PhotoSize::Large;
+	if (const auto video = videoContent(large); !video.isEmpty()) {
+		QFile f(path);
+		return f.open(QIODevice::WriteOnly)
+			&& (f.write(video) == video.size());
+	} else if (const auto photo = imageBytes(large)
+		; !photo.isEmpty()) {
+		QFile f(path);
+		return f.open(QIODevice::WriteOnly)
+			&& (f.write(photo) == photo.size());
+	} else if (const auto fallback = image(large)->original()
+		; !fallback.isNull()) {
+		return fallback.save(path, "JPG");
+	}
+	return false;
 }
 
 } // namespace Data

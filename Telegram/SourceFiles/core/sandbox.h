@@ -8,12 +8,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "mtproto/mtproto_proxy_data.h"
-#include "base/qt_adapters.h"
+#include "base/qt/qt_common_adapters.h"
 
 #include <QtWidgets/QApplication>
 #include <QtNetwork/QLocalServer>
 #include <QtNetwork/QLocalSocket>
 #include <QtCore/QAbstractNativeEventFilter>
+
+class QLockFile;
 
 namespace Core {
 
@@ -119,6 +121,7 @@ private:
 	QLocalServer _localServer;
 	QLocalSocket _localSocket;
 	LocalClients _localClients;
+	std::unique_ptr<QLockFile> _lockFile;
 	bool _secondInstance = false;
 	bool _started = false;
 	static bool QuitOnStartRequested;

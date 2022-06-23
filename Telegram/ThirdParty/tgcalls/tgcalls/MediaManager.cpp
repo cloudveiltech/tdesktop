@@ -22,6 +22,11 @@
 #include "api/call/audio_sink.h"
 #include "modules/audio_processing/audio_buffer.h"
 #include "modules/audio_device/include/audio_device_factory.h"
+#ifdef WEBRTC_IOS
+#include "platform/darwin/iOS/tgcalls_audio_device_module_ios.h"
+#endif
+
+#include "FieldTrialsConfig.h"
 
 namespace tgcalls {
 namespace {
@@ -309,7 +314,7 @@ _enableHighBitrateVideo(enableHighBitrateVideo) {
 
     webrtc::AudioProcessingBuilder builder;
     std::unique_ptr<AudioCapturePostProcessor> audioProcessor = std::make_unique<AudioCapturePostProcessor>([this](float level) {
-        this->_thread->PostTask(RTC_FROM_HERE, [this, level](){
+        this->_thread->PostTask([this, level](){
             auto strong = this;
             strong->_currentMyAudioLevel = level;
         });
@@ -333,7 +338,7 @@ _enableHighBitrateVideo(enableHighBitrateVideo) {
 
 	webrtc::Call::Config callConfig(_eventLog.get());
 	callConfig.task_queue_factory = _taskQueueFactory.get();
-	callConfig.trials = &_fieldTrials;
+	callConfig.trials = &fieldTrialsBasedConfig;
 	callConfig.audio_state = _mediaEngine->voice().GetAudioState();
 	_call.reset(webrtc::Call::Create(callConfig));
 
@@ -402,9 +407,13 @@ _enableHighBitrateVideo(enableHighBitrateVideo) {
 
 rtc::scoped_refptr<webrtc::AudioDeviceModule> MediaManager::createAudioDeviceModule() {
 	const auto create = [&](webrtc::AudioDeviceModule::AudioLayer layer) {
+#ifdef WEBRTC_IOS
+        return rtc::make_ref_counted<webrtc::tgcalls_ios_adm::AudioDeviceModuleIOS>(false, false, 1);
+#else
 		return webrtc::AudioDeviceModule::Create(
 			layer,
             _taskQueueFactory.get());
+#endif
 	};
 	const auto check = [&](const rtc::scoped_refptr<webrtc::AudioDeviceModule> &result) {
         return (result && result->Init() == 0) ? result : nullptr;
@@ -423,7 +432,7 @@ void MediaManager::start() {
     // Here we hope that thread outlives the sink
     rtc::Thread *thread = _thread;
     std::unique_ptr<AudioTrackSinkInterfaceImpl> incomingSink(new AudioTrackSinkInterfaceImpl([weak, thread](float level) {
-        thread->PostTask(RTC_FROM_HERE, [weak, level] {
+        thread->PostTask([weak, level] {
             if (const auto strong = weak.lock()) {
                 strong->_currentAudioLevel = level;
             }
@@ -532,7 +541,7 @@ void MediaManager::sendOutgoingMediaStateMessage() {
 
 void MediaManager::beginStatsTimer(int timeoutMs) {
     const auto weak = std::weak_ptr<MediaManager>(shared_from_this());
-    _thread->PostDelayedTask(RTC_FROM_HERE, [weak]() {
+    _thread->PostDelayedTask([weak]() {
         auto strong = weak.lock();
         if (!strong) {
             return;
@@ -543,7 +552,7 @@ void MediaManager::beginStatsTimer(int timeoutMs) {
 
 void MediaManager::beginLevelsTimer(int timeoutMs) {
     const auto weak = std::weak_ptr<MediaManager>(shared_from_this());
-    _thread->PostDelayedTask(RTC_FROM_HERE, [weak]() {
+    _thread->PostDelayedTask([weak]() {
         auto strong = weak.lock();
         if (!strong) {
             return;
@@ -640,7 +649,7 @@ void MediaManager::setSendVideo(std::shared_ptr<VideoCaptureInterface> videoCapt
         const auto object = GetVideoCaptureAssumingSameThread(_videoCapture.get());
         _isScreenCapture = object->isScreenCapture();
 		object->setStateUpdated([=](VideoState state) {
-			thread->PostTask(RTC_FROM_HERE, [=] {
+			thread->PostTask([=] {
 				if (const auto strong = weak.lock()) {
 					strong->setOutgoingVideoState(state);
 				}

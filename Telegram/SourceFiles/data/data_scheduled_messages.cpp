@@ -23,6 +23,19 @@ namespace {
 
 constexpr auto kRequestTimeLimit = 60 * crl::time(1000);
 
+[[nodiscard]] MsgId RemoteToLocalMsgId(MsgId id) {
+	Expects(IsServerMsgId(id));
+
+	return ServerMaxMsgId + id + 1;
+}
+
+[[nodiscard]] MsgId LocalToRemoteMsgId(MsgId id) {
+	Expects(id > ServerMaxMsgId);
+	Expects(id < ServerMaxMsgId + ScheduledMsgIdsRange);
+
+	return (id - ServerMaxMsgId - 1);
+}
+
 [[nodiscard]] bool TooEarlyForRequest(crl::time received) {
 	return (received > 0) && (received + kRequestTimeLimit > crl::now());
 }
@@ -32,7 +45,7 @@ constexpr auto kRequestTimeLimit = 60 * crl::time(1000);
 		&& (item->date() > base::unixtime::now());
 }
 
-MTPMessage PrepareMessage(const MTPMessage &message) {
+[[nodiscard]] MTPMessage PrepareMessage(const MTPMessage &message) {
 	return message.match([&](const MTPDmessageEmpty &data) {
 		return MTP_messageEmpty(
 			data.vflags(),
@@ -72,13 +85,18 @@ MTPMessage PrepareMessage(const MTPMessage &message) {
 			MTP_int(data.vedit_date().value_or_empty()),
 			MTP_bytes(data.vpost_author().value_or_empty()),
 			MTP_long(data.vgrouped_id().value_or_empty()),
-			//MTPMessageReactions(),
+			MTPMessageReactions(),
 			MTPVector<MTPRestrictionReason>(),
 			MTP_int(data.vttl_period().value_or_empty()));
 	});
 }
 
 } // namespace
+
+bool IsScheduledMsgId(MsgId id) {
+	return (id > ServerMaxMsgId)
+		&& (id < ServerMaxMsgId + ScheduledMsgIdsRange);
+}
 
 ScheduledMessages::ScheduledMessages(not_null<Session*> owner)
 : _session(&owner->session())
@@ -112,15 +130,16 @@ void ScheduledMessages::clearOldRequests() {
 	}
 }
 
-MsgId ScheduledMessages::lookupId(not_null<HistoryItem*> item) const {
-	Expects(item->isScheduled());
+MsgId ScheduledMessages::localMessageId(MsgId remoteId) const {
+	return RemoteToLocalMsgId(remoteId);
+}
 
-	const auto i = _data.find(item->history());
-	Assert(i != end(_data));
-	const auto &list = i->second;
-	const auto j = list.idByItem.find(item);
-	Assert(j != end(list.idByItem));
-	return j->second;
+MsgId ScheduledMessages::lookupId(not_null<const HistoryItem*> item) const {
+	Expects(item->isScheduled());
+	Expects(!item->isSending());
+	Expects(!item->hasFailed());
+
+	return LocalToRemoteMsgId(item->id);
 }
 
 HistoryItem *ScheduledMessages::lookupItem(PeerId peer, MsgId msg) const {
@@ -145,7 +164,7 @@ HistoryItem *ScheduledMessages::lookupItem(PeerId peer, MsgId msg) const {
 }
 
 HistoryItem *ScheduledMessages::lookupItem(FullMsgId itemId) const {
-	return lookupItem(peerFromChannel(itemId.channel), itemId.msg);
+	return lookupItem(itemId.peer, itemId.msg);
 }
 
 int ScheduledMessages::count(not_null<History*> history) const {
@@ -213,7 +232,7 @@ void ScheduledMessages::sendNowSimpleMessage(
 			MTPint(), // edit_date
 			MTP_string(),
 			MTPlong(),
-			//MTPMessageReactions(),
+			MTPMessageReactions(),
 			MTPVector<MTPRestrictionReason>(),
 			MTP_int(update.vttl_period().value_or_empty())),
 		localFlags,
@@ -314,13 +333,11 @@ void ScheduledMessages::apply(
 	Assert(i != end(_data));
 	auto &list = i->second;
 	const auto j = list.itemById.find(id);
-	if (j != end(list.itemById)) {
+	if (j != end(list.itemById) || !IsServerMsgId(id)) {
 		local->destroy();
 	} else {
 		Assert(!list.itemById.contains(local->id));
-		Assert(!list.idByItem.contains(local));
-		local->setRealId(local->history()->nextNonHistoryEntryId());
-		list.idByItem.emplace(local, id);
+		local->setRealId(localMessageId(id));
 		list.itemById.emplace(id, local);
 	}
 }
@@ -375,6 +392,10 @@ Data::MessagesSlice ScheduledMessages::list(not_null<History*> history) {
 }
 
 void ScheduledMessages::request(not_null<History*> history) {
+	const auto peer = history->peer;
+	if (peer->isBroadcast() && !peer->canWrite()) {
+		return;
+	}
 	auto &request = _requests[history];
 	if (request.requestId || TooEarlyForRequest(request.lastReceived)) {
 		return;
@@ -384,9 +405,7 @@ void ScheduledMessages::request(not_null<History*> history) {
 		? countListHash(i->second)
 		: uint64(0);
 	request.requestId = _session->api().request(
-		MTPmessages_GetScheduledHistory(
-			history->peer->input,
-			MTP_long(hash))
+		MTPmessages_GetScheduledHistory(peer->input, MTP_long(hash))
 	).done([=](const MTPmessages_Messages &result) {
 		parse(history, result);
 	}).fail([=] {
@@ -464,8 +483,12 @@ HistoryItem *ScheduledMessages::append(
 		return existing;
 	}
 
+	if (!IsServerMsgId(id)) {
+		LOG(("API Error: Bad id in scheduled messages: %1.").arg(id));
+		return nullptr;
+	}
 	const auto item = _session->data().addNewMessage(
-		history->nextNonHistoryEntryId(),
+		localMessageId(id),
 		PrepareMessage(message),
 		MessageFlags(), // localFlags
 		NewMessageType::Existing);
@@ -475,7 +498,6 @@ HistoryItem *ScheduledMessages::append(
 	}
 	list.items.emplace_back(item);
 	list.itemById.emplace(id, item);
-	list.idByItem.emplace(item, id);
 	return item;
 }
 
@@ -522,10 +544,7 @@ void ScheduledMessages::remove(not_null<const HistoryItem*> item) {
 	auto &list = i->second;
 
 	if (!item->isSending() && !item->hasFailed()) {
-		const auto j = list.idByItem.find(item);
-		Assert(j != end(list.idByItem));
-		list.itemById.remove(j->second);
-		list.idByItem.erase(j);
+		list.itemById.remove(lookupId(item));
 	}
 	const auto k = ranges::find(list.items, item, &OwnedItem::get);
 	Assert(k != list.items.end());
@@ -548,8 +567,7 @@ uint64 ScheduledMessages::countListHash(const List &list) const {
 		return !item->isSending() && !item->hasFailed();
 	}) | ranges::views::reverse;
 	for (const auto &item : serverside) {
-		const auto j = list.idByItem.find(item.get());
-		HashUpdate(hash, j->second.bare);
+		HashUpdate(hash, lookupId(item.get()).bare);
 		if (const auto edited = item->Get<HistoryMessageEdited>()) {
 			HashUpdate(hash, edited->date);
 		} else {

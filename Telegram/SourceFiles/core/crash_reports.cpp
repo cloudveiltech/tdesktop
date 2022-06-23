@@ -18,9 +18,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #ifndef DESKTOP_APP_DISABLE_CRASH_REPORTS
 #ifdef Q_OS_WIN
 
+#include <new.h>
+
 #pragma warning(push)
 #pragma warning(disable:4091)
-#include "client/windows/handler/exception_handler.h"
+#include <client/windows/handler/exception_handler.h>
 #pragma warning(pop)
 
 #elif defined Q_OS_UNIX // Q_OS_WIN
@@ -34,14 +36,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <unistd.h>
 
 #ifdef MAC_USE_BREAKPAD
-#include "client/mac/handler/exception_handler.h"
+#include <client/mac/handler/exception_handler.h>
 #else // MAC_USE_BREAKPAD
-#include "client/crashpad_client.h"
+#include <client/crashpad_client.h>
 #endif // else for MAC_USE_BREAKPAD
 
 #else // Q_OS_MAC
 
-#include "client/linux/handler/exception_handler.h"
+#include <client/linux/handler/exception_handler.h>
 
 #endif // Q_OS_MAC
 
@@ -105,11 +107,20 @@ std::unique_ptr<ReservedMemoryChunk> ReservedMemory;
 
 void InstallOperatorNewHandler() {
 	ReservedMemory = std::make_unique<ReservedMemoryChunk>();
+#ifdef Q_OS_WIN
+	_set_new_handler([](size_t requested) -> int {
+		_set_new_handler(nullptr);
+		ReservedMemory.reset();
+		CrashReports::SetAnnotation("Requested", QString::number(requested));
+		Unexpected("Could not allocate!");
+	});
+#else // Q_OS_WIN
 	std::set_new_handler([] {
 		std::set_new_handler(nullptr);
 		ReservedMemory.reset();
 		Unexpected("Could not allocate!");
 	});
+#endif // Q_OS_WIN
 }
 
 void InstallQtMessageHandler() {

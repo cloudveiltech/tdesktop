@@ -38,7 +38,7 @@ class PaintContext : public PaintContextBase {
 public:
 	PaintContext(crl::time ms, bool selecting) : PaintContextBase(ms, selecting) {
 	}
-	bool isAfterDate = false;
+	bool skipBorder = false;
 
 };
 
@@ -53,9 +53,9 @@ public:
 		TextSelection selection,
 		const PaintContext *context) = 0;
 
-	QDateTime dateTime() const;
+	[[nodiscard]] QDateTime dateTime() const;
 
-	HistoryItem *getItem() const {
+	[[nodiscard]] not_null<HistoryItem*> getItem() const {
 		return _parent;
 	}
 
@@ -79,7 +79,7 @@ protected:
 		QPoint position,
 		bool selected,
 		const PaintContext *context);
-	virtual const style::RoundCheckbox &checkboxStyle() const;
+	[[nodiscard]] virtual const style::RoundCheckbox &checkboxStyle() const;
 
 private:
 	void ensureCheckboxCreated();
@@ -144,23 +144,27 @@ protected:
 class StatusText {
 public:
 	// duration = -1 - no duration, duration = -2 - "GIF" duration
-	void update(int newSize, int fullSize, int duration, crl::time realDuration);
-	void setSize(int newSize);
+	void update(
+		int64 newSize,
+		int64 fullSize,
+		TimeId duration,
+		TimeId realDuration);
+	void setSize(int64 newSize);
 
-	int size() const {
+	[[nodiscard]] int64 size() const {
 		return _size;
 	}
-	QString text() const {
+	[[nodiscard]] QString text() const {
 		return _text;
 	}
 
 private:
 	// >= 0 will contain download / upload string, _size = loaded bytes
 	// < 0 will contain played string, _size = -(seconds + 1) played
-	// 0x7FFFFFF0 will contain status for not yet downloaded file
-	// 0x7FFFFFF1 will contain status for already downloaded file
-	// 0x7FFFFFF2 will contain status for failed to download / upload file
-	int _size = 0;
+	// 0xFFFFFFF0LL will contain status for not yet downloaded file
+	// 0xFFFFFFF1LL will contain status for already downloaded file
+	// 0xFFFFFFF2LL will contain status for failed to download / upload file
+	int64 _size = 0;
 	QString _text;
 
 };
@@ -328,19 +332,24 @@ private:
 	const style::OverviewFileLayout &_st;
 
 	Ui::Text::String _name, _details;
-	int _nameVersion;
+	int _nameVersion = 0;
 
 	void updateName();
 	bool updateStatusText();
 
 };
 
+struct DocumentFields {
+	not_null<DocumentData*> document;
+	TimeId dateOverride = 0;
+	bool forceFileLayout = false;
+};
 class Document final : public RadialProgressItem {
 public:
 	Document(
 		not_null<Delegate*> delegate,
 		not_null<HistoryItem*> parent,
-		not_null<DocumentData*> document,
+		DocumentFields fields,
 		const style::OverviewFileLayout &st);
 
 	void initDimensions() override;
@@ -365,6 +374,7 @@ private:
 		QPoint point,
 		StateRequest request) const;
 
+	[[nodiscard]] bool songLayout() const;
 	void ensureDataMediaCreated() const;
 
 	not_null<DocumentData*> _data;
@@ -376,12 +386,14 @@ private:
 	const ::Layout::DocumentGenericPreview _generic;
 
 	bool _thumbLoaded = false;
+	bool _forceFileLayout = false;
 	QPixmap _thumb;
 
 	Ui::Text::String _name;
 	QString _date, _ext;
-	int32 _datew, _extw;
-	int32 _thumbw;
+	int _datew = 0;
+	int _extw = 0;
+	int _thumbw = 0;
 
 	bool withThumb() const;
 	bool updateStatusText();

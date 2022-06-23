@@ -68,7 +68,7 @@ struct File {
 		DateLimits,
 	};
 	FileLocation location;
-	int size = 0;
+	int64 size = 0;
 	QByteArray content;
 
 	QString suggestedPath;
@@ -401,6 +401,8 @@ struct ActionGameScore {
 struct ActionPaymentSent {
 	Utf8String currency;
 	uint64 amount = 0;
+	bool recurringInit = false;
+	bool recurringUsed = false;
 };
 
 struct ActionPhoneCall {
@@ -482,6 +484,10 @@ struct ActionSetChatTheme {
 struct ActionChatJoinedByRequest {
 };
 
+struct ActionWebViewDataSent {
+	Utf8String text;
+};
+
 struct ServiceAction {
 	std::variant<
 		v::null_t,
@@ -512,7 +518,8 @@ struct ServiceAction {
 		ActionSetMessagesTTL,
 		ActionGroupCallScheduled,
 		ActionSetChatTheme,
-		ActionChatJoinedByRequest> content;
+		ActionChatJoinedByRequest,
+		ActionWebViewDataSent> content;
 };
 
 ServiceAction ParseServiceAction(
@@ -541,6 +548,7 @@ struct TextPart {
 		Strike,
 		Blockquote,
 		BankCard,
+		Spoiler,
 	};
 	Type type = Type::Text;
 	Utf8String text;
@@ -701,6 +709,7 @@ bool SkipMessageByDate(const Message &message, const Settings &settings);
 Utf8String FormatPhoneNumber(const Utf8String &phoneNumber);
 Utf8String FormatDateTime(
 	TimeId date,
+	bool hasTimeZone = false,
 	QChar dateSeparator = QChar('.'),
 	QChar timeSeparator = QChar(':'),
 	QChar separator = QChar(' '));

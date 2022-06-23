@@ -7,11 +7,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "base/observer.h"
 #include "data/data_audio_msg_id.h"
 #include "data/data_shared_media.h"
 
 class AudioMsgId;
 class DocumentData;
+class History;
 
 namespace Media {
 namespace Audio {
@@ -35,8 +37,14 @@ enum class Error;
 } // namespace Streaming
 } // namespace Media
 
+namespace base {
+class PowerSaveBlocker;
+} // namespace base
+
 namespace Media {
 namespace Player {
+
+extern const char kOptionDisableAutoplayNext[];
 
 enum class RepeatMode {
 	None,
@@ -161,8 +169,6 @@ public:
 
 	[[nodiscard]] bool pauseGifByRoundVideo() const;
 
-	void documentLoadProgress(DocumentData *document);
-
 private:
 	using SharedMediaType = Storage::SharedMediaType;
 	using SliceKey = SparseIdsMergedSlice::Key;
@@ -195,6 +201,8 @@ private:
 		bool resumeOnCallEnd = false;
 		std::unique_ptr<Streamed> streamed;
 		std::unique_ptr<ShuffleData> shuffleData;
+		std::unique_ptr<base::PowerSaveBlocker> powerSaveBlocker;
+		std::unique_ptr<base::PowerSaveBlocker> powerSaveBlockerVideo;
 	};
 
 	struct SeekingChanges {
@@ -234,6 +242,9 @@ private:
 	void validateOtherPlaylist(not_null<Data*> data);
 	void playlistUpdated(not_null<Data*> data);
 	bool moveInPlaylist(not_null<Data*> data, int delta, bool autonext);
+	void updatePowerSaveBlocker(
+		not_null<Data*> data,
+		const TrackState &state);
 	HistoryItem *itemByIndex(not_null<Data*> data, int index);
 	void stopAndClear(not_null<Data*> data);
 
@@ -284,7 +295,10 @@ private:
 	void requestRoundVideoResize() const;
 	void requestRoundVideoRepaint() const;
 
-	void setHistory(not_null<Data*> data, History *history);
+	void setHistory(
+		not_null<Data*> data,
+		History *history,
+		Main::Session *sessionFallback = nullptr);
 	void setSession(not_null<Data*> data, Main::Session *session);
 
 	Data _songData;

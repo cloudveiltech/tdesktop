@@ -29,8 +29,7 @@ use qrcodegen::Mask;
 use qrcodegen::QrCode;
 use qrcodegen::QrCodeEcc;
 use qrcodegen::QrSegment;
-use qrcodegen::QrCode_MAX_VERSION;
-use qrcodegen::QrCode_MIN_VERSION;
+use qrcodegen::Version;
 
 
 // The main application program.
@@ -53,7 +52,7 @@ fn do_basic_demo() {
 	// Make and print the QR Code symbol
 	let qr: QrCode = QrCode::encode_text(text, errcorlvl).unwrap();
 	print_qr(&qr);
-	println!("{}", qr.to_svg_string(4));
+	println!("{}", to_svg_string(&qr, 4));
 }
 
 
@@ -128,8 +127,8 @@ fn do_segment_demo() {
 		0x0000, 0x0208, 0x01FF, 0x0008,
 	];
 	let mut bb = qrcodegen::BitBuffer(Vec::new());
-	for c in &kanjichars {
-		bb.append_bits(*c, 13);
+	for &c in &kanjichars {
+		bb.append_bits(c, 13);
 	}
 	let segs = vec![
 		QrSegment::new(qrcodegen::QrSegmentMode::Kanji, kanjichars.len(), bb.0),
@@ -143,26 +142,55 @@ fn do_segment_demo() {
 fn do_mask_demo() {
 	// Project Nayuki URL
 	let segs = QrSegment::make_segments(&to_chars("https://www.nayuki.io/"));
-	let qr = QrCode::encode_segments_advanced(&segs, QrCodeEcc::High, QrCode_MIN_VERSION, QrCode_MAX_VERSION, None, true).unwrap();  // Automatic mask
+	let qr = QrCode::encode_segments_advanced(&segs, QrCodeEcc::High, Version::MIN, Version::MAX, None, true).unwrap();  // Automatic mask
 	print_qr(&qr);
-	let qr = QrCode::encode_segments_advanced(&segs, QrCodeEcc::High, QrCode_MIN_VERSION, QrCode_MAX_VERSION, Some(Mask::new(3)), true).unwrap();  // Force mask 3
+	let qr = QrCode::encode_segments_advanced(&segs, QrCodeEcc::High, Version::MIN, Version::MAX, Some(Mask::new(3)), true).unwrap();  // Force mask 3
 	print_qr(&qr);
 	
 	// Chinese text as UTF-8
 	let segs = QrSegment::make_segments(&to_chars("維基百科（Wikipedia，聆聽i/ˌwɪkᵻˈpiːdi.ə/）是一個自由內容、公開編輯且多語言的網路百科全書協作計畫"));
-	let qr = QrCode::encode_segments_advanced(&segs, QrCodeEcc::Medium, QrCode_MIN_VERSION, QrCode_MAX_VERSION, Some(Mask::new(0)), true).unwrap();  // Force mask 0
+	let qr = QrCode::encode_segments_advanced(&segs, QrCodeEcc::Medium, Version::MIN, Version::MAX, Some(Mask::new(0)), true).unwrap();  // Force mask 0
 	print_qr(&qr);
-	let qr = QrCode::encode_segments_advanced(&segs, QrCodeEcc::Medium, QrCode_MIN_VERSION, QrCode_MAX_VERSION, Some(Mask::new(1)), true).unwrap();  // Force mask 1
+	let qr = QrCode::encode_segments_advanced(&segs, QrCodeEcc::Medium, Version::MIN, Version::MAX, Some(Mask::new(1)), true).unwrap();  // Force mask 1
 	print_qr(&qr);
-	let qr = QrCode::encode_segments_advanced(&segs, QrCodeEcc::Medium, QrCode_MIN_VERSION, QrCode_MAX_VERSION, Some(Mask::new(5)), true).unwrap();  // Force mask 5
+	let qr = QrCode::encode_segments_advanced(&segs, QrCodeEcc::Medium, Version::MIN, Version::MAX, Some(Mask::new(5)), true).unwrap();  // Force mask 5
 	print_qr(&qr);
-	let qr = QrCode::encode_segments_advanced(&segs, QrCodeEcc::Medium, QrCode_MIN_VERSION, QrCode_MAX_VERSION, Some(Mask::new(7)), true).unwrap();  // Force mask 7
+	let qr = QrCode::encode_segments_advanced(&segs, QrCodeEcc::Medium, Version::MIN, Version::MAX, Some(Mask::new(7)), true).unwrap();  // Force mask 7
 	print_qr(&qr);
 }
 
 
 
 /*---- Utilities ----*/
+
+// Returns a string of SVG code for an image depicting
+// the given QR Code, with the given number of border modules.
+// The string always uses Unix newlines (\n), regardless of the platform.
+fn to_svg_string(qr: &QrCode, border: i32) -> String {
+	assert!(border >= 0, "Border must be non-negative");
+	let mut result = String::new();
+	result += "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+	result += "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">\n";
+	let dimension = qr.size().checked_add(border.checked_mul(2).unwrap()).unwrap();
+	result += &format!(
+		"<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" viewBox=\"0 0 {0} {0}\" stroke=\"none\">\n", dimension);
+	result += "\t<rect width=\"100%\" height=\"100%\" fill=\"#FFFFFF\"/>\n";
+	result += "\t<path d=\"";
+	for y in 0 .. qr.size() {
+		for x in 0 .. qr.size() {
+			if qr.get_module(x, y) {
+				if x != 0 || y != 0 {
+					result += " ";
+				}
+				result += &format!("M{},{}h1v1h-1z", x + border, y + border);
+			}
+		}
+	}
+	result += "\" fill=\"#000000\"/>\n";
+	result += "</svg>\n";
+	result
+}
+
 
 // Prints the given QrCode object to the console.
 fn print_qr(qr: &QrCode) {

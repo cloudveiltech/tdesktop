@@ -49,17 +49,19 @@ public:
     MultilineText(const QFont &font, const QString &text) {
         QStringList lines = text.split("\n");
         int currentY = 0;
+        int width = 0;
+        QFontMetrics fontMetrics(font);
+        fontHeight_ = fontMetrics.ascent() + fontMetrics.descent();
         for (const auto &line : lines) {
             layouts_.emplace_back(std::make_unique<QTextLayout>(line));
             layouts_.back()->setFont(font);
             doLayout(*layouts_.back());
-            auto size = layouts_.back()->boundingRect().toRect();
-            boundingRect_ =
-                boundingRect_.united(size.translated(QPoint(0, currentY)));
-            currentY += size.height();
+            width = std::max(width,
+                             layouts_.back()->boundingRect().toRect().width());
+            currentY += fontHeight_;
         }
-        QFontMetrics fontMetrics(font);
-        fontHeight_ = fontMetrics.ascent() + fontMetrics.descent();
+        boundingRect_.setTopLeft(QPoint(0, 0));
+        boundingRect_.setSize(QSize(width, lines.size() * fontHeight_));
     }
 
     bool isEmpty() const { return layouts_.empty(); }
@@ -70,8 +72,7 @@ public:
         int currentY = 0;
         for (const auto &layout : layouts_) {
             layout->draw(painter, position + QPoint(0, currentY));
-            auto size = layout->boundingRect();
-            currentY += size.height();
+            currentY += fontHeight_;
         }
         painter->restore();
     }
@@ -84,9 +85,8 @@ private:
     QRect boundingRect_;
 };
 
-FcitxCandidateWindow::FcitxCandidateWindow(FcitxQtICData *data,
-                                           FcitxTheme *theme)
-    : QWindow(), theme_(theme), parent_(data->window()) {
+FcitxCandidateWindow::FcitxCandidateWindow(QWindow *window, FcitxTheme *theme)
+    : QWindow(), theme_(theme), parent_(window) {
     setFlags(Qt::ToolTip | Qt::FramelessWindowHint |
              Qt::BypassWindowManagerHint | Qt::WindowDoesNotAcceptFocus |
              Qt::NoDropShadowWindowHint);
@@ -97,18 +97,6 @@ FcitxCandidateWindow::FcitxCandidateWindow(FcitxQtICData *data,
     surfaceFormat.setAlphaBufferSize(8);
     setFormat(surfaceFormat);
     backingStore_ = new QBackingStore(this);
-    connect(data->window(), &QWindow::visibilityChanged, this,
-            [data](bool visible) {
-                if (!visible) {
-                    data->resetCandidateWindow();
-                }
-            });
-    connect(data->watcher(), &FcitxQtWatcher::availabilityChanged, this,
-            [data](bool avail) {
-                if (!avail) {
-                    data->resetCandidateWindow();
-                }
-            });
 }
 
 FcitxCandidateWindow::~FcitxCandidateWindow() {}
@@ -204,9 +192,8 @@ void FcitxCandidateWindow::render(QPainter *painter) {
     if (!upperLayout_.text().isEmpty()) {
         upperLayout_.draw(
             painter, topLeft + QPoint(textMargin.left(), textMargin.top()));
-        auto size = upperLayout_.boundingRect();
         // Draw cursor
-        currentHeight += std::max(minH, qCeil(size.height())) + extraH;
+        currentHeight += minH + extraH;
         if (cursor_ >= 0) {
             auto line = upperLayout_.lineForTextPosition(cursor_);
             if (line.isValid()) {
@@ -228,8 +215,7 @@ void FcitxCandidateWindow::render(QPainter *painter) {
         lowerLayout_.draw(painter,
                           topLeft + QPoint(textMargin.left(),
                                            textMargin.top() + currentHeight));
-        auto size = upperLayout_.boundingRect();
-        currentHeight += std::max(minH, qCeil(size.height())) + extraH;
+        currentHeight += minH + extraH;
     }
 
     bool vertical = theme_->vertical();
@@ -364,11 +350,11 @@ void UpdateLayout(QTextLayout &layout, const QFont &font,
     layout.setFormats(formats);
 }
 
-void fcitx::FcitxCandidateWindow::updateClientSideUI(
-    const fcitx::FcitxQtFormattedPreeditList &preedit, int cursorpos,
-    const fcitx::FcitxQtFormattedPreeditList &auxUp,
-    const fcitx::FcitxQtFormattedPreeditList &auxDown,
-    const fcitx::FcitxQtStringKeyValueList &candidates, int candidateIndex,
+void FcitxCandidateWindow::updateClientSideUI(
+    const FcitxQtFormattedPreeditList &preedit, int cursorpos,
+    const FcitxQtFormattedPreeditList &auxUp,
+    const FcitxQtFormattedPreeditList &auxDown,
+    const FcitxQtStringKeyValueList &candidates, int candidateIndex,
     int layoutHint, bool hasPrev, bool hasNext) {
     bool preeditVisble = (cursorpos >= 0 || !preedit.isEmpty());
     bool auxUpVisbile = !auxUp.isEmpty();
@@ -422,11 +408,10 @@ void fcitx::FcitxCandidateWindow::updateClientSideUI(
     // intent to use this with wayland. It we have no information above screen
     // edge.
     if (isWayland_) {
-        screenGeometry = QRect(QPoint(0, 0), window->size());
+        screenGeometry = window->frameGeometry();
         cursorRect.translate(window->framePosition());
         auto margins = window->frameMargins();
         cursorRect.translate(margins.left(), margins.top());
-        screenGeometry.translate(window->framePosition());
     } else {
         screenGeometry = window->screen()->geometry();
         auto pos = window->mapToGlobal(cursorRect.topLeft());
@@ -469,9 +454,7 @@ void fcitx::FcitxCandidateWindow::updateClientSideUI(
     show();
 }
 
-} // namespace fcitx
-
-void fcitx::FcitxCandidateWindow::mouseMoveEvent(QMouseEvent *event) {
+void FcitxCandidateWindow::mouseMoveEvent(QMouseEvent *event) {
     bool needRepaint = false;
     auto oldHighlight = highlight();
     hoverIndex_ = -1;
@@ -495,7 +478,7 @@ void fcitx::FcitxCandidateWindow::mouseMoveEvent(QMouseEvent *event) {
     }
 }
 
-void fcitx::FcitxCandidateWindow::mouseReleaseEvent(QMouseEvent *event) {
+void FcitxCandidateWindow::mouseReleaseEvent(QMouseEvent *event) {
     if (event->button() != Qt::LeftButton) {
         return;
     }
@@ -516,7 +499,7 @@ void fcitx::FcitxCandidateWindow::mouseReleaseEvent(QMouseEvent *event) {
     }
 }
 
-QSize fcitx::FcitxCandidateWindow::sizeHint() {
+QSize FcitxCandidateWindow::sizeHint() {
     auto minH =
         theme_->fontMetrics().ascent() + theme_->fontMetrics().descent();
 
@@ -532,16 +515,16 @@ QSize fcitx::FcitxCandidateWindow::sizeHint() {
     auto extraH = textMargin.top() + textMargin.bottom();
     if (!upperLayout_.text().isEmpty()) {
         auto size = upperLayout_.boundingRect();
-        height += std::max(minH, qCeil(size.height())) + extraH;
+        height += minH + extraH;
         updateIfLarger(width, size.width() + extraW);
     }
     if (!lowerLayout_.text().isEmpty()) {
         auto size = lowerLayout_.boundingRect();
-        height += std::max(minH, qCeil(size.height())) + extraH;
+        height += minH + extraH;
         updateIfLarger(width, size.width() + extraW);
     }
 
-    bool vertical = false;
+    bool vertical = theme_->vertical();
     if (layoutHint_ == FcitxCandidateLayoutHint::Vertical) {
         vertical = true;
     } else if (layoutHint_ == FcitxCandidateLayoutHint::Horizontal) {
@@ -590,7 +573,7 @@ QSize fcitx::FcitxCandidateWindow::sizeHint() {
     return {static_cast<int>(width), static_cast<int>(height)};
 }
 
-void fcitx::FcitxCandidateWindow::wheelEvent(QWheelEvent *event) {
+void FcitxCandidateWindow::wheelEvent(QWheelEvent *event) {
     if (!theme_ || !theme_->wheelForPaging()) {
         return;
     }
@@ -605,3 +588,5 @@ void fcitx::FcitxCandidateWindow::wheelEvent(QWheelEvent *event) {
         Q_EMIT nextClicked();
     }
 }
+
+} // namespace fcitx

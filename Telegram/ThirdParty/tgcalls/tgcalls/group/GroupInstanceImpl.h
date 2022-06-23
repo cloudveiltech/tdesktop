@@ -158,6 +158,7 @@ struct GroupInstanceDescriptor {
     std::function<std::shared_ptr<BroadcastPartTask>(int64_t, int64_t, int32_t, VideoChannelDescription::Quality, std::function<void(BroadcastPart &&)>)> requestVideoBroadcastPart;
     int outgoingAudioBitrateKbit{32};
     bool disableOutgoingAudioProcessing{false};
+    bool disableAudioInput{false};
     VideoContentType videoContentType{VideoContentType::None};
     bool initialEnableNoiseSuppression{false};
     std::vector<VideoCodecName> videoCodecPreferences;
@@ -177,7 +178,7 @@ public:
 
     virtual void stop() = 0;
 
-    virtual void setConnectionMode(GroupConnectionMode connectionMode, bool keepBroadcastIfWasEnabled) = 0;
+    virtual void setConnectionMode(GroupConnectionMode connectionMode, bool keepBroadcastIfWasEnabled, bool isUnifiedBroadcast) = 0;
 
     virtual void emitJoinPayload(std::function<void(GroupJoinPayload const &)> completion) = 0;
     virtual void setJoinResponsePayload(std::string const &payload) = 0;
@@ -192,6 +193,7 @@ public:
     virtual void setAudioInputDevice(std::string id) = 0;
     virtual void addExternalAudioSamples(std::vector<uint8_t> &&samples) = 0;
 
+    virtual void addOutgoingVideoOutput(std::weak_ptr<rtc::VideoSinkInterface<webrtc::VideoFrame>> sink) = 0;
     virtual void addIncomingVideoOutput(std::string const &endpointId, std::weak_ptr<rtc::VideoSinkInterface<webrtc::VideoFrame>> sink) = 0;
 
     virtual void setVolume(uint32_t ssrc, double volume) = 0;

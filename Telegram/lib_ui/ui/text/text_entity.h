@@ -25,6 +25,7 @@ enum class EntityType : uchar {
 	MentionName,
 	BotCommand,
 	MediaTimestamp,
+	PlainLink, // Senders in chat list, attachements in chat list, etc.
 
 	Bold,
 	Semibold,
@@ -33,6 +34,7 @@ enum class EntityType : uchar {
 	StrikeOut,
 	Code, // inline
 	Pre,  // block
+	Spoiler,
 };
 
 enum class EntityLinkShown : uchar {
@@ -235,11 +237,11 @@ struct TextForMimeData {
 enum {
 	TextParseMultiline = 0x001,
 	TextParseLinks = 0x002,
-	TextParseRichText = 0x004,
-	TextParseMentions = 0x008,
-	TextParseHashtags = 0x010,
-	TextParseBotCommands = 0x020,
-	TextParseMarkdown = 0x040,
+	TextParseMentions = 0x004,
+	TextParseHashtags = 0x008,
+	TextParseBotCommands = 0x010,
+	TextParseMarkdown = 0x020,
+	TextParsePlainLinks = 0x040,
 };
 
 struct TextWithTags {
@@ -290,9 +292,10 @@ QString MarkdownCodeGoodBefore();
 QString MarkdownCodeBadAfter();
 QString MarkdownPreGoodBefore();
 QString MarkdownPreBadAfter();
+QString MarkdownSpoilerGoodBefore();
+QString MarkdownSpoilerBadAfter();
 
 // Text preprocess.
-QString Clean(const QString &text);
 QString EscapeForRichParsing(const QString &text);
 QString SingleLine(const QString &text);
 TextWithEntities SingleLine(const TextWithEntities &text);
@@ -331,7 +334,7 @@ inline QString MentionNameDataFromFields(const MentionNameFields &fields) {
 // New entities are added to the ones that are already in result.
 // Changes text if (flags & TextParseMarkdown).
 TextWithEntities ParseEntities(const QString &text, int32 flags);
-void ParseEntities(TextWithEntities &result, int32 flags, bool rich = false);
+void ParseEntities(TextWithEntities &result, int32 flags);
 
 void PrepareForSending(TextWithEntities &result, int32 flags);
 void Trim(TextWithEntities &result);
@@ -363,6 +366,7 @@ inline const auto kMentionTagStart = qstr("mention://user.");
 [[nodiscard]] bool IsMentionLink(QStringView link);
 [[nodiscard]] bool IsSeparateTag(QStringView tag);
 [[nodiscard]] QString JoinTag(const QList<QStringView> &list);
+[[nodiscard]] QList<QStringView> SplitTags(const QString &tag);
 [[nodiscard]] QString TagWithRemoved(
 	const QString &tag,
 	const QString &removed);

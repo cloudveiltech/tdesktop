@@ -8,11 +8,24 @@
 
 #include <memory>
 #include <string>
+#include <optional>
 #include <functional>
+
+#include <QtGui/QColor>
 
 // Inspired by https://github.com/webview/webview.
 
+class QWidget;
+
 namespace Webview {
+
+struct ThemeParams {
+	QColor scrollBg;
+	QColor scrollBgOver;
+	QColor scrollBarBg;
+	QColor scrollBarBgOver;
+	QByteArray json;
+};
 
 class Interface {
 public:
@@ -21,6 +34,7 @@ public:
 	virtual bool finishEmbedding() = 0;
 
 	virtual void navigate(std::string url) = 0;
+	virtual void reload() = 0;
 
 	virtual void resizeToWindow() = 0;
 
@@ -31,12 +45,33 @@ public:
 
 };
 
+enum class DialogType {
+	Alert,
+	Confirm,
+	Prompt,
+};
+
+struct DialogArgs {
+	QWidget *parent = nullptr;
+	DialogType type = DialogType::Alert;
+	std::string value;
+	std::string text;
+	std::string url;
+};
+
+struct DialogResult {
+	std::string text;
+	bool accepted = false;
+};
+
 struct Config {
 	void *window = nullptr;
 	std::function<void(std::string)> messageHandler;
-	std::function<bool(std::string)> navigationStartHandler;
+	std::function<bool(std::string,bool)> navigationStartHandler;
 	std::function<void(bool)> navigationDoneHandler;
+	std::function<DialogResult(DialogArgs)> dialogHandler;
 	std::string userDataPath;
+	bool debug = false;
 };
 
 struct Available {
@@ -46,6 +81,7 @@ struct Available {
 		NoGtkOrWebkit2Gtk,
 		MutterWM,
 		Wayland,
+		OldWindows,
 	};
 	Error error = Error::None;
 	std::string details;

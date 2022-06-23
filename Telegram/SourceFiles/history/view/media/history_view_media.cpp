@@ -11,9 +11,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item.h"
 #include "history/view/history_view_element.h"
 #include "history/view/history_view_cursor_state.h"
+#include "history/view/history_view_spoiler_click_handler.h"
 #include "lottie/lottie_single_player.h"
 #include "storage/storage_shared_media.h"
 #include "data/data_document.h"
+#include "data/data_session.h"
 #include "data/data_web_page.h"
 #include "ui/item_text_options.h"
 #include "ui/chat/chat_style.h"
@@ -59,7 +61,7 @@ QString TimestampLinkBase(
 		FullMsgId context) {
 	return QString(
 		"media_timestamp?base=doc%1_%2_%3&t="
-	).arg(document->id).arg(context.channel.bare).arg(context.msg.bare);
+	).arg(document->id).arg(context.peer.value).arg(context.msg.bare);
 }
 
 TimeId DurationForTimestampLinks(not_null<WebPageData*> webpage) {
@@ -73,7 +75,7 @@ TimeId DurationForTimestampLinks(not_null<WebPageData*> webpage) {
 	} else if (webpage->duration > 0) {
 		return webpage->duration;
 	}
-	constexpr auto kMaxYouTubeTimestampDuration = 10 * 60 * TimeId(60);
+	constexpr auto kMaxYouTubeTimestampDuration = 100 * 60 * TimeId(60);
 	return kMaxYouTubeTimestampDuration;
 }
 
@@ -185,6 +187,10 @@ QSize Media::countCurrentSize(int newWidth) {
 	return QSize(qMin(newWidth, maxWidth()), minHeight());
 }
 
+void Media::repaint() const {
+	history()->owner().requestViewRepaint(_parent);
+}
+
 Ui::Text::String Media::createCaption(not_null<HistoryItem*> item) const {
 	if (item->emptyText()) {
 		return {};
@@ -201,6 +207,7 @@ Ui::Text::String Media::createCaption(not_null<HistoryItem*> item) const {
 		item->originalTextWithLocalEntities(),
 		Ui::ItemTextOptions(item),
 		context);
+	FillTextWithAnimatedSpoilers(result);
 	if (const auto width = _parent->skipBlockWidth()) {
 		result.updateSkipBlock(width, _parent->skipBlockHeight());
 	}

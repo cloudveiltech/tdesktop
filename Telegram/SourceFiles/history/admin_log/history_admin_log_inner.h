@@ -50,8 +50,7 @@ class SectionMemento;
 class InnerWidget final
 	: public Ui::RpWidget
 	, public Ui::AbstractTooltipShower
-	, public HistoryView::ElementDelegate
-	, private base::Subscriber {
+	, public HistoryView::ElementDelegate {
 public:
 	InnerWidget(
 		QWidget *parent,
@@ -102,8 +101,8 @@ public:
 		HistoryView::Element *replacing = nullptr) override;
 	bool elementUnderCursor(
 		not_null<const HistoryView::Element*> view) override;
-	crl::time elementHighlightTime(
-		not_null<const HistoryItem*> item) override;
+	[[nodiscard]] float64 elementHighlightOpacity(
+		not_null<const HistoryItem*> item) const override;
 	bool elementInSelectionMode() override;
 	bool elementIntersectsRange(
 		not_null<const HistoryView::Element*> view,
@@ -139,6 +138,12 @@ public:
 	void elementReplyTo(const FullMsgId &to) override;
 	void elementStartInteraction(
 		not_null<const HistoryView::Element*> view) override;
+	void elementStartPremium(
+		not_null<const HistoryView::Element*> view,
+		HistoryView::Element *replacing) override;
+	void elementCancelPremium(
+		not_null<const HistoryView::Element*> view) override;
+	void elementShowSpoilerAnimation() override;
 
 	~InnerWidget();
 
@@ -321,6 +326,8 @@ private:
 
 	QPoint _trippleClickPoint;
 	base::Timer _trippleClickTimer;
+
+	Ui::Animations::Simple _spoilerOpacity;
 
 	FilterValue _filter;
 	QString _searchQuery;

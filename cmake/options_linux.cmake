@@ -7,12 +7,11 @@
 target_compile_options(common_options
 INTERFACE
     -fstack-protector-all
-    -fstack-clash-protection
     -fPIC
     $<IF:$<CONFIG:Debug>,,-fno-strict-aliasing>
     -pipe
     -Wall
-    -W
+    -Wextra
     -Wno-unused-parameter
     -Wno-switch
     -Wno-missing-field-initializers
@@ -23,6 +22,7 @@ INTERFACE
 target_compile_definitions(common_options
 INTERFACE
     $<IF:$<CONFIG:Debug>,,_FORTIFY_SOURCE=2>
+    _GLIBCXX_ASSERTIONS
 )
 
 target_link_options(common_options
@@ -33,6 +33,7 @@ INTERFACE
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_compile_options(common_options
     INTERFACE
+        -fstack-clash-protection
         -Wno-maybe-uninitialized
     )
 endif()
@@ -61,9 +62,17 @@ if (DESKTOP_APP_SPECIAL_TARGET)
     target_link_options(common_options INTERFACE $<IF:$<CONFIG:Debug>,,-g -flto -fuse-linker-plugin>)
 endif()
 
+if (NOT DESKTOP_APP_DISABLE_JEMALLOC)
+	target_link_libraries(common_options
+	INTERFACE
+	    $<TARGET_OBJECTS:desktop-app::linux_jemalloc_helper>
+	    $<LINK_ONLY:desktop-app::external_jemalloc>
+	)
+endif()
+
 target_link_libraries(common_options
 INTERFACE
-    desktop-app::external_jemalloc
+    ${CMAKE_DL_LIBS}
 )
 
 if (DESKTOP_APP_USE_ALLOCATION_TRACER)
@@ -80,7 +89,7 @@ if (DESKTOP_APP_USE_ALLOCATION_TRACER)
         -Wl,-wrap,aligned_alloc
         -Wl,-wrap,posix_memalign
         -Wl,-wrap,free
-        -Wl,--no-as-needed,-lrt,--as-needed
+        -Wl,--push-state,--no-as-needed,-lrt,--pop-state
     )
     target_link_libraries(common_options
     INTERFACE
@@ -89,7 +98,14 @@ if (DESKTOP_APP_USE_ALLOCATION_TRACER)
     )
 endif()
 
-if (NOT DESKTOP_APP_USE_PACKAGED)
+if (DESKTOP_APP_USE_PACKAGED)
+    set(THREADS_PREFER_PTHREAD_FLAG ON)
+    find_package(Threads REQUIRED)
+    target_link_libraries(common_options
+    INTERFACE
+        Threads::Threads
+    )
+else()
     if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         target_link_options(common_options
         INTERFACE
@@ -115,18 +131,5 @@ if (NOT DESKTOP_APP_USE_PACKAGED)
         -Wl,-z,relro
         -Wl,-z,now
         # -pie # https://gitlab.gnome.org/GNOME/nautilus/-/issues/1601
-    )
-endif()
-
-if (DESKTOP_APP_USE_PACKAGED)
-    find_library(ATOMIC_LIBRARY atomic)
-else()
-    find_library(ATOMIC_LIBRARY libatomic.a)
-endif()
-
-if (ATOMIC_LIBRARY)
-    target_link_libraries(common_options
-    INTERFACE
-        ${ATOMIC_LIBRARY}
     )
 endif()

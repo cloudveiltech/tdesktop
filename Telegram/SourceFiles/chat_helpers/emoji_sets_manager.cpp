@@ -17,8 +17,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/emoji_config.h"
 #include "ui/ui_utility.h"
 #include "core/application.h"
+#include "lang/lang_keys.h"
 #include "main/main_account.h"
-#include "mainwidget.h"
 #include "storage/storage_cloud_blob.h"
 #include "styles/style_layers.h"
 #include "styles/style_boxes.h"
@@ -120,7 +120,7 @@ void SetGlobalLoader(base::unique_qptr<Loader> loader) {
 	GlobalLoaderValues.fire(GlobalLoader.get());
 }
 
-int GetDownloadSize(int id) {
+int64 GetDownloadSize(int id) {
 	return ranges::find(kSets, id, &Set::id)->size;
 }
 
@@ -364,9 +364,7 @@ void Row::setupContent(const Set &set) {
 	) | rpl::map([=](Loader *loader) {
 		return (loader && loader->id() == _id)
 			? loader->state()
-			: rpl::single(
-				rpl::empty_value()
-			) | rpl::then(
+			: rpl::single(rpl::empty) | rpl::then(
 				Updated()
 			) | rpl::map([=] {
 				return ComputeState(_id);

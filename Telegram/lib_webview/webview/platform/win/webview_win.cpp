@@ -6,31 +6,40 @@
 //
 #include "webview/platform/win/webview_win.h"
 
+#include "base/platform/base_platform_info.h"
 #include "webview/platform/win/webview_windows_edge_chromium.h"
 #include "webview/platform/win/webview_windows_edge_html.h"
 
 namespace Webview {
 
 Available Availability() {
-	if (EdgeHtml::Supported() || EdgeChromium::Supported()) {
+	if (!Platform::IsWindows8Point1OrGreater()) {
+		return Available{
+			.error = Available::Error::OldWindows,
+			.details = "Please update your system to Windows 8.1 or later.",
+		};
+	}
+	if (EdgeChromium::Supported() || EdgeHtml::Supported()) {
 		return Available{};
 	}
 	return Available{
 		.error = Available::Error::NoWebview2,
 		.details = "Please install Microsoft Edge Webview2 Runtime.",
 	};
-	// WebKit2Gtk::Supported();
 }
 
 bool SupportsEmbedAfterCreate() {
-	return EdgeHtml::Supported();
+	return !EdgeChromium::Supported() && EdgeHtml::Supported();
 }
 
 std::unique_ptr<Interface> CreateInstance(Config config) {
-	if (auto result = EdgeHtml::CreateInstance(config)) {
+	if (!Platform::IsWindows8Point1OrGreater()) {
+		return nullptr;
+	}
+	if (auto result = EdgeChromium::CreateInstance(config)) {
 		return result;
 	}
-	return EdgeChromium::CreateInstance(std::move(config));
+	return EdgeHtml::CreateInstance(config);
 }
 
 } // namespace Webview

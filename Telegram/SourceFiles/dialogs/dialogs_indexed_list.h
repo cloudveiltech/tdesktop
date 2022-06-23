@@ -48,14 +48,7 @@ public:
 		return (i != _index.end()) ? &i->second : nullptr;
 	}
 	std::vector<not_null<Row*>> filtered(const QStringList &words) const;
-	
-	//CloudVeil start
-	void clearAll() {
-		clear();
-		_list.resetAll();
-	}
-	//CloudVeil end
-	
+
 	// Part of List interface is duplicated here for all() list.
 	int size() const { return all().size(); }
 	bool empty() const { return all().empty(); }
@@ -78,6 +71,12 @@ public:
 	const_iterator find(int y, int h) const { return all().cfind(y, h); }
 	iterator find(int y, int h) { return all().find(y, h); }
 
+	//CloudVeil start
+	void clearAll() {
+		clear();
+		_list.resetAll();
+	}
+	//CloudVeil end
 private:
 	void adjustByName(
 		Key key,

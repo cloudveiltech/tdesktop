@@ -55,6 +55,7 @@
 #include "qwayland-xdg-shell.h"
 
 #include "qwaylandxdgdecorationv1_p.h"
+#include "qwaylandxdgactivationv1_p.h"
 
 #include <QtWaylandClient/qtwaylandclientglobal.h>
 #include <QtWaylandClient/private/qwaylandshellsurface_p.h>
@@ -80,7 +81,7 @@ using namespace QtWaylandClient;
 
 class QWaylandXdgShell;
 
-class Q_WAYLAND_CLIENT_EXPORT QWaylandXdgSurface : public QWaylandShellSurface, public QtWayland::xdg_surface
+class QWaylandXdgSurface : public QWaylandShellSurface, public QtWayland::xdg_surface
 {
     Q_OBJECT
 public:
@@ -101,11 +102,17 @@ public:
     bool wantsDecorations() const override;
     void propagateSizeHints() override;
     void setWindowGeometry(const QRect &rect) override;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 3, 0)
+    bool requestActivate() override;
+    void setXdgActivationToken(const QString &token) override;
+    void requestXdgActivationToken(quint32 serial) override;
+#endif
 
     void setSizeHints();
-    QMargins customMargins() const;
 
     void *nativeResource(const QByteArray &resource);
+
+    void sendProperty(const QString &name, const QVariant &value) override;
 
 protected:
     void requestWindowStates(Qt::WindowStates states) override;
@@ -166,17 +173,22 @@ private:
     bool m_configured = false;
     QRegion m_exposeRegion;
     uint m_pendingConfigureSerial = 0;
+    uint m_appliedConfigureSerial = 0;
+    QString m_activationToken;
+    QString m_appId;
+    QMargins m_customMargins;
 
     friend class QWaylandXdgShell;
 };
 
-class Q_WAYLAND_CLIENT_EXPORT QWaylandXdgShell : public QtWayland::xdg_wm_base
+class QWaylandXdgShell : public QtWayland::xdg_wm_base
 {
 public:
     QWaylandXdgShell(QWaylandDisplay *display, uint32_t id, uint32_t availableVersion);
     ~QWaylandXdgShell() override;
 
     QWaylandXdgDecorationManagerV1 *decorationManager() { return m_xdgDecorationManager.data(); }
+    QWaylandXdgActivationV1 *activation() const { return m_xdgActivation.data(); }
     QWaylandXdgSurface *getXdgSurface(QWaylandWindow *window);
 
 protected:
@@ -188,6 +200,7 @@ private:
 
     QWaylandDisplay *m_display = nullptr;
     QScopedPointer<QWaylandXdgDecorationManagerV1> m_xdgDecorationManager;
+    QScopedPointer<QWaylandXdgActivationV1> m_xdgActivation;
     QWaylandXdgSurface::Popup *m_topmostGrabbingPopup = nullptr;
 
     friend class QWaylandXdgSurface;

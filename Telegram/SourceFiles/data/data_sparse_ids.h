@@ -62,7 +62,7 @@ public:
 		std::optional<SparseIdsSlice> migrated);
 	SparseIdsMergedSlice(
 		Key key,
-		SparseUnsortedIdsSlice scheduled);
+		SparseUnsortedIdsSlice unsorted);
 
 	std::optional<int> fullCount() const;
 	std::optional<int> skippedBefore() const;
@@ -100,12 +100,10 @@ private:
 	}
 
 	static bool IsFromSlice(PeerId peerId, FullMsgId fullId) {
-		return peerIsChannel(peerId)
-			? (peerId == peerFromChannel(fullId.channel))
-			: !fullId.channel;
+		return (peerId == fullId.peer);
 	}
 	static FullMsgId ComputeId(PeerId peerId, MsgId msgId) {
-		return FullMsgId(peerToChannel(peerId), msgId);
+		return FullMsgId(peerId, msgId);
 	}
 	static FullMsgId ComputeId(const Key &key) {
 		return (key.universalId >= 0)
@@ -141,7 +139,7 @@ private:
 	Key _key;
 	SparseIdsSlice _part;
 	std::optional<SparseIdsSlice> _migrated;
-	std::optional<SparseUnsortedIdsSlice> _scheduled;
+	std::optional<SparseUnsortedIdsSlice> _unsorted;
 
 };
 

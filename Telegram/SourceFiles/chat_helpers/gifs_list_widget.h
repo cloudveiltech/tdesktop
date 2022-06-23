@@ -41,7 +41,8 @@ enum class Type;
 namespace ChatHelpers {
 
 void AddGifAction(
-	Fn<void(QString, Fn<void()> &&)> callback,
+	Fn<void(QString, Fn<void()> &&, const style::icon*)> callback,
+	Window::SessionController *controller,
 	not_null<DocumentData*> document);
 
 class GifsListWidget
@@ -133,12 +134,14 @@ private:
 	void paintInlineItems(Painter &p, QRect clip);
 
 	void updateInlineItems();
+	void repaintItems(crl::time now = 0);
 	void showPreview();
 
 	MTP::Sender _api;
 
 	Section _section = Section::Gifs;
-	crl::time _lastScrolled = 0;
+	crl::time _lastScrolledAt = 0;
+	crl::time _lastUpdatedAt = 0;
 	base::Timer _updateInlineItems;
 	bool _inlineWithThumb = false;
 

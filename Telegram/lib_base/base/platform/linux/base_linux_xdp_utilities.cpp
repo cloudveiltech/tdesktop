@@ -7,8 +7,33 @@
 #include "base/platform/linux/base_linux_xdp_utilities.h"
 
 #include "base/platform/linux/base_linux_glibmm_helper.h"
+#include "base/platform/linux/base_linux_wayland_integration.h"
+#include "base/platform/base_platform_info.h"
+
+#include <glibmm.h>
+#include <giomm.h>
+
+#include <QtGui/QWindow>
 
 namespace base::Platform::XDP {
+
+Glib::ustring ParentWindowID(QWindow *window) {
+	std::stringstream result;
+	if (!window) {
+		return result.str();
+	}
+
+	if (const auto integration = WaylandIntegration::Instance()) {
+		if (const auto handle = integration->nativeHandle(window)
+			; !handle.isEmpty()) {
+			result << "wayland:" << handle.toStdString();
+		}
+	} else if (::Platform::IsX11()) {
+		result << "x11:" << std::hex << window->winId();
+	}
+
+	return result.str();
+}
 
 std::optional<Glib::VariantBase> ReadSetting(
 		const Glib::ustring &group,
@@ -18,14 +43,14 @@ std::optional<Glib::VariantBase> ReadSetting(
 			Gio::DBus::BusType::BUS_TYPE_SESSION);
 
 		auto reply = connection->call_sync(
-			std::string(kXDPObjectPath),
-			std::string(kXDPSettingsInterface),
+			std::string(kObjectPath),
+			std::string(kSettingsInterface),
 			"Read",
 			MakeGlibVariant(std::tuple{
 				group,
 				key,
 			}),
-			std::string(kXDPService));
+			std::string(kService));
 
 		return GlibVariantCast<Glib::VariantBase>(
 			GlibVariantCast<Glib::VariantBase>(reply.get_child(0)));
@@ -78,10 +103,10 @@ SettingWatcher::SettingWatcher(
 				} catch (...) {
 				}
 			},
-			std::string(kXDPService),
-			std::string(kXDPSettingsInterface),
+			std::string(kService),
+			std::string(kSettingsInterface),
 			"SettingChanged",
-			std::string(kXDPObjectPath));
+			std::string(kObjectPath));
 	} catch (...) {
 	}
 }

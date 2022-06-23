@@ -21,17 +21,10 @@ class MainWindow : public Window::MainWindow {
 public:
 	explicit MainWindow(not_null<Window::Controller*> controller);
 
-	void showFromTrayMenu() override;
-
 	HWND psHwnd() const;
 
 	void updateWindowIcon() override;
 	bool isActiveForTrayMenu() override;
-
-	void psRefreshTaskbarIcon();
-
-	[[nodiscard]] static uint32 TaskbarCreatedMsgId();
-	static void TaskbarCreated();
 
 	// Custom shadows.
 	void shadowsActivate();
@@ -39,7 +32,7 @@ public:
 
 	[[nodiscard]] bool hasTabletView() const;
 
-	void psShowTrayMenu();
+	void destroyedFromSystem();
 
 	~MainWindow();
 
@@ -47,18 +40,6 @@ protected:
 	void initHook() override;
 	int32 screenNameChecksum(const QString &name) const override;
 	void unreadCounterChangedHook() override;
-
-	bool hasTrayIcon() const override {
-		return trayIcon;
-	}
-
-	QSystemTrayIcon *trayIcon = nullptr;
-	Ui::PopupMenu *trayIconMenu = nullptr;
-
-	void psTrayMenuUpdated();
-	void psSetupTrayIcon();
-
-	void showTrayTooltip() override;
 
 	void workmodeUpdated(Core::Settings::WorkMode mode) override;
 
@@ -72,22 +53,22 @@ private:
 	void setupNativeWindowFrame();
 	void updateIconCounters();
 	void validateWindowTheme(bool native, bool night);
-	void psDestroyIcons();
+
+	void forceIconRefresh();
+	void destroyCachedIcons();
 
 	const std::unique_ptr<Private> _private;
+	const std::unique_ptr<QWindow> _taskbarHiderWindow;
 
-	bool _hasActiveFrame = false;
+	HWND _hWnd = nullptr;
+	HICON _iconBig = nullptr;
+	HICON _iconSmall = nullptr;
+	HICON _iconOverlay = nullptr;
 
 	// Workarounds for activation from tray icon.
 	crl::time _lastDeactivateTime = 0;
-	rpl::lifetime _showFromTrayLifetime;
 
-	HWND ps_hWnd = nullptr;
-	HICON ps_iconBig = nullptr;
-	HICON ps_iconSmall = nullptr;
-	HICON ps_iconOverlay = nullptr;
-
-	const std::unique_ptr<QWindow> _taskbarHiderWindow;
+	bool _hasActiveFrame = false;
 
 };
 

@@ -14,7 +14,7 @@
 #include "ui/text/text_entity.h"
 #include "ui/text/text_utilities.h"
 #include "ui/ui_utility.h"
-#include "base/qt_adapters.h"
+#include "base/qt/qt_common_adapters.h"
 
 namespace Spellchecker {
 
@@ -81,7 +81,7 @@ inline bool IsTagUnspellcheckable(const QString &tag) {
 	if (tag.isEmpty()) {
 		return false;
 	}
-	for (const auto &single : QStringView(tag).split('|')) {
+	for (const auto &single : TextUtilities::SplitTags(tag)) {
 		const auto isCommonFormatting = ranges::any_of(
 			kUnspellcheckableTags,
 			[&](const auto *t) { return (*t) == single; });

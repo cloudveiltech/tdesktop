@@ -17,9 +17,10 @@
 namespace Lottie {
 
 struct IconDescriptor {
+	QString name;
 	QString path;
 	QByteArray json;
-	const style::color &color;
+	const style::color *color = nullptr;
 	QSize sizeOverride;
 	int frame = 0;
 };
@@ -29,6 +30,8 @@ public:
 	explicit Icon(IconDescriptor &&descriptor);
 	Icon(const Icon &other) = delete;
 	Icon &operator=(const Icon &other) = delete;
+	Icon(Icon &&other) = delete; // _animation captures 'this'.
+	Icon &operator=(Icon &&other) = delete;
 
 	[[nodiscard]] bool valid() const;
 	[[nodiscard]] int frameIndex() const;
@@ -37,6 +40,14 @@ public:
 	[[nodiscard]] int width() const;
 	[[nodiscard]] int height() const;
 	[[nodiscard]] QSize size() const;
+
+	struct ResizedFrame {
+		QImage image;
+		bool scaled = false;
+	};
+	[[nodiscard]] ResizedFrame frame(
+		QSize desiredSize,
+		Fn<void()> updateWithPerfect) const;
 
 	void paint(
 		QPainter &p,
@@ -62,15 +73,17 @@ private:
 
 	void wait() const;
 	[[nodiscard]] int wantedFrameIndex() const;
-	void preloadNextFrame() const;
+	void preloadNextFrame(QSize updatedDesiredSize = QSize()) const;
 	void frameJumpFinished();
 
 	std::shared_ptr<Inner> _inner;
-	const style::color &_color;
+	const style::color *_color = nullptr;
 	Ui::Animations::Simple _animation;
-	int _animationFrameTo = 0;
-	Fn<void()> _repaint;
+	mutable int _animationFrameTo = 0;
+	mutable Fn<void()> _repaint;
 
 };
+
+[[nodiscard]] std::unique_ptr<Icon> MakeIcon(IconDescriptor &&descriptor);
 
 } // namespace Lottie

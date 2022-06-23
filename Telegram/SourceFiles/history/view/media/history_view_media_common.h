@@ -31,12 +31,16 @@ void PaintInterpolatedIcon(
 	float64 b_ratio,
 	QRect rect);
 
-std::unique_ptr<Media> CreateAttach(
+[[nodiscard]] std::unique_ptr<Media> CreateAttach(
+	not_null<Element*> parent,
+	DocumentData *document,
+	PhotoData *photo);
+[[nodiscard]] std::unique_ptr<Media> CreateAttach(
 	not_null<Element*> parent,
 	DocumentData *document,
 	PhotoData *photo,
-	const std::vector<std::unique_ptr<Data::Media>> &collage = {},
-	const QString &webpageUrl = QString());
+	const std::vector<std::unique_ptr<Data::Media>> &collage,
+	const QString &webpageUrl);
 int unitedLineHeight();
 
 [[nodiscard]] inline QSize NonEmptySize(QSize size) {
@@ -44,9 +48,10 @@ int unitedLineHeight();
 }
 
 [[nodiscard]] inline QSize DownscaledSize(QSize size, QSize box) {
-	return (size.width() > box.width() || size.height() > box.height())
-		? size.scaled(box, Qt::KeepAspectRatio)
-		: size;
+	return NonEmptySize(
+		((size.width() > box.width() || size.height() > box.height())
+			? size.scaled(box, Qt::KeepAspectRatio)
+			: size));
 }
 
 } // namespace HistoryView

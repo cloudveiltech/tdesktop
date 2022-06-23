@@ -17,9 +17,6 @@
 
 namespace Ui {
 
-// 37px per 15ms while select-by-drag.
-inline constexpr auto kMaxScrollSpeed = 37;
-
 // Touch flick ignore 3px.
 inline constexpr auto kFingerAccuracyThreshold = 3;
 
@@ -88,6 +85,7 @@ protected:
 	void mousePressEvent(QMouseEvent *e) override;
 	void mouseReleaseEvent(QMouseEvent *e) override;
 	void resizeEvent(QResizeEvent *e) override;
+	void wheelEvent(QWheelEvent *e) override;
 
 private:
 	ScrollArea *area();

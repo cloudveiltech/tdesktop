@@ -28,8 +28,7 @@ namespace {
 TextParseOptions kInformBoxTextOptions = {
 	(TextParseLinks
 		| TextParseMultiline
-		| TextParseMarkdown
-		| TextParseRichText), // flags
+		| TextParseMarkdown), // flags
 	0, // maxw
 	0, // maxh
 	Qt::LayoutDirectionAuto, // dir
@@ -91,7 +90,9 @@ void MaxInviteBox::mousePressEvent(QMouseEvent *e) {
 	if (_linkOver) {
 		if (!_channel->inviteLink().isEmpty()) {
 			QGuiApplication::clipboard()->setText(_channel->inviteLink());
-			Ui::Toast::Show(tr::lng_create_channel_link_copied(tr::now));
+			Ui::Toast::Show(
+				Ui::BoxShow(this).toastParent(),
+				tr::lng_create_channel_link_copied(tr::now));
 		} else if (_channel->isFullLoaded() && !_creatingInviteLink) {
 			_creatingInviteLink = true;
 			_channel->session().api().inviteLinks().create(_channel);

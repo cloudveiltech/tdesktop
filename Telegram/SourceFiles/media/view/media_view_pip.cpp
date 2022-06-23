@@ -23,6 +23,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "core/application.h"
 #include "base/platform/base_platform_info.h"
+#include "base/power_save_blocker.h"
 #include "ui/platform/ui_platform_utility.h"
 #include "ui/widgets/buttons.h"
 #include "ui/wrap/fade_wrap.h"
@@ -371,6 +372,7 @@ void PipPanel::setAspectRatio(QSize ratio) {
 	if (_ratio.isEmpty()) {
 		_ratio = QSize(1, 1);
 	}
+	Ui::Platform::DisableSystemWindowResize(widget(), _ratio);
 	if (!widget()->size().isEmpty()) {
 		setPosition(countPosition());
 	}
@@ -416,10 +418,7 @@ rpl::producer<> PipPanel::saveGeometryRequests() const {
 }
 
 QScreen *PipPanel::myScreen() const {
-	if (const auto window = widget()->windowHandle()) {
-		return window->screen();
-	}
-	return nullptr;
+	return widget()->screen();
 }
 
 PipPanel::Position PipPanel::countPosition() const {
@@ -462,24 +461,27 @@ PipPanel::Position PipPanel::countPosition() const {
 
 void PipPanel::setPositionDefault() {
 	const auto widgetScreen = [&](auto &&widget) -> QScreen* {
-		if (auto handle = widget ? widget->windowHandle() : nullptr) {
-			return handle->screen();
+		if (!widget) {
+			return nullptr;
 		}
-		return nullptr;
+		if (!Platform::IsWayland()) {
+			if (const auto screen = QGuiApplication::screenAt(
+				widget->geometry().center())) {
+				return screen;
+			}
+		}
+		return widget->screen();
 	};
 	const auto parentScreen = widgetScreen(_parent);
 	const auto myScreen = widgetScreen(widget());
 	if (parentScreen && myScreen && myScreen != parentScreen) {
-		widget()->windowHandle()->setScreen(parentScreen);
+		widget()->setScreen(parentScreen);
 	}
-	const auto screen = parentScreen
-		? parentScreen
-		: QGuiApplication::primaryScreen();
 	auto position = Position();
 	position.snapped = RectPart::Top | RectPart::Left;
-	position.screen = screen->geometry();
+	position.screen = parentScreen->geometry();
 	position.geometry = QRect(0, 0, st::pipDefaultSize, st::pipDefaultSize);
-	setPositionOnScreen(position, screen->availableGeometry());
+	setPositionOnScreen(position, parentScreen->availableGeometry());
 }
 
 void PipPanel::setPositionOnScreen(Position position, QRect available) {
@@ -1512,6 +1514,7 @@ void Pip::updatePlaybackState() {
 		return;
 	}
 	_playbackProgress->updateState(state);
+	updatePowerSaveBlocker(state);
 
 	qint64 position = 0;
 	if (Player::IsStoppedAtEnd(state.state)) {
@@ -1527,6 +1530,18 @@ void Pip::updatePlaybackState() {
 	if (_seekPositionMs < 0) {
 		updatePlaybackTexts(position, state.length, playFrequency);
 	}
+}
+
+void Pip::updatePowerSaveBlocker(const Player::TrackState &state) {
+	const auto block = _data->isVideoFile()
+		&& !IsPausedOrPausing(state.state)
+		&& !IsStoppedOrStopping(state.state);
+	base::UpdatePowerSaveBlocker(
+		_powerSaveBlocker,
+		block,
+		base::PowerSaveBlockType::PreventDisplaySleep,
+		[] { return u"Video playback is active"_q; },
+		[=] { return _panel.widget()->windowHandle(); });
 }
 
 void Pip::updatePlaybackTexts(
@@ -1586,6 +1601,7 @@ void Pip::restartAtSeekPosition(crl::time position) {
 
 	auto options = Streaming::PlaybackOptions();
 	options.position = position;
+	options.hwAllowed = Core::App().settings().hardwareAcceleratedVideo();
 	options.audioId = _instance.player().prepareLegacyState().id;
 
 	Assert(8 && _delegate->pipPlaybackSpeed() >= 0.5
@@ -1660,7 +1676,7 @@ QImage Pip::staticContent() const {
 			? blurred
 			: Image::BlankMedia().get())->original();
 		if (!good) {
-			_preparedCoverStorage = Images::prepareBlur(
+			_preparedCoverStorage = Images::Blur(
 				std::move(_preparedCoverStorage));
 		}
 	}

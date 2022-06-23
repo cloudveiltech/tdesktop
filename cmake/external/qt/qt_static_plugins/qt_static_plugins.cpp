@@ -41,11 +41,13 @@ Q_IMPORT_PLUGIN(QConnmanEnginePlugin)
 Q_IMPORT_PLUGIN(QNetworkManagerEnginePlugin)
 #endif // Qt < 6.0.0
 Q_IMPORT_PLUGIN(QIbusPlatformInputContextPlugin)
+Q_IMPORT_PLUGIN(QXdgDesktopPortalThemePlugin)
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 #ifndef DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION
 Q_IMPORT_PLUGIN(QWaylandIntegrationPlugin)
 Q_IMPORT_PLUGIN(QWaylandEglPlatformIntegrationPlugin)
 Q_IMPORT_PLUGIN(QWaylandEglClientBufferPlugin)
+Q_IMPORT_PLUGIN(QWaylandXdgShellIntegrationPlugin)
 Q_IMPORT_PLUGIN(QWaylandBradientDecorationPlugin)
 #endif // !DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION
 Q_IMPORT_PLUGIN(QGtk3ThemePlugin)

@@ -340,6 +340,63 @@ bool BlockParser::isLineBreak(
 	return lineBreak;
 }
 
+AbstractBlock::AbstractBlock(
+	const style::font &font,
+	const QString &str,
+	uint16 from,
+	uint16 length,
+	uint16 flags,
+	uint16 lnkIndex,
+	uint16 spoilerIndex)
+: _from(from)
+, _flags((flags & 0b1111111111) | ((lnkIndex & 0xFFFF) << 14))
+, _spoilerIndex(spoilerIndex) {
+}
+
+uint16 AbstractBlock::from() const {
+	return _from;
+}
+
+int AbstractBlock::width() const {
+	return _width.toInt();
+}
+
+int AbstractBlock::rpadding() const {
+	return _rpadding.toInt();
+}
+
+QFixed AbstractBlock::f_width() const {
+	return _width;
+}
+
+QFixed AbstractBlock::f_rpadding() const {
+	return _rpadding;
+}
+
+uint16 AbstractBlock::lnkIndex() const {
+	return (_flags >> 14) & 0xFFFF;
+}
+
+void AbstractBlock::setLnkIndex(uint16 lnkIndex) {
+	_flags = (_flags & ~(0xFFFF << 14)) | (lnkIndex << 14);
+}
+
+uint16 AbstractBlock::spoilerIndex() const {
+	return _spoilerIndex;
+}
+
+void AbstractBlock::setSpoilerIndex(uint16 spoilerIndex) {
+	_spoilerIndex = spoilerIndex;
+}
+
+TextBlockType AbstractBlock::type() const {
+	return TextBlockType((_flags >> 10) & 0x0F);
+}
+
+int32 AbstractBlock::flags() const {
+	return (_flags & 0b1111111111);
+}
+
 QFixed AbstractBlock::f_rbearing() const {
 	return (type() == TextBlockTText)
 		? static_cast<const TextBlock*>(this)->real_f_rbearing()
@@ -352,10 +409,11 @@ TextBlock::TextBlock(
 	QFixed minResizeWidth,
 	uint16 from,
 	uint16 length,
-	uchar flags,
-	uint16 lnkIndex)
-: AbstractBlock(font, str, from, length, flags, lnkIndex) {
-	_flags |= ((TextBlockTText & 0x0F) << 8);
+	uint16 flags,
+	uint16 lnkIndex,
+	uint16 spoilerIndex)
+: AbstractBlock(font, str, from, length, flags, lnkIndex, spoilerIndex) {
+	_flags |= ((TextBlockTText & 0x0F) << 10);
 	if (length) {
 		style::font blockFont = font;
 		if (!flags && lnkIndex) {
@@ -388,17 +446,22 @@ TextBlock::TextBlock(
 	}
 }
 
+QFixed TextBlock::real_f_rbearing() const {
+	return _words.isEmpty() ? 0 : _words.back().f_rbearing();
+}
+
 EmojiBlock::EmojiBlock(
 	const style::font &font,
 	const QString &str,
 	uint16 from,
 	uint16 length,
-	uchar flags,
+	uint16 flags,
 	uint16 lnkIndex,
+	uint16 spoilerIndex,
 	EmojiPtr emoji)
-: AbstractBlock(font, str, from, length, flags, lnkIndex)
+: AbstractBlock(font, str, from, length, flags, lnkIndex, spoilerIndex)
 , _emoji(emoji) {
-	_flags |= ((TextBlockTEmoji & 0x0F) << 8);
+	_flags |= ((TextBlockTEmoji & 0x0F) << 10);
 	_width = int(st::emojiSize + 2 * st::emojiPadding);
 	_rpadding = 0;
 	for (auto i = length; i != 0;) {
@@ -408,6 +471,280 @@ EmojiBlock::EmojiBlock(
 		} else {
 			break;
 		}
+	}
+}
+
+NewlineBlock::NewlineBlock(
+	const style::font &font,
+	const QString &str,
+	uint16 from,
+	uint16 length,
+	uint16 flags,
+	uint16 lnkIndex,
+	uint16 spoilerIndex)
+: AbstractBlock(font, str, from, length, flags, lnkIndex, spoilerIndex) {
+	_flags |= ((TextBlockTNewline & 0x0F) << 10);
+}
+
+Qt::LayoutDirection NewlineBlock::nextDirection() const {
+	return _nextDir;
+}
+
+SkipBlock::SkipBlock(
+	const style::font &font,
+	const QString &str,
+	uint16 from,
+	int32 w,
+	int32 h,
+	uint16 lnkIndex,
+	uint16 spoilerIndex)
+: AbstractBlock(font, str, from, 1, 0, lnkIndex, spoilerIndex)
+, _height(h) {
+	_flags |= ((TextBlockTSkip & 0x0F) << 10);
+	_width = w;
+}
+
+int SkipBlock::height() const {
+	return _height;
+}
+
+
+TextWord::TextWord(
+	uint16 from,
+	QFixed width,
+	QFixed rbearing,
+	QFixed rpadding)
+: _from(from)
+, _rbearing((rbearing.value() > 0x7FFF)
+	? 0x7FFF
+	: (rbearing.value() < -0x7FFF ? -0x7FFF : rbearing.value()))
+, _width(width)
+, _rpadding(rpadding) {
+}
+
+uint16 TextWord::from() const {
+	return _from;
+}
+
+QFixed TextWord::f_rbearing() const {
+	return QFixed::fromFixed(_rbearing);
+}
+
+QFixed TextWord::f_width() const {
+	return _width;
+}
+
+QFixed TextWord::f_rpadding() const {
+	return _rpadding;
+}
+
+void TextWord::add_rpadding(QFixed padding) {
+	_rpadding += padding;
+}
+
+Block::Block() {
+	Unexpected("Should not be called.");
+}
+
+Block::Block(const Block &other) {
+	switch (other->type()) {
+	case TextBlockTNewline:
+		emplace<NewlineBlock>(other.unsafe<NewlineBlock>());
+		break;
+	case TextBlockTText:
+		emplace<TextBlock>(other.unsafe<TextBlock>());
+		break;
+	case TextBlockTEmoji:
+		emplace<EmojiBlock>(other.unsafe<EmojiBlock>());
+		break;
+	case TextBlockTSkip:
+		emplace<SkipBlock>(other.unsafe<SkipBlock>());
+		break;
+	default:
+		Unexpected("Bad text block type in Block(const Block&).");
+	}
+}
+
+Block::Block(Block &&other) {
+	switch (other->type()) {
+	case TextBlockTNewline:
+		emplace<NewlineBlock>(std::move(other.unsafe<NewlineBlock>()));
+		break;
+	case TextBlockTText:
+		emplace<TextBlock>(std::move(other.unsafe<TextBlock>()));
+		break;
+	case TextBlockTEmoji:
+		emplace<EmojiBlock>(std::move(other.unsafe<EmojiBlock>()));
+		break;
+	case TextBlockTSkip:
+		emplace<SkipBlock>(std::move(other.unsafe<SkipBlock>()));
+		break;
+	default:
+		Unexpected("Bad text block type in Block(Block&&).");
+	}
+}
+
+Block &Block::operator=(const Block &other) {
+	if (&other == this) {
+		return *this;
+	}
+	destroy();
+	switch (other->type()) {
+	case TextBlockTNewline:
+		emplace<NewlineBlock>(other.unsafe<NewlineBlock>());
+		break;
+	case TextBlockTText:
+		emplace<TextBlock>(other.unsafe<TextBlock>());
+		break;
+	case TextBlockTEmoji:
+		emplace<EmojiBlock>(other.unsafe<EmojiBlock>());
+		break;
+	case TextBlockTSkip:
+		emplace<SkipBlock>(other.unsafe<SkipBlock>());
+		break;
+	default:
+		Unexpected("Bad text block type in operator=(const Block&).");
+	}
+	return *this;
+}
+
+Block &Block::operator=(Block &&other) {
+	if (&other == this) {
+		return *this;
+	}
+	destroy();
+	switch (other->type()) {
+	case TextBlockTNewline:
+		emplace<NewlineBlock>(std::move(other.unsafe<NewlineBlock>()));
+		break;
+	case TextBlockTText:
+		emplace<TextBlock>(std::move(other.unsafe<TextBlock>()));
+		break;
+	case TextBlockTEmoji:
+		emplace<EmojiBlock>(std::move(other.unsafe<EmojiBlock>()));
+		break;
+	case TextBlockTSkip:
+		emplace<SkipBlock>(std::move(other.unsafe<SkipBlock>()));
+		break;
+	default:
+		Unexpected("Bad text block type in operator=(Block&&).");
+	}
+	return *this;
+}
+
+Block::~Block() {
+	destroy();
+}
+
+Block Block::Newline(
+		const style::font &font,
+		const QString &str,
+		uint16 from,
+		uint16 length,
+		uint16 flags,
+		uint16 lnkIndex,
+		uint16 spoilerIndex) {
+	return New<NewlineBlock>(
+		font,
+		str,
+		from,
+		length,
+		flags,
+		lnkIndex,
+		spoilerIndex);
+}
+
+Block Block::Text(
+		const style::font &font,
+		const QString &str,
+		QFixed minResizeWidth,
+		uint16 from,
+		uint16 length,
+		uint16 flags,
+		uint16 lnkIndex,
+		uint16 spoilerIndex) {
+	return New<TextBlock>(
+		font,
+		str,
+		minResizeWidth,
+		from,
+		length,
+		flags,
+		lnkIndex,
+		spoilerIndex);
+}
+
+Block Block::Emoji(
+		const style::font &font,
+		const QString &str,
+		uint16 from,
+		uint16 length,
+		uint16 flags,
+		uint16 lnkIndex,
+		uint16 spoilerIndex,
+		EmojiPtr emoji) {
+	return New<EmojiBlock>(
+		font,
+		str,
+		from,
+		length,
+		flags,
+		lnkIndex,
+		spoilerIndex,
+		emoji);
+}
+
+Block Block::Skip(
+		const style::font &font,
+		const QString &str,
+		uint16 from,
+		int32 w,
+		int32 h,
+		uint16 lnkIndex,
+		uint16 spoilerIndex) {
+	return New<SkipBlock>(font, str, from, w, h, lnkIndex, spoilerIndex);
+}
+
+AbstractBlock *Block::get() {
+	return &unsafe<AbstractBlock>();
+}
+
+const AbstractBlock *Block::get() const {
+	return &unsafe<AbstractBlock>();
+}
+
+AbstractBlock *Block::operator->() {
+	return get();
+}
+
+const AbstractBlock *Block::operator->() const {
+	return get();
+}
+
+AbstractBlock &Block::operator*() {
+	return *get();
+}
+
+const AbstractBlock &Block::operator*() const {
+	return *get();
+}
+
+void Block::destroy() {
+	switch (get()->type()) {
+	case TextBlockTNewline:
+		unsafe<NewlineBlock>().~NewlineBlock();
+		break;
+	case TextBlockTText:
+		unsafe<TextBlock>().~TextBlock();
+		break;
+	case TextBlockTEmoji:
+		unsafe<EmojiBlock>().~EmojiBlock();
+		break;
+	case TextBlockTSkip:
+		unsafe<SkipBlock>().~SkipBlock();
+		break;
+	default:
+		Unexpected("Bad text block type in Block(Block&&).");
 	}
 }
 

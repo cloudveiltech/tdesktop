@@ -8,6 +8,9 @@
 
 #include "base/integration.h"
 
+#include <QtCore/QCoreApplication>
+#include <QtCore/QPointer>
+
 namespace base {
 
 // This method allows to create an rpl::producer from a Qt object
@@ -66,9 +69,13 @@ auto qt_signal_producer(Object *object, Signal signal) {
 			});
 		};
 		auto put = [=](const Produced &value) {
-			Integration::Instance().enterFromEventLoop([&] {
+			if (QCoreApplication::instance()) {
+				Integration::Instance().enterFromEventLoop([&] {
+					consumer.put_next_copy(value);
+				});
+			} else {
 				consumer.put_next_copy(value);
-			});
+			}
 		};
 		if constexpr (NoArgument) {
 			return connect([put = std::move(put)] { put({}); });

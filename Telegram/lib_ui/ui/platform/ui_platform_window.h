@@ -7,6 +7,9 @@
 #pragma once
 
 #include "base/flags.h"
+#include "base/object_ptr.h"
+#include "base/qt/qt_common_adapters.h"
+#include "ui/round_rect.h"
 
 namespace style {
 struct WindowTitle;
@@ -15,11 +18,14 @@ struct WindowTitle;
 namespace Ui {
 
 class RpWidget;
+class RpWindow;
 enum class WindowTitleHitTestFlag;
 using WindowTitleHitTestFlags = base::flags<WindowTitleHitTestFlag>;
 
 namespace Platform {
 
+struct HitTestRequest;
+enum class HitTestResult;
 class DefaultTitleWidget;
 
 class BasicWindowHelper {
@@ -27,8 +33,26 @@ public:
 	explicit BasicWindowHelper(not_null<RpWidget*> window);
 	virtual ~BasicWindowHelper() = default;
 
+	[[nodiscard]] not_null<RpWidget*> window() const {
+		return _window;
+	}
+
+	virtual void initInWindow(not_null<RpWindow*> window);
 	[[nodiscard]] virtual not_null<RpWidget*> body();
 	[[nodiscard]] virtual QMargins frameMargins();
+	[[nodiscard]] virtual int additionalContentPadding() const;
+	[[nodiscard]] virtual auto additionalContentPaddingValue() const
+		-> rpl::producer<int>;
+	[[nodiscard]] virtual auto hitTestRequests() const
+		-> rpl::producer<not_null<HitTestRequest*>>;
+	[[nodiscard]] virtual auto systemButtonOver() const
+		-> rpl::producer<HitTestResult>;
+	[[nodiscard]] virtual auto systemButtonDown() const
+		-> rpl::producer<HitTestResult>;
+	[[nodiscard]] virtual bool nativeEvent(
+		const QByteArray &eventType,
+		void *message,
+		base::NativeEventResult *result);
 	virtual void setTitle(const QString &title);
 	virtual void setTitleStyle(const style::WindowTitle &st);
 	virtual void setNativeFrame(bool enabled);
@@ -43,9 +67,6 @@ public:
 	void setBodyTitleArea(Fn<WindowTitleHitTestFlags(QPoint)> testMethod);
 
 protected:
-	[[nodiscard]] not_null<RpWidget*> window() const {
-		return _window;
-	}
 	[[nodiscard]] WindowTitleHitTestFlags bodyTitleAreaHit(
 			QPoint point) const {
 		return _bodyTitleAreaTestMethod
@@ -81,6 +102,7 @@ protected:
 
 private:
 	void init();
+	void updateRoundingOverlay();
 	[[nodiscard]] bool hasShadow() const;
 	[[nodiscard]] QMargins resizeArea() const;
 	[[nodiscard]] Qt::Edges edgesFromPos(const QPoint &pos) const;
@@ -92,6 +114,8 @@ private:
 
 	const not_null<DefaultTitleWidget*> _title;
 	const not_null<RpWidget*> _body;
+	RoundRect _roundRect;
+	object_ptr<RpWidget> _roundingOverlay = { nullptr };
 	bool _extentsSet = false;
 	rpl::variable<Qt::WindowStates> _windowState = Qt::WindowNoState;
 
@@ -108,7 +132,7 @@ private:
 	return std::make_unique<DefaultWindowHelper>(window);
 }
 
-bool NativeWindowFrameSupported();
+[[nodiscard]] bool NativeWindowFrameSupported();
 
 } // namespace Platform
 } // namespace Ui

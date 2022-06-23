@@ -27,18 +27,18 @@ generate_emoji(lib_ui emoji.txt emoji_suggestions/emoji_autocomplete.json)
 set_target_properties(lib_ui PROPERTIES AUTOMOC ON)
 target_prepare_qrc(lib_ui)
 
-target_precompile_headers(lib_ui PRIVATE ${src_loc}/ui/ui_pch.h)
+target_precompile_headers(lib_ui PRIVATE $<$<COMPILE_LANGUAGE:CXX,OBJCXX>:${src_loc}/ui/ui_pch.h>)
 nice_target_sources(lib_ui ${src_loc}
 PRIVATE
     ${style_files}
     ui/colors.palette
     emoji_suggestions/emoji_autocomplete.json
 
-    qt_conf/mac.qrc
     qt_conf/win.qrc
 
     ui/effects/animation_value.cpp
     ui/effects/animation_value.h
+    ui/effects/animation_value_f.h
     ui/effects/animations.cpp
     ui/effects/animations.h
     ui/effects/cross_animation.cpp
@@ -47,6 +47,7 @@ PRIVATE
     ui/effects/cross_line.h
     ui/effects/fade_animation.cpp
     ui/effects/fade_animation.h
+    ui/effects/gradient.cpp
     ui/effects/gradient.h
     ui/effects/numbers_animation.cpp
     ui/effects/numbers_animation.h
@@ -58,6 +59,8 @@ PRIVATE
     ui/effects/radial_animation.h
     ui/effects/ripple_animation.cpp
     ui/effects/ripple_animation.h
+    ui/effects/show_animation.cpp
+    ui/effects/show_animation.h
     ui/effects/slide_animation.cpp
     ui/effects/slide_animation.h
     ui/gl/gl_detection.cpp
@@ -86,6 +89,7 @@ PRIVATE
     ui/layers/layer_manager.h
     ui/layers/layer_widget.cpp
     ui/layers/layer_widget.h
+    ui/layers/show.h
     ui/paint/arcs.cpp
     ui/paint/arcs.h
     ui/paint/blob.cpp
@@ -95,6 +99,7 @@ PRIVATE
     ui/paint/blobs_linear.cpp
     ui/paint/blobs_linear.h
     ui/platform/linux/ui_linux_wayland_integration.cpp
+    ui/platform/linux/ui_linux_wayland_integration_dummy.cpp
     ui/platform/linux/ui_linux_wayland_integration.h
     ui/platform/linux/ui_window_linux.cpp
     ui/platform/linux/ui_window_linux.h
@@ -149,12 +154,16 @@ PRIVATE
     ui/text/text_isolated_emoji.h
     ui/text/text_utilities.cpp
     ui/text/text_utilities.h
+    ui/text/text_variant.cpp
+    ui/text/text_variant.h
     ui/toast/toast.cpp
     ui/toast/toast.h
     ui/toast/toast_manager.cpp
     ui/toast/toast_manager.h
     ui/toast/toast_widget.cpp
     ui/toast/toast_widget.h
+    ui/toasts/common_toasts.cpp
+    ui/toasts/common_toasts.h
     ui/widgets/box_content_divider.cpp
     ui/widgets/box_content_divider.h
     ui/widgets/buttons.cpp
@@ -165,16 +174,24 @@ PRIVATE
     ui/widgets/checkbox.h
     ui/widgets/dropdown_menu.cpp
     ui/widgets/dropdown_menu.h
+    ui/widgets/icon_button_with_text.cpp
+    ui/widgets/icon_button_with_text.h
     ui/widgets/inner_dropdown.cpp
     ui/widgets/inner_dropdown.h
     ui/widgets/input_fields.cpp
     ui/widgets/input_fields.h
     ui/widgets/labels.cpp
     ui/widgets/labels.h
+    ui/widgets/fields/time_part_input.cpp
+    ui/widgets/fields/time_part_input.h
     ui/widgets/menu/menu.cpp
     ui/widgets/menu/menu.h
     ui/widgets/menu/menu_action.cpp
     ui/widgets/menu/menu_action.h
+    ui/widgets/menu/menu_add_action_callback.cpp
+    ui/widgets/menu/menu_add_action_callback.h
+    ui/widgets/menu/menu_add_action_callback_factory.cpp
+    ui/widgets/menu/menu_add_action_callback_factory.h
     ui/widgets/menu/menu_common.cpp
     ui/widgets/menu/menu_common.h
     ui/widgets/menu/menu_item_base.cpp
@@ -187,6 +204,8 @@ PRIVATE
     ui/widgets/popup_menu.h
     ui/widgets/rp_window.cpp
     ui/widgets/rp_window.h
+    ui/widgets/separate_panel.cpp
+    ui/widgets/separate_panel.h
     ui/widgets/scroll_area.cpp
     ui/widgets/scroll_area.h
     ui/widgets/side_bar_button.cpp
@@ -212,10 +231,14 @@ PRIVATE
     ui/abstract_button.h
     ui/basic_click_handlers.cpp
     ui/basic_click_handlers.h
+    ui/cached_special_layer_shadow_corners.cpp
+    ui/cached_special_layer_shadow_corners.h
     ui/click_handler.cpp
     ui/click_handler.h
     ui/delayed_activation.cpp
     ui/delayed_activation.h
+    ui/dragging_scroll_manager.cpp
+    ui/dragging_scroll_manager.h
     ui/emoji_config.cpp
     ui/emoji_config.h
     ui/focus_persister.h
@@ -231,6 +254,8 @@ PRIVATE
     ui/rect_part.h
     ui/round_rect.cpp
     ui/round_rect.h
+    ui/spoiler_click_handler.cpp
+    ui/spoiler_click_handler.h
     ui/rp_widget.cpp
     ui/rp_widget.h
     ui/ui_utility.cpp
@@ -243,24 +268,28 @@ PRIVATE
     emoji_suggestions/emoji_suggestions_helper.h
 )
 
-if (DESKTOP_APP_USE_PACKAGED)
-    nice_target_sources(lib_ui ${src_loc} PRIVATE ui/text/qtextitemint.cpp)
-else()
-    nice_target_sources(lib_ui ${src_loc} PRIVATE qt_conf/linux.qrc)
-endif()
-
 if (NOT DESKTOP_APP_USE_PACKAGED_FONTS)
     nice_target_sources(lib_ui ${src_loc} PRIVATE fonts/fonts.qrc)
 endif()
 
 if (DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
-    remove_target_sources(Telegram ${src_loc} ui/platform/linux/ui_linux_wayland_integration.cpp)
-    nice_target_sources(Telegram ${src_loc} PRIVATE ui/platform/linux/ui_linux_wayland_integration_dummy.cpp)
+    remove_target_sources(lib_ui ${src_loc} ui/platform/linux/ui_linux_wayland_integration.cpp)
 elseif(LINUX)
+    remove_target_sources(lib_ui ${src_loc} ui/platform/linux/ui_linux_wayland_integration_dummy.cpp)
+
+    if (DESKTOP_APP_QT6)
+        qt6_generate_wayland_protocol_client_sources(lib_ui
+        FILES
+            ${third_party_loc}/wayland-protocols/stable/xdg-shell/xdg-shell.xml
+        )
+    else()
+        message(FATAL_ERROR "This piece of cmake code is not ported to Qt 5")
+    endif()
+
     target_link_libraries(lib_ui
     PUBLIC
         desktop-app::lib_waylandshells
-        desktop-app::external_kwayland
+        desktop-app::external_wayland_client
     )
 endif()
 
@@ -275,4 +304,5 @@ PUBLIC
     desktop-app::lib_base
 PRIVATE
     desktop-app::external_zlib
+    desktop-app::external_jpeg
 )

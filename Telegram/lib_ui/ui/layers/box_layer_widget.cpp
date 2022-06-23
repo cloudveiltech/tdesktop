@@ -8,12 +8,7 @@
 
 #include "ui/effects/radial_animation.h"
 #include "ui/widgets/buttons.h"
-#include "ui/widgets/scroll_area.h"
 #include "ui/widgets/labels.h"
-#include "ui/widgets/shadow.h"
-#include "ui/wrap/fade_wrap.h"
-#include "ui/text/text_utilities.h"
-#include "ui/image/image_prepare.h"
 #include "ui/painter.h"
 #include "base/timer.h"
 #include "styles/style_layers.h"
@@ -42,7 +37,7 @@ BoxLayerWidget::BoxLayerWidget(
 : LayerWidget(layer)
 , _layer(layer)
 , _content(std::move(content))
-, _roundRect(ImageRoundRadius::Small, st().bg) {
+, _roundRect(st::boxRadius, st().bg) {
 	_content->setParent(this);
 	_content->setDelegate(this);
 
@@ -217,6 +212,10 @@ void BoxLayerWidget::showBox(
 	_layer->showBox(std::move(box), options, animated);
 }
 
+void BoxLayerWidget::hideLayer() {
+	_layer->hideLayers(anim::type::normal);
+}
+
 void BoxLayerWidget::updateSize() {
 	setDimensions(width(), _maxContentHeight);
 }
@@ -264,44 +263,35 @@ void BoxLayerWidget::clearButtons() {
 	_topButton = nullptr;
 }
 
-QPointer<RoundButton> BoxLayerWidget::addButton(
-		rpl::producer<QString> text,
-		Fn<void()> clickCallback,
-		const style::RoundButton &st) {
-	_buttons.emplace_back(this, std::move(text), st);
-	auto result = QPointer<RoundButton>(_buttons.back());
-	result->setClickedCallback(std::move(clickCallback));
-	result->show();
-	result->widthValue(
+void BoxLayerWidget::addButton(object_ptr<AbstractButton> button) {
+	_buttons.push_back(std::move(button));
+	const auto raw = _buttons.back().data();
+	raw->setParent(this);
+	raw->show();
+	raw->widthValue(
 	) | rpl::start_with_next([=] {
 		updateButtonsPositions();
-	}, result->lifetime());
-	return result;
+	}, raw->lifetime());
 }
 
-QPointer<RoundButton> BoxLayerWidget::addLeftButton(
-		rpl::producer<QString> text,
-		Fn<void()> clickCallback,
-		const style::RoundButton &st) {
-	_leftButton = object_ptr<RoundButton>(this, std::move(text), st);
-	auto result = QPointer<RoundButton>(_leftButton);
-	result->setClickedCallback(std::move(clickCallback));
-	result->show();
-	result->widthValue(
+void BoxLayerWidget::addLeftButton(object_ptr<AbstractButton> button) {
+	_leftButton = std::move(button);
+	const auto raw = _leftButton.data();
+	raw->setParent(this);
+	raw->show();
+	raw->widthValue(
 	) | rpl::start_with_next([=] {
 		updateButtonsPositions();
-	}, result->lifetime());
-	return result;
+	}, raw->lifetime());
 }
 
-QPointer<IconButton> BoxLayerWidget::addTopButton(const style::IconButton &st, Fn<void()> clickCallback) {
-	_topButton = base::make_unique_q<IconButton>(this, st);
-	auto result = QPointer<IconButton>(_topButton.get());
-	result->setClickedCallback(std::move(clickCallback));
-	result->show();
+void BoxLayerWidget::addTopButton(object_ptr<AbstractButton> button) {
+	_topButton = base::unique_qptr<AbstractButton>(button.release());
+	const auto raw = _topButton.get();
+	raw->setParent(this);
+	raw->show();
 	updateButtonsPositions();
 	updateTitlePosition();
-	return result;
 }
 
 void BoxLayerWidget::showLoading(bool show) {
@@ -377,14 +367,19 @@ int BoxLayerWidget::countFullHeight() const {
 }
 
 int BoxLayerWidget::contentTop() const {
-	return hasTitle() ? titleHeight() : (_noContentMargin ? 0 : st::boxTopMargin);
+	return hasTitle()
+		? titleHeight()
+		: _noContentMargin
+		?
+		0
+		: st::boxTopMargin;
 }
 
 void BoxLayerWidget::resizeEvent(QResizeEvent *e) {
 	updateButtonsPositions();
 	updateTitlePosition();
 
-	auto top = contentTop();
+	const auto top = contentTop();
 	_content->resize(width(), height() - top - buttonsHeight());
 	_content->moveToLeft(0, top);
 

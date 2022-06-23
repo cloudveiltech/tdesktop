@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_instance.h"
 #include "lang/lang_cloud_manager.h"
 #include "main/main_account.h"
+#include "main/main_app_config.h"
 #include "main/main_domain.h"
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
@@ -142,7 +143,7 @@ void Step::finish(const MTPUser &user, QImage &&photo) {
 		|| !user.c_user().vid().v) {
 		// No idea what to do here.
 		// We could've reset intro and MTP, but this really should not happen.
-		Ui::show(Box<Ui::InformBox>(
+		Ui::show(Ui::MakeInformBox(
 			"Internal error: bad user.is_self() after sign in."));
 		return;
 	}
@@ -200,6 +201,7 @@ void Step::createSession(
 	if (!photo.isNull()) {
 		session.api().peerPhoto().upload(session.user(), std::move(photo));
 	}
+	account->appConfig().refresh();
 	if (session.supportMode()) {
 		PrepareSupportMode(&session);
 	}

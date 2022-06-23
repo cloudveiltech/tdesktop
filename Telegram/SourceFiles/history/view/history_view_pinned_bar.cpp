@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_pinned_tracker.h"
 #include "history/history_item.h"
 #include "history/history.h"
+#include "base/weak_ptr.h"
 #include "apiwrap.h"
 #include "styles/style_chat.h"
 
@@ -24,7 +25,7 @@ namespace {
 [[nodiscard]] Ui::MessageBarContent ContentWithoutPreview(
 		not_null<HistoryItem*> item) {
 	return Ui::MessageBarContent{
-		.text = { item->inReplyText() },
+		.text = item->inReplyText(),
 	};
 }
 
@@ -101,13 +102,9 @@ namespace {
 		consumer.put_next(Ui::MessageBarContent{
 			.text = { tr::lng_contacts_loading(tr::now) },
 		});
-		const auto channel = id.channel
-			? session->data().channel(id.channel).get()
-			: nullptr;
-		const auto callback = [=](ChannelData *channel, MsgId id) {
-			consumer.put_done();
-		};
-		session->api().requestMessageData(channel, id.msg, callback);
+		const auto peer = session->data().peer(id.peer);
+		const auto callback = [=] { consumer.put_done(); };
+		session->api().requestMessageData(peer, id.msg, callback);
 		return rpl::lifetime();
 	});
 	return std::move(
@@ -156,6 +153,68 @@ rpl::producer<Ui::MessageBarContent> PinnedBarContent(
 			id.message
 		) | rpl::map(WithPinnedTitle(session, id));
 	}) | rpl::flatten_latest();
+}
+
+rpl::producer<HistoryItem*> PinnedBarItemWithReplyMarkup(
+		not_null<Main::Session*> session,
+		rpl::producer<PinnedId> id) {
+	return rpl::make_producer<HistoryItem*>([=,
+			id = std::move(id)](auto consumer) {
+		auto lifetime = rpl::lifetime();
+		consumer.put_next(nullptr);
+
+		struct State {
+			bool hasReplyMarkup = false;
+			base::has_weak_ptr guard;
+			rpl::lifetime lifetime;
+			FullMsgId resolvedId;
+		};
+		const auto state = lifetime.make_state<State>();
+
+		const auto pushUnique = [=](not_null<HistoryItem*> item) {
+			const auto replyMarkup = item->inlineReplyMarkup();
+			if (!state->hasReplyMarkup && !replyMarkup) {
+				return;
+			}
+			state->hasReplyMarkup = (replyMarkup != nullptr);
+			consumer.put_next(item.get());
+		};
+
+		rpl::duplicate(
+			id
+		) | rpl::filter([=](PinnedId current) {
+			return current.message && (current.message != state->resolvedId);
+		}) | rpl::start_with_next([=](PinnedId current) {
+			const auto fullId = current.message;
+			state->lifetime.destroy();
+			state->resolvedId = fullId;
+			invalidate_weak_ptrs(&state->guard);
+
+			const auto messageFlag = [=](not_null<HistoryItem*> item) {
+				using Update = Data::MessageUpdate;
+				session->changes().messageFlagsValue(
+					item,
+					Update::Flag::ReplyMarkup
+				) | rpl::start_with_next([=](const Update &update) {
+					pushUnique(update.item);
+				}, state->lifetime);
+			};
+			if (const auto item = session->data().message(fullId)) {
+				messageFlag(item);
+				return;
+			}
+			const auto resolved = crl::guard(&state->guard, [=] {
+				if (const auto item = session->data().message(fullId)) {
+					messageFlag(item);
+				}
+			});
+			session->api().requestMessageData(
+				session->data().peer(fullId.peer),
+				fullId.msg,
+				resolved);
+		}, lifetime);
+		return lifetime;
+	});
 }
 
 } // namespace HistoryView

@@ -87,7 +87,11 @@ EditInfoBox::EditInfoBox(
 	_field->setInstantReplacesEnabled(
 		Core::App().settings().replaceEmojiValue());
 	_field->setMarkdownReplacesEnabled(rpl::single(true));
-	_field->setEditLinkCallback(DefaultEditLinkCallback(controller, _field));
+	_field->setEditLinkCallback(
+		DefaultEditLinkCallback(
+			std::make_shared<Window::Show>(controller),
+			&controller->session(),
+			_field));
 }
 
 void EditInfoBox::prepare() {
@@ -592,8 +596,12 @@ QString InterpretSendPath(
 			+ QString::number(peerToChannel(toId).bare);
 	}
 	Ui::showPeerHistory(history, ShowAtUnreadMsgId);
+	const auto premium = window->session().user()->isPremium();
 	history->session().api().sendFiles(
-		Storage::PrepareMediaList(QStringList(filePath), st::sendMediaPreviewSize),
+		Storage::PrepareMediaList(
+			QStringList(filePath),
+			st::sendMediaPreviewSize,
+			premium),
 		SendMediaType::File,
 		{ caption },
 		nullptr,

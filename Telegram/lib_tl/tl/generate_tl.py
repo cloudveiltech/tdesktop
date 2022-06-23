@@ -13,7 +13,7 @@ def readInputs(inputFiles):
   for inputFile in inputFiles:
     names.append(os.path.basename(inputFile))
     lines.append('---types---')
-    with open(inputFile) as f:
+    with open(inputFile, encoding="utf-8") as f:
       for line in f:
         layerline = re.match(r'// LAYER (\d+)', line)
         if (layerline):
@@ -32,18 +32,20 @@ def addTextSerialize(typeList, typeData, typesDict, idPrefix, primeType, boxed, 
       prmsList = data[2]
       prms = data[3]
       hasFlags = data[4]
-      conditionsList = data[5]
-      conditions = data[6]
-      trivialConditions = data[7]
-      isTemplate = data[8]
+      hasFlags64 = data[5]
+      conditionsList = data[6]
+      conditions = data[7]
+      trivialConditions = data[8]
+      isTemplate = data[9]
+      flagRawType = 'uint64' if hasFlags64 != '' else 'uint32'
 
       templateArgument = ''
       if (isTemplate != ''):
           templateArgument = '<SerializedRequest>'
 
-      result += 'bool Serialize_' + name + '(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, StagesFlags &stages, StagesFlags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint32 iflag) {\n'
+      result += 'bool Serialize_' + name + '(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, Stages &stages, Flags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint64 iflag) {\n'
       if (len(conditions)):
-        result += '\tauto flag = ' + prefix + name + templateArgument + '::Flags::from_raw(iflag);\n\n'
+        result += '\tauto flag = ' + prefix + name + templateArgument + '::Flags::from_raw(' + flagRawType + '(iflag));\n\n'
       if (len(prms)):
         result += '\tif (stage) {\n'
         result += '\t\tto.add(",\\n").addSpaces(lev);\n'
@@ -57,11 +59,17 @@ def addTextSerialize(typeList, typeData, typesDict, idPrefix, primeType, boxed, 
           v = prms[k]
           result += '\tcase ' + str(stage) + ': to.add("  ' + k + ': "); ++stages.back(); '
           if (k == hasFlags):
-            result += 'if (start >= end) return false; else flags.back() = *start; '
+            if (hasFlags64 != ''):
+              result += 'if (start + 1 >= end) return false; else flags.back() = int64(*start) + (int64(*(start + 1)) << 32); '
+            else:
+              result += 'if (start >= end) return false; else flags.back() = *start; '
           if (k in trivialConditions):
+            flagBitValue = int(conditions[k])
+            flagFieldName = hasFlags64 if flagBitValue >= 32 else hasFlags
+            flagBitLogged = (flagBitValue - 32) if flagBitValue >= 32 else flagBitValue
             result += 'if (flag & ' + prefix + name + templateArgument + '::Flag::f_' + k + ') { '
-            result += 'to.add("YES [ BY BIT ' + conditions[k] + ' IN FIELD ' + hasFlags + ' ]"); '
-            result += '} else { to.add("[ SKIPPED BY BIT ' + conditions[k] + ' IN FIELD ' + hasFlags + ' ]"); } '
+            result += 'to.add("YES [ BY BIT ' + str(flagBitLogged) + ' IN FIELD ' + flagFieldName + ' ]"); '
+            result += '} else { to.add("[ SKIPPED BY BIT ' + str(flagBitLogged) + ' IN FIELD ' + flagFieldName + ' ]"); } '
           else:
             if (k in conditions):
               result += 'if (flag & ' + prefix + name + templateArgument + '::Flag::f_' + k + ') { '
@@ -103,6 +111,9 @@ def addTextSerialize(typeList, typeData, typesDict, idPrefix, primeType, boxed, 
                   result += '); vtypes.push_back('
                 if (re.match(r'^flags<', restype)):
                   result += idPrefix + 'flags'
+                  if (k == hasFlags):
+                    if (hasFlags64 != ''):
+                      result += '64'
                 else:
                   result += idPrefix + restype + '+0'
                 if (not vtypeget):
@@ -113,7 +124,10 @@ def addTextSerialize(typeList, typeData, typesDict, idPrefix, primeType, boxed, 
               result += '); vtypes.push_back(0'
             result += '); stages.push_back(0); flags.push_back(0); '
             if (k in conditions):
-              result += '} else { to.add("[ SKIPPED BY BIT ' + conditions[k] + ' IN FIELD ' + hasFlags + ' ]"); } '
+              flagBitValue = int(conditions[k])
+              flagFieldName = hasFlags64 if flagBitValue >= 32 else hasFlags
+              flagBitLogged = (flagBitValue - 32) if flagBitValue >= 32 else flagBitValue
+              result += '} else { to.add("[ SKIPPED BY BIT ' + str(flagBitLogged) + ' IN FIELD ' + flagFieldName + ' ]"); } '
           result += 'break;\n'
           stage = stage + 1
         result += '\tdefault: to.add("}"); types.pop_back(); vtypes.pop_back(); stages.pop_back(); flags.pop_back(); break;\n'
@@ -150,22 +164,55 @@ def generate(scheme):
       inputFiles.append(arg)
 
   if len(inputFiles) == 0:
-    print('Input file required.')
-    sys.exit(1)
+    raise ValueError('Input file required.')
   if outputPath == '':
-    print('Output path required.')
-    sys.exit(1)
+    raise ValueError('Output path required.')
   readAndGenerate(inputFiles, outputPath, scheme)
+
+def endsWithForTag(comments, tag, ending):
+  position = comments.find('@' + tag + ' ')
+  if (position < 0):
+    return False
+  tail = comments[(position + len(tag) + 1):]
+  till = tail.find('@')
+  line = tail[:till] if till >= 0 else tail
+  stripped = line.strip()
+  fullending = '; ' + ending.strip()
+  if len(stripped) < len(fullending):
+    return False
+  if stripped.endswith(fullending) or stripped.find(fullending + '.') >= 0 or stripped.find(fullending + ';') >= 0 or stripped.find(fullending + ' if') >= 0 or stripped.find(fullending + ' to') >= 0 or stripped.find(fullending + ' otherwise') >= 0 or stripped.find(fullending + ' unless') >= 0:
+    return True
+  if line.find(ending) >= 0:
+    print('WARNING: Found "' + ending + '" in "' + stripped + '"')
+  return False
+
+def paramNameTag(name):
+  return 'param_description' if name == 'description' else name
+
+def isBotsOnlyLine(comments):
+  return endsWithForTag(comments, 'description', 'for bots only')
+
+def isBotsOnlyParam(comments, name):
+  return endsWithForTag(comments, paramNameTag(name), 'for bots only')
+
+def isNullableVector(comments, name):
+  return name.endswith('s') and endsWithForTag(comments, paramNameTag(name), name + ' may be null')
+
+def isNullableParam(comments, name):
+  return endsWithForTag(comments, paramNameTag(name), 'may be null') or endsWithForTag(comments, paramNameTag(name), 'pass null')
 
 def readAndGenerate(inputFiles, outputPath, scheme):
   outputHeader = outputPath + '.h'
   outputSource = outputPath + '.cpp'
-  outputConversionHeader = outputPath + '-conversion.h'
-  outputConversionSource = outputPath + '-conversion.cpp'
+  outputConversionHeaderFrom = outputPath + '-conversion-from.h'
+  outputConversionSourceFrom = outputPath + '-conversion-from.cpp'
+  outputConversionHeaderTo = outputPath + '-conversion-to.h'
+  outputConversionSourceTo = outputPath + '-conversion-to.cpp'
   outputSerializationHeader = outputPath + '-dump_to_text.h'
   outputSerializationSource = outputPath + '-dump_to_text.cpp'
   outputHeaderBasename = os.path.basename(outputHeader)
-  outputConversionHeaderBasename = os.path.basename(outputConversionHeader)
+  outputConversionHeaderFromBasename = os.path.basename(outputConversionHeaderFrom)
+  outputConversionHeaderToBasename = os.path.basename(outputConversionHeaderTo)
   outputSerializationHeaderBasename = os.path.basename(outputSerializationHeader)
 
   prefixes = scheme.get('prefixes', {})
@@ -175,20 +222,35 @@ def readAndGenerate(inputFiles, outputPath, scheme):
   constructPrefix = prefixes.get('construct')
   def normalizedName(name):
     return name.replace('.', '_')
+  def normalizedBareName(name):
+    full = re.match(r'^([a-zA-Z0-9])+\.([A-Z][a-zA-Z0-9]+)$', name)
+    if (full):
+      return full.group(1) + '_' + full.group(2)[0:1].lower() + full.group(2)[1:]
+    elif name.find('.') >= 0:
+      raise ValueError('Bad name: ' + name)
+    return name[0:1].lower() + name[1:]
   def fullTypeName(name):
     return typePrefix + normalizedName(name)
+  def fullBareTypeName(name):
+    return typePrefix + normalizedBareName(name)
   def fullDataName(name):
     return dataPrefix + normalizedName(name)
-  def handleTemplate(name):
+  def optionalInVector(name):
+    templ = re.match(r'(.*?)([vV]ector<)([A-Za-z0-9_]+)>$', name)
+    if templ:
+      return templ.group(1) + templ.group(2) + 'std::optional<' + templ.group(3) + '>>';
+    else:
+      raise ValueError('Bad optional vector: ' + name)
+  def handleTemplate(name, process = fullTypeName):
     templ = re.match(r'^([vV]ector<)([A-Za-z0-9\._<>]+)>$', name)
     if (templ):
       vectemplate = templ.group(2)
       if (vectemplate.find('<') >= 0):
-        return templ.group(1) + fullTypeName(handleTemplate(vectemplate)) + '>'
+        return templ.group(1) + process(handleTemplate(vectemplate, process)) + '>'
       elif (re.match(r'^[A-Z]', vectemplate) or re.match(r'^[a-zA-Z0-9]+\.[A-Z]', vectemplate)):
-        return templ.group(1) + fullTypeName(vectemplate) + '>'
+        return templ.group(1) + process(vectemplate) + '>'
       elif (vectemplate in builtinTypes):
-        return templ.group(1) + fullTypeName(vectemplate) + '>'
+        return templ.group(1) + process(vectemplate) + '>'
       else:
         foundmeta = ''
         for metatype in typesDict:
@@ -199,13 +261,11 @@ def readAndGenerate(inputFiles, outputPath, scheme):
           if (len(foundmeta) > 0):
             break
         if (len(foundmeta) > 0):
-          return templ.group(1) + fullTypeName(foundmeta) + '>'
+          return templ.group(1) + process(foundmeta) + '>'
         else:
-          print('Bad vector param: ' + vectemplate)
-          sys.exit(1)
+          raise ValueError('Bad vector param: ' + vectemplate)
     else:
-      print('Bad template type: ' + name)
-      sys.exit(1)
+      raise ValueError('Bad template type: ' + name)
 
   namespaces = scheme.get('namespaces')
   globalNamespace = namespaces.get('global', '')
@@ -233,11 +293,13 @@ def readAndGenerate(inputFiles, outputPath, scheme):
   bufferType = primitiveTypeNames.get('buffer', '')
 
   writeConversion = 'conversion' in scheme
+  optimizeSingleData = 'optimizeSingleData' in scheme
   conversionScheme = scheme.get('conversion', {})
   conversionInclude = conversionScheme.get('include') if writeConversion else ''
   conversionNamespace = conversionScheme.get('namespace') if writeConversion else ''
   conversionBuiltinTypes = conversionScheme.get('builtinAdditional', [])
-  conversionBuiltinInclude = conversionScheme.get('builtinInclude', '')
+  conversionBuiltinIncludeFrom = conversionScheme.get('builtinIncludeFrom', '')
+  conversionBuiltinIncludeTo = conversionScheme.get('builtinIncludeTo', '')
   def conversionName(name):
     return '::' + conversionNamespace + '::' + name
   def conversionTemplate(name, param):
@@ -255,8 +317,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
 
   if primeType == '' or bufferType == '':
     if readWriteSection or writeSerialization:
-      print('Required types not provided.')
-      sys.exit(1)
+      raise ValueError('Required types not provided.')
 
   def isBuiltinType(name):
     return name in builtinTypes or name in builtinTemplateTypes
@@ -286,16 +347,21 @@ def readAndGenerate(inputFiles, outputPath, scheme):
   textSerializeMethods = ''
   forwards = ''
   forwTypedefs = ''
-  conversionHeader = ''
-  conversionSource = ''
+  conversionHeaderFrom = ''
+  conversionHeaderTo = ''
+  conversionSourceFrom = ''
+  conversionSourceTo = ''
+  accumulatedComments = ''
 
   lines, layer, names = readInputs(inputFiles)
   inputNames = '\'' + '\', \''.join(names) + '\''
 
   for line in lines:
-    nocomment = re.match(r'^(.*?)//', line)
+    comment = ''
+    nocomment = re.match(r'^(.*?)//(.*?)$', line)
     if (nocomment):
       line = nocomment.group(1)
+      comment = nocomment.group(2)
     if (re.match(r'\-\-\-functions\-\-\-', line)):
       funcsNow = 1
       continue
@@ -303,14 +369,23 @@ def readAndGenerate(inputFiles, outputPath, scheme):
       funcsNow = 0
       continue
     if (re.match(r'^\s*$', line)):
+      if not nocomment:
+        accumulatedComments = ''
+      elif comment != '':
+        accumulatedComments += ' ' + comment
       continue
     if line.strip() in skipLines:
       continue
 
     nametype = re.match(r'([a-zA-Z\.0-9_]+)(#[0-9a-f]+)?([^=]*)=\s*([a-zA-Z\.<>0-9_]+);', line)
     if (not nametype):
-      print('Bad line found: ' + line)
-      sys.exit(1)
+      raise ValueError('Bad line found: ' + line)
+
+    comments = accumulatedComments
+    accumulatedComments = ''
+
+    if isBotsOnlyLine(comments):
+      continue
 
     originalname = nametype.group(1)
     name = originalname
@@ -329,7 +404,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
       typeid = typeid[1:]
 
     cleanline = nametype.group(1) + nametype.group(3) + '= ' + nametype.group(4)
-    cleanline = re.sub(r' [a-zA-Z0-9_]+\:flags\.[0-9]+\?true', '', cleanline)
+    cleanline = re.sub(r' [a-zA-Z0-9_]+\:flags2?\.[0-9]+\?true', '', cleanline)
     cleanline = cleanline.replace('<', ' ').replace('>', ' ').replace('  ', ' ')
     cleanline = re.sub(r'^ ', '', cleanline)
     cleanline = re.sub(r' $', '', cleanline)
@@ -365,14 +440,12 @@ def readAndGenerate(inputFiles, outputPath, scheme):
       if (parts):
         restype = parts.group(1).replace('.', '_') + '_' + parts.group(2)[0:1].lower() + parts.group(2)[1:]
       else:
-        print('Bad result type name with dot: ' + restype)
-        sys.exit(1)
+        raise ValueError('Bad result type name with dot: ' + restype)
     else:
       if (re.match(r'^[A-Z]', restype)):
         restype = restype[:1].lower() + restype[1:]
       else:
-        print('Bad result type name: ' + restype)
-        sys.exit(1)
+        raise ValueError('Bad result type name: ' + restype)
 
     boxed[resType] = restype
     boxed[Name] = name
@@ -382,10 +455,13 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     paramsList = params.strip().split(' ')
     prms = {}
     conditions = {}
-    trivialConditions = {}; # true type
+    trivialConditions = {} # true type
+    nullablePrms = {}
+    nullableVectors = {}
+    botsOnlyPrms = {}
     prmsList = []
     conditionsList = []
-    isTemplate = hasFlags = hasTemplate = ''
+    isTemplate = hasFlags = hasFlags64 = hasTemplate = ''
     for param in paramsList:
       if (re.match(r'^\s*$', param)):
         continue
@@ -395,50 +471,83 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         continue
       pnametype = re.match(r'([a-zA-Z_][a-zA-Z0-9_]*):([A-Za-z0-9<>\._]+|![a-zA-Z]+|\#|[a-z_][a-z0-9_]*\.[0-9]+\?[A-Za-z0-9<>\._]+)$', param)
       if (not pnametype):
-        print('Bad param found: "' + param + '" in line: ' + line)
-        sys.exit(1)
+        raise ValueError('Bad param found: "' + param + '" in line: ' + line)
       pname = pnametype.group(1)
       ptypewide = pnametype.group(2)
+      botsOnlyPrm = isBotsOnlyParam(comments, pname)
+      nullableVector = not botsOnlyPrm and isNullableVector(comments, pname)
+      nullablePrm = not botsOnlyPrm and not nullableVector and isNullableParam(comments, pname)
       if (re.match(r'^!([a-zA-Z]+)$', ptypewide)):
         if ('!' + hasTemplate == ptypewide):
           isTemplate = pname
           ptype = 'TQueryType'
         else:
-          print('Bad template param name: "' + param + '" in line: ' + line)
-          sys.exit(1)
+          raise ValueError('Bad template param name: "' + param + '" in line: ' + line)
+        if nullablePrm or nullableVector:
+          raise ValueError('Template param should not be nullable: "' + param + '" in line: ' + line + ', comments: ' + comments)
       elif (ptypewide == '#'):
+        if hasFlags != '' and pname == hasFlags + '2':
+          hasFlags64 = pname
+          continue
         hasFlags = pname
         if funcsNow:
           ptype = 'flags<' + fullTypeName(name) + '::Flags>'
         else:
           ptype = 'flags<' + fullDataName(name) + '::Flags>'
+        if nullablePrm or nullableVector:
+          raise ValueError('Flags param should not be nullable: "' + param + '" in line: ' + line + ', comments: ' + comments)
       else:
         ptype = ptypewide
+        if botsOnlyPrm:
+          botsOnlyPrms[pname] = 1
         if (ptype.find('?') >= 0):
           pmasktype = re.match(r'([a-z_][a-z0-9_]*)\.([0-9]+)\?([A-Za-z0-9<>\._]+)', ptype)
-          if (not pmasktype or pmasktype.group(1) != hasFlags):
-            print('Bad param found: "' + param + '" in line: ' + line)
-            sys.exit(1)
+          if not pmasktype:
+            raise ValueError('Bad param found: "' + param + '" in line: ' + line)
+          flagsName = pmasktype.group(1)
+          if flagsName != hasFlags and flagsName != hasFlags64:
+            raise ValueError('Bad param found: "' + param + '" in line: ' + line)
+          if nullablePrm or nullableVector:
+            raise ValueError('Conditional param should not be nullable: "' + param + '" in line: ' + line + ', comments: ' + comments)
           ptype = pmasktype.group(3)
           if (ptype.find('<') >= 0):
-            ptype = handleTemplate(ptype)
+            if not readWriteSection:
+              ptype = handleTemplate(ptype, fullBareTypeName)
+            else:
+              ptype = handleTemplate(ptype)
           if (not pname in conditions):
             conditionsList.append(pname)
-            conditions[pname] = pmasktype.group(2)
+            if flagsName == hasFlags64:
+              conditions[pname] = str(int(pmasktype.group(2)) + 32)
+            else:
+              conditions[pname] = pmasktype.group(2)
             if (ptype == 'true'):
-              trivialConditions[pname] = 1
+              trivialConditions[pname] = flagsName
         elif (ptype.find('<') >= 0):
-          ptype = handleTemplate(ptype)
+          if nullablePrm:
+            raise ValueError('Vector param should not be nullable: "' + param + '" in line: ' + line + ', comments: ' + comments)
+          if nullableVector:
+            nullableVectors[pname] = 1
+          if not readWriteSection:
+            ptype = handleTemplate(ptype, fullBareTypeName)
+          else:
+            ptype = handleTemplate(ptype)
+        elif nullableVector:
+          raise ValueError('Non-vector param should not be vector-nullable: "' + param + '" in line: ' + line + ', comments: ' + comments)
+        elif nullablePrm:
+          nullablePrms[pname] = 1
       prmsList.append(pname)
-      normalizedType = normalizedName(ptype)
+      if not readWriteSection:
+        normalizedType = normalizedBareName(ptype)
+      else:
+        normalizedType = normalizedName(ptype)
       if (normalizedType in TypeConstructors):
         prms[pname] = TypeConstructors[normalizedType]['typeBare']
       else:
         prms[pname] = normalizedType
 
     if (isTemplate == '' and resType == 'X'):
-      print('Bad response type "X" in "' + name +'" in line: ' + line)
-      sys.exit(1)
+      raise ValueError('Bad response type "X" in "' + name +'" in line: ' + line)
 
     if funcsNow:
       methodBodies = ''
@@ -451,25 +560,27 @@ def readAndGenerate(inputFiles, outputPath, scheme):
       prmsStr = []
       prmsInit = []
       prmsNames = []
-      if (hasFlags != ''):
-        funcsText += '\tenum class Flag : uint32 {\n'
+      if hasFlags != '':
+        flagsType = 'uint64' if hasFlags64 != '' else 'uint32'
+        flagsBit = '1ULL' if hasFlags64 != '' else '1U'
+        funcsText += '\tenum class Flag : ' + flagsType + ' {\n'
         maxbit = 0
         parentFlagsCheck[fullTypeName(name)] = {}
         for paramName in conditionsList:
-          funcsText += '\t\tf_' + paramName + ' = (1U << ' + conditions[paramName] + '),\n'
+          funcsText += '\t\tf_' + paramName + ' = (' + flagsBit + ' << ' + conditions[paramName] + '),\n'
           parentFlagsCheck[fullTypeName(name)][paramName] = conditions[paramName]
           maxbit = max(maxbit, int(conditions[paramName]))
         if (maxbit > 0):
           funcsText += '\n'
-        funcsText += '\t\tMAX_FIELD = (1U << ' + str(maxbit) + '),\n'
+        funcsText += '\t\tMAX_FIELD = (' + flagsBit + ' << ' + str(maxbit) + '),\n'
         funcsText += '\t};\n'
         funcsText += '\tusing Flags = base::flags<Flag>;\n'
         funcsText += '\tfriend inline constexpr bool is_flag_type(Flag) { return true; };\n'
         funcsText += '\n'
 
-      if (len(prms) > len(trivialConditions)):
+      if (len(prms) > len(trivialConditions) + len(botsOnlyPrms)):
         for paramName in prmsList:
-          if (paramName in trivialConditions):
+          if (paramName in trivialConditions or paramName in botsOnlyPrms):
             continue
           paramType = prms[paramName]
           prmsInit.append('_' + paramName + '(' + paramName + '_)')
@@ -478,8 +589,12 @@ def readAndGenerate(inputFiles, outputPath, scheme):
             ptypeFull = paramType
           else:
             ptypeFull = fullTypeName(paramType)
-          if (paramType in ['int', 'Int', 'bool', 'Bool', 'flags<Flags>']):
+          if (paramType in ['int', 'Int', 'bool', 'Bool', 'flags<Flags>', 'long', 'int32', 'int53', 'int64', 'double']):
             prmsStr.append(ptypeFull + ' ' + paramName + '_')
+          elif paramName in nullableVectors:
+            prmsStr.append('const ' + optionalInVector(ptypeFull) + ' &' + paramName + '_')
+          elif paramName in nullablePrms:
+            prmsStr.append('const std::optional<' + ptypeFull + '> &' + paramName + '_')
           else:
             prmsStr.append('const ' + ptypeFull + ' &' + paramName + '_')
 
@@ -489,8 +604,8 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         methodBodies += fullTypeName(name) + '<TQueryType>::' + fullTypeName(name) + '() = default;\n'
       else:
         methodBodies += fullTypeName(name) + '::' + fullTypeName(name) + '() = default;\n'
-      if (len(prms) > len(trivialConditions)):
-        explicitText = 'explicit ' if (len(prms) - len(trivialConditions) == 1) else ''
+      if (len(prms) > len(trivialConditions) + len(botsOnlyPrms)):
+        explicitText = 'explicit ' if (len(prms) - len(trivialConditions) - len(botsOnlyPrms) == 1) else ''
         funcsText += '\t' + explicitText + fullTypeName(name) + '(' + ', '.join(prmsStr) + ');\n'
         if (isTemplate != ''):
           methodBodies += 'template <typename TQueryType>\n'
@@ -513,8 +628,8 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         readFunc = ''
         for k in prmsList:
           v = prms[k]
-          if (k in conditionsList):
-            if (not k in trivialConditions):
+          if k in conditionsList:
+            if not k in trivialConditions:
               readFunc += '\t\t&& ((_' + hasFlags + '.v & Flag::f_' + k + ') ? _' + k + '.read(from, end) : ((_' + k + ' = ' + fullTypeName(v) + '()), true))\n'
           else:
             readFunc += '\t\t&& _' + k + '.read(from, end)\n'
@@ -536,9 +651,8 @@ def readAndGenerate(inputFiles, outputPath, scheme):
           methodBodies += 'template <typename Accumulator>\n'
           methodBodies += 'void ' + fullTypeName(name) + '::write(Accumulator &to) const {\n'
         for k in prmsList:
-          v = prms[k]
-          if (k in conditionsList):
-            if (not k in trivialConditions):
+          if k in conditionsList:
+            if not k in trivialConditions:
               methodBodies += '\tif (_' + hasFlags + '.v & Flag::f_' + k + ') _' + k + '.write(to);\n'
           else:
             methodBodies += '\t_' + k + '.write(to);\n'
@@ -548,46 +662,62 @@ def readAndGenerate(inputFiles, outputPath, scheme):
           methodBodies += 'template void ' + fullTypeName(name) + '::write<::tl::details::LengthCounter>(::tl::details::LengthCounter &to) const;\n'
 
       if writeConversion:
-        conversionHeader += fullTypeName(name) + ' tl_from(' + conversionPointer(name) + ' &&value);\n'
-        conversionHeader += conversionPointer(name) + ' tl_to(const ' + fullTypeName(name) + ' &value);\n'
-        conversionSource += '\n\
-' + fullTypeName(name) + ' tl_from(' + conversionPointer(name) + ' &&value) {\n\
-\treturn ' + fullTypeName(name) + '('
+        conversionSourceTo += '\n\
+template <>\n\
+ExternalGenerator tl_to_generator('+  fullTypeName(name) + ' &&request) {\n\
+\treturn [value = std::move(request)]() -> ExternalRequest {\n\
+\t\treturn new ' + conversionName(name) + '('
         conversionArguments = []
         for k in prmsList:
-          if k in conditionsList:
-            print('Conversion with flags :(')
-            sys.exit(1)
-          else:
-            conversionArguments.append('tl_from(std::move(value->' + k + '_))')
-        conversionSource += ', '.join(conversionArguments) + ');\n\
-}\n\
-\n\
-' + conversionPointer(name) + ' tl_to(const '+  fullTypeName(name) + ' &value) {\n\
-\treturn ' + conversionMake(name) + '('
-        conversionArguments = []
-        for k in prmsList:
+          prmsTypeBare = prms[k]
           if (k in conditionsList):
-            print('Conversion with flags :(')
-            sys.exit(1)
+            raise ValueError('Conversion with flags :(')
+          elif k in botsOnlyPrms:
+            conversionArguments.append('{}')
+          elif prmsTypeBare in builtinTypes or prmsTypeBare == 'bool':
+            conversionArguments.append('tl_to_simple(value.v' + k + '())')
+          elif prmsTypeBare.find('<') >= 0:
+            if (k in nullableVectors):
+              conversionArguments.append('tl_to_vector_optional(value.v' + k + '())')
+            else:
+              conversionArguments.append('tl_to_vector(value.v' + k + '())')
           else:
-            conversionArguments.append('tl_to(value.v' + k + '())')
-        conversionSource += ', '.join(conversionArguments) + ');\n\
+            if (k in nullablePrms):
+              conversionValue = 'value.v' + k + '() ? tl_to(*value.v' + k + '()) : nullptr'
+            else:
+              conversionValue = 'tl_to(value.v' + k + '())'
+            if len(typesDict[prmsTypeBare]) > 1:
+              conversionArguments.append('::td::td_api::object_ptr<' + conversionName(prmsTypeBare[0:1].upper() + prmsTypeBare[1:]) + '>(' + conversionValue + ')')
+            else:
+              conversionArguments.append('::td::td_api::object_ptr<' + conversionName(prmsTypeBare) + '>(' + conversionValue + ')')
+        conversionSourceTo += ', '.join(conversionArguments) + ');\n\
+\t};\n\
 }\n'
         if len(prmsList) > 0:
           funcsText += '\n'
           for paramName in prmsList: # getters
-            if (paramName in trivialConditions):
+            if (paramName in trivialConditions or paramName in botsOnlyPrms):
               continue
             paramType = prms[paramName]
+            ptypeFull = fullTypeName(paramType)
             if (paramName in conditions):
-              funcsText += '\t[[nodiscard]] tl::conditional<' + fullTypeName(paramType) + '> v' + paramName + '() const;\n'
-              methodBodies += 'tl::conditional<' + fullTypeName(paramType) + '> ' + fullTypeName(name) + '::v' + paramName + '() const {\n'
+              funcsText += '\t[[nodiscard]] tl::conditional<' + ptypeFull + '> v' + paramName + '() const;\n'
+              methodBodies += 'tl::conditional<' + ptypeFull + '> ' + fullTypeName(name) + '::v' + paramName + '() const {\n'
               methodBodies += '\treturn (_' + hasFlags + '.v & Flag::f_' + paramName + ') ? &_' + paramName + ' : nullptr;\n'
               methodBodies += '}\n'
+            elif (paramName in nullableVectors):
+              funcsText += '\t[[nodiscard]] const ' + optionalInVector(ptypeFull) + ' &v' + paramName + '() const;\n'
+              methodBodies += 'const ' + optionalInVector(ptypeFull) + ' &' + fullTypeName(name) + '::v' + paramName + '() const {\n'
+              methodBodies += '\treturn _' + paramName + ';\n'
+              methodBodies += '}\n'
+            elif (paramName in nullablePrms):
+              funcsText += '\t[[nodiscard]] tl::conditional<' + ptypeFull + '> v' + paramName + '() const;\n'
+              methodBodies += 'tl::conditional<' + ptypeFull + '> ' + fullTypeName(name) + '::v' + paramName + '() const {\n'
+              methodBodies += '\treturn _' + paramName + ' ? &*_' + paramName + ' : nullptr;\n'
+              methodBodies += '}\n'
             else:
-              funcsText += '\t[[nodiscard]] const ' + fullTypeName(paramType) + ' &v' + paramName + '() const;\n'
-              methodBodies += 'const ' + fullTypeName(paramType) + ' &' + fullTypeName(name) + '::v' + paramName + '() const {\n'
+              funcsText += '\t[[nodiscard]] const ' + ptypeFull + ' &v' + paramName + '() const;\n'
+              methodBodies += 'const ' + ptypeFull + ' &' + fullTypeName(name) + '::v' + paramName + '() const {\n'
               methodBodies += '\treturn _' + paramName + ';\n'
               methodBodies += '}\n'
 
@@ -595,35 +725,45 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         funcsText += '\n\tusing ResponseType = typename TQueryType::ResponseType;\n\n'
         inlineMethods += methodBodies
       else:
-        funcsText += '\n\tusing ResponseType = ' + fullTypeName(resType) + ';\n\n'; # method return type
+        # method return type
+        if not readWriteSection:
+          funcsText += '\n\tusing ResponseType = ' + fullTypeName(restype) + ';\n\n'
+        else:
+          funcsText += '\n\tusing ResponseType = ' + fullTypeName(resType) + ';\n\n'
         methods += methodBodies
 
-      if (len(prms) > len(trivialConditions)):
+      if (len(prms) > len(trivialConditions) + len(botsOnlyPrms)):
         funcsText += 'private:\n'
         for paramName in prmsList:
-          if (paramName in trivialConditions):
+          if (paramName in trivialConditions or paramName in botsOnlyPrms):
             continue
           paramType = prms[paramName]
           if (paramName == isTemplate):
             ptypeFull = paramType
           else:
             ptypeFull = fullTypeName(paramType)
-          funcsText += '\t' + ptypeFull + ' _' + paramName + ';\n'
+          if (paramName in nullableVectors):
+            funcsText += '\t' + optionalInVector(ptypeFull) + ' _' + paramName + ';\n'
+          elif (paramName in nullablePrms):
+            funcsText += '\tstd::optional<' + ptypeFull + '> _' + paramName + ';\n'
+          else:
+            funcsText += '\t' + ptypeFull + ' _' + paramName + ';\n'
         funcsText += '\n'
 
       funcsText += '};\n'; # class ending
-      if (isTemplate != ''):
-        funcsText += 'template <typename TQueryType>\n'
-        funcsText += 'using ' + fullTypeName(Name) + ' = tl::boxed<' + fullTypeName(name) + '<TQueryType>>;\n'
-      else:
-        funcsText += 'using ' + fullTypeName(Name) + ' = tl::boxed<' + fullTypeName(name) + '>;\n'
+      if readWriteSection:
+        if (isTemplate != ''):
+          funcsText += 'template <typename TQueryType>\n'
+          funcsText += 'using ' + fullTypeName(Name) + ' = tl::boxed<' + fullTypeName(name) + '<TQueryType>>;\n'
+        else:
+          funcsText += 'using ' + fullTypeName(Name) + ' = tl::boxed<' + fullTypeName(name) + '>;\n'
       funcs = funcs + 1
 
       if (not restype in funcsDict):
         funcsList.append(restype)
         funcsDict[restype] = []
 #        TypesDict[restype] = resType
-      funcsDict[restype].append([name, typeid, prmsList, prms, hasFlags, conditionsList, conditions, trivialConditions, isTemplate])
+      funcsDict[restype].append([name, typeid, prmsList, prms, hasFlags, hasFlags64, conditionsList, conditions, trivialConditions, isTemplate, nullablePrms, nullableVectors, botsOnlyPrms])
     else:
       if (isTemplate != ''):
         print('Template types not allowed: "' + resType + '" in line: ' + line)
@@ -632,22 +772,24 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         typesList.append(restype)
         typesDict[restype] = []
       TypesDict[restype] = resType
-      typesDict[restype].append([name, typeid, prmsList, prms, hasFlags, conditionsList, conditions, trivialConditions, isTemplate])
+      typesDict[restype].append([name, typeid, prmsList, prms, hasFlags, hasFlags64, conditionsList, conditions, trivialConditions, isTemplate, nullablePrms, nullableVectors, botsOnlyPrms])
 
       TypeConstructors[name] = {'typeBare': restype, 'typeBoxed': resType}
 
       consts = consts + 1
 
-  for typeName in builtinTypes:
-    forwTypedefs += 'using ' + fullTypeName(typeName[:1].upper() + typeName[1:]) + ' = tl::boxed<' + fullTypeName(typeName) + '>;\n'
-  for typeName in builtinTemplateTypes:
-    forwTypedefs += 'template <typename T>\n'
-    forwTypedefs += 'using ' + fullTypeName(typeName[:1].upper() + typeName[1:]) + ' = tl::boxed<' + fullTypeName(typeName) + '<T>>;\n'
+  if readWriteSection:
+    for typeName in builtinTypes:
+      forwTypedefs += 'using ' + fullTypeName(typeName[:1].upper() + typeName[1:]) + ' = tl::boxed<' + fullTypeName(typeName) + '>;\n'
+    for typeName in builtinTemplateTypes:
+      forwTypedefs += 'template <typename T>\n'
+      forwTypedefs += 'using ' + fullTypeName(typeName[:1].upper() + typeName[1:]) + ' = tl::boxed<' + fullTypeName(typeName) + '<T>>;\n'
 
-  textSerializeMethods += addTextSerialize(typesList, typesDict, typesDict, idPrefix, primeType, boxed, dataPrefix)
-  textSerializeInit += addTextSerializeInit(typesList, typesDict, idPrefix) + '\n'
-  textSerializeMethods += addTextSerialize(funcsList, funcsDict, typesDict, idPrefix, primeType, boxed, typePrefix)
-  textSerializeInit += addTextSerializeInit(funcsList, funcsDict, idPrefix) + '\n'
+  if writeSerialization:
+    textSerializeMethods += addTextSerialize(typesList, typesDict, typesDict, idPrefix, primeType, boxed, dataPrefix)
+    textSerializeInit += addTextSerializeInit(typesList, typesDict, idPrefix) + '\n'
+    textSerializeMethods += addTextSerialize(funcsList, funcsDict, typesDict, idPrefix, primeType, boxed, typePrefix)
+    textSerializeInit += addTextSerializeInit(funcsList, funcsDict, idPrefix) + '\n'
 
   for restype in typesList:
     v = typesDict[restype]
@@ -660,7 +802,8 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     constructsBodies = ''
 
     forwards += 'class ' + fullTypeName(restype) + ';\n'
-    forwTypedefs += 'using ' + fullTypeName(resType) + ' = tl::boxed<' + fullTypeName(restype) + '>;\n'
+    if readWriteSection:
+      forwTypedefs += 'using ' + fullTypeName(resType) + ' = tl::boxed<' + fullTypeName(restype) + '>;\n'
 
     withType = (len(v) > 1)
     nullable = restype in nullableTypes
@@ -676,42 +819,80 @@ def readAndGenerate(inputFiles, outputPath, scheme):
       if not restype in builtinTypes and not restype in conversionBuiltinTypes:
         if len(v) > 1:
           conversionType = resType
-          conversionHeader += fullTypeName(resType) + ' tl_from(' + conversionPointer(conversionType) + ' &&value);\n'
-          conversionSource += '\n' + fullTypeName(resType) + ' tl_from(' + conversionPointer(conversionType) + ' &&value) {\n'
+          conversionHeaderFrom += 'template <>\n' + fullTypeName(restype) + ' tl_from<' + fullTypeName(restype) + '>(ExternalResponse response);\n'
+          conversionSourceFrom += '\ntemplate <>\n' + fullTypeName(restype) + ' tl_from<' + fullTypeName(restype) + '>(ExternalResponse response) {\n'
           if nullable:
-            conversionSource += '\tif (!value) {\n\t\treturn nullptr;\n\t}\n\n'
+            conversionSourceFrom += '\tif (!response) {\n\t\treturn nullptr;\n\t}\n\n'
           else:
-            conversionSource += '\tExpects(value != nullptr);\n\n'
-          conversionSource += '\tswitch (' + typeIdType + '(value->get_id())) {\n'
+            conversionSourceFrom += '\tExpects(response != nullptr);\n\n'
+          conversionSourceFrom += '\tswitch (response->get_id()) {\n'
           for data in v:
             name = data[0]
+            prmsList = data[2]
             prms = data[3]
             trivialConditions = data[7]
-            conversionSource += '\tcase uint32(' + conversionName(name) + '::ID): return tl_from(' + conversionMove(name) + '(std::move(value)));\n'
-          conversionSource += '\tdefault: Unexpected("Type in ' + fullTypeName(restype) + ' tl_from.");\n\t}\n}\n'
+            isTemplate = data[8]
+            nullablePrms = data[9]
+            nullableVectors = data[10]
+            botsOnlyPrms = data[11]
+            conversionSourceFrom += '\tcase ' + conversionName(name) + '::ID: '
+            if (len(prmsList) == 0):
+              conversionSourceFrom += 'return ' + constructPrefix + name + '();\n'
+            else:
+              conversionSourceFrom += '{\n\t\tconst auto specific = static_cast<const ' + conversionName(name) + '*>(response);\n'
+              conversionSourceFrom += '\t\treturn ' + constructPrefix + name + '('
+              conversionArguments = []
+              for k in prmsList:
+                prmsTypeBare = prms[k]
+                ptypeFullBare = fullTypeName(prmsTypeBare)
+                if k in conditionsList:
+                  raise ValueError('Conversion with flags :(')
+                elif k in botsOnlyPrms:
+                  continue
+                elif prmsTypeBare == 'string':
+                  conversionArguments.append('tl_from_string(specific->' + k + '_)')
+                elif prmsTypeBare in builtinTypes or prmsTypeBare == 'bool':
+                  conversionArguments.append('tl_from_simple(specific->' + k + '_)')
+                elif prmsTypeBare.find('<') >= 0:
+                  if k in nullableVectors:
+                    conversionArguments.append('tl_from_vector_optional<' + ptypeFullBare + '>(specific->' + k + '_)')
+                  else:
+                    conversionArguments.append('tl_from_vector<' + ptypeFullBare + '>(specific->' + k + '_)')
+                else:
+                  if k in nullablePrms:
+                    conversionArguments.append('specific->' + k + '_.get() ? std::make_optional(tl_from<' + ptypeFullBare + '>(specific->' + k + '_.get())) : std::nullopt')
+                  else:
+                    conversionArguments.append('tl_from<' + ptypeFullBare + '>(specific->' + k + '_.get())')
+              conversionSourceFrom += ', '.join(conversionArguments) + ');\n'
+              conversionSourceFrom += '\t} break;\n'
+          conversionSourceFrom += '\tdefault: Unexpected("Type in ' + fullTypeName(restype) + ' tl_from.");\n\t}\n}\n'
         else:
           conversionType = v[0][0]
 
-        conversionHeader += conversionPointer(conversionType) + ' tl_to(const ' + fullTypeName(restype) + ' &value);\n'
-        conversionSource += '\n' + conversionPointer(conversionType) + ' tl_to(const ' + fullTypeName(restype) + ' &value) {\n'
+        conversionHeaderTo += conversionName(conversionType) + ' *tl_to(const ' + fullTypeName(restype) + ' &value);\n'
+        conversionSourceTo += '\n' + conversionName(conversionType) + ' *tl_to(const ' + fullTypeName(restype) + ' &value) {\n'
         if withType:
-          conversionSource += '\tswitch (value.type()) {\n'
+          conversionSourceTo += '\tswitch (value.type()) {\n'
           if nullable:
-            conversionSource += '\tcase ' + typeIdType + '(0): return nullptr;\n'
+            conversionSourceTo += '\tcase ' + typeIdType + '(0): return nullptr;\n'
           for data in v:
             name = data[0]
             prms = data[3]
             trivialConditions = data[7]
+            isTemplate = data[8]
+            nullablePrms = data[9]
+            nullableVectors = data[10]
+            botsOnlyPrms = data[11]
             if (len(prms) == len(trivialConditions)):
-              conversionSource += '\tcase ' + idPrefix + name + ': return ' + conversionMake(name) + '();\n'
+              conversionSourceTo += '\tcase ' + idPrefix + name + ': return new ' + conversionName(name) + '();\n'
             else:
-              conversionSource += '\tcase ' + idPrefix + name + ': return tl_to(value.c_' + name + '());\n'
-          conversionSource += '\tdefault: Unexpected("Type in tl_to(' + fullTypeName(restype) + ').");\n\t}\n'
+              conversionSourceTo += '\tcase ' + idPrefix + name + ': return tl_to(value.c_' + name + '());\n'
+          conversionSourceTo += '\tdefault: Unexpected("Type in tl_to(' + fullTypeName(restype) + ').");\n\t}\n'
         else:
           if nullable:
-            conversionSource += '\tif (!value) {\n\t\treturn nullptr;\n\t}\n'
-          conversionSource += '\treturn tl_to(value.c_' + v[0][0] + '());\n'
-        conversionSource += '}\n'
+            conversionSourceTo += '\tif (!value) {\n\t\treturn nullptr;\n\t}\n'
+          conversionSourceTo += '\treturn tl_to(value.c_' + v[0][0] + '());\n'
+        conversionSourceTo += '}\n'
 
     for data in v:
       name = data[0]
@@ -719,12 +900,17 @@ def readAndGenerate(inputFiles, outputPath, scheme):
       prmsList = data[2]
       prms = data[3]
       hasFlags = data[4]
-      conditionsList = data[5]
-      conditions = data[6]
-      trivialConditions = data[7]
+      hasFlags64 = data[5]
+      conditionsList = data[6]
+      conditions = data[7]
+      trivialConditions = data[8]
+      isTemplate = data[9]
+      nullablePrms = data[10]
+      nullableVectors = data[11]
+      botsOnlyPrms = data[12]
 
       dataText = ''
-      if (len(prms) > len(trivialConditions)):
+      if (len(prms) > len(trivialConditions) + len(botsOnlyPrms)):
         withData = 1
         dataText += '\nclass ' + fullDataName(name) + ' : public tl::details::type_data {\n'; # data class
       else:
@@ -738,23 +924,25 @@ def readAndGenerate(inputFiles, outputPath, scheme):
       writeText = ''
 
       if (hasFlags != ''):
-        dataText += '\tenum class Flag : uint32 {\n'
+        flagsType = 'uint64' if hasFlags64 != '' else 'uint32'
+        flagsBit = '1ULL' if hasFlags64 != '' else '1U'
+        dataText += '\tenum class Flag : ' + flagsType + ' {\n'
         maxbit = 0
         parentFlagsCheck[fullDataName(name)] = {}
         for paramName in conditionsList:
-          dataText += '\t\tf_' + paramName + ' = (1U << ' + conditions[paramName] + '),\n'
+          dataText += '\t\tf_' + paramName + ' = (' + flagsBit + ' << ' + conditions[paramName] + '),\n'
           parentFlagsCheck[fullDataName(name)][paramName] = conditions[paramName]
           maxbit = max(maxbit, int(conditions[paramName]))
         if (maxbit > 0):
           dataText += '\n'
-        dataText += '\t\tMAX_FIELD = (1U << ' + str(maxbit) + '),\n'
+        dataText += '\t\tMAX_FIELD = (' + flagsBit + ' << ' + str(maxbit) + '),\n'
         dataText += '\t};\n'
         dataText += '\tusing Flags = base::flags<Flag>;\n'
         dataText += '\tfriend inline constexpr bool is_flag_type(Flag) { return true; };\n'
         dataText += '\n'
         if (len(conditions)):
           for paramName in conditionsList:
-            if (paramName in trivialConditions):
+            if paramName in trivialConditions:
               dataText += '\t[[nodiscard]] bool is_' + paramName + '() const;\n'
               constructsBodies += 'bool ' + fullDataName(name) + '::is_' + paramName + '() const {\n'
               constructsBodies += '\treturn _' + hasFlags + '.v & Flag::f_' + paramName + ';\n'
@@ -763,10 +951,12 @@ def readAndGenerate(inputFiles, outputPath, scheme):
 
       switchLines += '\tcase ' + idPrefix + name + ': '; # for by-type-id type constructor
       getters += '\t[[nodiscard]] const ' + fullDataName(name) + ' &c_' + name + '() const;\n'; # const getter
+      if optimizeSingleData and withData and not withType:
+        getters += '\t[[nodiscard]] const ' + fullDataName(name) + ' &data() const;\n';
       visitor += '\tcase ' + idPrefix + name + ': return base::match_method(c_' + name + '(), std::forward<Method>(method), std::forward<Methods>(methods)...);\n'
 
       forwards += 'class ' + fullDataName(name) + ';\n'; # data class forward declaration
-      if (len(prms) > len(trivialConditions)):
+      if (len(prms) > len(trivialConditions) + len(botsOnlyPrms)):
         dataText += '\t' + fullDataName(name) + '();\n'; # default constructor
         switchLines += 'setData(new ' + fullDataName(name) + '()); '
 
@@ -776,6 +966,11 @@ def readAndGenerate(inputFiles, outputPath, scheme):
           constructsBodies += '\tExpects(_type == ' + idPrefix + name + ');\n\n'
         constructsBodies += '\treturn queryData<' + fullDataName(name) + '>();\n'
         constructsBodies += '}\n'
+
+        if optimizeSingleData and withData and not withType:
+          constructsBodies += 'const ' + fullDataName(name) + ' &' + fullTypeName(restype) + '::data() const {\n'
+          constructsBodies += '\treturn queryData<' + fullDataName(name) + '>();\n'
+          constructsBodies += '}\n'
 
         constructsText += '\texplicit ' + fullTypeName(restype) + '(const ' + fullDataName(name) + ' *data);\n'; # by-data type constructor
         constructsBodies += fullTypeName(restype) + '::' + fullTypeName(restype) + '(const ' + fullDataName(name) + ' *data) : type_owner(data)'
@@ -787,16 +982,23 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         prmsStr = []
         prmsInit = []
         for paramName in prmsList:
-          if (paramName in trivialConditions):
+          if (paramName in trivialConditions or paramName in botsOnlyPrms):
             continue
           paramType = prms[paramName]
+          ptypeFull = fullTypeName(paramType)
 
-          if (paramType in ['int', 'Int', 'bool', 'Bool']):
-            prmsStr.append(fullTypeName(paramType) + ' ' + paramName + '_')
-            creatorParams.append(fullTypeName(paramType) + ' ' + paramName + '_')
+          if (paramType in ['int', 'Int', 'bool', 'Bool', 'flags<Flags>', 'long', 'int32', 'int53', 'int64', 'double']):
+            prmsStr.append(ptypeFull + ' ' + paramName + '_')
+            creatorParams.append(ptypeFull + ' ' + paramName + '_')
+          elif paramName in nullableVectors:
+            prmsStr.append('const ' + optionalInVector(ptypeFull) + ' &' + paramName + '_')
+            creatorParams.append('const ' + optionalInVector(ptypeFull) + ' &' + paramName + '_')
+          elif paramName in nullablePrms:
+            prmsStr.append('const std::optional<' + ptypeFull + '> &' + paramName + '_')
+            creatorParams.append('const std::optional<' + ptypeFull + '> &' + paramName + '_')
           else:
-            prmsStr.append('const ' + fullTypeName(paramType) + ' &' + paramName + '_')
-            creatorParams.append('const ' + fullTypeName(paramType) + ' &' + paramName + '_')
+            prmsStr.append('const ' + ptypeFull + ' &' + paramName + '_')
+            creatorParams.append('const ' + ptypeFull + ' &' + paramName + '_')
           creatorParamsList.append(paramName + '_')
           prmsInit.append('_' + paramName + '(' + paramName + '_)')
           if withType:
@@ -826,26 +1028,43 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         dataText += '\n'
         if len(prmsList) > 0:
           for paramName in prmsList: # getters
-            if (paramName in trivialConditions):
+            if (paramName in trivialConditions or paramName in botsOnlyPrms):
               continue
             paramType = prms[paramName]
-            if (paramName in conditions):
-              dataText += '\t[[nodiscard]] tl::conditional<' + fullTypeName(paramType) + '> v' + paramName + '() const;\n'
-              constructsBodies += 'tl::conditional<' + fullTypeName(paramType) + '> ' + fullDataName(name) + '::v' + paramName + '() const {\n'
+            ptypeFull = fullTypeName(paramType)
+            if paramName in conditions:
+              dataText += '\t[[nodiscard]] tl::conditional<' + ptypeFull + '> v' + paramName + '() const;\n'
+              constructsBodies += 'tl::conditional<' + ptypeFull + '> ' + fullDataName(name) + '::v' + paramName + '() const {\n'
               constructsBodies += '\treturn (_' + hasFlags + '.v & Flag::f_' + paramName + ') ? &_' + paramName + ' : nullptr;\n'
               constructsBodies += '}\n'
+            elif (paramName in nullableVectors):
+              dataText += '\t[[nodiscard]] const ' + optionalInVector(ptypeFull) + ' &v' + paramName + '() const;\n'
+              constructsBodies += 'const ' + optionalInVector(ptypeFull) + ' &' + fullDataName(name) + '::v' + paramName + '() const {\n'
+              constructsBodies += '\treturn _' + paramName + ';\n'
+              constructsBodies += '}\n'
+            elif (paramName in nullablePrms):
+              dataText += '\t[[nodiscard]] tl::conditional<' + ptypeFull + '> v' + paramName + '() const;\n'
+              constructsBodies += 'tl::conditional<' + ptypeFull + '> ' + fullDataName(name) + '::v' + paramName + '() const {\n'
+              constructsBodies += '\treturn _' + paramName + ' ? &*_' + paramName + ' : nullptr;\n'
+              constructsBodies += '}\n'
             else:
-              dataText += '\t[[nodiscard]] const ' + fullTypeName(paramType) + ' &v' + paramName + '() const;\n'
-              constructsBodies += 'const ' + fullTypeName(paramType) + ' &' + fullDataName(name) + '::v' + paramName + '() const {\n'
+              dataText += '\t[[nodiscard]] const ' + ptypeFull + ' &v' + paramName + '() const;\n'
+              constructsBodies += 'const ' + ptypeFull + ' &' + fullDataName(name) + '::v' + paramName + '() const {\n'
               constructsBodies += '\treturn _' + paramName + ';\n'
               constructsBodies += '}\n'
           dataText += '\n'
           dataText += 'private:\n'
           for paramName in prmsList: # fields declaration
-            if (paramName in trivialConditions):
-              continue
             paramType = prms[paramName]
-            dataText += '\t' + fullTypeName(paramType) + ' _' + paramName + ';\n'
+            ptypeFull = fullTypeName(paramType)
+            if (paramName in trivialConditions or paramName in botsOnlyPrms):
+              continue
+            elif (paramName in nullableVectors):
+              dataText += '\t' + optionalInVector(ptypeFull) + ' _' + paramName + ';\n'
+            elif (paramName in nullablePrms):
+              dataText += '\tstd::optional<' + ptypeFull + '> _' + paramName + ';\n'
+            else:
+              dataText += '\t' + ptypeFull + ' _' + paramName + ';\n'
           dataText += '\n'
         newFast = 'new ' + fullDataName(name) + '()'
       else:
@@ -857,30 +1076,68 @@ def readAndGenerate(inputFiles, outputPath, scheme):
         constructsBodies += '}\n'
 
       if writeConversion and not restype in builtinTypes and not restype in conversionBuiltinTypes:
-        conversionHeader += fullTypeName(restype) + ' tl_from(' + conversionPointer(name) + ' &&value);\n'
-        conversionHeader += conversionPointer(name) + ' tl_to(const ' + fullDataName(name) + ' &value);\n'
-        conversionSource += '\n' + fullTypeName(restype) + ' tl_from(' + conversionPointer(name) + ' &&value) {\n'
-        if nullable:
-          conversionSource += '\tif (!value) {\n\t\treturn nullptr;\n\t}\n\n'
-        conversionSource += '\treturn ' + constructPrefix + normalizedName(name) + '('
-        conversionArguments = []
-        for k in prmsList:
-          if k in conditionsList:
-            print('Conversion with flags :(')
-            sys.exit(1)
+        if (len(v) == 1):
+          conversionHeaderFrom += 'template <>\n' + fullTypeName(restype) + ' tl_from<' + fullTypeName(restype) + '>(ExternalResponse response);\n'
+          conversionSourceFrom += '\ntemplate <>\n' + fullTypeName(restype) + ' tl_from<' + fullTypeName(restype) + '>(ExternalResponse response) {\n'
+          if nullable:
+            conversionSourceFrom += '\tif (!response) {\n\t\treturn nullptr;\n\t}\n\n'
           else:
-            conversionArguments.append('tl_from(std::move(value->' + k + '_))')
-        conversionSource += ', '.join(conversionArguments) + ');\n'
-        conversionSource += '}\n\n' + conversionPointer(name) + ' tl_to(const ' + fullDataName(name) + ' &value) {\n'
-        conversionSource += '\treturn ' + conversionMake(name) + '('
+            conversionSourceFrom += '\tExpects(response != nullptr);\n'
+            conversionSourceFrom += '\tExpects(response->get_id() == ' + conversionName(name) + '::ID);\n\n'
+          if (len(prmsList) > 0):
+            conversionSourceFrom += '\tconst auto specific = static_cast<const ' + conversionName(name) + '*>(response);\n'
+          conversionSourceFrom += '\treturn ' + constructPrefix + normalizedName(name) + '('
+          conversionArguments = []
+          for k in prmsList:
+            prmsTypeBare = prms[k]
+            ptypeFullBare = fullTypeName(prmsTypeBare)
+            if k in conditionsList:
+              raise ValueError('Conversion with flags :(')
+            elif k in botsOnlyPrms:
+              continue
+            elif prmsTypeBare == 'string':
+              conversionArguments.append('tl_from_string(specific->' + k + '_)')
+            elif prmsTypeBare in builtinTypes or prmsTypeBare == 'bool':
+              conversionArguments.append('tl_from_simple(specific->' + k + '_)')
+            elif prmsTypeBare.find('<') >= 0:
+              if k in nullableVectors:
+                conversionArguments.append('tl_from_vector_optional<' + ptypeFullBare + '>(specific->' + k + '_)')
+              else:
+                conversionArguments.append('tl_from_vector<' + ptypeFullBare + '>(specific->' + k + '_)')
+            else:
+              if k in nullablePrms:
+                conversionArguments.append('specific->' + k + '_.get() ? std::make_optional(tl_from<' + ptypeFullBare + '>(specific->' + k + '_.get())) : std::nullopt')
+              else:
+                conversionArguments.append('tl_from<' + ptypeFullBare + '>(specific->' + k + '_.get())')
+          conversionSourceFrom += ', '.join(conversionArguments) + ');\n'
+          conversionSourceFrom += '}\n'
+        conversionHeaderTo += conversionName(name) + ' *tl_to(const ' + fullDataName(name) + ' &value);\n'
+        conversionSourceTo += '\n' + conversionName(name) + ' *tl_to(const ' + fullDataName(name) + ' &value) {\n'
+        conversionSourceTo += '\treturn new ' + conversionName(name) + '('
         conversionArguments = []
         for k in prmsList:
+          prmsTypeBare = prms[k]
           if (k in conditionsList):
-            print('Conversion with flags :(')
-            sys.exit(1)
+            raise ValueError('Conversion with flags :(')
+          elif k in botsOnlyPrms:
+            conversionArguments.append('{}')
+          elif prmsTypeBare in builtinTypes or prmsTypeBare == 'bool':
+            conversionArguments.append('tl_to_simple(value.v' + k + '())')
+          elif prmsTypeBare.find('<') >= 0:
+            if (k in nullableVectors):
+              conversionArguments.append('tl_to_vector_optional(value.v' + k + '())')
+            else:
+              conversionArguments.append('tl_to_vector(value.v' + k + '())')
           else:
-            conversionArguments.append('tl_to(value.v' + k + '())')
-        conversionSource += ', '.join(conversionArguments) + ');\n}\n'
+            if (k in nullablePrms):
+              conversionValue = 'value.v' + k + '() ? tl_to(*value.v' + k + '()) : nullptr'
+            else:
+              conversionValue = 'tl_to(value.v' + k + '())'
+            if len(typesDict[prmsTypeBare]) > 1:
+              conversionArguments.append('::td::td_api::object_ptr<' + conversionName(prmsTypeBare[0:1].upper() + prmsTypeBare[1:]) + '>(' + conversionValue + ')')
+            else:
+              conversionArguments.append('::td::td_api::object_ptr<' + conversionName(prmsTypeBare) + '>(' + conversionValue + ')')
+        conversionSourceTo += ', '.join(conversionArguments) + ');\n}\n'
 
       switchLines += 'break;\n'
       dataText += '};\n'; # class ending
@@ -935,11 +1192,9 @@ def readAndGenerate(inputFiles, outputPath, scheme):
 
     if nullable:
       if not withType and not withData:
-        print('No way to make a nullable non-data-owner non-type-distinct type')
-        sys.exit(1)
+        raise ValueError('No way to make a nullable non-data-owner non-type-distinct type')
       elif readWriteSection:
-        print('No way to make read-write code for a nullable type')
-        sys.exit(1)
+        raise ValueError('No way to make read-write code for a nullable type')
 
     forwards += '\n'
 
@@ -1031,6 +1286,13 @@ def readAndGenerate(inputFiles, outputPath, scheme):
       methods += 'template void ' + fullTypeName(restype) + '::write<::tl::details::LengthCounter>(::tl::details::LengthCounter &to) const;\n'
 
     typesText += '\n\tusing ResponseType = void;\n'; # no response types declared
+    if optimizeSingleData:
+      if withData and not withType:
+        for data in v:
+          name = data[0]
+          typesText += '\tusing SingleDataType = ' + fullDataName(name) + ';\n'
+      else:
+        typesText += '\tusing SingleDataType = NotSingleDataTypePlaceholder;\n';
 
     typesText += '\nprivate:\n'; # private constructors
     if (withType): # by-type-id constructor
@@ -1059,7 +1321,8 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     flagOperators += flagDeclarations
     factories += creatorsDeclarations
     methods += creatorsBodies
-    typesText += 'using ' + fullTypeName(resType) + ' = tl::boxed<' + fullTypeName(restype) + '>;\n'; # boxed type definition
+    if readWriteSection:
+      typesText += 'using ' + fullTypeName(resType) + ' = tl::boxed<' + fullTypeName(restype) + '>;\n'; # boxed type definition
 
   flagOperators += '\n'
 
@@ -1072,13 +1335,11 @@ def readAndGenerate(inputFiles, outputPath, scheme):
   # But as long as flags don't collide this is not a problem.
   #
   #    if (not flag in parentFlagsCheck[parentName]):
-  #      print('Flag ' + flag + ' not found in ' + parentName + ' which should be a flags-parent of ' + childName)
-  #      sys.exit(1)
+  #      raise ValueError('Flag ' + flag + ' not found in ' + parentName + ' which should be a flags-parent of ' + childName)
   #
       if (flag in parentFlagsCheck[parentName]):
         if (parentFlagsCheck[childName][flag] != parentFlagsCheck[parentName][flag]):
-          print('Flag ' + flag + ' has different value in ' + parentName + ' which should be a flags-parent of ' + childName)
-          sys.exit(1)
+          raise ValueError('Flag ' + flag + ' has different value in ' + parentName + ' which should be a flags-parent of ' + childName)
       else:
         parentFlagsCheck[parentName][flag] = parentFlagsCheck[childName][flag]
     flagOperators += 'inline ' + parentName + '::Flags mtpCastFlags(' + childName + '::Flags flags) { return static_cast<' + parentName + '::Flag>(flags.value()); }\n'
@@ -1089,7 +1350,7 @@ def readAndGenerate(inputFiles, outputPath, scheme):
     # manual types added here
 
     textSerializeMethods += '\
-bool Serialize_rpc_result(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, StagesFlags &stages, StagesFlags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint32 iflag) {\n\
+bool Serialize_rpc_result(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, Stages &stages, Flags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint64 iflag) {\n\
 	if (stage) {\n\
 		to.add(",\\n").addSpaces(lev);\n\
 	} else {\n\
@@ -1104,7 +1365,7 @@ bool Serialize_rpc_result(DumpToTextBuffer &to, int32 stage, int32 lev, Types &t
 	return true;\n\
 }\n\
 \n\
-bool Serialize_msg_container(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, StagesFlags &stages, StagesFlags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint32 iflag) {\n\
+bool Serialize_msg_container(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, Stages &stages, Flags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint64 iflag) {\n\
 	if (stage) {\n\
 		to.add(",\\n").addSpaces(lev);\n\
 	} else {\n\
@@ -1118,7 +1379,7 @@ bool Serialize_msg_container(DumpToTextBuffer &to, int32 stage, int32 lev, Types
 	return true;\n\
 }\n\
 \n\
-bool Serialize_core_message(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, StagesFlags &stages, StagesFlags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint32 iflag) {\n\
+bool Serialize_core_message(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, Stages &stages, Flags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint64 iflag) {\n\
 	if (stage) {\n\
 		to.add(",\\n").addSpaces(lev);\n\
 	} else {\n\
@@ -1144,11 +1405,12 @@ bool Serialize_core_message(DumpToTextBuffer &to, int32 stage, int32 lev, Types 
 namespace {\n\
 \n\
 using Types = QVector<' + typeIdType + '>;\n\
-using StagesFlags = QVector<int32>;\n\
+using Stages = QVector<int32>;\n\
+using Flags = QVector<int64>;\n\
 \n\
 ' + textSerializeMethods + '\n\
 \n\
-using TextSerializer = bool (*)(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, StagesFlags &stages, StagesFlags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint32 iflag);\n\
+using TextSerializer = bool (*)(DumpToTextBuffer &to, int32 stage, int32 lev, Types &types, Types &vtypes, Stages &stages, Flags &flags, const ' + primeType + ' *start, const ' + primeType + ' *end, uint64 iflag);\n\
 \n\
 base::flat_map<' + typeIdType + ', TextSerializer> CreateTextSerializers() {\n\
 	return {\n\
@@ -1161,13 +1423,15 @@ base::flat_map<' + typeIdType + ', TextSerializer> CreateTextSerializers() {\n\
 bool DumpToTextType(DumpToTextBuffer &to, const ' + primeType + ' *&from, const ' + primeType + ' *end, ' + primeType + ' cons, uint32 level, ' + primeType + ' vcons) {\n\
 	static auto kSerializers = CreateTextSerializers();\n\
 \n\
-	QVector<' + typeIdType + '> types, vtypes;\n\
-	QVector<int32> stages, flags;\n\
+	Types types, vtypes;\n\
+	Stages stages;\n\
+  Flags flags;\n\
 	types.reserve(20); vtypes.reserve(20); stages.reserve(20); flags.reserve(20);\n\
 	types.push_back(' + typeIdType + '(cons)); vtypes.push_back(' + typeIdType + '(vcons)); stages.push_back(0); flags.push_back(0);\n\
 \n\
 	' + typeIdType + ' type = cons, vtype = vcons;\n\
-	int32 stage = 0, flag = 0;\n\
+	int32 stage = 0;\n\
+  int64 flag = 0;\n\
 \n\
 	while (!types.isEmpty()) {\n\
 		type = types.back();\n\
@@ -1203,6 +1467,9 @@ bool DumpToTextType(DumpToTextBuffer &to, const ' + primeType + ' *&from, const 
 	return true;\n\
 }\n'
 
+  if forwTypedefs != '':
+    forwTypedefs = '// Boxed types definitions\n' + forwTypedefs + '\n'
+
   # module itself
   header = '\
 // WARNING! All changes made in this file will be lost!\n\
@@ -1230,8 +1497,7 @@ enum {\n\
 \n\
 // Type forward declarations\n\
 ' + forwards + '\n\
-// Boxed types definitions\n\
-' + forwTypedefs + '\n\
+' + forwTypedefs + '\
 // Type classes definitions\n\
 ' + typesText + '\n\
 // Type constructors with data\n\
@@ -1268,7 +1534,7 @@ public:\n\
 ' + methods + '\n\
 ' + ('} // namespace ' + globalNamespace + '\n' if globalNamespace != '' else '')
 
-  conversionHeader = '\
+  conversionHeaderFrom = '\
 // WARNING! All changes made in this file will be lost!\n\
 // Created from ' + inputNames + ' by \'generate.py\'\n\
 //\n\
@@ -1278,18 +1544,42 @@ public:\n\
 #include "' + outputHeaderBasename + '"\n\
 \n\
 ' + ('namespace ' + globalNamespace + ' {\n\n' if globalNamespace != '' else '') + '\
-' + conversionHeader + '\n\
+' + conversionHeaderFrom + '\n\
 ' + ('} // namespace ' + globalNamespace + '\n' if globalNamespace != '' else '') +'\
-' + ('\n#include "' + conversionBuiltinInclude + '"\n' if conversionBuiltinInclude != '' else '')
+' + ('\n#include "' + conversionBuiltinIncludeFrom + '"\n' if conversionBuiltinIncludeFrom != '' else '')
 
-  conversionSource = '\
+  conversionHeaderTo = '\
 // WARNING! All changes made in this file will be lost!\n\
 // Created from ' + inputNames + ' by \'generate.py\'\n\
 //\n\
-#include "' + outputConversionHeaderBasename + '"\n\
+#pragma once\n\
+\n\
+#include "' + conversionInclude + '"\n\
+#include "' + outputHeaderBasename + '"\n\
+\n\
+' + ('namespace ' + globalNamespace + ' {\n\n' if globalNamespace != '' else '') + '\
+' + conversionHeaderTo + '\n\
+' + ('} // namespace ' + globalNamespace + '\n' if globalNamespace != '' else '') +'\
+' + ('\n#include "' + conversionBuiltinIncludeTo + '"\n' if conversionBuiltinIncludeTo != '' else '')
+
+  conversionSourceFrom = '\
+// WARNING! All changes made in this file will be lost!\n\
+// Created from ' + inputNames + ' by \'generate.py\'\n\
+//\n\
+#include "' + outputConversionHeaderFromBasename + '"\n\
 \n\
 ' + ('namespace ' + globalNamespace + ' {\n' if globalNamespace != '' else '') + '\
-' + conversionSource + '\n\
+' + conversionSourceFrom + '\n\
+' + ('} // namespace ' + globalNamespace + '\n' if globalNamespace != '' else '')
+
+  conversionSourceTo = '\
+// WARNING! All changes made in this file will be lost!\n\
+// Created from ' + inputNames + ' by \'generate.py\'\n\
+//\n\
+#include "' + outputConversionHeaderToBasename + '"\n\
+\n\
+' + ('namespace ' + globalNamespace + ' {\n' if globalNamespace != '' else '') + '\
+' + conversionSourceTo + '\n\
 ' + ('} // namespace ' + globalNamespace + '\n' if globalNamespace != '' else '')
 
   serializationHeader = '\
@@ -1338,20 +1628,37 @@ namespace MTP::details {\n\
 
   if writeConversion:
     alreadyHeader = ''
-    if os.path.isfile(outputConversionHeader):
-      with open(outputConversionHeader, 'r') as already:
+    if os.path.isfile(outputConversionHeaderFrom):
+      with open(outputConversionHeaderFrom, 'r') as already:
         alreadyHeader = already.read()
-    if alreadyHeader != conversionHeader:
-      with open(outputConversionHeader, 'w') as out:
-        out.write(conversionHeader)
+    if alreadyHeader != conversionHeaderFrom:
+      with open(outputConversionHeaderFrom, 'w') as out:
+        out.write(conversionHeaderFrom)
+
+  if writeConversion:
+    alreadyHeader = ''
+    if os.path.isfile(outputConversionHeaderTo):
+      with open(outputConversionHeaderTo, 'r') as already:
+        alreadyHeader = already.read()
+    if alreadyHeader != conversionHeaderTo:
+      with open(outputConversionHeaderTo, 'w') as out:
+        out.write(conversionHeaderTo)
 
     alreadySource = ''
-    if os.path.isfile(outputConversionSource):
-      with open(outputConversionSource, 'r') as already:
+    if os.path.isfile(outputConversionSourceFrom):
+      with open(outputConversionSourceFrom, 'r') as already:
         alreadySource = already.read()
-    if alreadySource != conversionSource:
-      with open(outputConversionSource, 'w') as out:
-        out.write(conversionSource)
+    if alreadySource != conversionSourceFrom:
+      with open(outputConversionSourceFrom, 'w') as out:
+        out.write(conversionSourceFrom)
+
+    alreadySource = ''
+    if os.path.isfile(outputConversionSourceTo):
+      with open(outputConversionSourceTo, 'r') as already:
+        alreadySource = already.read()
+    if alreadySource != conversionSourceTo:
+      with open(outputConversionSourceTo, 'w') as out:
+        out.write(conversionSourceTo)
 
   if writeSerialization:
     alreadyHeader = ''

@@ -86,6 +86,8 @@ public:
 
 	void unloadHeavyPart() override;
 
+	QRect innerContentRect() const override;
+
 private:
 	enum class StateFlag {
 		Over = (1 << 0),
@@ -201,11 +203,16 @@ public:
 
 	void unloadHeavyPart() override;
 
+	QRect innerContentRect() const override;
+
 private:
 	void ensureDataMediaCreated(not_null<DocumentData*> document) const;
 	void setupLottie() const;
+	void setupWebm() const;
 	QSize getThumbSize() const;
+	QSize boundingBox() const;
 	void prepareThumbnail() const;
+	void clipCallback(Media::Clip::Notification notification);
 
 	mutable Ui::Animations::Simple _a_over;
 	mutable bool _active = false;
@@ -214,6 +221,7 @@ private:
 	mutable bool _thumbLoaded = false;
 
 	mutable std::unique_ptr<Lottie::SinglePlayer> _lottie;
+	Media::Clip::ReaderPointer _webm;
 	mutable std::shared_ptr<Data::DocumentMedia> _dataMedia;
 	mutable rpl::lifetime _lifetime;
 
@@ -319,14 +327,18 @@ private:
 
 	// >= 0 will contain download / upload string, _statusSize = loaded bytes
 	// < 0 will contain played string, _statusSize = -(seconds + 1) played
-	// 0x7FFFFFF0 will contain status for not yet downloaded file
-	// 0x7FFFFFF1 will contain status for already downloaded file
-	// 0x7FFFFFF2 will contain status for failed to download / upload file
-	mutable int32 _statusSize;
+	// 0xFFFFFFF0LL will contain status for not yet downloaded file
+	// 0xFFFFFFF1LL will contain status for already downloaded file
+	// 0xFFFFFFF2LL will contain status for failed to download / upload file
+	mutable int64 _statusSize = 0;
 	mutable QString _statusText;
 
 	// duration = -1 - no duration, duration = -2 - "GIF" duration
-	void setStatusSize(int32 newSize, int32 fullSize, int32 duration, qint64 realDuration) const;
+	void setStatusSize(
+		int64 newSize,
+		int64 fullSize,
+		TimeId duration,
+		TimeId realDuration) const;
 
 	not_null<DocumentData*> _document;
 	mutable std::shared_ptr<Data::DocumentMedia> _documentMedia;

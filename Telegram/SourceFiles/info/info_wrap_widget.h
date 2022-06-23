@@ -18,8 +18,9 @@ namespace Ui {
 class SettingsSlider;
 class FadeShadow;
 class PlainShadow;
-class DropdownMenu;
+class PopupMenu;
 class IconButton;
+class RoundRect;
 } // namespace Ui
 
 namespace Window {
@@ -51,10 +52,10 @@ enum class Wrap {
 };
 
 struct SelectedItem {
-	explicit SelectedItem(FullMsgId msgId) : msgId(msgId) {
+	explicit SelectedItem(GlobalMsgId globalId) : globalId(globalId) {
 	}
 
-	FullMsgId msgId;
+	GlobalMsgId globalId;
 	bool canDelete = false;
 	bool canForward = false;
 };
@@ -66,7 +67,12 @@ struct SelectedItems {
 
 	Storage::SharedMediaType type;
 	std::vector<SelectedItem> list;
+};
 
+enum class SelectionAction {
+	Clear,
+	Forward,
+	Delete,
 };
 
 class WrapWidget final : public Window::SectionWidget {
@@ -101,6 +107,7 @@ public:
 		not_null<Window::SectionMemento*> memento,
 		const Window::SectionShow &params) override;
 	bool showBackFromStackInternal(const Window::SectionShow &params);
+	void removeFromStack(const std::vector<Section> &sections);
 	std::shared_ptr<Window::SectionMemento> createMemento() override;
 
 	rpl::producer<int> desiredHeightValue() const override;
@@ -113,11 +120,17 @@ public:
 
 	object_ptr<Ui::RpWidget> createTopBarSurrogate(QWidget *parent);
 
-	bool closeByOutsideClick() const;
+	[[nodiscard]] bool closeByOutsideClick() const;
 
-	void updateGeometry(QRect newGeometry, int additionalScroll);
-	int scrollTillBottom(int forHeight) const;
-	rpl::producer<int>  scrollTillBottomChanges() const;
+	void updateGeometry(
+		QRect newGeometry,
+		bool expanding,
+		int additionalScroll);
+	[[nodiscard]] int scrollBottomSkip() const;
+	[[nodiscard]] int scrollTillBottom(int forHeight) const;
+	[[nodiscard]] rpl::producer<int> scrollTillBottomChanges() const;
+	[[nodiscard]] rpl::producer<bool> grabbingForExpanding() const;
+	[[nodiscard]] const Ui::RoundRect *bottomSkipRounding() const;
 
 	~WrapWidget();
 
@@ -167,6 +180,8 @@ private:
 	void highlightTopBar();
 	void setupShortcuts();
 
+	[[nodiscard]] bool hasBackButton() const;
+
 	not_null<RpWidget*> topWidget() const;
 
 	QRect contentGeometry() const;
@@ -190,15 +205,16 @@ private:
 	bool requireTopBarSearch() const;
 
 	void addTopBarMenuButton();
-	void addContentSaveButton();
 	void addProfileCallsButton();
-	void addProfileNotificationsButton();
-	void showTopBarMenu();
+	void showTopBarMenu(bool check);
+	void deleteAllDownloads();
 
 	rpl::variable<Wrap> _wrap;
 	std::unique_ptr<Controller> _controller;
 	object_ptr<ContentWidget> _content = { nullptr };
 	int _additionalScroll = 0;
+	bool _expanding = false;
+	rpl::variable<bool> _grabbingForExpanding = false;
 	//object_ptr<Ui::PlainShadow> _topTabsBackground = { nullptr };
 	//object_ptr<Ui::SettingsSlider> _topTabs = { nullptr };
 	object_ptr<TopBar> _topBar = { nullptr };
@@ -207,8 +223,9 @@ private:
 	bool _topBarOverrideShown = false;
 
 	object_ptr<Ui::FadeShadow> _topShadow;
+	object_ptr<Ui::FadeShadow> _bottomShadow;
 	base::unique_qptr<Ui::IconButton> _topBarMenuToggle;
-	base::unique_qptr<Ui::DropdownMenu> _topBarMenu;
+	base::unique_qptr<Ui::PopupMenu> _topBarMenu;
 
 //	Tab _tab = Tab::Profile;
 //	std::shared_ptr<ContentMemento> _anotherTabMemento;
@@ -216,6 +233,7 @@ private:
 
 	rpl::event_stream<rpl::producer<int>> _desiredHeights;
 	rpl::event_stream<rpl::producer<bool>> _desiredShadowVisibilities;
+	rpl::event_stream<rpl::producer<bool>> _desiredBottomShadowVisibilities;
 	rpl::event_stream<rpl::producer<SelectedItems>> _selectedLists;
 	rpl::event_stream<rpl::producer<int>> _scrollTillBottomChanges;
 	rpl::event_stream<> _contentChanges;

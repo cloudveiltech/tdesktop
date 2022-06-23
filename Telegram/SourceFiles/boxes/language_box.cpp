@@ -33,6 +33,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_info.h"
 #include "styles/style_passport.h"
 #include "styles/style_chat_helpers.h"
+#include "styles/style_menu_icons.h"
 
 #include <QtGui/QGuiApplication>
 #include <QtGui/QClipboard>
@@ -437,7 +438,9 @@ void Rows::showMenu(int index) {
 	if (_menu || !hasMenu(row)) {
 		return;
 	}
-	_menu = base::make_unique_q<Ui::DropdownMenu>(window());
+	_menu = base::make_unique_q<Ui::DropdownMenu>(
+		window(),
+		st::dropdownMenuWithIcons);
 	const auto weak = _menu.get();
 	_menu->setHiddenCallback([=] {
 		weak->deleteLater();
@@ -460,21 +463,25 @@ void Rows::showMenu(int index) {
 	});
 	const auto addAction = [&](
 			const QString &text,
-			Fn<void()> callback) {
-		return _menu->addAction(text, std::move(callback));
+			Fn<void()> callback,
+			const style::icon *icon) {
+		return _menu->addAction(text, std::move(callback), icon);
 	};
 	if (canShare(row)) {
-		addAction(tr::lng_proxy_edit_share(tr::now), [=] { share(row); });
+		addAction(
+			tr::lng_proxy_edit_share(tr::now),
+			[=] { share(row); },
+			&st::menuIconShare);
 	}
 	if (canRemove(row)) {
 		if (row->removed) {
 			addAction(tr::lng_proxy_menu_restore(tr::now), [=] {
 				restore(row);
-			});
+			}, &st::menuIconRestore);
 		} else {
 			addAction(tr::lng_proxy_menu_delete(tr::now), [=] {
 				remove(row);
-			});
+			}, &st::menuIconDelete);
 		}
 	}
 	const auto toggle = menuToggleArea(row);
@@ -900,6 +907,30 @@ void Content::setupContent(
 			content,
 			object_ptr<Ui::BoxContentDivider>(content)));
 	const auto other = add(official, true);
+	const auto empty = content->add(
+		object_ptr<Ui::SlideWrap<Ui::FixedHeightWidget>>(
+			content,
+			object_ptr<Ui::FixedHeightWidget>(
+				content,
+				st::membersAbout.style.font->height * 9)));
+	const auto label = Ui::CreateChild<Ui::FlatLabel>(
+		empty->entity(),
+		tr::lng_languages_none(),
+		st::membersAbout);
+	empty->entity()->sizeValue(
+	) | rpl::start_with_next([=](QSize size) {
+		label->move(
+			(size.width() - label->width()) / 2,
+			(size.height() - label->height()) / 2);
+	}, label->lifetime());
+
+	empty->toggleOn(
+		rpl::combine(
+			main ? main->isEmpty() : rpl::single(true),
+			other ? other->isEmpty() : rpl::single(true),
+			_1 && _2),
+		anim::type::instant);
+
 	Ui::ResizeFitChild(this, content);
 
 	if (main && other) {
@@ -1136,7 +1167,7 @@ void LanguageBox::keyPressEvent(QKeyEvent *e) {
 		return Ui::ScrollToRequest(-1, -1);
 	}();
 	if (selected.ymin >= 0 && selected.ymax >= 0) {
-		onScrollToY(selected.ymin, selected.ymax);
+		scrollToY(selected.ymin, selected.ymax);
 	}
 }
 

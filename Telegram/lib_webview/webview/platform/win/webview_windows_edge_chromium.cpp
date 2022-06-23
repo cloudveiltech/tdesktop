@@ -8,6 +8,9 @@
 
 #include "base/basic_types.h"
 
+#include <QtCore/QUrl>
+#include <QtGui/QDesktopServices>
+
 #include <string>
 #include <locale>
 #include <shlwapi.h>
@@ -64,7 +67,9 @@ class Handler final
 	, public ICoreWebView2WebMessageReceivedEventHandler
 	, public ICoreWebView2PermissionRequestedEventHandler
 	, public ICoreWebView2NavigationStartingEventHandler
-	, public ICoreWebView2NavigationCompletedEventHandler {
+	, public ICoreWebView2NavigationCompletedEventHandler
+	, public ICoreWebView2NewWindowRequestedEventHandler
+	, public ICoreWebView2ScriptDialogOpeningEventHandler {
 
 public:
 	Handler(
@@ -76,28 +81,35 @@ public:
 	HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, LPVOID *ppv);
 	HRESULT STDMETHODCALLTYPE Invoke(
 		HRESULT res,
-		ICoreWebView2Environment *env);
+		ICoreWebView2Environment *env) override;
 	HRESULT STDMETHODCALLTYPE Invoke(
 		HRESULT res,
-		ICoreWebView2Controller *controller);
+		ICoreWebView2Controller *controller) override;
 	HRESULT STDMETHODCALLTYPE Invoke(
 		ICoreWebView2 *sender,
-		ICoreWebView2WebMessageReceivedEventArgs *args);
+		ICoreWebView2WebMessageReceivedEventArgs *args) override;
 	HRESULT STDMETHODCALLTYPE Invoke(
 		ICoreWebView2 *sender,
-		ICoreWebView2PermissionRequestedEventArgs *args);
+		ICoreWebView2PermissionRequestedEventArgs *args) override;
 	HRESULT STDMETHODCALLTYPE Invoke(
 		ICoreWebView2 *sender,
-		ICoreWebView2NavigationStartingEventArgs *args);
+		ICoreWebView2NavigationStartingEventArgs *args) override;
 	HRESULT STDMETHODCALLTYPE Invoke(
 		ICoreWebView2 *sender,
-		ICoreWebView2NavigationCompletedEventArgs *args);
+		ICoreWebView2NavigationCompletedEventArgs *args) override;
+	HRESULT STDMETHODCALLTYPE Invoke(
+		ICoreWebView2 *sender,
+		ICoreWebView2NewWindowRequestedEventArgs *args) override;
+	HRESULT STDMETHODCALLTYPE Invoke(
+		ICoreWebView2 *sender,
+		ICoreWebView2ScriptDialogOpeningEventArgs *args) override;
 
 private:
 	HWND _window = nullptr;
 	std::function<void(std::string)> _messageHandler;
-	std::function<bool(std::string)> _navigationStartHandler;
+	std::function<bool(std::string, bool)> _navigationStartHandler;
 	std::function<void(bool)> _navigationDoneHandler;
+	std::function<DialogResult(DialogArgs)> _dialogHandler;
 	std::function<void(ICoreWebView2Controller*)> _readyHandler;
 
 };
@@ -109,6 +121,7 @@ Handler::Handler(
 , _messageHandler(std::move(config.messageHandler))
 , _navigationStartHandler(std::move(config.navigationStartHandler))
 , _navigationDoneHandler(std::move(config.navigationDoneHandler))
+, _dialogHandler(std::move(config.dialogHandler))
 , _readyHandler(std::move(readyHandler)) {
 }
 
@@ -158,6 +171,9 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	webview->add_WebMessageReceived(this, &token);
 	webview->add_PermissionRequested(this, &token);
 	webview->add_NavigationStarting(this, &token);
+	webview->add_NavigationCompleted(this, &token);
+	webview->add_NewWindowRequested(this, &token);
+	webview->add_ScriptDialogOpening(this, &token);
 	return S_OK;
 }
 
@@ -196,7 +212,7 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	const auto result = args->get_Uri(&uri);
 
 	if (result == S_OK && uri) {
-		if (_navigationStartHandler && !_navigationStartHandler(FromWide(uri))) {
+		if (_navigationStartHandler && !_navigationStartHandler(FromWide(uri), false)) {
 			args->put_Cancel(TRUE);
 		}
 	}
@@ -218,6 +234,84 @@ HRESULT STDMETHODCALLTYPE Handler::Invoke(
 	return S_OK;
 }
 
+HRESULT STDMETHODCALLTYPE Handler::Invoke(
+		ICoreWebView2 *sender,
+		ICoreWebView2NewWindowRequestedEventArgs *args) {
+	auto uri = LPWSTR{};
+	const auto result = args->get_Uri(&uri);
+	auto isUserInitiated = BOOL{};
+	args->get_IsUserInitiated(&isUserInitiated);
+	args->put_Handled(TRUE);
+
+	if (result == S_OK && uri && isUserInitiated) {
+		const auto url = FromWide(uri);
+		if (_navigationStartHandler && _navigationStartHandler(url, true)) {
+			QDesktopServices::openUrl(QString::fromStdString(url));
+		}
+	}
+
+	CoTaskMemFree(uri);
+	return S_OK;
+}
+
+HRESULT STDMETHODCALLTYPE Handler::Invoke(
+		ICoreWebView2 *sender,
+		ICoreWebView2ScriptDialogOpeningEventArgs *args) {
+	auto kind = COREWEBVIEW2_SCRIPT_DIALOG_KIND_ALERT;
+	auto hr = args->get_Kind(&kind);
+	if (hr != S_OK) {
+		return S_OK;
+	}
+
+	auto uri = LPWSTR{};
+	hr = args->get_Uri(&uri);
+	if (hr != S_OK || !uri) {
+		return S_OK;
+	}
+	const auto uriGuard = gsl::finally([&] { CoTaskMemFree(uri); });
+
+	auto text = LPWSTR{};
+	hr = args->get_Message(&text);
+	if (hr != S_OK || !text) {
+		return S_OK;
+	}
+	const auto textGuard = gsl::finally([&] { CoTaskMemFree(text); });
+
+	auto value = LPWSTR{};
+	hr = args->get_DefaultText(&value);
+	if (hr != S_OK || !value) {
+		return S_OK;
+	}
+	const auto valueGuard = gsl::finally([&] { CoTaskMemFree(value); });
+
+	const auto type = [&] {
+		switch (kind) {
+		case COREWEBVIEW2_SCRIPT_DIALOG_KIND_ALERT:
+			return DialogType::Alert;
+		case COREWEBVIEW2_SCRIPT_DIALOG_KIND_CONFIRM:
+			return DialogType::Confirm;
+		case COREWEBVIEW2_SCRIPT_DIALOG_KIND_PROMPT:
+			return DialogType::Prompt;
+		}
+		return DialogType::Alert;
+	}();
+	const auto result = _dialogHandler(DialogArgs{
+		.type = type,
+		.value = FromWide(value),
+		.text = FromWide(text),
+		.url = FromWide(uri),
+	});
+
+	if (result.accepted) {
+		args->Accept();
+		if (kind == COREWEBVIEW2_SCRIPT_DIALOG_KIND_PROMPT) {
+			const auto wide = ToWide(result.text);
+			args->put_ResultText(wide.c_str());
+		}
+	}
+	return S_OK;
+}
+
 class Instance final : public Interface {
 public:
 	Instance(
@@ -230,6 +324,7 @@ public:
 	bool finishEmbedding() override;
 
 	void navigate(std::string url) override;
+	void reload() override;
 
 	void resizeToWindow() override;
 
@@ -274,11 +369,14 @@ void Instance::navigate(std::string url) {
 	_webview->Navigate(wide.c_str());
 }
 
+void Instance::reload() {
+	_webview->Reload();
+}
+
 void Instance::resizeToWindow() {
 	auto bounds = RECT{};
 	GetClientRect(_window, &bounds);
-	const auto result = _controller->put_Bounds(bounds);
-	int a = (int)result;
+	_controller->put_Bounds(bounds);
 }
 
 void Instance::init(std::string js) {
@@ -315,7 +413,7 @@ std::unique_ptr<Interface> CreateInstance(Config config) {
 	auto webview = (ICoreWebView2*)nullptr;
 	const auto event = CreateEvent(nullptr, false, false, nullptr);
 	const auto guard = gsl::finally([&] { CloseHandle(event); });
-
+	const auto debug = config.debug;
 	const auto ready = [&](ICoreWebView2Controller *created) {
 		const auto guard = gsl::finally([&] { SetEvent(event); });
 		controller = created;
@@ -331,8 +429,9 @@ std::unique_ptr<Interface> CreateInstance(Config config) {
 		if (result != S_OK || !settings) {
 			return;
 		}
-		settings->put_AreDefaultContextMenusEnabled(FALSE);
-		settings->put_AreDevToolsEnabled(FALSE);
+		settings->put_AreDefaultContextMenusEnabled(debug);
+		settings->put_AreDevToolsEnabled(debug);
+		settings->put_AreDefaultScriptDialogsEnabled(FALSE);
 		settings->put_IsStatusBarEnabled(FALSE);
 
 		controller->AddRef();

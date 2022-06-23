@@ -22,7 +22,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/toast/toast.h"
 #include "ui/text/format_values.h"
 #include "ui/style/style_palette_colorizer.h"
-#include "ui/special_fields.h"
+#include "ui/widgets/fields/special_fields.h"
 #include "ui/ui_utility.h"
 #include "main/main_account.h"
 #include "main/main_session.h"
@@ -169,8 +169,8 @@ void BackgroundSelector::updateThumbnail() {
 		int s = (pix.width() > pix.height()) ? pix.height() : pix.width();
 		p.drawImage(QRect(0, 0, size, size), pix, QRect(sx, sy, s, s));
 	}
-	Images::prepareRound(back, ImageRoundRadius::Small);
-	_thumbnail = Ui::PixmapFromImage(std::move(back));
+	_thumbnail = Ui::PixmapFromImage(
+		Images::Round(std::move(back), ImageRoundRadius::Small));
 	_thumbnail.setDevicePixelRatio(cRetinaFactor());
 	update();
 }
@@ -431,7 +431,7 @@ SendMediaReady PrepareThemeMedia(
 		MTP_bytes(),
 		MTP_int(base::unixtime::now()),
 		MTP_string("application/x-tgtheme-tdesktop"),
-		MTP_int(content.size()),
+		MTP_long(content.size()),
 		MTP_vector<MTPPhotoSize>(sizes),
 		MTPVector<MTPVideoSize>(),
 		MTP_int(dcId),
@@ -479,7 +479,7 @@ Fn<void()> SavePreparedTheme(
 	const auto api = &session->api();
 	const auto state = std::make_shared<State>();
 	state->id = FullMsgId(
-		0,
+		session->userPeerId(),
 		session->data().nextLocalMessageId());
 
 	const auto creating = !fields.id
@@ -655,7 +655,7 @@ void StartEditor(
 		? GenerateDefaultPalette()
 		: ParseTheme(object, true).palette;
 	if (palette.isEmpty() || !CopyColorsToPalette(path, palette, cloud)) {
-		window->show(Box<Ui::InformBox>(tr::lng_theme_editor_error(tr::now)));
+		window->show(Ui::MakeInformBox(tr::lng_theme_editor_error()));
 		return;
 	}
 	if (Core::App().settings().systemDarkModeEnabled()) {
@@ -893,10 +893,11 @@ void SaveThemeBox(
 				type = SaveErrorType::Link;
 			} else if (error == qstr("THEME_SLUG_OCCUPIED")) {
 				Ui::Toast::Show(
+					Ui::BoxShow(box).toastParent(),
 					tr::lng_create_channel_link_occupied(tr::now));
 				type = SaveErrorType::Link;
 			} else if (!error.isEmpty()) {
-				Ui::Toast::Show(error);
+				Ui::Toast::Show(Ui::BoxShow(box).toastParent(), error);
 			}
 			if (type == SaveErrorType::Name) {
 				name->showError();

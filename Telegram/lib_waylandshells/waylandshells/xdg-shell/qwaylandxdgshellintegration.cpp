@@ -40,8 +40,11 @@
 #include "qwaylandxdgshellintegration_p.h"
 #include "qwaylandxdgdecorationv1_p.h"
 
+#include <QtWaylandClient/private/qwaylandintegration_p.h>
 #include <QtWaylandClient/private/qwaylandwindow_p.h>
 #include <QtWaylandClient/private/qwaylanddisplay_p.h>
+
+#include <QtGui/private/qguiapplication_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -56,6 +59,11 @@ bool InUse = false;
 }
 
 bool XdgShell() {
+	// initialize shell integration before querying
+	if (const auto integration = static_cast<QWaylandIntegration*>(
+		QGuiApplicationPrivate::platformIntegration())) {
+		integration->shellIntegration();
+	}
     return InUse;
 }
 
@@ -75,7 +83,11 @@ bool QWaylandXdgShellIntegration::initialize(QWaylandDisplay *display)
         return false;
     }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 3, 0)
+    InUse = true;
+#else
     InUse = QWaylandShellIntegration::initialize(display);
+#endif
     return InUse;
 }
 
@@ -84,6 +96,7 @@ QWaylandShellSurface *QWaylandXdgShellIntegration::createShellSurface(QWaylandWi
     return m_xdgShell->getXdgSurface(window);
 }
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 3, 0)
 void QWaylandXdgShellIntegration::handleKeyboardFocusChanged(QWaylandWindow *newFocus, QWaylandWindow *oldFocus)
 {
     if (newFocus) {
@@ -97,6 +110,7 @@ void QWaylandXdgShellIntegration::handleKeyboardFocusChanged(QWaylandWindow *new
             m_display->handleWindowDeactivated(oldFocus);
     }
 }
+#endif
 
 void *QWaylandXdgShellIntegration::nativeResourceForWindow(const QByteArray &resource, QWindow *window)
 {

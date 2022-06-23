@@ -37,8 +37,8 @@ struct UploadedMedia {
 
 struct UploadSecureProgress {
 	FullMsgId fullId;
-	int offset = 0;
-	int size = 0;
+	int64 offset = 0;
+	int64 size = 0;
 };
 
 struct UploadSecureDone {
@@ -54,6 +54,10 @@ public:
 
 	[[nodiscard]] Main::Session &session() const;
 
+	[[nodiscard]] FullMsgId currentUploadId() const {
+		return uploadingId;
+	}
+
 	void uploadMedia(const FullMsgId &msgId, const SendMediaReady &image);
 	void upload(
 		const FullMsgId &msgId,
@@ -63,6 +67,7 @@ public:
 	void pause(const FullMsgId &msgId);
 	void confirm(const FullMsgId &msgId);
 
+	void cancelAll();
 	void clear();
 
 	rpl::producer<UploadedMedia> photoReady() const {
@@ -108,7 +113,9 @@ private:
 	void processDocumentProgress(const FullMsgId &msgId);
 	void processDocumentFailed(const FullMsgId &msgId);
 
+	void notifyFailed(FullMsgId id, const File &file);
 	void currentFailed();
+	void cancelRequests();
 
 	void sendProgressUpdate(
 		not_null<HistoryItem*> item,
@@ -119,13 +126,12 @@ private:
 	base::flat_map<mtpRequestId, QByteArray> requestsSent;
 	base::flat_map<mtpRequestId, int32> docRequestsSent;
 	base::flat_map<mtpRequestId, int32> dcMap;
-	uint32 sentSize = 0;
+	uint32 sentSize = 0; // FileSize: Right now any file size fits 32 bit.
 	uint32 sentSizes[MTP::kUploadSessionsCount] = { 0 };
 
 	FullMsgId uploadingId;
 	FullMsgId _pausedId;
 	std::map<FullMsgId, File> queue;
-	std::map<FullMsgId, File> uploaded;
 	base::Timer _nextTimer, _stopSessionsTimer;
 
 	rpl::event_stream<UploadedMedia> _photoReady;

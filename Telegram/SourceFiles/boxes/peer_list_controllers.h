@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/peer_list_box.h"
 #include "base/flat_set.h"
 #include "base/weak_ptr.h"
+#include "base/timer.h"
 
 // Not used for now.
 //
@@ -45,8 +46,7 @@ public:
 
 	void lazyInitialize(const style::PeerListItem &st) override;
 
-private:
-	void refreshActionLink();
+protected:
 	QSize rightActionSize() const override;
 	QMargins rightActionMargins() const override;
 	void rightActionPaint(
@@ -56,6 +56,9 @@ private:
 		int outerWidth,
 		bool selected,
 		bool actionSelected) override;
+
+private:
+	void refreshActionLink();
 
 	QString _action;
 	int _actionWidth = 0;
@@ -136,6 +139,12 @@ public:
 		not_null<PeerData*> peer) override final;
 	void rowClicked(not_null<PeerListRow*> row) override;
 
+	enum class SortMode {
+		Alphabet,
+		Online,
+	};
+	void setSortMode(SortMode mode);
+
 protected:
 	virtual std::unique_ptr<PeerListRow> createRow(not_null<UserData*> user);
 	virtual void prepareViewHook() {
@@ -144,43 +153,17 @@ protected:
 	}
 
 private:
+	void sort();
+	void sortByName();
+	void sortByOnline();
 	void rebuildRows();
 	void checkForEmptyRows();
 	bool appendRow(not_null<UserData*> user);
 
 	const not_null<Main::Session*> _session;
-
-};
-
-class AddBotToGroupBoxController
-	: public ChatsListBoxController
-	, public base::has_weak_ptr {
-public:
-	static void Start(not_null<UserData*> bot);
-
-	explicit AddBotToGroupBoxController(not_null<UserData*> bot);
-
-	Main::Session &session() const override;
-	void rowClicked(not_null<PeerListRow*> row) override;
-
-protected:
-	std::unique_ptr<Row> createRow(not_null<History*> history) override;
-	void prepareViewHook() override;
-	QString emptyBoxText() const override;
-
-private:
-	static bool SharingBotGame(not_null<UserData*> bot);
-
-	bool needToCreateRow(not_null<PeerData*> peer) const;
-	bool sharingBotGame() const;
-	QString noResultsText() const;
-	QString descriptionText() const;
-	void updateLabels();
-
-	void shareBotGame(not_null<PeerData*> chat);
-	void addBotToGroup(not_null<PeerData*> chat);
-
-	const not_null<UserData*> _bot;
+	SortMode _sortMode = SortMode::Alphabet;
+	base::Timer _sortByOnlineTimer;
+	rpl::lifetime _sortByOnlineLifetime;
 
 };
 
@@ -190,7 +173,8 @@ class ChooseRecipientBoxController
 public:
 	ChooseRecipientBoxController(
 		not_null<Main::Session*> session,
-		FnMut<void(not_null<PeerData*>)> callback);
+		FnMut<void(not_null<PeerData*>)> callback,
+		Fn<bool(not_null<PeerData*>)> filter = nullptr);
 
 	Main::Session &session() const override;
 	void rowClicked(not_null<PeerListRow*> row) override;
@@ -206,5 +190,6 @@ protected:
 private:
 	const not_null<Main::Session*> _session;
 	FnMut<void(not_null<PeerData*>)> _callback;
+	Fn<bool(not_null<PeerData*>)> _filter;
 
 };

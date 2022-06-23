@@ -10,10 +10,19 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwidget.h"
 #include "ui/ui_utility.h"
 #include "ui/chat/chat_theme.h"
+#include "ui/toasts/common_toasts.h"
+#include "boxes/premium_preview_box.h"
 #include "data/data_peer.h"
+#include "data/data_user.h"
+#include "data/data_document.h"
 #include "data/data_changes.h"
 #include "data/data_session.h"
 #include "data/data_cloud_themes.h"
+#include "data/data_message_reactions.h"
+#include "data/data_peer_values.h"
+#include "history/history.h"
+#include "history/history_item.h"
+#include "settings/settings_premium.h"
 #include "main/main_session.h"
 #include "window/section_memento.h"
 #include "window/window_slide_animation.h"
@@ -74,9 +83,7 @@ AbstractSectionWidget::AbstractSectionWidget(
 		peerForBackground
 	) | rpl::map([=](PeerData *peer) -> rpl::producer<> {
 		if (!peer) {
-			return rpl::single(
-				rpl::empty_value()
-			) | rpl::then(
+			return rpl::single(rpl::empty) | rpl::then(
 				controller->defaultChatTheme()->repaintBackgroundRequests()
 			);
 		}
@@ -84,9 +91,7 @@ AbstractSectionWidget::AbstractSectionWidget(
 			controller,
 			peer
 		) | rpl::map([](const std::shared_ptr<Ui::ChatTheme> &theme) {
-			return rpl::single(
-				rpl::empty_value()
-			) | rpl::then(
+			return rpl::single(rpl::empty) | rpl::then(
 				theme->repaintBackgroundRequests()
 			);
 		}) | rpl::flatten_latest();
@@ -153,6 +158,8 @@ void SectionWidget::showAnimated(
 		myContentCache);
 	_showAnimation->setTopBarShadow(params.withTopBarShadow);
 	_showAnimation->setWithFade(params.withFade);
+	_showAnimation->setTopSkip(params.topSkip);
+	_showAnimation->setTopBarMask(params.topMask);
 	_showAnimation->start();
 
 	show();
@@ -271,8 +278,12 @@ void SectionWidget::PaintBackground(
 void SectionWidget::paintEvent(QPaintEvent *e) {
 	if (_showAnimation) {
 		Painter p(this);
-		_showAnimation->paintContents(p, e->rect());
+		_showAnimation->paintContents(p);
 	}
+}
+
+bool SectionWidget::animatingShow() const {
+	return (_showAnimation != nullptr);
 }
 
 void SectionWidget::showFinished() {
@@ -319,6 +330,55 @@ auto ChatThemeValueFromPeer(
 			? std::move(overriden.theme)
 			: std::move(cloud);
 	});
+}
+
+bool ShowSendPremiumError(
+		not_null<SessionController*> controller,
+		not_null<DocumentData*> document) {
+	if (!document->isPremiumSticker()
+		|| document->session().premium()) {
+		return false;
+	}
+	ShowStickerPreviewBox(controller, document);
+	return true;
+}
+
+[[nodiscard]] auto ExtractDisabledReactions(
+	not_null<PeerData*> peer,
+	const std::vector<Data::Reaction> &list)
+-> base::flat_map<QString, ReactionDisableType> {
+	auto result = base::flat_map<QString, ReactionDisableType>();
+	const auto type = peer->isBroadcast()
+		? ReactionDisableType::Channel
+		: ReactionDisableType::Group;
+	if (const auto allowed = Data::PeerAllowedReactions(peer)) {
+		for (const auto &reaction : list) {
+			if (reaction.premium && !allowed->contains(reaction.emoji)) {
+				result.emplace(reaction.emoji, type);
+			}
+		}
+	}
+	return result;
+}
+
+bool ShowReactPremiumError(
+		not_null<SessionController*> controller,
+		not_null<HistoryItem*> item,
+		const QString &emoji) {
+	if (item->chosenReaction() == emoji || controller->session().premium()) {
+		return false;
+	}
+	const auto &list = controller->session().data().reactions().list(
+		Data::Reactions::Type::Active);
+	const auto i = ranges::find(list, emoji, &Data::Reaction::emoji);
+	if (i == end(list) || !i->premium) {
+		return false;
+	}
+	ShowPremiumPreviewBox(
+		controller,
+		PremiumPreview::Reactions,
+		ExtractDisabledReactions(item->history()->peer, list));
+	return true;
 }
 
 } // namespace Window

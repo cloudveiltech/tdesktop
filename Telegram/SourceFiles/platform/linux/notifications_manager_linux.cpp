@@ -74,6 +74,9 @@ std::unique_ptr<base::Platform::DBus::ServiceWatcher> CreateServiceWatcher() {
 				const Glib::ustring &oldOwner,
 				const Glib::ustring &newOwner) {
 				if (activatable && newOwner.empty()) {
+					crl::on_main([] {
+						Core::App().notifications().clearAll();
+					});
 					return;
 				}
 
@@ -432,11 +435,13 @@ private:
 
 	uint _notificationId = 0;
 	uint _actionInvokedSignalId = 0;
+	uint _activationTokenSignalId = 0;
 	uint _notificationRepliedSignalId = 0;
 	uint _notificationClosedSignalId = 0;
 
 	void notificationClosed(uint id, uint reason);
 	void actionInvoked(uint id, const Glib::ustring &actionName);
+	void activationToken(uint id, const Glib::ustring &token);
 	void notificationReplied(uint id, const Glib::ustring &text);
 
 };
@@ -483,6 +488,14 @@ bool NotificationData::init(
 					parameters.get_child(1));
 
 				crl::on_main(weak, [=] { actionInvoked(id, actionName); });
+			} else if (signal_name == "ActivationToken") {
+				const auto id = GlibVariantCast<uint>(
+					parameters.get_child(0));
+
+				const auto token = GlibVariantCast<Glib::ustring>(
+					parameters.get_child(1));
+
+				crl::on_main(weak, [=] { activationToken(id, token); });
 			} else if (signal_name == "NotificationReplied") {
 				const auto id = GlibVariantCast<uint>(
 					parameters.get_child(0));
@@ -555,6 +568,13 @@ bool NotificationData::init(
 			std::string(kInterface),
 			"ActionInvoked",
 			std::string(kObjectPath));
+
+		_activationTokenSignalId = _dbusConnection->signal_subscribe(
+			signalEmitted,
+			std::string(kService),
+			std::string(kInterface),
+			"ActivationToken",
+			std::string(kObjectPath));
 	}
 
 	if (capabilities.contains("action-icons")) {
@@ -596,6 +616,10 @@ NotificationData::~NotificationData() {
 	if (_dbusConnection) {
 		if (_actionInvokedSignalId != 0) {
 			_dbusConnection->signal_unsubscribe(_actionInvokedSignalId);
+		}
+
+		if (_activationTokenSignalId != 0) {
+			_dbusConnection->signal_unsubscribe(_activationTokenSignalId);
 		}
 
 		if (_notificationRepliedSignalId != 0) {
@@ -665,7 +689,9 @@ void NotificationData::close() {
 			_notificationId,
 		}),
 		{},
-		std::string(kService));
+		std::string(kService),
+		-1,
+		Gio::DBus::CALL_FLAGS_NO_AUTO_START);
 	_manager->clearNotification(_id);
 }
 
@@ -674,8 +700,12 @@ void NotificationData::setImage(const QString &imagePath) {
 		return;
 	}
 
-	const auto image = QImage(imagePath)
-		.convertToFormat(QImage::Format_RGBA8888);
+	const auto image = [&] {
+		const auto original = QImage(imagePath);
+		return original.hasAlphaChannel()
+			? original.convertToFormat(QImage::Format_RGBA8888)
+			: original.convertToFormat(QImage::Format_RGB888);
+	}();
 
 	if (image.isNull()) {
 		return;
@@ -685,9 +715,9 @@ void NotificationData::setImage(const QString &imagePath) {
 		image.width(),
 		image.height(),
 		int(image.bytesPerLine()),
-		true,
+		image.hasAlphaChannel(),
 		8,
-		4,
+		image.hasAlphaChannel() ? 4 : 3,
 		std::vector<uchar>(
 			image.constBits(),
 			image.constBits() + image.sizeInBytes()),
@@ -695,7 +725,21 @@ void NotificationData::setImage(const QString &imagePath) {
 }
 
 void NotificationData::notificationClosed(uint id, uint reason) {
-	if (id == _notificationId) {
+	/*
+	 * From: https://specifications.freedesktop.org/notification-spec/latest/ar01s09.html
+	 * The reason the notification was closed
+	 * 1 - The notification expired.
+	 * 2 - The notification was dismissed by the user.
+	 * 3 - The notification was closed by a call to CloseNotification.
+	 * 4 - Undefined/reserved reasons.
+	 *
+	 * If the notification was dismissed by the user (reason == 2), the notification is not kept in notification history.
+	 * We do not need to send a "CloseNotification" call later to clear it from history.
+	 * Therefore we can drop the notification reference now.
+	 * In all other cases we keep the notification reference so that we may clear the notification later from history,
+	 * if the message for that notification is read (e.g. chat is opened or read from another device).
+	*/
+	if (id == _notificationId && reason == 2) {
 		_manager->clearNotification(_id);
 	}
 }
@@ -712,6 +756,12 @@ void NotificationData::actionInvoked(
 		_manager->notificationActivated(_id);
 	} else if (actionName == "mail-mark-read") {
 		_manager->notificationReplied(_id, {});
+	}
+}
+
+void NotificationData::activationToken(uint id, const Glib::ustring &token) {
+	if (id == _notificationId) {
+		qputenv("XDG_ACTIVATION_TOKEN", QByteArray::fromStdString(token));
 	}
 }
 

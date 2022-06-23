@@ -12,7 +12,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_changes.h"
 #include "data/data_streaming.h"
 #include "data/data_file_click_handler.h"
+#include "base/options.h"
 #include "base/random.h"
+#include "base/power_save_blocker.h"
 #include "media/audio/media_audio.h"
 #include "media/audio/media_audio_capture.h"
 #include "media/streaming/media_streaming_instance.h"
@@ -24,6 +26,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_media_types.h"
 #include "data/data_file_origin.h"
 #include "window/window_session_controller.h"
+#include "window/window_controller.h"
 #include "core/shortcuts.h"
 #include "core/application.h"
 #include "main/main_domain.h" // Domain::activeSessionValue.
@@ -53,7 +56,16 @@ auto VoicePlaybackSpeed() {
 	return std::clamp(Core::App().settings().voicePlaybackSpeed(), 0.6, 1.7);
 }
 
+base::options::toggle OptionDisableAutoplayNext({
+	.id = kOptionDisableAutoplayNext,
+	.name = "Disable auto-play of the next track",
+	.description = "Disable auto-play of the next "
+		"Audio file / Voice Message / Video message.",
+});
+
 } // namespace
+
+const char kOptionDisableAutoplayNext[] = "disable-autoplay-next";
 
 struct Instance::Streamed {
 	Streamed(
@@ -215,23 +227,27 @@ void Instance::setCurrent(const AudioMsgId &audioId) {
 		if (item) {
 			setHistory(data, item->history());
 		} else {
-			data->history = nullptr;
-			data->migrated = nullptr;
-			data->session = nullptr;
+			setHistory(
+				data,
+				nullptr,
+				audioId.audio() ? &audioId.audio()->session() : nullptr);
 		}
 		_trackChanged.fire_copy(data->type);
 		refreshPlaylist(data);
 	}
 }
 
-void Instance::setHistory(not_null<Data*> data, History *history) {
+void Instance::setHistory(
+		not_null<Data*> data,
+		History *history,
+		Main::Session *sessionFallback) {
 	if (history) {
 		data->history = history->migrateToOrMe();
 		data->migrated = data->history->migrateFrom();
 		setSession(data, &history->session());
 	} else {
 		data->history = data->migrated = nullptr;
-		setSession(data, nullptr);
+		setSession(data, sessionFallback);
 	}
 }
 
@@ -248,6 +264,18 @@ void Instance::setSession(not_null<Data*> data, Main::Session *session) {
 		) | rpl::start_with_next([=] {
 			setSession(data, nullptr);
 		}, data->sessionLifetime);
+
+		session->data().documentLoadProgress(
+		) | rpl::filter([=](not_null<DocumentData*> document) {
+			// Before refactoring it was called only for audio files.
+			return document->isAudioFile();
+		}) | rpl::start_with_next([=](not_null<DocumentData*> document) {
+			const auto type = AudioMsgId::Type::Song;
+			emitUpdate(type, [&](const AudioMsgId &audioId) {
+				return (audioId.audio() == document);
+			});
+		}, data->sessionLifetime);
+
 		session->data().itemRemoved(
 		) | rpl::filter([=](not_null<const HistoryItem*> item) {
 			return (data->current.contextId() == item->fullId());
@@ -386,7 +414,7 @@ auto Instance::playlistKey(not_null<const Data*> data) const
 		return {};
 	}
 
-	const auto universalId = (contextId.channel == history->channelId())
+	const auto universalId = (contextId.peer == history->peer->id)
 		? contextId.msg
 		: (contextId.msg - ServerMaxMsgId);
 	return SliceKey(
@@ -506,9 +534,9 @@ bool Instance::moveInPlaylist(
 		}
 		const auto universal = computeCurrentUniversalId(data);
 		const auto byUniversal = [&](ShuffleData::UniversalMsgId id) {
-			return (id < 0)
-				? jumpById({ ChannelId(), id + ServerMaxMsgId })
-				: jumpById({ raw->history->channelId(), id });
+			return (id < 0 && raw->migrated)
+				? jumpById({ raw->migrated->peer->id, id + ServerMaxMsgId })
+				: jumpById({ raw->history->peer->id, id });
 		};
 		if (universal && raw->indexInPlayedIds == raw->playedIds.size()) {
 			raw->playedIds.push_back(universal);
@@ -566,6 +594,32 @@ bool Instance::moveInPlaylist(
 		}
 	}
 	return false;
+}
+
+void Instance::updatePowerSaveBlocker(
+		not_null<Data*> data,
+		const TrackState &state) {
+	const auto block = !IsPausedOrPausing(state.state)
+		&& !IsStoppedOrStopping(state.state);
+	const auto blockVideo = block
+		&& data->current.audio()
+		&& data->current.audio()->isVideoMessage();
+	const auto windowResolver = [] {
+		const auto window = Core::App().activeWindow();
+		return window ? window->widget()->windowHandle() : nullptr;
+	};
+	base::UpdatePowerSaveBlocker(
+		data->powerSaveBlocker,
+		block,
+		base::PowerSaveBlockType::PreventAppSuspension,
+		[] { return u"Audio playback is active"_q; },
+		windowResolver);
+	base::UpdatePowerSaveBlocker(
+		data->powerSaveBlockerVideo,
+		blockVideo,
+		base::PowerSaveBlockType::PreventDisplaySleep,
+		[] { return u"Video playback is active"_q; },
+		windowResolver);
 }
 
 void Instance::ensureShuffleMove(not_null<Data*> data, int delta) {
@@ -906,12 +960,12 @@ void Instance::validateShuffleData(not_null<Data*> data) {
 		raw->nextSliceLifetime.destroy();
 
 		const auto size = update.size();
-		const auto channel = raw->history->channelId();
+		const auto peer = raw->history->peer->id;
 		raw->playlist.reserve(raw->playlist.size() + size);
 		raw->nonPlayedIds.reserve(raw->nonPlayedIds.size() + size);
 		for (auto i = size; i != 0;) {
 			const auto fullId = update[--i];
-			const auto universal = (fullId.channel == channel)
+			const auto universal = (fullId.peer == peer)
 				? fullId.msg
 				: (fullId.msg - ServerMaxMsgId);
 			if (raw->playlist.empty() || raw->playlist.back() > universal) {
@@ -1086,15 +1140,6 @@ void Instance::updateVoicePlaybackSpeed() {
 	}
 }
 
-void Instance::documentLoadProgress(DocumentData *document) {
-	const auto type = document->isAudioFile()
-		? AudioMsgId::Type::Song
-		: AudioMsgId::Type::Voice;
-	emitUpdate(type, [&](const AudioMsgId &audioId) {
-		return (audioId.audio() == document);
-	});
-}
-
 void Instance::emitUpdate(AudioMsgId::Type type) {
 	emitUpdate(type, [](const AudioMsgId &playing) { return true; });
 }
@@ -1170,11 +1215,15 @@ void Instance::emitUpdate(AudioMsgId::Type type, CheckCallback check) {
 				streamed->progress.updateState(state);
 			}
 		}
+		updatePowerSaveBlocker(data, state);
+
 		auto finished = false;
 		_updatedNotifier.fire_copy({state});
 		if (data->isPlaying && state.state == State::StoppedAtEnd) {
 			if (repeat(data) == RepeatMode::One) {
 				play(data->current);
+			} else if (OptionDisableAutoplayNext.value()) {
+				finished = true;
 			} else if (!moveInPlaylist(data, 1, true)) {
 				finished = true;
 			}
@@ -1290,12 +1339,12 @@ void Instance::handleStreamingError(
 	const auto document = data->streamed->id.audio();
 	const auto contextId = data->streamed->id.contextId();
 	if (error == Streaming::Error::NotStreamable) {
-		DocumentSaveClickHandler::Save(
-			(contextId ? contextId : ::Data::FileOrigin()),
+		DocumentSaveClickHandler::SaveAndTrack(
+			contextId,
 			document);
 	} else if (error == Streaming::Error::OpenFailed) {
-		DocumentSaveClickHandler::Save(
-			(contextId ? contextId : ::Data::FileOrigin()),
+		DocumentSaveClickHandler::SaveAndTrack(
+			contextId,
 			document,
 			DocumentSaveClickHandler::Mode::ToFile);
 	}

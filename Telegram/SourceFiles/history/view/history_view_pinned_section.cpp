@@ -31,6 +31,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_peer_menu.h"
 #include "base/event_filter.h"
 #include "base/call_delayed.h"
+#include "base/qt/qt_key_modifiers.h"
 #include "core/file_utilities.h"
 #include "main/main_session.h"
 #include "data/data_session.h"
@@ -51,7 +52,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_boxes.h"
 
 #include <QtCore/QMimeData>
-#include <QtGui/QGuiApplication>
 
 namespace HistoryView {
 namespace {
@@ -64,9 +64,7 @@ PinnedMemento::PinnedMemento(
 : _history(history)
 , _highlightId(highlightId) {
 	_list.setAroundPosition({
-		.fullId = FullMsgId(
-			history->channelId(),
-			highlightId),
+		.fullId = FullMsgId(history->peer->id, highlightId),
 		.date = TimeId(0),
 	});
 }
@@ -206,7 +204,7 @@ void PinnedWidget::setupClearButton() {
 }
 
 void PinnedWidget::scrollDownClicked() {
-	if (QGuiApplication::keyboardModifiers() == Qt::ControlModifier) {
+	if (base::IsCtrlPressed()) {
 		showAtEnd();
 	//} else if (_replyReturn) {
 	//	showAtPosition(_replyReturn->position());
@@ -272,7 +270,7 @@ bool PinnedWidget::showAtPositionNow(
 }
 
 void PinnedWidget::updateScrollDownVisibility() {
-	if (animating()) {
+	if (animatingShow()) {
 		return;
 	}
 
@@ -332,7 +330,7 @@ not_null<History*> PinnedWidget::history() const {
 Dialogs::RowDescriptor PinnedWidget::activeChat() const {
 	return {
 		_history,
-		FullMsgId(_history->channelId(), ShowAtUnreadMsgId)
+		FullMsgId(_history->peer->id, ShowAtUnreadMsgId)
 	};
 }
 
@@ -391,8 +389,8 @@ void PinnedWidget::restoreState(not_null<PinnedMemento*> memento) {
 	if (const auto highlight = memento->getHighlightId()) {
 		const auto position = Data::MessagePosition{
 			.fullId = ((highlight > 0 || !_migratedPeer)
-				? FullMsgId(_history->channelId(), highlight)
-				: FullMsgId(0, -highlight)),
+				? FullMsgId(_history->peer->id, highlight)
+				: FullMsgId(_migratedPeer->id, -highlight)),
 			.date = TimeId(0),
 		};
 		_inner->showAroundPosition(position, [=] {
@@ -469,7 +467,7 @@ void PinnedWidget::updateControlsGeometry() {
 }
 
 void PinnedWidget::paintEvent(QPaintEvent *e) {
-	if (animating()) {
+	if (animatingShow()) {
 		SectionWidget::paintEvent(e);
 		return;
 	} else if (Ui::skipPaintEvent(this, e)) {
@@ -683,6 +681,11 @@ CopyRestrictionType PinnedWidget::listCopyRestrictionType(
 
 CopyRestrictionType PinnedWidget::listSelectRestrictionType() {
 	return SelectRestrictionTypeFor(_history->peer);
+}
+
+auto PinnedWidget::listAllowedReactionsValue()
+-> rpl::producer<std::optional<base::flat_set<QString>>> {
+	return Data::PeerAllowedReactionsValue(_history->peer);
 }
 
 void PinnedWidget::confirmDeleteSelected() {

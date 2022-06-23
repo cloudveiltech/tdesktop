@@ -305,6 +305,19 @@ auto Animation::frameInfo(const FrameRequest &request) const -> FrameInfo {
 	};
 }
 
+int Animation::frameIndex() const {
+	Expects(_state != nullptr);
+
+	const auto frame = _state->frameForPaint();
+	return frame->index % _state->framesCount();
+}
+
+int Animation::framesCount() const {
+	Expects(_state != nullptr);
+
+	return _state->framesCount();
+}
+
 Information Animation::information() const {
 	Expects(_state != nullptr);
 

@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/history_view_element.h"
 
+#include "api/api_chat_invite.h"
 #include "history/view/history_view_service_message.h"
 #include "history/view/history_view_message.h"
 #include "history/history_item_components.h"
@@ -15,6 +16,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/media/history_view_media_grouped.h"
 #include "history/view/media/history_view_sticker.h"
 #include "history/view/media/history_view_large_emoji.h"
+#include "history/view/history_view_react_animation.h"
+#include "history/view/history_view_react_button.h"
+#include "history/view/history_view_cursor_state.h"
 #include "history/history.h"
 #include "base/unixtime.h"
 #include "core/application.h"
@@ -31,8 +35,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "data/data_groups.h"
 #include "data/data_media_types.h"
+#include "data/data_sponsored_messages.h"
+#include "data/data_message_reactions.h"
 #include "lang/lang_keys.h"
-#include "app.h"
 #include "styles/style_chat.h"
 
 namespace HistoryView {
@@ -41,7 +46,13 @@ namespace {
 // A new message from the same sender is attached to previous within 15 minutes.
 constexpr int kAttachMessageToPreviousSecondsDelta = 900;
 
-bool IsAttachedToPreviousInSavedMessages(
+Element *HoveredElement/* = nullptr*/;
+Element *PressedElement/* = nullptr*/;
+Element *HoveredLinkElement/* = nullptr*/;
+Element *PressedLinkElement/* = nullptr*/;
+Element *MousedElement/* = nullptr*/;
+
+[[nodiscard]] bool IsAttachedToPreviousInSavedMessages(
 		not_null<HistoryItem*> previous,
 		HistoryMessageForwarded *prevForwarded,
 		not_null<HistoryItem*> item,
@@ -59,6 +70,17 @@ bool IsAttachedToPreviousInSavedMessages(
 	Assert(previousInfo != nullptr);
 	Assert(itemInfo != nullptr);
 	return (*previousInfo == *itemInfo);
+}
+
+[[nodiscard]] Window::SessionController *ContextOrSessionWindow(
+		const ClickHandlerContext &context,
+		not_null<Main::Session*> session) {
+	if (const auto controller = context.sessionWindow.get()) {
+		if (&controller->session() == session) {
+			return controller;
+		}
+	}
+	return session->tryResolveWindow();
 }
 
 } // namespace
@@ -102,9 +124,9 @@ bool SimpleElementDelegate::elementUnderCursor(
 	return false;
 }
 
-crl::time SimpleElementDelegate::elementHighlightTime(
-		not_null<const HistoryItem*> item) {
-	return crl::time(0);
+float64 SimpleElementDelegate::elementHighlightOpacity(
+		not_null<const HistoryItem*> item) const {
+	return 0.;
 }
 
 bool SimpleElementDelegate::elementInSelectionMode() {
@@ -179,9 +201,20 @@ auto SimpleElementDelegate::elementPathShiftGradient()
 void SimpleElementDelegate::elementReplyTo(const FullMsgId &to) {
 }
 
-
 void SimpleElementDelegate::elementStartInteraction(
 	not_null<const Element*> view) {
+}
+
+void SimpleElementDelegate::elementStartPremium(
+	not_null<const Element*> view,
+	Element *replacing) {
+}
+
+void SimpleElementDelegate::elementCancelPremium(
+	not_null<const Element*> view) {
+}
+
+void SimpleElementDelegate::elementShowSpoilerAnimation() {
 }
 
 TextSelection UnshiftItemSelection(
@@ -231,8 +264,8 @@ QString DateTooltipText(not_null<Element*> view) {
 				+ "\n\n" + dateText;
 		}
 	}
-	if (const auto msgsigned = view->data()->Get<HistoryMessageSigned>()) {
-		if (msgsigned->isElided && !msgsigned->isAnonymousRank) {
+	if (view->isSignedAuthorElided()) {
+		if (const auto msgsigned = view->data()->Get<HistoryMessageSigned>()) {
 			dateText += '\n'
 				+ tr::lng_signed_author(tr::now, lt_user, msgsigned->author);
 		}
@@ -319,6 +352,15 @@ void DateBadge::paint(
 	ServiceMessagePainter::PaintDate(p, st, text, width, y, w, chatWide);
 }
 
+ReactionAnimationArgs ReactionAnimationArgs::translated(
+		QPoint point) const {
+	return {
+		.emoji = emoji,
+		.flyIcon = flyIcon,
+		.flyFrom = flyFrom.translated(point),
+	};
+}
+
 Element::Element(
 	not_null<ElementDelegate*> delegate,
 	not_null<HistoryItem*> data,
@@ -370,6 +412,23 @@ void Element::setY(int y) {
 void Element::refreshDataIdHook() {
 }
 
+//void Element::externalLottieProgressing(bool external) const {
+//	if (const auto media = _media.get()) {
+//		media->externalLottieProgressing(external);
+//	}
+//}
+//
+//bool Element::externalLottieTill(ExternalLottieInfo info) const {
+//	if (const auto media = _media.get()) {
+//		return media->externalLottieTill(info);
+//	}
+//	return true;
+//}
+
+void Element::repaint() const {
+	history()->owner().requestViewRepaint(this);
+}
+
 void Element::paintHighlight(
 		Painter &p,
 		const PaintContext &context,
@@ -383,26 +442,13 @@ void Element::paintHighlight(
 	paintCustomHighlight(p, context, skiptop, fillheight, data());
 }
 
-float64 Element::highlightOpacity(not_null<const HistoryItem*> item) const {
-	const auto animms = delegate()->elementHighlightTime(item);
-	if (!animms
-		|| animms >= st::activeFadeInDuration + st::activeFadeOutDuration) {
-		return 0.;
-	}
-
-	return (animms > st::activeFadeInDuration)
-		? (1. - (animms - st::activeFadeInDuration)
-			/ float64(st::activeFadeOutDuration))
-		: (animms / float64(st::activeFadeInDuration));
-}
-
 void Element::paintCustomHighlight(
 		Painter &p,
 		const PaintContext &context,
 		int y,
 		int height,
 		not_null<const HistoryItem*> item) const {
-	const auto opacity = highlightOpacity(item);
+	const auto opacity = delegate()->elementHighlightOpacity(item);
 	if (opacity == 0.) {
 		return;
 	}
@@ -458,12 +504,16 @@ int Element::skipBlockHeight() const {
 	return st::msgDateFont->height - st::msgDateDelta.y();
 }
 
-QString Element::skipBlock() const {
-	return textcmdSkipBlock(skipBlockWidth(), skipBlockHeight());
-}
-
 int Element::infoWidth() const {
 	return 0;
+}
+
+int Element::bottomInfoFirstLineWidth() const {
+	return 0;
+}
+
+bool Element::bottomInfoIsWide() const {
+	return false;
 }
 
 bool Element::isHiddenByGroup() const {
@@ -502,12 +552,14 @@ void Element::refreshMedia(Element *replacing) {
 		&& Core::App().settings().largeEmoji()) {
 		const auto emoji = _data->isolatedEmoji();
 		const auto emojiStickers = &session->emojiStickersPack();
+		const auto skipPremiumEffect = false;
 		if (const auto sticker = emojiStickers->stickerForEmoji(emoji)) {
 			_media = std::make_unique<UnwrappedMedia>(
 				this,
 				std::make_unique<Sticker>(
 					this,
 					sticker.document,
+					skipPremiumEffect,
 					replacing,
 					sticker.replacements));
 		} else {
@@ -527,6 +579,13 @@ void Element::previousInBlocksChanged() {
 
 void Element::nextInBlocksRemoved() {
 	setAttachToNext(false);
+}
+
+bool Element::markSponsoredViewed(int shownFromTop) const {
+	const auto sponsoredTextTop = height()
+		- st::msgPadding.bottom()
+		- st::historyViewButtonHeight;
+	return shownFromTop >= sponsoredTextTop;
 }
 
 void Element::refreshDataId() {
@@ -578,28 +637,35 @@ ClickHandlerPtr Element::fromLink() const {
 		return _fromLink;
 	}
 	const auto item = data();
-	if (const auto from = item->displayFrom()) {
+	if (item->isSponsored()) {
+		const auto session = &item->history()->session();
 		_fromLink = std::make_shared<LambdaClickHandler>([=](
 				ClickContext context) {
 			if (context.button != Qt::LeftButton) {
 				return;
 			}
 			const auto my = context.other.value<ClickHandlerContext>();
-			const auto window = [&]() -> Window::SessionController* {
-				if (const auto controller = my.sessionWindow.get()) {
-					return controller;
+			if (const auto window = ContextOrSessionWindow(my, session)) {
+				auto &sponsored = session->data().sponsoredMessages();
+				const auto itemId = my.itemId ? my.itemId : item->fullId();
+				const auto details = sponsored.lookupDetails(itemId);
+				if (const auto &hash = details.hash) {
+					Api::CheckChatInvite(window, *hash);
+				} else if (const auto peer = details.peer) {
+					window->showPeerInfo(peer);
 				}
-				const auto session = &from->session();
-				const auto &windows = session->windows();
-				if (windows.empty()) {
-					session->domain().activate(&session->account());
-					if (windows.empty()) {
-						return nullptr;
-					}
-				}
-				return windows.front();
-			}();
-			if (window) {
+			}
+		});
+		return _fromLink;
+	} else if (const auto from = item->displayFrom()) {
+		_fromLink = std::make_shared<LambdaClickHandler>([=](
+				ClickContext context) {
+			if (context.button != Qt::LeftButton) {
+				return;
+			}
+			const auto my = context.other.value<ClickHandlerContext>();
+			const auto session = &from->session();
+			if (const auto window = ContextOrSessionWindow(my, session)) {
 				window->showPeerInfo(from);
 			}
 		});
@@ -608,18 +674,21 @@ ClickHandlerPtr Element::fromLink() const {
 	}
 	if (const auto forwarded = item->Get<HistoryMessageForwarded>()) {
 		if (forwarded->imported) {
-			static const auto imported = std::make_shared<LambdaClickHandler>([] {
-				Ui::ShowMultilineToast({
-					.text = { tr::lng_forwarded_imported(tr::now) },
-				});
+			static const auto imported = std::make_shared<LambdaClickHandler>([](
+					ClickContext context) {
+				const auto my = context.other.value<ClickHandlerContext>();
+				const auto weak = my.sessionWindow;
+				if (const auto strong = weak.get()) {
+					Ui::ShowMultilineToast({
+						.parentOverride = Window::Show(strong).toastParent(),
+						.text = { tr::lng_forwarded_imported(tr::now) },
+					});
+				}
 			});
 			return imported;
 		}
 	}
-	static const auto hidden = std::make_shared<LambdaClickHandler>([] {
-		Ui::Toast::Show(tr::lng_forwarded_hidden(tr::now));
-	});
-	_fromLink = hidden;
+	_fromLink = HiddenSenderInfo::ForwardClickHandler();
 	return _fromLink;
 }
 
@@ -803,10 +872,6 @@ ClickHandlerPtr Element::rightActionLink() const {
 	return ClickHandlerPtr();
 }
 
-bool Element::displayEditedBadge() const {
-	return false;
-}
-
 TimeId Element::displayedEditDate() const {
 	return TimeId(0);
 }
@@ -839,6 +904,13 @@ void Element::checkHeavyPart() {
 	if (!hasHeavyPart() && (!_media || !_media->hasHeavyPart())) {
 		history()->owner().unregisterHeavyViewPart(this);
 	}
+}
+
+bool Element::isSignedAuthorElided() const {
+	return false;
+}
+
+void Element::itemDataChanged() {
 }
 
 void Element::unloadHeavyPart() {
@@ -945,18 +1017,28 @@ void Element::drawInfo(
 	InfoDisplayType type) const {
 }
 
-bool Element::pointInTime(
+TextState Element::bottomInfoTextState(
 		int right,
 		int bottom,
 		QPoint point,
 		InfoDisplayType type) const {
-	return false;
+	return TextState();
 }
 
 TextSelection Element::adjustSelection(
 		TextSelection selection,
 		TextSelectType type) const {
 	return selection;
+}
+
+Reactions::ButtonParameters Element::reactionButtonParameters(
+		QPoint position,
+		const TextState &reactionState) const {
+	return {};
+}
+
+int Element::reactionsOptimalWidth() const {
+	return 0;
 }
 
 void Element::clickHandlerActiveChanged(
@@ -967,8 +1049,8 @@ void Element::clickHandlerActiveChanged(
 			keyboard->clickHandlerActiveChanged(handler, active);
 		}
 	}
-	App::hoveredLinkItem(active ? this : nullptr);
-	history()->owner().requestViewRepaint(this);
+	HoveredLink(active ? this : nullptr);
+	repaint();
 	if (const auto media = this->media()) {
 		media->clickHandlerActiveChanged(handler, active);
 	}
@@ -982,11 +1064,28 @@ void Element::clickHandlerPressedChanged(
 			keyboard->clickHandlerPressedChanged(handler, pressed);
 		}
 	}
-	App::pressedLinkItem(pressed ? this : nullptr);
-	history()->owner().requestViewRepaint(this);
+	PressedLink(pressed ? this : nullptr);
+	repaint();
 	if (const auto media = this->media()) {
 		media->clickHandlerPressedChanged(handler, pressed);
 	}
+}
+
+void Element::animateReaction(ReactionAnimationArgs &&args) {
+}
+
+void Element::animateUnreadReactions() {
+	const auto &recent = data()->recentReactions();
+	for (const auto &[emoji, list] : recent) {
+		if (ranges::contains(list, true, &Data::RecentReaction::unread)) {
+			animateReaction({ .emoji = emoji });
+		}
+	}
+}
+
+auto Element::takeReactionAnimations()
+-> base::flat_map<QString, std::unique_ptr<Reactions::Animation>> {
+	return {};
 }
 
 Element::~Element() {
@@ -999,6 +1098,54 @@ Element::~Element() {
 		history()->owner().notifyViewRemoved(this);
 	}
 	history()->owner().unregisterItemView(this);
+}
+
+void Element::Hovered(Element *view) {
+	HoveredElement = view;
+}
+
+Element *Element::Hovered() {
+	return HoveredElement;
+}
+
+void Element::Pressed(Element *view) {
+	PressedElement = view;
+}
+
+Element *Element::Pressed() {
+	return PressedElement;
+}
+
+void Element::HoveredLink(Element *view) {
+	HoveredLinkElement = view;
+}
+
+Element *Element::HoveredLink() {
+	return HoveredLinkElement;
+}
+
+void Element::PressedLink(Element *view) {
+	PressedLinkElement = view;
+}
+
+Element *Element::PressedLink() {
+	return PressedLinkElement;
+}
+
+void Element::Moused(Element *view) {
+	MousedElement = view;
+}
+
+Element *Element::Moused() {
+	return MousedElement;
+}
+
+void Element::ClearGlobal() {
+	HoveredElement = nullptr;
+	PressedElement = nullptr;
+	HoveredLinkElement = nullptr;
+	PressedLinkElement = nullptr;
+	MousedElement = nullptr;
 }
 
 } // namespace HistoryView

@@ -64,7 +64,9 @@ constexpr auto kPlayerIntrospectionXML = R"INTROSPECTION(<node>
 			<arg name='Position' type='x'/>
 		</signal>
 		<property name='PlaybackStatus' type='s' access='read'/>
+		<property name='LoopStatus' type='s' access='readwrite'/>
 		<property name='Rate' type='d' access='readwrite'/>
+		<property name='Shuffle' type='b' access='readwrite'/>
 		<property name='Metadata' type='a{sv}' access='read'>
 			<annotation
 				name="org.qtproject.QtDBus.QtTypeName"
@@ -88,15 +90,24 @@ inline auto Q2VUString(const QString &s) {
 	return MakeGlibVariant<Glib::ustring>(s.toStdString());
 }
 
-auto ConvertPlaybackStatus(
-		base::Platform::SystemMediaControls::PlaybackStatus status) {
-	using Status = base::Platform::SystemMediaControls::PlaybackStatus;
+auto ConvertPlaybackStatus(SystemMediaControls::PlaybackStatus status) {
+	using Status = SystemMediaControls::PlaybackStatus;
 	switch (status) {
 	case Status::Playing: return Glib::ustring("Playing");
 	case Status::Paused: return Glib::ustring("Paused");
 	case Status::Stopped: return Glib::ustring("Stopped");
 	}
 	Unexpected("ConvertPlaybackStatus in SystemMediaControls");
+}
+
+auto ConvertLoopStatus(SystemMediaControls::LoopStatus status) {
+	using Status = SystemMediaControls::LoopStatus;
+	switch (status) {
+	case Status::None: return Glib::ustring("None");
+	case Status::Track: return Glib::ustring("Track");
+	case Status::Playlist: return Glib::ustring("Playlist");
+	}
+	Unexpected("ConvertLoopStatus in SystemMediaControls");
 }
 
 auto EventToCommand(const Glib::ustring &event) {
@@ -117,6 +128,20 @@ auto EventToCommand(const Glib::ustring &event) {
 		return Command::Quit;
 	} else if (event == "Raise") {
 		return Command::Raise;
+	} else if (event == "Shuffle") {
+		return Command::Shuffle;
+	}
+	return Command::None;
+}
+
+auto LoopStatusToCommand(const Glib::ustring &status) {
+	using Command = SystemMediaControls::Command;
+	if (status == "None") {
+		return Command::LoopNone;
+	} else if (status == "Track") {
+		return Command::LoopTrack;
+	} else if (status == "Playlist") {
+		return Command::LoopPlaylist;
 	}
 	return Command::None;
 }
@@ -136,10 +161,12 @@ public:
 		Metadata metadata;
 
 		bool enabled = false;
+		bool shuffle = false;
 		gint64 position = 0;
 		gint64 duration = 0;
 		float64 volume = 0.;
 		PlaybackStatus playbackStatus = PlaybackStatus::Stopped;
+		LoopStatus loopStatus = LoopStatus::None;
 
 		bool canGoNext = false;
 		bool canGoPrevious = false;
@@ -356,11 +383,16 @@ void SystemMediaControls::Private::handleGetProperty(
 		} else if (propertyName == "PlaybackStatus") {
 			property = MakeGlibVariant(
 				ConvertPlaybackStatus(_player.playbackStatus));
+		} else if (propertyName == "LoopStatus") {
+			property = MakeGlibVariant(
+				ConvertLoopStatus(_player.loopStatus));
 		} else if (propertyName == "Position") {
 			_updatePositionRequests.fire({});
 			property = MakeGlibVariant<gint64>(_player.position);
 		} else if (propertyName == "Rate") {
 			property = MakeGlibVariant<float64>(1.0);
+		} else if (propertyName == "Shuffle") {
+			property = MakeGlibVariant<bool>(_player.shuffle);
 		} else if (propertyName == "Volume") {
 			property = MakeGlibVariant<float64>(_player.volume);
 		}
@@ -379,7 +411,7 @@ void SystemMediaControls::Private::handleMethodCall(
 	if (methodName == "Seek") {
 		// Seek (x: Offset);
 		Glib::Variant<gint64> offset;
-		parameters.get_child(offset, 1);
+		parameters.get_child(offset, 0);
 
 		base::Integration::Instance().enterFromEventLoop([&] {
 			_player.position += offset.get();
@@ -418,7 +450,18 @@ bool SystemMediaControls::Private::handleSetProperty(
 		const Glib::ustring &propertyName,
 		const Glib::VariantBase &value) {
 	if (propertyName == "Fullscreen") {
+	} else if (propertyName == "LoopStatus") {
+		base::Integration::Instance().enterFromEventLoop([&] {
+			Noexcept([&] {
+				_commandRequests.fire_copy(LoopStatusToCommand(
+					GlibVariantCast<Glib::ustring>(value)));
+			});
+		});
 	} else if (propertyName == "Rate") {
+	} else if (propertyName == "Shuffle") {
+		base::Integration::Instance().enterFromEventLoop([&] {
+			_commandRequests.fire_copy(EventToCommand(propertyName));
+		});
 	} else if (propertyName == "Volume") {
 		base::Integration::Instance().enterFromEventLoop([&] {
 			Noexcept([&] {
@@ -551,6 +594,20 @@ void SystemMediaControls::setPlaybackStatus(PlaybackStatus status) {
 		MakeGlibVariant<Glib::ustring>(ConvertPlaybackStatus(status)));
 }
 
+void SystemMediaControls::setLoopStatus(LoopStatus status) {
+	_private->player().loopStatus = status;
+	_private->signalPropertyChanged(
+		"LoopStatus",
+		MakeGlibVariant<Glib::ustring>(ConvertLoopStatus(status)));
+}
+
+void SystemMediaControls::setShuffle(bool value) {
+	_private->player().shuffle = value;
+	_private->signalPropertyChanged(
+		"Shuffle",
+		MakeGlibVariant<bool>(value));
+}
+
 void SystemMediaControls::setTitle(const QString &title) {
 	_private->player().metadata["xesam:title"] = Q2VUString(title);
 }
@@ -604,9 +661,12 @@ void SystemMediaControls::clearThumbnail() {
 void SystemMediaControls::clearMetadata() {
 	_private->player().metadata.clear();
 
-	const auto path = kFakeTrackPath.utf8().constData();
-	_private->player().metadata["mpris:trackid"] =
-		Glib::wrap(g_variant_new_object_path(path));
+	Glib::VariantStringBase path;
+	Glib::VariantStringBase::create_object_path(
+		path,
+		std::string(kFakeTrackPath));
+
+	_private->player().metadata["mpris:trackid"] = path;
 }
 
 void SystemMediaControls::updateDisplay() {

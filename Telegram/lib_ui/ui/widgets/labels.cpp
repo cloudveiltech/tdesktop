@@ -13,7 +13,9 @@
 #include "ui/widgets/box_content_divider.h"
 #include "ui/basic_click_handlers.h" // UrlClickHandler
 #include "ui/inactive_press.h"
-#include "base/qt_adapters.h"
+#include "base/qt/qt_common_adapters.h"
+#include "styles/style_layers.h"
+#include "styles/palette.h"
 
 #include <QtWidgets/QApplication>
 #include <QtGui/QClipboard>
@@ -32,7 +34,7 @@ TextParseOptions _labelOptions = {
 };
 
 TextParseOptions _labelMarkedOptions = {
-	TextParseMultiline | TextParseRichText | TextParseLinks | TextParseHashtags | TextParseMentions | TextParseBotCommands | TextParseMarkdown, // flags
+	TextParseMultiline | TextParseLinks | TextParseHashtags | TextParseMentions | TextParseBotCommands | TextParseMarkdown, // flags
 	0, // maxw
 	0, // maxh
 	Qt::LayoutDirectionAuto, // dir
@@ -191,20 +193,26 @@ void LabelSimple::paintEvent(QPaintEvent *e) {
 	p.drawTextLeft(0, 0, width(), _text, _textWidth);
 }
 
-FlatLabel::FlatLabel(QWidget *parent, const style::FlatLabel &st)
+FlatLabel::FlatLabel(
+	QWidget *parent,
+	const style::FlatLabel &st,
+	const style::PopupMenu &stMenu)
 : RpWidget(parent)
 , _text(st.minWidth ? st.minWidth : QFIXED_MAX)
-, _st(st) {
+, _st(st)
+, _stMenu(stMenu) {
 	init();
 }
 
 FlatLabel::FlatLabel(
 	QWidget *parent,
 	const QString &text,
-	const style::FlatLabel &st)
+	const style::FlatLabel &st,
+	const style::PopupMenu &stMenu)
 : RpWidget(parent)
 , _text(st.minWidth ? st.minWidth : QFIXED_MAX)
-, _st(st) {
+, _st(st)
+, _stMenu(stMenu) {
 	setText(text);
 	init();
 }
@@ -212,10 +220,12 @@ FlatLabel::FlatLabel(
 FlatLabel::FlatLabel(
 	QWidget *parent,
 	rpl::producer<QString> &&text,
-	const style::FlatLabel &st)
+	const style::FlatLabel &st,
+	const style::PopupMenu &stMenu)
 : RpWidget(parent)
 , _text(st.minWidth ? st.minWidth : QFIXED_MAX)
-, _st(st) {
+, _st(st)
+, _stMenu(stMenu) {
 	textUpdated();
 	std::move(
 		text
@@ -228,10 +238,12 @@ FlatLabel::FlatLabel(
 FlatLabel::FlatLabel(
 	QWidget *parent,
 	rpl::producer<TextWithEntities> &&text,
-	const style::FlatLabel &st)
+	const style::FlatLabel &st,
+	const style::PopupMenu &stMenu)
 : RpWidget(parent)
 , _text(st.minWidth ? st.minWidth : QFIXED_MAX)
 , _st(st)
+, _stMenu(stMenu)
 , _touchSelectTimer([=] { touchSelect(); }) {
 	textUpdated();
 	std::move(
@@ -257,19 +269,18 @@ void FlatLabel::setText(const QString &text) {
 	textUpdated();
 }
 
-void FlatLabel::setRichText(const QString &text) {
-	_text.setRichText(_st.style, text, _labelOptions);
-	textUpdated();
-}
-
 void FlatLabel::setMarkedText(const TextWithEntities &textWithEntities) {
 	_text.setMarkedText(_st.style, textWithEntities, _labelMarkedOptions);
 	textUpdated();
 }
 
 void FlatLabel::setSelectable(bool selectable) {
-	_selectable = selectable;
-	setMouseTracking(_selectable || _text.hasLinks());
+	if (_selectable != selectable) {
+		_selection = { 0, 0 };
+		_savedSelection = { 0, 0 };
+		_selectable = selectable;
+		setMouseTracking(_selectable || _text.hasLinks());
+	}
 }
 
 void FlatLabel::setDoubleClickSelectsParagraph(bool doubleClickSelectsParagraph) {
@@ -630,7 +641,7 @@ void FlatLabel::showContextMenu(QContextMenuEvent *e, ContextMenuReason reason) 
 	const auto fullSelection = _selectable
 		&& _text.isFullSelection(_selection);
 
-	_contextMenu = base::make_unique_q<PopupMenu>(this);
+	_contextMenu = base::make_unique_q<PopupMenu>(this, _stMenu);
 
 	if (fullSelection && !_contextCopyText.isEmpty()) {
 		_contextMenu->addAction(
@@ -892,6 +903,15 @@ void FlatLabel::paintEvent(QPaintEvent *e) {
 	} else {
 		_text.draw(p, textLeft, _st.margin.top(), textWidth, _st.align, e->rect().y(), e->rect().bottom(), selection);
 	}
+}
+
+DividerLabel::DividerLabel(
+	QWidget *parent,
+	object_ptr<FlatLabel> &&child,
+	const style::margins &padding,
+	RectParts parts)
+: PaddingWrap(parent, std::move(child), padding)
+, _background(this, st::boxDividerHeight, st::boxDividerBg, parts) {
 }
 
 int DividerLabel::naturalWidth() const {

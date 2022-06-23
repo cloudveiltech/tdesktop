@@ -10,6 +10,7 @@
 #include "ui/platform/ui_platform_utility.h"
 #include "base/invoke_queued.h"
 #include "styles/style_widgets.h"
+#include "base/platform/base_platform_info.h"
 
 #include <QtGui/QScreen>
 #include <QtWidgets/QApplication>
@@ -72,8 +73,9 @@ Tooltip::~Tooltip() {
 }
 
 void Tooltip::popup(const QPoint &m, const QString &text, const style::Tooltip *st) {
-	const auto screen = QGuiApplication::screenAt(m);
-	if (!screen) {
+	const auto usingScreenGeometry = !::Platform::IsWayland();
+	const auto screen = usingScreenGeometry ? QGuiApplication::screenAt(m) : nullptr;
+	if (usingScreenGeometry && !screen) {
 		Hide();
 		return;
 	}
@@ -85,7 +87,7 @@ void Tooltip::popup(const QPoint &m, const QString &text, const style::Tooltip *
 
 	_point = m;
 	_st = st;
-	_text = Text::String(_st->textStyle, text, _textPlainOptions, _st->widthMax, true);
+	_text = Text::String(_st->textStyle, text, kPlainTextOptions, _st->widthMax);
 
 	_useTransparency = Platform::TranslucentWindowsSupported(_point);
 	setAttribute(Qt::WA_OpaquePaintEvent, !_useTransparency);
@@ -114,18 +116,21 @@ void Tooltip::popup(const QPoint &m, const QString &text, const style::Tooltip *
 	}
 
 	// adjust tooltip position
-	const auto r = screen->availableGeometry();
-	if (r.x() + r.width() - _st->skip < p.x() + s.width() && p.x() + s.width() > m.x()) {
-		p.setX(qMax(r.x() + r.width() - int32(_st->skip) - s.width(), m.x() - s.width()));
-	}
-	if (r.x() + _st->skip > p.x() && p.x() < m.x()) {
-		p.setX(qMin(m.x(), r.x() + int32(_st->skip)));
-	}
-	if (r.y() + r.height() - _st->skip < p.y() + s.height()) {
-		p.setY(m.y() - s.height() - _st->skip);
-	}
-	if (r.y() > p.x()) {
-		p.setY(qMin(m.y() + _st->shift.y(), r.y() + r.height() - s.height()));
+	if (screen) {
+		setScreen(screen);
+		const auto r = screen->availableGeometry();
+		if (r.x() + r.width() - _st->skip < p.x() + s.width() && p.x() + s.width() > m.x()) {
+			p.setX(qMax(r.x() + r.width() - int32(_st->skip) - s.width(), m.x() - s.width()));
+		}
+		if (r.x() + _st->skip > p.x() && p.x() < m.x()) {
+			p.setX(qMin(m.x(), r.x() + int32(_st->skip)));
+		}
+		if (r.y() + r.height() - _st->skip < p.y() + s.height()) {
+			p.setY(m.y() - s.height() - _st->skip);
+		}
+		if (r.y() > p.x()) {
+			p.setY(qMin(m.y() + _st->shift.y(), r.y() + r.height() - s.height()));
+		}
 	}
 
 	setGeometry(QRect(p, s));

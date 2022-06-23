@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_peer.h"
 #include "data/data_user.h"
 #include "data/data_session.h"
+#include "ui/controls/peer_list_dummy.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/buttons.h"
 #include "ui/wrap/vertical_layout.h"
@@ -36,21 +37,6 @@ constexpr auto kFirstPage = 15;
 constexpr auto kPerPage = 50;
 constexpr auto kLeavePreloaded = 5;
 
-class PeerListDummy final : public Ui::RpWidget {
-public:
-	PeerListDummy(QWidget *parent, int count, const style::PeerList &st);
-
-protected:
-	void paintEvent(QPaintEvent *e) override;
-
-private:
-	const style::PeerList &_st;
-	int _count = 0;
-
-	std::vector<Ui::Animations::Simple> _animations;
-
-};
-
 class ListDelegate final : public PeerListContentDelegate {
 public:
 	void peerListSetTitle(rpl::producer<QString> title) override;
@@ -65,55 +51,13 @@ public:
 	void peerListFinishSelectedRowsBunch() override;
 	void peerListSetDescription(
 		object_ptr<Ui::FlatLabel> description) override;
+	void peerListShowBox(
+		object_ptr<Ui::BoxContent> content,
+		Ui::LayerOptions options = Ui::LayerOption::KeepOther) override;
+	void peerListHideLayer() override;
+	not_null<QWidget*> peerListToastParent() override;
 
 };
-
-PeerListDummy::PeerListDummy(
-	QWidget *parent,
-	int count,
-	const style::PeerList &st)
-: _st(st)
-, _count(count) {
-	resize(width(), _count * _st.item.height);
-}
-
-void PeerListDummy::paintEvent(QPaintEvent *e) {
-	QPainter p(this);
-
-	PainterHighQualityEnabler hq(p);
-
-	const auto fill = e->rect();
-	const auto bottom = fill.top() + fill.height();
-	const auto from = floorclamp(fill.top(), _st.item.height, 0, _count);
-	const auto till = ceilclamp(bottom, _st.item.height, 0, _count);
-	p.translate(0, _st.item.height * from);
-	p.setPen(Qt::NoPen);
-	for (auto i = from; i != till; ++i) {
-		p.setBrush(st::windowBgOver);
-		p.drawEllipse(
-			_st.item.photoPosition.x(),
-			_st.item.photoPosition.y(),
-			_st.item.photoSize,
-			_st.item.photoSize);
-
-		const auto small = int(1.5 * _st.item.photoSize);
-		const auto large = 2 * small;
-		const auto second = (i % 2) ? large : small;
-		const auto height = _st.item.nameStyle.font->height / 2;
-		const auto radius = height / 2;
-		const auto left = _st.item.namePosition.x();
-		const auto top = _st.item.namePosition.y()
-			+ (_st.item.nameStyle.font->height - height) / 2;
-		const auto skip = _st.item.namePosition.x()
-			- _st.item.photoPosition.x()
-			- _st.item.photoSize;
-		const auto next = left + small + skip;
-		p.drawRoundedRect(left, top, small, height, radius, radius);
-		p.drawRoundedRect(next, top, second, height, radius, radius);
-
-		p.translate(0, _st.item.height);
-	}
-}
 
 void ListDelegate::peerListSetTitle(rpl::producer<QString> title) {
 }
@@ -146,6 +90,18 @@ void ListDelegate::peerListFinishSelectedRowsBunch() {
 void ListDelegate::peerListSetDescription(
 		object_ptr<Ui::FlatLabel> description) {
 	description.destroy();
+}
+
+void ListDelegate::peerListShowBox(
+	object_ptr<Ui::BoxContent> content,
+	Ui::LayerOptions options) {
+}
+
+void ListDelegate::peerListHideLayer() {
+}
+
+not_null<QWidget*> ListDelegate::peerListToastParent() {
+	Unexpected("...ListDelegate::peerListToastParent");
 }
 
 } // namespace
@@ -679,7 +635,7 @@ void InnerWidget::setupContent() {
 			st::boxRowPadding.right(),
 			st::boxMediumSkip });
 	for (const auto &answer : _poll->answers) {
-		const auto session = &_controller->parentController()->session();
+		const auto session = &_controller->session();
 		const auto controller = CreateAnswerRows(
 			_content,
 			_visibleTop.value(),

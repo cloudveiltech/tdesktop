@@ -8,7 +8,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "base/type_traits.h"
-#include "base/observer.h"
 #include "base/call_delayed.h"
 #include "mtproto/mtproto_proxy_data.h"
 
@@ -37,7 +36,7 @@ template <typename Guard, typename Lambda>
 
 bool insertBotCommand(const QString &cmd);
 void activateBotCommand(
-	Window::SessionController *sessionController,
+	not_null<Window::SessionController*> sessionController,
 	not_null<const HistoryItem*> msg,
 	int row,
 	int column);
@@ -47,9 +46,6 @@ void activateBotCommand(
 namespace Ui {
 
 // Legacy global methods.
-
-void showPeerProfile(not_null<PeerData*> peer);
-void showPeerProfile(not_null<const History*> history);
 
 void showPeerHistory(not_null<const PeerData*> peer, MsgId msgId);
 void showPeerHistory(not_null<const History*> history, MsgId msgId);

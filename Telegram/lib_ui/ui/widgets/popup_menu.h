@@ -21,6 +21,11 @@ class ScrollArea;
 
 class PopupMenu : public RpWidget {
 public:
+	enum class VerticalOrigin {
+		Top,
+		Bottom,
+	};
+
 	PopupMenu(QWidget *parent, const style::PopupMenu &st = st::defaultPopupMenu);
 	PopupMenu(QWidget *parent, QMenu *menu, const style::PopupMenu &st = st::defaultPopupMenu);
 
@@ -29,8 +34,16 @@ public:
 	}
 
 	not_null<QAction*> addAction(base::unique_qptr<Menu::ItemBase> widget);
-	not_null<QAction*> addAction(const QString &text, Fn<void()> callback, const style::icon *icon = nullptr, const style::icon *iconOver = nullptr);
-	not_null<QAction*> addAction(const QString &text, std::unique_ptr<PopupMenu> submenu);
+	not_null<QAction*> addAction(
+		const QString &text,
+		Fn<void()> callback,
+		const style::icon *icon = nullptr,
+		const style::icon *iconOver = nullptr);
+	not_null<QAction*> addAction(
+		const QString &text,
+		std::unique_ptr<PopupMenu> submenu,
+		const style::icon *icon = nullptr,
+		const style::icon *iconOver = nullptr);
 	not_null<QAction*> addSeparator();
 	void clearActions();
 
@@ -45,6 +58,7 @@ public:
 	void popup(const QPoint &p);
 	void hideMenu(bool fast = false);
 	void setForcedOrigin(PanelAnimation::Origin origin);
+	void setForcedVerticalOrigin(VerticalOrigin origin);
 
 	void setDestroyedCallback(Fn<void()> callback) {
 		_destroyedCallback = std::move(callback);
@@ -135,6 +149,7 @@ private:
 
 	QPointer<PopupMenu> _activeSubmenu;
 
+	std::optional<VerticalOrigin> _forcedVerticalOrigin;
 	PanelAnimation::Origin _origin = PanelAnimation::Origin::TopLeft;
 	std::optional<PanelAnimation::Origin> _forcedOrigin;
 	std::unique_ptr<PanelAnimation> _showAnimation;

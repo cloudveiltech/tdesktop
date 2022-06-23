@@ -1,5 +1,5 @@
 # 
-# QR Code generator Distutils script (Python 2, 3)
+# QR Code generator Distutils script (Python)
 # 
 # Copyright (c) Project Nayuki. (MIT License)
 # https://www.nayuki.io/page/qr-code-generator-library
@@ -26,9 +26,10 @@ import setuptools
 
 setuptools.setup(
 	name = "qrcodegen",
-	description = "High quality QR Code generator library for Python 2 and 3",
-	version = "1.5.0",
+	description = "High quality QR Code generator library for Python",
+	version = "1.7.0",
 	platforms = "OS Independent",
+	python_requires = '>=3',
 	license = "MIT License",
 	
 	author = "Project Nayuki",
@@ -42,7 +43,6 @@ setuptools.setup(
 		"License :: OSI Approved :: MIT License",
 		"Operating System :: OS Independent",
 		"Programming Language :: Python",
-		"Programming Language :: Python :: 2",
 		"Programming Language :: Python :: 3",
 		"Topic :: Multimedia :: Graphics",
 		"Topic :: Software Development :: Libraries :: Python Modules",
@@ -69,7 +69,7 @@ Core features:
 * Available in 6 programming languages, all with nearly equal functionality: Java, TypeScript/JavaScript, Python, Rust, C++, C
 * Significantly shorter code but more documentation comments compared to competing libraries
 * Supports encoding all 40 versions (sizes) and all 4 error correction levels, as per the QR Code Model 2 standard
-* Output formats: Raw modules/pixels of the QR symbol, SVG XML string
+* Output format: Raw modules/pixels of the QR symbol
 * Encodes numeric and special-alphanumeric text in less space than general text
 * Open source code under the permissive MIT License
 
@@ -94,7 +94,7 @@ Examples:
     
     # Simple operation
     qr0 = QrCode.encode_text("Hello, world!", QrCode.Ecc.MEDIUM)
-    svg = qr0.to_svg_str(4)
+    svg = to_svg_str(qr0, 4)  # See qrcodegen-demo
     
     # Manual operation
     segs = QrSegment.make_segments("3141592653589793238462643383")

@@ -25,6 +25,8 @@ public:
 		_widthChangedCallback = std::move(callback);
 	}
 	void setText(const QString &text, int value);
+	void setDuration(int duration);
+	void setDisabledMonospace(bool value);
 	void finishAnimating();
 
 	void paint(QPainter &p, int x, int y, int outerWidth);
@@ -44,6 +46,8 @@ private:
 
 	const style::font &_font;
 
+	int _duration;
+
 	QList<Digit> _digits;
 	int _digitWidth = 0;
 
@@ -56,6 +60,8 @@ private:
 
 	int _value = 0;
 	bool _growing = false;
+
+	bool _disabledMonospace = false;
 
 	Fn<void()> _animationCallback;
 	Fn<void()> _widthChangedCallback;

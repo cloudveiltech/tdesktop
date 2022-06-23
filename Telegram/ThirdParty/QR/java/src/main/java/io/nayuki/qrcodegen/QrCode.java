@@ -23,7 +23,6 @@
 
 package io.nayuki.qrcodegen;
 
-import java.awt.image.BufferedImage;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -32,7 +31,7 @@ import java.util.Objects;
 /**
  * A QR Code symbol, which is a type of two-dimension barcode.
  * Invented by Denso Wave and described in the ISO/IEC 18004 standard.
- * <p>Instances of this class represent an immutable square grid of black and white cells.
+ * <p>Instances of this class represent an immutable square grid of dark and light cells.
  * The class provides static factory functions to create a QR Code from text or binary data.
  * The class covers the QR Code Model 2 specification, supporting all versions (sizes)
  * from 1 to 40, all 4 error correction levels, and 4 character encoding modes.</p>
@@ -222,7 +221,7 @@ public final class QrCode {
 	
 	// Private grids of modules/pixels, with dimensions of size*size:
 	
-	// The modules of this QR Code (false = white, true = black).
+	// The modules of this QR Code (false = light, true = dark).
 	// Immutable after constructor finishes. Accessed through getModule().
 	private boolean[][] modules;
 	
@@ -256,14 +255,14 @@ public final class QrCode {
 		size = ver * 4 + 17;
 		errorCorrectionLevel = Objects.requireNonNull(ecl);
 		Objects.requireNonNull(dataCodewords);
-		modules    = new boolean[size][size];  // Initially all white
+		modules    = new boolean[size][size];  // Initially all light
 		isFunction = new boolean[size][size];
 		
 		// Compute ECC, draw modules, do masking
 		drawFunctionPatterns();
 		byte[] allCodewords = addEccAndInterleave(dataCodewords);
 		drawCodewords(allCodewords);
-		this.mask = handleConstructorMasking(msk);
+		mask = handleConstructorMasking(msk);
 		isFunction = null;
 	}
 	
@@ -273,77 +272,15 @@ public final class QrCode {
 	
 	/**
 	 * Returns the color of the module (pixel) at the specified coordinates, which is {@code false}
-	 * for white or {@code true} for black. The top left corner has the coordinates (x=0, y=0).
-	 * If the specified coordinates are out of bounds, then {@code false} (white) is returned.
+	 * for light or {@code true} for dark. The top left corner has the coordinates (x=0, y=0).
+	 * If the specified coordinates are out of bounds, then {@code false} (light) is returned.
 	 * @param x the x coordinate, where 0 is the left edge and size&#x2212;1 is the right edge
 	 * @param y the y coordinate, where 0 is the top edge and size&#x2212;1 is the bottom edge
 	 * @return {@code true} if the coordinates are in bounds and the module
-	 * at that location is black, or {@code false} (white) otherwise
+	 * at that location is dark, or {@code false} (light) otherwise
 	 */
 	public boolean getModule(int x, int y) {
 		return 0 <= x && x < size && 0 <= y && y < size && modules[y][x];
-	}
-	
-	
-	/**
-	 * Returns a raster image depicting this QR Code, with the specified module scale and border modules.
-	 * <p>For example, toImage(scale=10, border=4) means to pad the QR Code with 4 white
-	 * border modules on all four sides, and use 10&#xD7;10 pixels to represent each module.
-	 * The resulting image only contains the hex colors 000000 and FFFFFF.
-	 * @param scale the side length (measured in pixels, must be positive) of each module
-	 * @param border the number of border modules to add, which must be non-negative
-	 * @return a new image representing this QR Code, with padding and scaling
-	 * @throws IllegalArgumentException if the scale or border is out of range, or if
-	 * {scale, border, size} cause the image dimensions to exceed Integer.MAX_VALUE
-	 */
-	public BufferedImage toImage(int scale, int border) {
-		if (scale <= 0 || border < 0)
-			throw new IllegalArgumentException("Value out of range");
-		if (border > Integer.MAX_VALUE / 2 || size + border * 2L > Integer.MAX_VALUE / scale)
-			throw new IllegalArgumentException("Scale or border too large");
-		
-		BufferedImage result = new BufferedImage((size + border * 2) * scale, (size + border * 2) * scale, BufferedImage.TYPE_INT_RGB);
-		for (int y = 0; y < result.getHeight(); y++) {
-			for (int x = 0; x < result.getWidth(); x++) {
-				boolean color = getModule(x / scale - border, y / scale - border);
-				result.setRGB(x, y, color ? 0x000000 : 0xFFFFFF);
-			}
-		}
-		return result;
-	}
-	
-	
-	/**
-	 * Returns a string of SVG code for an image depicting this QR Code, with the specified number
-	 * of border modules. The string always uses Unix newlines (\n), regardless of the platform.
-	 * @param border the number of border modules to add, which must be non-negative
-	 * @return a string representing this QR Code as an SVG XML document
-	 * @throws IllegalArgumentException if the border is negative
-	 */
-	public String toSvgString(int border) {
-		if (border < 0)
-			throw new IllegalArgumentException("Border must be non-negative");
-		long brd = border;
-		StringBuilder sb = new StringBuilder()
-			.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
-			.append("<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" \"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">\n")
-			.append(String.format("<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" viewBox=\"0 0 %1$d %1$d\" stroke=\"none\">\n",
-				size + brd * 2))
-			.append("\t<rect width=\"100%\" height=\"100%\" fill=\"#FFFFFF\"/>\n")
-			.append("\t<path d=\"");
-		for (int y = 0; y < size; y++) {
-			for (int x = 0; x < size; x++) {
-				if (getModule(x, y)) {
-					if (x != 0 || y != 0)
-						sb.append(" ");
-					sb.append(String.format("M%d,%dh1v1h-1z", x + brd, y + brd));
-				}
-			}
-		}
-		return sb
-			.append("\" fill=\"#000000\"/>\n")
-			.append("</svg>\n")
-			.toString();
 	}
 	
 	
@@ -405,7 +342,7 @@ public final class QrCode {
 			setFunctionModule(size - 1 - i, 8, getBit(bits, i));
 		for (int i = 8; i < 15; i++)
 			setFunctionModule(8, size - 15 + i, getBit(bits, i));
-		setFunctionModule(8, size - 8, true);  // Always black
+		setFunctionModule(8, size - 8, true);  // Always dark
 	}
 	
 	
@@ -459,8 +396,8 @@ public final class QrCode {
 	
 	// Sets the color of a module and marks it as a function module.
 	// Only used by the constructor. Coordinates must be in bounds.
-	private void setFunctionModule(int x, int y, boolean isBlack) {
-		modules[y][x] = isBlack;
+	private void setFunctionModule(int x, int y, boolean isDark) {
+		modules[y][x] = isDark;
 		isFunction[y][x] = true;
 	}
 	
@@ -530,7 +467,7 @@ public final class QrCode {
 						i++;
 					}
 					// If this QR Code has any remainder bits (0 to 7), they were assigned as
-					// 0/false/white by the constructor and are left unchanged by this method
+					// 0/false/light by the constructor and are left unchanged by this method
 				}
 			}
 		}
@@ -596,12 +533,10 @@ public final class QrCode {
 		int result = 0;
 		
 		// Adjacent modules in row having same color, and finder-like patterns
-		int[] runHistory = new int[7];
 		for (int y = 0; y < size; y++) {
 			boolean runColor = false;
 			int runX = 0;
-			Arrays.fill(runHistory, 0);
-			int padRun = size;  // Add white border to initial run
+			int[] runHistory = new int[7];
 			for (int x = 0; x < size; x++) {
 				if (modules[y][x] == runColor) {
 					runX++;
@@ -610,22 +545,20 @@ public final class QrCode {
 					else if (runX > 5)
 						result++;
 				} else {
-					finderPenaltyAddHistory(runX + padRun, runHistory);
-					padRun = 0;
+					finderPenaltyAddHistory(runX, runHistory);
 					if (!runColor)
 						result += finderPenaltyCountPatterns(runHistory) * PENALTY_N3;
 					runColor = modules[y][x];
 					runX = 1;
 				}
 			}
-			result += finderPenaltyTerminateAndCount(runColor, runX + padRun, runHistory) * PENALTY_N3;
+			result += finderPenaltyTerminateAndCount(runColor, runX, runHistory) * PENALTY_N3;
 		}
 		// Adjacent modules in column having same color, and finder-like patterns
 		for (int x = 0; x < size; x++) {
 			boolean runColor = false;
 			int runY = 0;
-			Arrays.fill(runHistory, 0);
-			int padRun = size;  // Add white border to initial run
+			int[] runHistory = new int[7];
 			for (int y = 0; y < size; y++) {
 				if (modules[y][x] == runColor) {
 					runY++;
@@ -634,15 +567,14 @@ public final class QrCode {
 					else if (runY > 5)
 						result++;
 				} else {
-					finderPenaltyAddHistory(runY + padRun, runHistory);
-					padRun = 0;
+					finderPenaltyAddHistory(runY, runHistory);
 					if (!runColor)
 						result += finderPenaltyCountPatterns(runHistory) * PENALTY_N3;
 					runColor = modules[y][x];
 					runY = 1;
 				}
 			}
-			result += finderPenaltyTerminateAndCount(runColor, runY + padRun, runHistory) * PENALTY_N3;
+			result += finderPenaltyTerminateAndCount(runColor, runY, runHistory) * PENALTY_N3;
 		}
 		
 		// 2*2 blocks of modules having same color
@@ -656,17 +588,17 @@ public final class QrCode {
 			}
 		}
 		
-		// Balance of black and white modules
-		int black = 0;
+		// Balance of dark and light modules
+		int dark = 0;
 		for (boolean[] row : modules) {
 			for (boolean color : row) {
 				if (color)
-					black++;
+					dark++;
 			}
 		}
-		int total = size * size;  // Note that size is odd, so black/total != 1/2
-		// Compute the smallest integer k >= 0 such that (45-5k)% <= black/total <= (55+5k)%
-		int k = (Math.abs(black * 20 - total * 10) + total - 1) / total - 1;
+		int total = size * size;  // Note that size is odd, so dark/total != 1/2
+		// Compute the smallest integer k >= 0 such that (45-5k)% <= dark/total <= (55+5k)%
+		int k = (Math.abs(dark * 20 - total * 10) + total - 1) / total - 1;
 		result += k * PENALTY_N4;
 		return result;
 	}
@@ -686,8 +618,8 @@ public final class QrCode {
 			int step;
 			if (version == 32)  // Special snowflake
 				step = 26;
-			else  // step = ceil[(size - 13) / (numAlign*2 - 2)] * 2
-				step = (version*4 + numAlign*2 + 1) / (numAlign*2 - 2) * 2;
+			else  // step = ceil[(size - 13) / (numAlign * 2 - 2)] * 2
+				step = (version * 4 + numAlign * 2 + 1) / (numAlign * 2 - 2) * 2;
 			int[] result = new int[numAlign];
 			result[0] = 6;
 			for (int i = result.length - 1, pos = size - 7; i >= 1; i--, pos -= step)
@@ -707,7 +639,7 @@ public final class QrCode {
 		int size = ver * 4 + 17;
 		int result = size * size;   // Number of modules in the whole QR Code square
 		result -= 8 * 8 * 3;        // Subtract the three finders with separators
-		result -= 15 * 2 + 1;       // Subtract the format information and black module
+		result -= 15 * 2 + 1;       // Subtract the format information and dark module
 		result -= (size - 16) * 2;  // Subtract the timing patterns (excluding finders)
 		// The five lines above are equivalent to: int result = (16 * ver + 128) * ver + 64;
 		if (ver >= 2) {
@@ -791,7 +723,7 @@ public final class QrCode {
 	}
 	
 	
-	// Can only be called immediately after a white run is added, and
+	// Can only be called immediately after a light run is added, and
 	// returns either 0, 1, or 2. A helper function for getPenaltyScore().
 	private int finderPenaltyCountPatterns(int[] runHistory) {
 		int n = runHistory[1];
@@ -804,18 +736,20 @@ public final class QrCode {
 	
 	// Must be called at the end of a line (row or column) of modules. A helper function for getPenaltyScore().
 	private int finderPenaltyTerminateAndCount(boolean currentRunColor, int currentRunLength, int[] runHistory) {
-		if (currentRunColor) {  // Terminate black run
+		if (currentRunColor) {  // Terminate dark run
 			finderPenaltyAddHistory(currentRunLength, runHistory);
 			currentRunLength = 0;
 		}
-		currentRunLength += size;  // Add white border to final run
+		currentRunLength += size;  // Add light border to final run
 		finderPenaltyAddHistory(currentRunLength, runHistory);
 		return finderPenaltyCountPatterns(runHistory);
 	}
 	
 	
 	// Pushes the given value to the front and drops the last value. A helper function for getPenaltyScore().
-	private static void finderPenaltyAddHistory(int currentRunLength, int[] runHistory) {
+	private void finderPenaltyAddHistory(int currentRunLength, int[] runHistory) {
+		if (runHistory[0] == 0)
+			currentRunLength += size;  // Add light border to initial run
 		System.arraycopy(runHistory, 0, runHistory, 1, runHistory.length - 1);
 		runHistory[0] = currentRunLength;
 	}

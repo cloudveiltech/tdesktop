@@ -8,8 +8,8 @@ namespace tgcalls {
 class DarwinInterface : public PlatformInterface {
 public:
     std::unique_ptr<rtc::NetworkMonitorFactory> createNetworkMonitorFactory() override;
-	void configurePlatformAudio() override;
-	std::unique_ptr<webrtc::VideoEncoderFactory> makeVideoEncoderFactory(bool preferHardwareEncoding) override;
+	void configurePlatformAudio(int numChannels) override;
+	std::unique_ptr<webrtc::VideoEncoderFactory> makeVideoEncoderFactory(bool preferHardwareEncoding, bool isScreencast) override;
 	std::unique_ptr<webrtc::VideoDecoderFactory> makeVideoDecoderFactory() override;
 	bool supportsEncoding(const std::string &codecName) override;
 	rtc::scoped_refptr<webrtc::VideoTrackSourceInterface> makeVideoSource(rtc::Thread *signalingThread, rtc::Thread *workerThread) override;

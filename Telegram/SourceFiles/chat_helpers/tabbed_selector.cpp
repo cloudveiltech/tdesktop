@@ -10,7 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "chat_helpers/emoji_list_widget.h"
 #include "chat_helpers/stickers_list_widget.h"
 #include "chat_helpers/gifs_list_widget.h"
-#include "chat_helpers/send_context_menu.h"
+#include "menu/menu_send.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/shadow.h"
@@ -31,8 +31,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwindow.h"
 #include "apiwrap.h"
 #include "styles/style_chat_helpers.h"
+#include "styles/style_menu_icons.h"
 #include "cloudveil/GlobalSecuritySettings.h"
-
 
 namespace ChatHelpers {
 
@@ -395,11 +395,12 @@ TabbedSelector::TabbedSelector(
 			_showRequests.fire({});
 		}, lifetime());
 
-		session().data().stickers().updated(
+		rpl::merge(
+			session().premiumPossibleValue() | rpl::to_empty,
+			session().data().stickers().updated()
 		) | rpl::start_with_next([=] {
 			refreshStickers();
 		}, lifetime());
-		refreshStickers();
 	}
 	//setAttribute(Qt::WA_AcceptTouchEvents);
 	setAttribute(Qt::WA_OpaquePaintEvent, false);
@@ -909,16 +910,13 @@ void TabbedSelector::fillTabsSliderSections() {
 		_tabs
 	) | ranges::views::filter([&](const Tab &tab) {
 		//CloudVeil start
-		if (tab.type() == SelectorTab::Stickers && !GlobalSecuritySettings::getSettings().disableStickers)
-		{
+		if (tab.type() == SelectorTab::Stickers && !GlobalSecuritySettings::getSettings().disableStickers) {
 			return false;
 		}
-		else if (tab.type() == SelectorTab::Gifs && !GlobalSecuritySettings::getSettings().disableGifs)
-		{
+		else if (tab.type() == SelectorTab::Gifs && !GlobalSecuritySettings::getSettings().disableGifs) {
 			return false;
 		}
-		else
-		{
+		else {
 			return (tab.type() == SelectorTab::Masks)
 				? !masks()->mySetsEmpty()
 				: true;
@@ -1072,7 +1070,9 @@ void TabbedSelector::scrollToY(int y) {
 }
 
 void TabbedSelector::showMenuWithType(SendMenu::Type type) {
-	_menu = base::make_unique_q<Ui::PopupMenu>(this);
+	_menu = base::make_unique_q<Ui::PopupMenu>(
+		this,
+		st::popupMenuWithIcons);
 	currentTab()->widget()->fillContextMenu(_menu, type);
 
 	if (!_menu->empty()) {

@@ -9,11 +9,16 @@
 #include "webrtc/webrtc_create_adm.h"
 #include "webrtc/mac/webrtc_media_devices_mac.h"
 #include "webrtc/linux/webrtc_media_devices_linux.h"
-#include "api/task_queue/default_task_queue_factory.h"
-#include "modules/video_capture/video_capture_factory.h"
-#include "modules/audio_device/include/audio_device_factory.h"
 #include "base/platform/base_platform_info.h"
 #include "crl/crl_async.h"
+
+#include <api/task_queue/default_task_queue_factory.h>
+#include <modules/video_capture/video_capture_factory.h>
+#include <modules/audio_device/include/audio_device_factory.h>
+
+#ifdef WEBRTC_LINUX
+#include <modules/desktop_capture/linux/wayland/shared_screencast_stream.h>
+#endif // WEBRTC_LINUX
 
 #ifdef WEBRTC_MAC
 //#define MAC_TRACK_MEDIA_DEVICES
@@ -221,6 +226,14 @@ std::optional<QString> UniqueDesktopCaptureSource() {
 #else // WEBRTC_LINUX
 	return std::nullopt;
 #endif // WEBRTC_LINUX
+}
+
+bool InitPipewireStubs() {
+#ifdef WEBRTC_USE_PIPEWIRE
+	return webrtc::InitPipewireStubs();
+#else // WEBRTC_USE_PIPEWIRE
+	return true;
+#endif // WEBRTC_USE_PIPEWIRE
 }
 
 } // namespace Webrtc

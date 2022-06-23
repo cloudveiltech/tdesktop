@@ -18,8 +18,8 @@
 #include "objc_video_decoder_factory.h"
 
 #ifdef WEBRTC_IOS
-#include "sdk/objc/components/audio/RTCAudioSession.h"
-#include "sdk/objc/components/audio/RTCAudioSessionConfiguration.h"
+#include "platform/darwin/iOS/RTCAudioSession.h"
+#include "platform/darwin/iOS/RTCAudioSessionConfiguration.h"
 #import <UIKit/UIKit.h>
 #endif // WEBRTC_IOS
 
@@ -59,10 +59,11 @@ std::unique_ptr<rtc::NetworkMonitorFactory> DarwinInterface::createNetworkMonito
     return webrtc::CreateNetworkMonitorFactory();
 }
 
-void DarwinInterface::configurePlatformAudio() {
+void DarwinInterface::configurePlatformAudio(int numChanels) {
 #ifdef WEBRTC_IOS
     RTCAudioSessionConfiguration *sharedConfiguration = [RTCAudioSessionConfiguration webRTCConfiguration];
     sharedConfiguration.categoryOptions |= AVAudioSessionCategoryOptionMixWithOthers;
+    sharedConfiguration.outputNumberOfChannels = numChanels;
     [RTCAudioSessionConfiguration setWebRTCConfiguration:sharedConfiguration];
 
     [RTCAudioSession sharedInstance].useManualAudio = true;
@@ -73,8 +74,13 @@ void DarwinInterface::configurePlatformAudio() {
 #endif
 }
 
-std::unique_ptr<webrtc::VideoEncoderFactory> DarwinInterface::makeVideoEncoderFactory(bool preferHardwareEncoding) {
-    return std::make_unique<webrtc::CustomObjCVideoEncoderFactory>([[TGRTCDefaultVideoEncoderFactory alloc] initWithPreferHardwareH264:preferHardwareEncoding]);
+std::unique_ptr<webrtc::VideoEncoderFactory> DarwinInterface::makeVideoEncoderFactory(bool preferHardwareEncoding, bool isScreencast) {
+    auto nativeFactory = std::make_unique<webrtc::CustomObjCVideoEncoderFactory>([[TGRTCDefaultVideoEncoderFactory alloc] initWithPreferHardwareH264:preferHardwareEncoding preferX264:false]);
+    if (!preferHardwareEncoding && !isScreencast) {
+        auto nativeHardwareFactory = std::make_unique<webrtc::CustomObjCVideoEncoderFactory>([[TGRTCDefaultVideoEncoderFactory alloc] initWithPreferHardwareH264:true preferX264:false]);
+        return std::make_unique<webrtc::SimulcastVideoEncoderFactory>(std::move(nativeFactory), std::move(nativeHardwareFactory));
+    }
+    return nativeFactory;
 }
 
 std::unique_ptr<webrtc::VideoDecoderFactory> DarwinInterface::makeVideoDecoderFactory() {
@@ -82,7 +88,10 @@ std::unique_ptr<webrtc::VideoDecoderFactory> DarwinInterface::makeVideoDecoderFa
 }
 
 bool DarwinInterface::supportsEncoding(const std::string &codecName) {
-	if (codecName == cricket::kH265CodecName) {
+    if (false) {
+    }
+#ifndef WEBRTC_DISABLE_H265
+    else if (codecName == cricket::kH265CodecName) {
 #ifdef WEBRTC_IOS
 		if (@available(iOS 11.0, *)) {
 			return [[AVAssetExportSession allExportPresets] containsObject:AVAssetExportPresetHEVCHighestQuality];
@@ -95,7 +104,9 @@ bool DarwinInterface::supportsEncoding(const std::string &codecName) {
         return YES;
 #endif
 #endif // WEBRTC_IOS || WEBRTC_MAC
-    } else if (codecName == cricket::kH264CodecName) {
+    }
+#endif
+    else if (codecName == cricket::kH264CodecName) {
 #ifdef __x86_64__
         return YES;
 #else
@@ -124,9 +135,9 @@ std::unique_ptr<VideoCapturerInterface> DarwinInterface::makeVideoCapturer(rtc::
 
 rtc::scoped_refptr<WrappedAudioDeviceModule> DarwinInterface::wrapAudioDeviceModule(rtc::scoped_refptr<webrtc::AudioDeviceModule> module) {
 #ifdef WEBRTC_MAC
-    return new rtc::RefCountedObject<AudioDeviceModuleMacos>(module);
+    return rtc::make_ref_counted<AudioDeviceModuleMacos>(module);
 #else
-    return new rtc::RefCountedObject<AudioDeviceModuleIOS>(module);
+    return rtc::make_ref_counted<AudioDeviceModuleIOS>(module);
 #endif
 }
 

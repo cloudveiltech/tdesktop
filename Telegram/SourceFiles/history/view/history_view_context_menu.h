@@ -51,24 +51,32 @@ base::unique_qptr<Ui::PopupMenu> FillContextMenu(
 	const ContextMenuRequest &request);
 
 void CopyPostLink(
-	not_null<Main::Session*> session,
+	not_null<Window::SessionController*> controller,
 	FullMsgId itemId,
 	Context context);
-void StopPoll(not_null<Main::Session*> session, FullMsgId itemId);
 void AddPollActions(
 	not_null<Ui::PopupMenu*> menu,
 	not_null<PollData*> poll,
 	not_null<HistoryItem*> item,
-	Context context);
-
-void ShowReportItemsBox(not_null<PeerData*> peer, MessageIdsList ids);
-void ShowReportPeerBox(
-	not_null<Window::SessionController*> window,
-	not_null<PeerData*> peer);
-void SendReport(
-	not_null<PeerData*> peer,
-	Ui::ReportReason reason,
-	const QString &comment,
-	MessageIdsList ids = {});
+	Context context,
+	not_null<Window::SessionController*> controller);
+void AddSaveSoundForNotifications(
+	not_null<Ui::PopupMenu*> menu,
+	not_null<HistoryItem*> item,
+	not_null<DocumentData*> document,
+	not_null<Window::SessionController*> controller);
+void AddWhoReactedAction(
+	not_null<Ui::PopupMenu*> menu,
+	not_null<QWidget*> context,
+	not_null<HistoryItem*> item,
+	not_null<Window::SessionController*> controller);
+void ShowWhoReactedMenu(
+	not_null<base::unique_qptr<Ui::PopupMenu>*> menu,
+	QPoint position,
+	not_null<QWidget*> context,
+	not_null<HistoryItem*> item,
+	const QString &emoji,
+	not_null<Window::SessionController*> controller,
+	rpl::lifetime &lifetime);
 
 } // namespace HistoryView

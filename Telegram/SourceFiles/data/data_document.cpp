@@ -45,6 +45,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwindow.h"
 #include "core/application.h"
 #include "lottie/lottie_animation.h"
+#include "boxes/abstract_box.h" // Ui::hideLayer().
 
 #include <QtCore/QBuffer>
 #include <QtCore/QMimeType>
@@ -52,7 +53,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace {
 
-const auto kAnimatedStickerDimensions = QSize(
+const auto kLottieStickerDimensions = QSize(
 	kStickerSideSize,
 	kStickerSideSize);
 
@@ -262,6 +263,22 @@ Data::FileOrigin StickerData::setOrigin() const {
 		: Data::FileOrigin();
 }
 
+bool StickerData::isStatic() const {
+	return (type == StickerType::Webp);
+}
+
+bool StickerData::isLottie() const {
+	return (type == StickerType::Tgs);
+}
+
+bool StickerData::isAnimated() const {
+	return !isStatic();
+}
+
+bool StickerData::isWebm() const {
+	return (type == StickerType::Webm);
+}
+
 VoiceData::~VoiceData() {
 	if (!waveform.isEmpty()
 		&& waveform[0] == -1
@@ -305,21 +322,25 @@ void DocumentData::setattributes(
 			dimensions = QSize(data.vw().v, data.vh().v);
 		}, [&](const MTPDdocumentAttributeAnimated &data) {
 			if (type == FileDocument
-				|| type == StickerDocument
-				|| type == VideoDocument) {
+				|| type == VideoDocument
+				|| (sticker() && sticker()->type != StickerType::Webm)) {
 				type = AnimatedDocument;
 				_additional = nullptr;
 			}
 		}, [&](const MTPDdocumentAttributeSticker &data) {
-			if (type == FileDocument) {
+			const auto was = type;
+			if (type == FileDocument || type == VideoDocument) {
 				type = StickerDocument;
 				_additional = std::make_unique<StickerData>();
 			}
-			if (sticker()) {
-				sticker()->alt = qs(data.valt());
-				if (!sticker()->set.id
+			if (const auto info = sticker()) {
+				if (was == VideoDocument) {
+					info->type = StickerType::Webm;
+				}
+				info->alt = qs(data.valt());
+				if (!info->set.id
 					|| data.vstickerset().type() == mtpc_inputStickerSetID) {
-					sticker()->set = data.vstickerset().match([&](
+					info->set = data.vstickerset().match([&](
 							const MTPDinputStickerSetID &data) {
 						return StickerSetIdentifier{
 							.id = data.vid().v,
@@ -339,6 +360,8 @@ void DocumentData::setattributes(
 				type = data.is_round_message()
 					? RoundVideoDocument
 					: VideoDocument;
+			} else if (const auto info = sticker()) {
+				info->type = StickerType::Webm;
 			}
 			_duration = data.vduration().v;
 			setMaybeSupportsStreaming(data.is_supports_streaming());
@@ -380,12 +403,19 @@ void DocumentData::setattributes(
 	}
 	if (type == StickerDocument
 		&& ((size > Storage::kMaxStickerBytesSize)
-			|| (!sticker()->animated
+			|| (!sticker()->isLottie()
 				&& !GoodStickerDimensions(
 					dimensions.width(),
 					dimensions.height())))) {
 		type = FileDocument;
 		_additional = nullptr;
+	} else if (type == FileDocument
+		&& hasMimeType(qstr("video/webm"))
+		&& (size < Storage::kMaxStickerBytesSize)
+		&& GoodStickerDimensions(dimensions.width(), dimensions.height())) {
+		type = StickerDocument;
+		_additional = std::make_unique<StickerData>();
+		sticker()->type = StickerType::Webm;
 	}
 	if (isAudioFile() || isAnimation() || isVoiceMessage()) {
 		setMaybeSupportsStreaming(true);
@@ -397,8 +427,8 @@ void DocumentData::validateLottieSticker() {
 		&& hasMimeType(qstr("application/x-tgsticker"))) {
 		type = StickerDocument;
 		_additional = std::make_unique<StickerData>();
-		sticker()->animated = true;
-		dimensions = kAnimatedStickerDimensions;
+		sticker()->type = StickerType::Tgs;
+		dimensions = kLottieStickerDimensions;
 	}
 }
 
@@ -435,7 +465,8 @@ bool DocumentData::checkWallPaperProperties() {
 void DocumentData::updateThumbnails(
 		const InlineImageLocation &inlineThumbnail,
 		const ImageWithLocation &thumbnail,
-		const ImageWithLocation &videoThumbnail) {
+		const ImageWithLocation &videoThumbnail,
+		bool isPremiumSticker) {
 	if (!inlineThumbnail.bytes.isEmpty()
 		&& _inlineThumbnailBytes.isEmpty()) {
 		_inlineThumbnailBytes = inlineThumbnail.bytes;
@@ -445,13 +476,18 @@ void DocumentData::updateThumbnails(
 			_flags &= ~Flag::InlineThumbnailIsPath;
 		}
 	}
+	if (isPremiumSticker) {
+		_flags |= Flag::PremiumSticker;
+	} else {
+		_flags &= ~Flag::PremiumSticker;
+	}
 	Data::UpdateCloudFile(
 		_thumbnail,
 		thumbnail,
 		owner().cache(),
 		Data::kImageCacheTag,
 		[&](Data::FileOrigin origin) { loadThumbnail(origin); },
-		[&](QImage preloaded) {
+		[&](QImage preloaded, QByteArray) {
 			if (const auto media = activeMediaView()) {
 				media->setThumbnail(std::move(preloaded));
 			}
@@ -481,6 +517,10 @@ bool DocumentData::isPatternWallPaperSVG() const {
 	return isWallPaper() && hasMimeType(qstr("application/x-tgwallpattern"));
 }
 
+bool DocumentData::isPremiumSticker() const {
+	return (_flags & Flag::PremiumSticker);
+}
+
 bool DocumentData::hasThumbnail() const {
 	return _thumbnail.location.valid();
 }
@@ -501,7 +541,7 @@ void DocumentData::loadThumbnail(Data::FileOrigin origin) {
 		}
 		return true;
 	};
-	const auto done = [=](QImage result) {
+	const auto done = [=](QImage result, QByteArray) {
 		if (const auto active = activeMediaView()) {
 			active->setThumbnail(std::move(result));
 		}
@@ -647,9 +687,14 @@ Storage::Cache::Key DocumentData::bigFileBaseCacheKey() const {
 		: Storage::Cache::Key();
 }
 
+void DocumentData::forceToCache(bool force) {
+	_flags |= Flag::ForceToCache;
+}
+
 bool DocumentData::saveToCache() const {
 	return (size < Storage::kMaxFileInMemory)
 		&& ((type == StickerDocument)
+			|| (_flags & Flag::ForceToCache)
 			|| isAnimation()
 			|| isVoiceMessage()
 			|| isWallPaper()
@@ -711,7 +756,7 @@ float64 DocumentData::progress() const {
 	if (uploading()) {
 		if (uploadingData->size > 0) {
 			const auto result = float64(uploadingData->offset)
-				/ uploadingData->size;
+				/ float64(uploadingData->size);
 			return std::clamp(result, 0., 1.);
 		}
 		return 0.;
@@ -719,7 +764,7 @@ float64 DocumentData::progress() const {
 	return loading() ? _loader->currentProgress() : 0.;
 }
 
-int DocumentData::loadOffset() const {
+int64 DocumentData::loadOffset() const {
 	return loading() ? _loader->currentOffset() : 0;
 }
 
@@ -905,9 +950,10 @@ void DocumentData::handleLoaderUpdates() {
 				Ui::hideLayer();
 				save(origin, failedFileName);
 			};
-			Ui::show(Box<Ui::ConfirmBox>(
-				tr::lng_download_finish_failed(tr::now),
-				crl::guard(&session(), retry)));
+			Ui::show(Ui::MakeConfirmBox({
+				tr::lng_download_finish_failed(),
+				crl::guard(&session(), retry)
+			}));
 		} else {
 			// Sometimes we have LOCATION_INVALID error in documents / stickers.
 			// Sometimes FILE_REFERENCE_EXPIRED could not be handled.
@@ -1158,6 +1204,11 @@ bool DocumentData::hasRemoteLocation() const {
 }
 
 bool DocumentData::useStreamingLoader() const {
+	if (size <= 0) {
+		return false;
+	} else if (const auto info = sticker()) {
+		return info->isWebm();
+	}
 	return isAnimation()
 		|| isVideoFile()
 		|| isAudioFile()
@@ -1221,7 +1272,11 @@ bool DocumentData::hasWebLocation() const {
 }
 
 bool DocumentData::isNull() const {
-	return !hasRemoteLocation() && !hasWebLocation() && _url.isEmpty();
+	return !hasRemoteLocation()
+		&& !hasWebLocation()
+		&& _url.isEmpty()
+		&& !uploading()
+		&& _location.isEmpty();
 }
 
 MTPInputDocument DocumentData::mtpInput() const {
@@ -1298,6 +1353,12 @@ LocationType DocumentData::locationType() const {
 		: DocumentFileLocation;
 }
 
+void DocumentData::forceIsStreamedAnimation() {
+	type = AnimatedDocument;
+	_additional = nullptr;
+	setMaybeSupportsStreaming(true);
+}
+
 bool DocumentData::isVoiceMessage() const {
 	return (type == VoiceDocument);
 }
@@ -1333,7 +1394,7 @@ bool DocumentData::isSongWithCover() const {
 }
 
 bool DocumentData::isAudioFile() const {
-	if (isVoiceMessage()) {
+	if (isVoiceMessage() || isVideoFile()) {
 		return false;
 	} else if (isSong()) {
 		return true;
@@ -1365,6 +1426,10 @@ TimeId DocumentData::getDuration() const {
 		return std::max(voice->duration, 0);
 	} else if (isAnimation() || isVideoFile()) {
 		return std::max(_duration, 0);
+	} else if (const auto sticker = this->sticker()) {
+		if (sticker->isWebm()) {
+			return std::max(_duration, 0);
+		}
 	}
 	return -1;
 }

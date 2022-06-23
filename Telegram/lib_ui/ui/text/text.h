@@ -15,24 +15,13 @@
 #include <private/qfixed_p.h>
 #include <any>
 
-static const QChar TextCommand(0x0010);
-enum TextCommands {
-	TextCommandBold        = 0x01,
-	TextCommandNoBold      = 0x02,
-	TextCommandItalic      = 0x03,
-	TextCommandNoItalic    = 0x04,
-	TextCommandUnderline   = 0x05,
-	TextCommandNoUnderline = 0x06,
-	TextCommandStrikeOut   = 0x07,
-	TextCommandNoStrikeOut = 0x08,
-	TextCommandSemibold    = 0x09,
-	TextCommandNoSemibold  = 0x0A,
-	TextCommandLinkIndex   = 0x0B, // 0 - NoLink
-	TextCommandLinkText    = 0x0C,
-	TextCommandSkipBlock   = 0x0D,
+class SpoilerClickHandler;
 
-	TextCommandLangTag     = 0x20,
-};
+namespace Ui {
+static const auto kQEllipsis = QStringLiteral("...");
+} // namespace Ui
+
+static const QChar TextCommand(0x0010);
 
 struct TextParseOptions {
 	int32 flags;
@@ -40,7 +29,9 @@ struct TextParseOptions {
 	int32 maxh;
 	Qt::LayoutDirection dir;
 };
-extern const TextParseOptions _defaultOptions, _textPlainOptions;
+extern const TextParseOptions kDefaultTextOptions;
+extern const TextParseOptions kMarkupTextOptions;
+extern const TextParseOptions kPlainTextOptions;
 
 enum class TextSelectType {
 	Letters    = 0x01,
@@ -113,9 +104,8 @@ public:
 	String(
 		const style::TextStyle &st,
 		const QString &text,
-		const TextParseOptions &options = _defaultOptions,
-		int32 minResizeWidth = QFIXED_MAX,
-		bool richText = false);
+		const TextParseOptions &options = kDefaultTextOptions,
+		int32 minResizeWidth = QFIXED_MAX);
 	String(const String &other) = default;
 	String(String &&other) = default;
 	String &operator=(const String &other) = default;
@@ -125,12 +115,16 @@ public:
 	int countWidth(int width, bool breakEverywhere = false) const;
 	int countHeight(int width, bool breakEverywhere = false) const;
 	void countLineWidths(int width, QVector<int> *lineWidths, bool breakEverywhere = false) const;
-	void setText(const style::TextStyle &st, const QString &text, const TextParseOptions &options = _defaultOptions);
-	void setRichText(const style::TextStyle &st, const QString &text, TextParseOptions options = _defaultOptions);
-	void setMarkedText(const style::TextStyle &st, const TextWithEntities &textWithEntities, const TextParseOptions &options = _defaultOptions, const std::any &context = {});
+	void setText(const style::TextStyle &st, const QString &text, const TextParseOptions &options = kDefaultTextOptions);
+	void setMarkedText(const style::TextStyle &st, const TextWithEntities &textWithEntities, const TextParseOptions &options = kMarkupTextOptions, const std::any &context = {});
 
 	void setLink(uint16 lnkIndex, const ClickHandlerPtr &lnk);
 	bool hasLinks() const;
+	void setSpoiler(
+		uint16 lnkIndex,
+		const std::shared_ptr<SpoilerClickHandler> &lnk);
+	void setSpoilerShown(uint16 lnkIndex, bool shown);
+	int spoilersCount() const;
 
 	bool hasSkipBlock() const;
 	bool updateSkipBlock(int width, int height);
@@ -205,6 +199,8 @@ private:
 	// it is also called from move constructor / assignment operator
 	void clearFields();
 
+	ClickHandlerPtr spoilerLink(uint16 spoilerIndex) const;
+
 	TextForMimeData toText(
 		TextSelection selection,
 		bool composeExpanded,
@@ -220,7 +216,14 @@ private:
 	TextBlocks _blocks;
 	TextLinks _links;
 
+	QVector<std::shared_ptr<SpoilerClickHandler>> _spoilers;
+
 	Qt::LayoutDirection _startDir = Qt::LayoutDirectionAuto;
+
+	struct {
+		std::array<QImage, 4> corners;
+		QColor color;
+	} _spoilerCache, _spoilerShownCache;
 
 	friend class Parser;
 	friend class Renderer;
@@ -231,10 +234,10 @@ private:
 [[nodiscard]] bool IsAlmostLinkEnd(QChar ch);
 [[nodiscard]] bool IsLinkEnd(QChar ch);
 [[nodiscard]] bool IsNewline(QChar ch);
-[[nodiscard]] bool IsSpace(QChar ch, bool rich = false);
+[[nodiscard]] bool IsSpace(QChar ch);
 [[nodiscard]] bool IsDiac(QChar ch);
 [[nodiscard]] bool IsReplacedBySpace(QChar ch);
-[[nodiscard]] bool IsTrimmed(QChar ch, bool rich = false);
+[[nodiscard]] bool IsTrimmed(QChar ch);
 
 } // namespace Text
 } // namespace Ui
@@ -254,14 +257,3 @@ inline TextSelection shiftSelection(TextSelection selection, const Ui::Text::Str
 inline TextSelection unshiftSelection(TextSelection selection, const Ui::Text::String &byText) {
 	return unshiftSelection(selection, byText.length());
 }
-
-// textcmd
-QString textcmdSkipBlock(ushort w, ushort h);
-QString textcmdStartLink(ushort lnkIndex);
-QString textcmdStartLink(const QString &url);
-QString textcmdStopLink();
-QString textcmdLink(ushort lnkIndex, const QString &text);
-QString textcmdLink(const QString &url, const QString &text);
-QString textcmdStartSemibold();
-QString textcmdStopSemibold();
-const QChar *textSkipCommand(const QChar *from, const QChar *end, bool canLink = true);

@@ -70,7 +70,7 @@ void Invoice::fillFromData(not_null<Data::Invoice*> invoice) {
 	// init strings
 	if (!invoice->description.isEmpty()) {
 		auto marked = TextWithEntities { invoice->description };
-		auto parseFlags = TextParseLinks | TextParseMultiline | TextParseRichText;
+		auto parseFlags = TextParseLinks | TextParseMultiline;
 		TextUtilities::ParseEntities(marked, parseFlags);
 		_description.setMarkedText(
 			st::webPageDescriptionStyle,
@@ -212,11 +212,7 @@ void Invoice::draw(Painter &p, const PaintContext &context) const {
 	QMargins bubble(_attach ? _attach->bubbleMargins() : QMargins());
 	auto padding = inBubblePadding();
 	auto tshift = padding.top();
-	auto bshift = padding.bottom();
 	paintw -= padding.left() + padding.right();
-	if (isBubbleBottom() && _attach && _attach->customInfoLayout() && _attach->width() + _parent->skipBlockWidth() > paintw + bubble.left() + bubble.right()) {
-		bshift += bottomInfoPadding();
-	}
 
 	auto lineHeight = unitedLineHeight();
 	if (_titleHeight) {

@@ -96,6 +96,18 @@ struct FileOriginTheme {
 	}
 };
 
+struct FileOriginRingtones {
+	inline bool operator<(const FileOriginRingtones &) const {
+		return false;
+	}
+};
+
+struct FileOriginPremiumPreviews {
+	inline bool operator<(const FileOriginPremiumPreviews &) const {
+		return false;
+	}
+};
+
 struct FileOrigin {
 	using Variant = std::variant<
 		v::null_t,
@@ -105,7 +117,9 @@ struct FileOrigin {
 		FileOriginStickerSet,
 		FileOriginSavedGifs,
 		FileOriginWallpaper,
-		FileOriginTheme>;
+		FileOriginTheme,
+		FileOriginRingtones,
+		FileOriginPremiumPreviews>;
 
 	FileOrigin() = default;
 	FileOrigin(FileOriginMessage data) : data(data) {
@@ -121,6 +135,10 @@ struct FileOrigin {
 	FileOrigin(FileOriginWallpaper data) : data(data) {
 	}
 	FileOrigin(FileOriginTheme data) : data(data) {
+	}
+	FileOrigin(FileOriginRingtones data) : data(data) {
+	}
+	FileOrigin(FileOriginPremiumPreviews data) : data(data) {
 	}
 
 	explicit operator bool() const {
@@ -167,5 +185,11 @@ UpdatedFileReferences GetFileReferences(const MTPmessages_StickerSet &data);
 UpdatedFileReferences GetFileReferences(const MTPmessages_SavedGifs &data);
 UpdatedFileReferences GetFileReferences(const MTPWallPaper &data);
 UpdatedFileReferences GetFileReferences(const MTPTheme &data);
+UpdatedFileReferences GetFileReferences(
+	const MTPaccount_SavedRingtones &data);
+UpdatedFileReferences GetFileReferences(const MTPhelp_PremiumPromo &data);
+
+// Admin Log Event.
+UpdatedFileReferences GetFileReferences(const MTPMessageMedia &data);
 
 } // namespace Data

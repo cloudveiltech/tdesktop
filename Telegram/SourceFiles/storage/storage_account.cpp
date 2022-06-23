@@ -24,6 +24,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/mtp_instance.h"
 #include "history/history.h"
 #include "core/application.h"
+#include "core/core_settings.h"
 #include "core/file_location.h"
 #include "data/stickers/data_stickers.h"
 #include "data/data_session.h"
@@ -598,6 +599,8 @@ void Account::reset() {
 	_fileLocations.clear();
 	_fileLocationPairs.clear();
 	_fileLocationAliases.clear();
+	_downloadsSerialize = nullptr;
+	_downloadsSerialized = QByteArray();
 	_cacheTotalSizeLimit = Database::Settings().totalSizeLimit;
 	_cacheTotalTimeLimit = Database::Settings().totalTimeLimit;
 	_cacheBigFileTotalSizeLimit = Database::Settings().totalSizeLimit;
@@ -629,7 +632,12 @@ void Account::writeLocations() {
 	}
 	_locationsChanged = false;
 
-	if (_fileLocations.isEmpty()) {
+	if (_downloadsSerialize) {
+		if (auto serialized = _downloadsSerialize()) {
+			_downloadsSerialized = std::move(*serialized);
+		}
+	}
+	if (_fileLocations.isEmpty() && _downloadsSerialized.isEmpty()) {
 		if (_locationsKey) {
 			ClearKey(_locationsKey, _basePath);
 			_locationsKey = 0;
@@ -665,6 +673,9 @@ void Account::writeLocations() {
 			size += sizeof(quint64) * 2 + sizeof(quint64) * 2;
 		}
 
+		size += sizeof(quint32); // legacy webLocationsCount
+		size += Serialize::bytearraySize(_downloadsSerialized);
+
 		EncryptedDescriptor data(size);
 		auto legacyTypeField = 0;
 		for (auto i = _fileLocations.cbegin(); i != _fileLocations.cend(); ++i) {
@@ -685,6 +696,8 @@ void Account::writeLocations() {
 		for (auto i = _fileLocationAliases.cbegin(), e = _fileLocationAliases.cend(); i != e; ++i) {
 			data.stream << quint64(i.key().first) << quint64(i.key().second) << quint64(i.value().first) << quint64(i.value().second);
 		}
+
+		data.stream << quint32(0) << _downloadsSerialized;
 
 		FileWriteDescriptor file(_locationsKey, _basePath);
 		file.writeEncrypted(data, _localKey);
@@ -718,12 +731,14 @@ void Account::readLocations() {
 		QByteArray bookmark;
 		Core::FileLocation loc;
 		quint32 legacyTypeField = 0;
+		quint32 size = 0;
 		locations.stream >> first >> second >> legacyTypeField >> loc.fname;
 		if (locations.version > 9013) {
 			locations.stream >> bookmark;
 		}
-		locations.stream >> loc.modified >> loc.size;
+		locations.stream >> loc.modified >> size;
 		loc.setBookmark(bookmark);
+		loc.size = int64(size);
 
 		if (!first && !second && !legacyTypeField && loc.fname.isEmpty() && !loc.size) { // end mark
 			endMarkFound = true;
@@ -757,8 +772,22 @@ void Account::readLocations() {
 				locations.stream >> url >> key >> size;
 				ClearKey(key, _basePath);
 			}
+
+			if (!locations.stream.atEnd()) {
+				locations.stream >> _downloadsSerialized;
+			}
 		}
 	}
+}
+
+void Account::updateDownloads(
+		Fn<std::optional<QByteArray>()> downloadsSerialize) {
+	_downloadsSerialize = std::move(downloadsSerialize);
+	writeLocationsDelayed();
+}
+
+QByteArray Account::downloadsSerialized() const {
+	return _downloadsSerialized;
 }
 
 void Account::writeSessionSettings() {
@@ -2143,8 +2172,9 @@ void Account::importOldRecentStickers() {
 			attributes,
 			mime,
 			InlineImageLocation(),
-			ImageWithLocation(),
-			ImageWithLocation(),
+			ImageWithLocation(), // thumbnail
+			ImageWithLocation(), // videoThumbnail
+			false, // isPremiumSticker
 			dc,
 			size);
 		if (!doc->sticker()) {
@@ -2769,6 +2799,31 @@ bool Account::isBotTrustedPayment(PeerId botId) {
 	const auto i = _trustedBots.find(botId);
 	return (i != end(_trustedBots))
 		&& ((i->second & BotTrustFlag::Payment) != 0);
+}
+
+void Account::markBotTrustedOpenWebView(PeerId botId) {
+	if (isBotTrustedOpenWebView(botId)) {
+		return;
+	}
+	const auto i = _trustedBots.find(botId);
+	if (i == end(_trustedBots)) {
+		_trustedBots.emplace(
+			botId,
+			BotTrustFlag::NoOpenGame | BotTrustFlag::OpenWebView);
+	} else {
+		i->second |= BotTrustFlag::OpenWebView;
+	}
+	writeTrustedBots();
+}
+
+bool Account::isBotTrustedOpenWebView(PeerId botId) {
+	if (!_trustedBotsRead) {
+		readTrustedBots();
+		_trustedBotsRead = true;
+	}
+	const auto i = _trustedBots.find(botId);
+	return (i != end(_trustedBots))
+		&& ((i->second & BotTrustFlag::OpenWebView) != 0);
 }
 
 bool Account::encrypt(

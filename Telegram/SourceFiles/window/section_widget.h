@@ -40,8 +40,7 @@ enum class Column {
 
 class AbstractSectionWidget
 	: public Ui::RpWidget
-	, public Media::Player::FloatSectionDelegate
-	, protected base::Subscriber {
+	, public Media::Player::FloatSectionDelegate {
 public:
 	AbstractSectionWidget(
 		QWidget *parent,
@@ -72,6 +71,8 @@ class SectionMemento;
 
 struct SectionSlideParams {
 	QPixmap oldContentCache;
+	int topSkip = 0;
+	QPixmap topMask;
 	bool withTopBarShadow = false;
 	bool withTabs = false;
 	bool withFade = false;
@@ -111,6 +112,7 @@ public:
 		SlideDirection direction,
 		const SectionSlideParams &params);
 	void showFast();
+	[[nodiscard]] bool animatingShow() const;
 
 	// This can be used to grab with or without top bar shadow.
 	// This will be protected when animation preparation will be done inside.
@@ -187,10 +189,6 @@ protected:
 		setFocus();
 	}
 
-	bool animating() const {
-		return _showAnimation != nullptr;
-	}
-
 	~SectionWidget();
 
 private:
@@ -207,5 +205,14 @@ private:
 	not_null<SessionController*> controller,
 	not_null<PeerData*> peer)
 -> rpl::producer<std::shared_ptr<Ui::ChatTheme>>;
+
+[[nodiscard]] bool ShowSendPremiumError(
+	not_null<SessionController*> controller,
+	not_null<DocumentData*> document);
+
+[[nodiscard]] bool ShowReactPremiumError(
+	not_null<SessionController*> controller,
+	not_null<HistoryItem*> item,
+	const QString &emoji);
 
 } // namespace Window

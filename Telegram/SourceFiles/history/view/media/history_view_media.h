@@ -69,6 +69,11 @@ enum class MediaInBubbleState {
 	TimeId duration,
 	const QString &base);
 
+//struct ExternalLottieInfo {
+//	int frame = -1;
+//	int count = -1;
+//};
+
 class Media : public Object {
 public:
 	explicit Media(not_null<Element*> parent) : _parent(parent) {
@@ -173,6 +178,15 @@ public:
 	virtual void checkAnimation() {
 	}
 
+	//virtual void externalLottieProgressing(bool external) {
+	//}
+	//virtual bool externalLottieTill(ExternalLottieInfo info) {
+	//	return true;
+	//}
+	//virtual ExternalLottieInfo externalLottieInfo() const {
+	//	return {};
+	//}
+
 	[[nodiscard]] virtual QSize sizeForGroupingOptimal(int maxWidth) const {
 		Unexpected("Grouping method call.");
 	}
@@ -205,6 +219,16 @@ public:
 	}
 	[[nodiscard]] virtual bool needsBubble() const = 0;
 	[[nodiscard]] virtual bool customInfoLayout() const = 0;
+	[[nodiscard]] virtual QRect contentRectForReactions() const {
+		return QRect(0, 0, width(), height());
+	}
+	[[nodiscard]] virtual auto reactionButtonCenterOverride() const
+	-> std::optional<int> {
+		return std::nullopt;
+	}
+	[[nodiscard]] virtual QPoint resolveCustomInfoRightBottom() const {
+		return QPoint();
+	}
 	[[nodiscard]] virtual QMargins bubbleMargins() const {
 		return QMargins();
 	}
@@ -303,6 +327,8 @@ protected:
 	}
 
 	[[nodiscard]] bool usesBubblePattern(const PaintContext &context) const;
+
+	void repaint() const;
 
 	const not_null<Element*> _parent;
 	MediaInBubbleState _inBubbleState = MediaInBubbleState::None;

@@ -8,6 +8,9 @@
 
 #include "base/platform/win/base_windows_winrt.h"
 
+#include <QtCore/QUrl>
+#include <QtGui/QDesktopServices>
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <objbase.h>
@@ -32,6 +35,7 @@ public:
 	bool finishEmbedding() override;
 
 	void navigate(std::string url) override;
+	void reload() override;
 
 	void resizeToWindow() override;
 
@@ -63,7 +67,7 @@ Instance::Instance(Config config, WebViewControl webview)
 			const auto &sender,
 			const WebViewControlNavigationStartingEventArgs &args) {
 		if (handler
-			&& !handler(winrt::to_string(args.Uri().AbsoluteUri()))) {
+			&& !handler(winrt::to_string(args.Uri().AbsoluteUri()), false)) {
 			args.Cancel(true);
 		}
 		_webview.AddInitializeScript(winrt::to_hstring(_initScript));
@@ -75,6 +79,14 @@ Instance::Instance(Config config, WebViewControl webview)
 			handler(args.IsSuccess());
 		}
 	});
+	_webview.NewWindowRequested([=, handler = config.navigationStartHandler](
+			const auto &sender,
+			const WebViewControlNewWindowRequestedEventArgs &args) {
+		const auto url = winrt::to_string(args.Uri().AbsoluteUri());
+		if (handler && handler(url, true)) {
+			QDesktopServices::openUrl(QString::fromStdString(url));
+		}
+	});
 	init("window.external.invoke = s => window.external.notify(s)");
 }
 
@@ -84,6 +96,10 @@ bool Instance::finishEmbedding() {
 
 void Instance::navigate(std::string url) {
 	_webview.Navigate(Uri(winrt::to_hstring(url)));
+}
+
+void Instance::reload() {
+	_webview.Refresh();
 }
 
 void Instance::init(std::string js) {

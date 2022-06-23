@@ -28,19 +28,12 @@ public:
 
 	Section section() const override;
 
-	void setInfoExpanded(bool expanded) {
-		_infoExpanded = expanded;
-	}
-	bool infoExpanded() const {
-		return _infoExpanded;
-	}
 	void setMembersState(std::unique_ptr<MembersState> state);
 	std::unique_ptr<MembersState> membersState();
 
 	~Memento();
 
 private:
-	bool _infoExpanded = true;
 	std::unique_ptr<MembersState> _membersState;
 
 };
@@ -51,8 +44,6 @@ public:
 		QWidget *parent,
 		not_null<Controller*> controller);
 
-	void setIsStackBottom(bool isStackBottom) override;
-
 	bool showInternal(
 		not_null<ContentMemento*> memento) override;
 
@@ -61,6 +52,8 @@ public:
 		not_null<Memento*> memento);
 
 	void setInnerFocus() override;
+
+	rpl::producer<QString> title() override;
 
 private:
 	void saveState(not_null<Memento*> memento);

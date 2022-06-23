@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Main {
 class Account;
+class Session;
 } // namespace Main
 
 namespace Media::View {
@@ -24,12 +25,19 @@ namespace Window {
 class Controller final : public base::has_weak_ptr {
 public:
 	Controller();
+	Controller(
+		not_null<PeerData*> singlePeer,
+		MsgId showAtMsgId);
 	~Controller();
 
 	Controller(const Controller &other) = delete;
 	Controller &operator=(const Controller &other) = delete;
 
 	void showAccount(not_null<Main::Account*> account);
+	[[nodiscard]] PeerData *singlePeer() const;
+	[[nodiscard]] bool isPrimary() const {
+		return (singlePeer() == nullptr);
+	}
 
 	[[nodiscard]] not_null<::MainWindow*> widget() {
 		return &_widget;
@@ -39,6 +47,10 @@ public:
 
 		return *_account;
 	}
+	[[nodiscard]] Main::Account *maybeAccount() const {
+		return _account;
+	}
+	[[nodiscard]] Main::Session *maybeSession() const;
 	[[nodiscard]] SessionController *sessionController() const {
 		return _sessionController.get();
 	}
@@ -51,7 +63,7 @@ public:
 	void setupPasscodeLock();
 	void clearPasscodeLock();
 	void setupIntro();
-	void setupMain();
+	void setupMain(MsgId singlePeerShowAtMsgId);
 
 	void showLogoutConfirmation();
 
@@ -75,7 +87,9 @@ public:
 		anim::type animated = anim::type::normal);
 
 	void showRightColumn(object_ptr<TWidget> widget);
-	void sideBarChanged();
+
+	void hideLayer(anim::type animated = anim::type::normal);
+	void hideSettingsAndLayer(anim::type animated = anim::type::normal);
 
 	void activate();
 	void reActivate();
@@ -89,6 +103,7 @@ public:
 
 	void invokeForSessionController(
 		not_null<Main::Account*> account,
+		PeerData *singlePeer,
 		Fn<void(not_null<SessionController*>)> &&callback);
 
 	void openInMediaView(Media::View::OpenRequest &&request);
@@ -100,6 +115,18 @@ public:
 	rpl::lifetime &lifetime();
 
 private:
+	struct CreateArgs {
+		PeerData *singlePeer = nullptr;
+	};
+	explicit Controller(CreateArgs &&args);
+
+	void showAccount(
+		not_null<Main::Account*> account,
+		MsgId singlePeerShowAtMsgId);
+	void setupSideBar();
+	void sideBarChanged();
+	void logoutWithChecks(Main::Account *account);
+
 	void showBox(
 		object_ptr<Ui::BoxContent> content,
 		Ui::LayerOptions options,
@@ -109,6 +136,7 @@ private:
 	void showTermsDecline();
 	void showTermsDelete();
 
+	PeerData *_singlePeer = nullptr;
 	Main::Account *_account = nullptr;
 	::MainWindow _widget;
 	const std::unique_ptr<Adaptive> _adaptive;

@@ -1,68 +1,68 @@
 {
   "images" : [
     {
-      "filename" : "logo_256-16.png",
+      "size" : "16x16",
       "idiom" : "mac",
-      "scale" : "1x",
-      "size" : "16x16"
+      "filename" : "icon16.png",
+      "scale" : "1x"
     },
     {
-      "filename" : "photo_2018-05-18_19-56-01-32.png",
+      "size" : "16x16",
       "idiom" : "mac",
-      "scale" : "2x",
-      "size" : "16x16"
+      "filename" : "icon16@2x.png",
+      "scale" : "2x"
     },
     {
-      "filename" : "photo_2018-05-18_19-56-01-33.png",
+      "size" : "32x32",
       "idiom" : "mac",
-      "scale" : "1x",
-      "size" : "32x32"
+      "filename" : "icon32.png",
+      "scale" : "1x"
     },
     {
-      "filename" : "photo_2018-05-18_19-56-01-64.png",
+      "size" : "32x32",
       "idiom" : "mac",
-      "scale" : "2x",
-      "size" : "32x32"
+      "filename" : "icon32@2x.png",
+      "scale" : "2x"
     },
     {
-      "filename" : "photo_2018-05-18_19-56-01-128.png",
+      "size" : "128x128",
       "idiom" : "mac",
-      "scale" : "1x",
-      "size" : "128x128"
+      "filename" : "icon128.png",
+      "scale" : "1x"
     },
     {
-      "filename" : "photo_2018-05-18_19-56-01-256.png",
+      "size" : "128x128",
       "idiom" : "mac",
-      "scale" : "2x",
-      "size" : "128x128"
+      "filename" : "icon128@2x.png",
+      "scale" : "2x"
     },
     {
-      "filename" : "photo_2018-05-18_19-56-01-257.png",
+      "size" : "256x256",
       "idiom" : "mac",
-      "scale" : "1x",
-      "size" : "256x256"
+      "filename" : "icon256.png",
+      "scale" : "1x"
     },
     {
-      "filename" : "photo_2018-05-18_19-56-01-512.png",
+      "size" : "256x256",
       "idiom" : "mac",
-      "scale" : "2x",
-      "size" : "256x256"
+      "filename" : "icon256@2x.png",
+      "scale" : "2x"
     },
     {
-      "filename" : "photo_2018-05-18_19-56-01-513.png",
+      "size" : "512x512",
       "idiom" : "mac",
-      "scale" : "1x",
-      "size" : "512x512"
+      "filename" : "icon512.png",
+      "scale" : "1x"
     },
     {
-      "filename" : "photo_2018-05-18_19-56-01-1024.png",
+      "size" : "512x512",
       "idiom" : "mac",
-      "scale" : "2x",
-      "size" : "512x512"
+      "filename" : "icon512@2x.png",
+      "scale" : "2x"
     }
   ],
   "info" : {
-    "author" : "xcode",
-    "version" : 1
+    "version" : 1,
+    "author" : "xcode"
   }
 }

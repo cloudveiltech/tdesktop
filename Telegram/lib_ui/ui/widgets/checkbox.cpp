@@ -7,6 +7,7 @@
 #include "ui/widgets/checkbox.h"
 
 #include "ui/effects/ripple_animation.h"
+#include "ui/basic_click_handlers.h"
 #include "ui/ui_utility.h"
 
 #include <QtGui/QtEvents>
@@ -22,7 +23,7 @@ TextParseOptions _checkboxOptions = {
 };
 
 TextParseOptions _checkboxRichOptions = {
-	TextParseMultiline | TextParseRichText, // flags
+	TextParseMultiline, // flags
 	0, // maxw
 	0, // maxh
 	Qt::LayoutDirectionAuto, // dir
@@ -380,7 +381,22 @@ Checkbox::Checkbox(
 	const style::Check &checkSt)
 : Checkbox(
 	parent,
-	text,
+	rpl::single(text) | rpl::map(TextWithEntities::Simple),
+	st,
+	std::make_unique<CheckView>(
+		checkSt,
+		checked)) {
+}
+
+Checkbox::Checkbox(
+	QWidget *parent,
+	const TextWithEntities &text,
+	bool checked,
+	const style::Checkbox &st,
+	const style::Check &checkSt)
+: Checkbox(
+	parent,
+	rpl::single(text),
 	st,
 	std::make_unique<CheckView>(
 		checkSt,
@@ -395,7 +411,7 @@ Checkbox::Checkbox(
 	const style::Toggle &toggleSt)
 : Checkbox(
 	parent,
-	rpl::single(text),
+	rpl::single(text) | rpl::map(TextWithEntities::Simple),
 	st,
 	std::make_unique<ToggleView>(
 		toggleSt,
@@ -410,7 +426,7 @@ Checkbox::Checkbox(
 	const style::Check &checkSt)
 : Checkbox(
 	parent,
-	std::move(text),
+	std::move(text) | rpl::map(TextWithEntities::Simple),
 	st,
 	std::make_unique<CheckView>(
 		checkSt,
@@ -425,7 +441,7 @@ Checkbox::Checkbox(
 	const style::Toggle &toggleSt)
 : Checkbox(
 	parent,
-	std::move(text),
+	std::move(text) | rpl::map(TextWithEntities::Simple),
 	st,
 	std::make_unique<ToggleView>(
 		toggleSt,
@@ -439,14 +455,14 @@ Checkbox::Checkbox(
 	std::unique_ptr<AbstractCheckView> check)
 : Checkbox(
 	parent,
-	rpl::single(text),
+	rpl::single(text) | rpl::map(TextWithEntities::Simple),
 	st,
 	std::move(check)) {
 }
 
 Checkbox::Checkbox(
 	QWidget *parent,
-	rpl::producer<QString> &&text,
+	rpl::producer<TextWithEntities> &&text,
 	const style::Checkbox &st,
 	std::unique_ptr<AbstractCheckView> check)
 : RippleButton(parent, st.ripple)
@@ -462,8 +478,20 @@ Checkbox::Checkbox(
 	setCursor(style::cur_pointer);
 	std::move(
 		text
-	) | rpl::start_with_next([=](QString &&value) {
-		setText(std::move(value));
+	) | rpl::start_with_next([=](TextWithEntities &&value) {
+		if (value.entities.empty()) {
+			setText(base::take(value.text));
+		} else {
+			_text.setMarkedText(
+				_st.style,
+				std::move(value),
+				_checkboxRichOptions);
+			resizeToText();
+			if (_text.hasLinks()) {
+				setMouseTracking(true);
+			}
+			update();
+		}
 	}, lifetime());
 }
 
@@ -514,6 +542,27 @@ void Checkbox::setAllowTextLines(int lines) {
 
 void Checkbox::setTextBreakEverywhere(bool allow) {
 	_textBreakEverywhere = allow;
+}
+
+void Checkbox::setLink(uint16 lnkIndex, const ClickHandlerPtr &lnk) {
+	_text.setLink(lnkIndex, lnk);
+}
+
+void Checkbox::setLinksTrusted() {
+	static const auto TrustedLinksFilter = [](
+			const ClickHandlerPtr &link,
+			Qt::MouseButton button) {
+		if (const auto url = dynamic_cast<UrlClickHandler*>(link.get())) {
+			url->UrlClickHandler::onClick({ button });
+			return false;
+		}
+		return true;
+	};
+	setClickHandlerFilter(TrustedLinksFilter);
+}
+
+void Checkbox::setClickHandlerFilter(ClickHandlerFilter &&filter) {
+	_clickHandlerFilter = std::move(filter);
 }
 
 bool Checkbox::checked() const {
@@ -665,6 +714,67 @@ void Checkbox::paintEvent(QPaintEvent *e) {
 	}
 }
 
+void Checkbox::mousePressEvent(QMouseEvent *e) {
+	RippleButton::mousePressEvent(e);
+	ClickHandler::pressed();
+}
+
+void Checkbox::mouseMoveEvent(QMouseEvent *e) {
+	RippleButton::mouseMoveEvent(e);
+	const auto state = getTextState(e->pos());
+	if (state.link != ClickHandler::getActive()) {
+		ClickHandler::setActive(state.link, this);
+		update();
+	}
+}
+
+void Checkbox::mouseReleaseEvent(QMouseEvent *e) {
+	const auto weak = Ui::MakeWeak(this);
+	if (auto activated = _activatingHandler = ClickHandler::unpressed()) {
+		// _clickHandlerFilter may delete `this`. In that case we don't want
+		// to try to show a context menu or smth like that.
+		const auto button = e->button();
+		crl::on_main(this, [=] {
+			const auto guard = window();
+			if (!_clickHandlerFilter
+				|| _clickHandlerFilter(activated, button)) {
+				ActivateClickHandler(guard, activated, button);
+			}
+		});
+	}
+	RippleButton::mouseReleaseEvent(e);
+	if (weak) {
+		_activatingHandler = nullptr;
+	}
+}
+
+void Checkbox::leaveEventHook(QEvent *e) {
+	RippleButton::leaveEventHook(e);
+	ClickHandler::clearActive(this);
+}
+
+Text::StateResult Checkbox::getTextState(const QPoint &m) const {
+	if (!(_checkAlignment & Qt::AlignLeft)) {
+		return {};
+	}
+	const auto check = checkRect();
+	const auto textSkip = _st.checkPosition.x()
+		+ check.width()
+		+ _st.textPosition.x();
+	const auto availableTextWidth = std::max(width() - textSkip, 1);
+	const auto textTop = _st.margin.top() + _st.textPosition.y();
+	return !_allowTextLines
+		? _text.getStateElided(
+			m - QPoint(textSkip, textTop),
+			availableTextWidth,
+			{})
+		: _text.getStateElidedLeft(
+			m - QPoint(textSkip, textTop),
+			availableTextWidth,
+			width(),
+			{});
+}
+
 QPixmap Checkbox::grabCheckCache() const {
 	auto checkSize = _check->getSize();
 	auto image = QImage(
@@ -700,7 +810,9 @@ void Checkbox::onStateChanged(State was, StateChangeSource source) {
 }
 
 void Checkbox::handlePress() {
-	setChecked(!checked());
+	if (!_activatingHandler) {
+		setChecked(!checked());
+	}
 }
 
 int Checkbox::resizeGetHeight(int newWidth) {

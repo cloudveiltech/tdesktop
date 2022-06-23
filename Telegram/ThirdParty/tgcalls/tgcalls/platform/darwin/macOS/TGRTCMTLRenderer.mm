@@ -214,13 +214,13 @@ static inline void getCubeVertexData(size_t frameWidth,
 
 
 - (void)uploadTexturesToRenderEncoder:(id<MTLRenderCommandEncoder>)renderEncoder {
-  RTC_NOTREACHED() << "Virtual method not implemented in subclass.";
+//  RTC_NOTREACHED() << "Virtual method not implemented in subclass.";
 }
 
 - (void)getWidth:(int *)width
           height:(int *)height
          ofFrame:(nonnull RTC_OBJC_TYPE(RTCVideoFrame) *)frame {
-  RTC_NOTREACHED() << "Virtual method not implemented in subclass.";
+ // RTC_NOTREACHED() << "Virtual method not implemented in subclass.";
 }
 
 - (BOOL)setupTexturesForFrame:(nonnull RTC_OBJC_TYPE(RTCVideoFrame) *)frame {
@@ -279,12 +279,13 @@ static inline void getCubeVertexData(size_t frameWidth,
                     memcpy((float *)_vertexBuffer2.contents, &values, sizeof(values));
                 } break;
                 case RTCVideoRotation_90: {
-                    float values[8] = {0.0, 1, 0, 0.0, 1, 1.0, 1.0, 0};
+                    float values[8] = {0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0};
                     memcpy((float *)_vertexBuffer1.contents, &values, sizeof(values));
                     memcpy((float *)_vertexBuffer2.contents, &values, sizeof(values));
                 } break;
                 case RTCVideoRotation_180: {
-                    float values[8] = {0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0};
+                    //[xLimit, yLimit, 0.0, yLimit, xLimit, 0.0, 0.0, 0.0]
+                    float values[8] = {1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0};
                     memcpy(_vertexBuffer1.contents, &values, sizeof(values));
                     memcpy(_vertexBuffer2.contents, &values, sizeof(values));
                 } break;

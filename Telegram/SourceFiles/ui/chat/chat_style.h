@@ -70,6 +70,9 @@ struct MessageStyle {
 	style::icon historyQuizExplain = { Qt::Uninitialized };
 	style::icon historyPollChosen = { Qt::Uninitialized };
 	style::icon historyPollChoiceRight = { Qt::Uninitialized };
+	style::icon historyTranscribeIcon = { Qt::Uninitialized };
+	style::icon historyTranscribeHide = { Qt::Uninitialized };
+
 };
 
 struct MessageImageStyle {
@@ -90,9 +93,16 @@ struct MessageImageStyle {
 	style::icon historyVideoMessageMute = { Qt::Uninitialized };
 };
 
+struct ReactionPaintInfo {
+	QPoint position;
+	QPoint effectOffset;
+	Fn<QRect(QPainter&)> effectPaint;
+};
+
 struct ChatPaintContext {
 	not_null<const ChatStyle*> st;
 	const BubblePattern *bubblesPattern = nullptr;
+	ReactionPaintInfo *reactionInfo = nullptr;
 	QRect viewport;
 	QRect clip;
 	TextSelection selection;
@@ -127,6 +137,14 @@ struct ChatPaintContext {
 		result.selection = selection;
 		return result;
 	}
+
+	// This is supported only in unwrapped media for now.
+	enum class SkipDrawingParts {
+		None,
+		Content,
+		Surrounding,
+	};
+	SkipDrawingParts skipDrawingParts = SkipDrawingParts::None;
 
 };
 
@@ -216,6 +234,9 @@ public:
 	}
 	[[nodiscard]] const style::icon &msgBotKbSwitchPmIcon() const {
 		return _msgBotKbSwitchPmIcon;
+	}
+	[[nodiscard]] const style::icon &msgBotKbWebviewIcon() const {
+		return _msgBotKbWebviewIcon;
 	}
 	[[nodiscard]] const style::icon &historyFastCommentsIcon() const {
 		return _historyFastCommentsIcon;
@@ -311,6 +332,7 @@ private:
 	style::icon _msgBotKbUrlIcon = { Qt::Uninitialized };
 	style::icon _msgBotKbPaymentIcon = { Qt::Uninitialized };
 	style::icon _msgBotKbSwitchPmIcon = { Qt::Uninitialized };
+	style::icon _msgBotKbWebviewIcon = { Qt::Uninitialized };
 	style::icon _historyFastCommentsIcon = { Qt::Uninitialized };
 	style::icon _historyFastShareIcon = { Qt::Uninitialized };
 	style::icon _historyGoToOriginalIcon = { Qt::Uninitialized };

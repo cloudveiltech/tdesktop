@@ -32,7 +32,7 @@ constexpr auto kMessagesPerPage = 50;
 		history->nextNonHistoryEntryId(),
 		MessageFlag::FakeHistoryItem,
 		date,
-		HistoryService::PreparedText{ text });
+		HistoryService::PreparedText{ { .text = text } });
 }
 
 } // namespace
@@ -193,10 +193,10 @@ std::optional<int> RepliesList::fullUnreadCountAfter(
 		|| (fullLoaded && _list.empty());
 	const auto countIncoming = [&](auto from, auto till) {
 		auto &owner = _history->owner();
-		const auto channelId = _history->channelId();
+		const auto peerId = _history->peer->id;
 		auto count = 0;
 		for (auto i = from; i != till; ++i) {
-			if (!owner.message(channelId, *i)->out()) {
+			if (!owner.message(peerId, *i)->out()) {
 				++count;
 			}
 		}
@@ -287,7 +287,7 @@ void RepliesList::injectRootDivider(
 			text());
 	} else if (_dividerWithComments != withComments) {
 		_dividerWithComments = withComments;
-		_divider->setServiceText(HistoryService::PreparedText{ text() });
+		_divider->setServiceText(HistoryService::PreparedText{ { text() } });
 	}
 	slice->ids.push_back(_divider->fullId());
 }
@@ -336,7 +336,7 @@ bool RepliesList::buildFromData(not_null<Viewer*> viewer) {
 			= (*_skippedAfter + (availableAfter - useAfter));
 	}
 
-	const auto channelId = _history->channelId();
+	const auto peerId = _history->peer->id;
 	slice->ids.clear();
 	auto nearestToAround = std::optional<MsgId>();
 	slice->ids.reserve(useAfter + useBefore);
@@ -346,10 +346,10 @@ bool RepliesList::buildFromData(not_null<Viewer*> viewer) {
 				? *j
 				: *(j - 1);
 		}
-		slice->ids.emplace_back(channelId, *j);
+		slice->ids.emplace_back(peerId, *j);
 	}
 	slice->nearestToAround = FullMsgId(
-		channelId,
+		peerId,
 		nearestToAround.value_or(
 			slice->ids.empty() ? 0 : slice->ids.back().msg));
 	slice->fullCount = _fullCount.current();
@@ -418,7 +418,7 @@ Histories &RepliesList::histories() {
 }
 
 HistoryItem *RepliesList::lookupRoot() {
-	return _history->owner().message(_history->channelId(), _rootId);
+	return _history->owner().message(_history->peer->id, _rootId);
 }
 
 void RepliesList::loadAround(MsgId id) {
@@ -614,9 +614,9 @@ bool RepliesList::processMessagesIsEmpty(const MTPmessages_Messages &result) {
 	for (const auto &message : list) {
 		if (const auto item = owner.addNewMessage(message, localFlags, type)) {
 			if (item->replyToTop() == _rootId) {
-				if (toFront) {
+				if (toFront && item->id > _list.front()) {
 					refreshed.push_back(item->id);
-				} else {
+				} else if (_list.empty() || item->id < _list.back()) {
 					_list.push_back(item->id);
 				}
 			} else {

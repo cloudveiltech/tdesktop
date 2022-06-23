@@ -8,8 +8,8 @@
 
 #include "webrtc/details/webrtc_openal_adm.h"
 
-#include "rtc_base/ref_counted_object.h"
-#include "modules/audio_device/include/audio_device_factory.h"
+#include <rtc_base/ref_counted_object.h>
+#include <modules/audio_device/include/audio_device_factory.h>
 
 #ifdef WEBRTC_WIN
 #include "webrtc/win/webrtc_loopback_adm_win.h"
@@ -28,7 +28,7 @@ rtc::scoped_refptr<webrtc::AudioDeviceModule> CreateAudioDeviceModule(
 		return (result && (result->Init() == 0)) ? result : nullptr;
 	};
 	if (true || backend == Backend::OpenAL) {
-		if (auto result = check(new rtc::RefCountedObject<details::AudioDeviceOpenAL>(factory))) {
+		if (auto result = check(rtc::make_ref_counted<details::AudioDeviceOpenAL>(factory))) {
 			return result;
 		}
 	}
@@ -62,8 +62,8 @@ auto AudioDeviceModuleCreator(Backend backend)
 AudioDeviceModulePtr CreateLoopbackAudioDeviceModule(
 		webrtc::TaskQueueFactory* factory) {
 #ifdef WEBRTC_WIN
-	auto result = rtc::scoped_refptr<webrtc::AudioDeviceModule>(
-		new rtc::RefCountedObject<details::AudioDeviceLoopbackWin>(factory));
+	auto result = rtc::make_ref_counted<details::AudioDeviceLoopbackWin>(
+		factory);
 	if (result->Init() == 0) {
 		return result;
 	}

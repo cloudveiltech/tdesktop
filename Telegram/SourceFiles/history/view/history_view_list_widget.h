@@ -7,13 +7,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "base/timer.h"
 #include "ui/rp_widget.h"
 #include "ui/effects/animations.h"
-#include "ui/chat/select_scroll_manager.h" // Has base/timer.h.
+#include "ui/dragging_scroll_manager.h"
 #include "ui/widgets/tooltip.h"
 #include "mtproto/sender.h"
 #include "data/data_messages.h"
 #include "history/view/history_view_element.h"
+#include "history/history_view_highlight_manager.h"
 
 namespace Main {
 class Session;
@@ -22,6 +24,7 @@ class Session;
 namespace Ui {
 class PopupMenu;
 class ChatTheme;
+struct ChatPaintContext;
 } // namespace Ui
 
 namespace Window {
@@ -31,12 +34,19 @@ class SessionController;
 namespace Data {
 struct Group;
 class CloudImageView;
+struct Reaction;
 } // namespace Data
+
+namespace HistoryView::Reactions {
+class Manager;
+struct ButtonParameters;
+} // namespace HistoryView::Reactions
 
 namespace HistoryView {
 
 struct TextState;
 struct StateRequest;
+class EmojiInteractions;
 enum class CursorState : char;
 enum class PointState : char;
 enum class Context : char;
@@ -106,7 +116,8 @@ public:
 		return listCopyRestrictionType(nullptr);
 	}
 	virtual CopyRestrictionType listSelectRestrictionType() = 0;
-
+	virtual auto listAllowedReactionsValue()
+		-> rpl::producer<std::optional<base::flat_set<QString>>> = 0;
 };
 
 struct SelectionData {
@@ -160,8 +171,7 @@ private:
 class ListWidget final
 	: public Ui::RpWidget
 	, public ElementDelegate
-	, public Ui::AbstractTooltipShower
-	, private base::Subscriber {
+	, public Ui::AbstractTooltipShower {
 public:
 	ListWidget(
 		QWidget *parent,
@@ -236,6 +246,12 @@ public:
 	[[nodiscard]] rpl::producer<FullMsgId> showMessageRequested() const;
 	void replyNextMessage(FullMsgId fullId, bool next = true);
 
+	[[nodiscard]] Reactions::ButtonParameters reactionButtonParameters(
+		not_null<const Element*> view,
+		QPoint position,
+		const TextState &reactionState) const;
+	void toggleFavoriteReaction(not_null<Element*> view) const;
+
 	// ElementDelegate interface.
 	Context elementContext() override;
 	std::unique_ptr<Element> elementCreate(
@@ -245,8 +261,8 @@ public:
 		not_null<HistoryService*> message,
 		Element *replacing = nullptr) override;
 	bool elementUnderCursor(not_null<const Element*> view) override;
-	crl::time elementHighlightTime(
-		not_null<const HistoryItem*> item) override;
+	[[nodiscard]] float64 elementHighlightOpacity(
+		not_null<const HistoryItem*> item) const override;
 	bool elementInSelectionMode() override;
 	bool elementIntersectsRange(
 		not_null<const Element*> view,
@@ -278,6 +294,12 @@ public:
 	not_null<Ui::PathShiftGradient*> elementPathShiftGradient() override;
 	void elementReplyTo(const FullMsgId &to) override;
 	void elementStartInteraction(not_null<const Element*> view) override;
+	void elementStartPremium(
+		not_null<const Element*> view,
+		Element *replacing) override;
+	void elementCancelPremium(not_null<const Element*> view) override;
+
+	void elementShowSpoilerAnimation() override;
 
 	void setEmptyInfoWidget(base::unique_qptr<Ui::RpWidget> &&w);
 
@@ -363,6 +385,8 @@ private:
 	void saveScrollState();
 	void restoreScrollState();
 
+	Ui::ChatPaintContext preparePaintContext(const QRect &clip) const;
+
 	Element *viewForItem(FullMsgId itemId) const;
 	Element *viewForItem(const HistoryItem *item) const;
 	not_null<Element*> enforceViewForItem(not_null<HistoryItem*> item);
@@ -382,7 +406,6 @@ private:
 	int itemTop(not_null<const Element*> view) const;
 	void repaintItem(FullMsgId itemId);
 	void repaintItem(const Element *view);
-	void repaintHighlightedItem(not_null<const Element*> view);
 	void resizeItem(not_null<Element*> view);
 	void refreshItem(not_null<const Element*> view);
 	void itemRemoved(not_null<const HistoryItem*> item);
@@ -422,6 +445,7 @@ private:
 		const SelectedMap::const_iterator &i);
 	bool hasSelectedText() const;
 	bool hasSelectedItems() const;
+	bool inSelectionMode() const;
 	bool overSelectedItems() const;
 	void clearTextSelection();
 	void clearSelected();
@@ -490,8 +514,7 @@ private:
 	void startItemRevealAnimations();
 	void revealItemsCallback();
 
-	void updateHighlightedMessage();
-	void clearHighlightedMessage();
+	void startMessageSendingAnimation(not_null<HistoryItem*> item);
 
 	// This function finds all history items that are displayed and calls template method
 	// for each found message (in given direction) in the passed history with passed top offset.
@@ -521,6 +544,8 @@ private:
 
 	const not_null<ListDelegate*> _delegate;
 	const not_null<Window::SessionController*> _controller;
+	const std::unique_ptr<EmojiInteractions> _emojiInteractions;
+
 	Data::MessagePosition _aroundPosition;
 	Data::MessagePosition _shownAtPosition;
 	Context _context;
@@ -545,10 +570,15 @@ private:
 	base::flat_map<
 		not_null<PeerData*>,
 		std::shared_ptr<Data::CloudImageView>> _userpics, _userpicsCache;
+	base::flat_map<
+		MsgId,
+		std::shared_ptr<Data::CloudImageView>> _sponsoredUserpics;
 
 	const std::unique_ptr<Ui::PathShiftGradient> _pathGradient;
 
 	base::unique_qptr<Ui::RpWidget> _emptyInfo = nullptr;
+
+	std::unique_ptr<HistoryView::Reactions::Manager> _reactionsManager;
 
 	int _minHeight = 0;
 	int _visibleTop = 0;
@@ -598,16 +628,18 @@ private:
 
 	bool _isChatWide = false;
 
+	// _menu must be destroyed before _whoReactedMenuLifetime.
+	rpl::lifetime _whoReactedMenuLifetime;
 	base::unique_qptr<Ui::PopupMenu> _menu;
 
 	QPoint _trippleClickPoint;
 	crl::time _trippleClickStartTime = 0;
 
-	crl::time _highlightStart = 0;
-	FullMsgId _highlightedMessageId;
-	base::Timer _highlightTimer;
+	ElementHighlighter _highlighter;
 
-	Ui::SelectScrollManager _selectScroll;
+	Ui::Animations::Simple _spoilerOpacity;
+
+	Ui::DraggingScrollManager _selectScroll;
 
 	rpl::event_stream<FullMsgId> _requestedToEditMessage;
 	rpl::event_stream<FullMsgId> _requestedToReplyToMessage;

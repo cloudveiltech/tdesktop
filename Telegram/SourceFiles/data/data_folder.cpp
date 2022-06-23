@@ -17,6 +17,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "storage/storage_facade.h"
 #include "core/application.h"
+#include "core/core_settings.h"
 #include "main/main_account.h"
 #include "main/main_session.h"
 #include "mtproto/mtproto_config.h"
@@ -38,7 +39,7 @@ Folder::Folder(not_null<Data::Session*> owner, FolderId id)
 , _chatsList(
 	&owner->session(),
 	FilterId(),
-	owner->session().serverConfig().pinnedDialogsInFolderMax.value())
+	owner->maxPinnedChatsLimitValue(this, FilterId()))
 , _name(tr::lng_archived_name(tr::now))
 , _chatListNameSortKey(owner->nameSortKey(_name)) {
 	indexNameParts();
@@ -300,9 +301,7 @@ void Folder::applyDialog(const MTPDdialogFolder &data) {
 	_chatsList.updateCloudUnread(data);
 	if (const auto peerId = peerFromMTP(data.vpeer())) {
 		const auto history = owner().history(peerId);
-		const auto fullId = FullMsgId(
-			peerToChannel(peerId),
-			data.vtop_message().v);
+		const auto fullId = FullMsgId(peerId, data.vtop_message().v);
 		history->setFolder(this, owner().message(fullId));
 	} else {
 		_chatsList.clear();

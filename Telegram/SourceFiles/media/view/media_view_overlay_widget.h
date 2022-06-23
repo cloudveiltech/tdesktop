@@ -20,6 +20,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/view/media_view_playback_controls.h"
 #include "media/view/media_view_open_common.h"
 
+class History;
+
 namespace Data {
 class PhotoMedia;
 class DocumentMedia;
@@ -140,6 +142,16 @@ private:
 		QRectF rect;
 		qreal rotation = 0.;
 	};
+	struct StartStreaming {
+		StartStreaming() : continueStreaming(false), startTime(0) {
+		}
+		StartStreaming(bool continueStreaming, crl::time startTime)
+		: continueStreaming(continueStreaming)
+		, startTime(startTime) {
+		}
+		const bool continueStreaming = false;
+		const crl::time startTime = 0;
+	};
 
 	[[nodiscard]] not_null<QWindow*> window() const;
 	[[nodiscard]] int width() const;
@@ -213,8 +225,8 @@ private:
 	void assignMediaPointer(not_null<PhotoData*> photo);
 
 	void updateOver(QPoint mpos);
-	void moveToScreen();
-	void updateGeometry();
+	void moveToScreen(bool inMove = false);
+	void updateGeometry(bool inMove = false);
 	bool moveToNext(int delta);
 	void preloadData(int delta);
 
@@ -274,7 +286,10 @@ private:
 	void updateControls();
 	void updateControlsGeometry();
 
-	using MenuCallback = Fn<void(const QString &, Fn<void()>)>;
+	using MenuCallback = Fn<void(
+		const QString &,
+		Fn<void()>,
+		const style::icon *)>;
 	void fillContextMenuActions(const MenuCallback &addAction);
 
 	void resizeCenteredControls();
@@ -284,7 +299,7 @@ private:
 	void displayDocument(
 		DocumentData *document,
 		const Data::CloudTheme &cloud = Data::CloudTheme(),
-		bool continueStreaming = false);
+		const StartStreaming &startStreaming = StartStreaming());
 	void displayFinished();
 	void redisplayContent();
 	void findCurrent();
@@ -300,19 +315,21 @@ private:
 	void refreshClipControllerGeometry();
 	void refreshCaptionGeometry();
 
-	bool initStreaming(bool continueStreaming = false);
-	void startStreamingPlayer();
+	bool initStreaming(
+		const StartStreaming &startStreaming = StartStreaming());
+	void startStreamingPlayer(const StartStreaming &startStreaming);
 	void initStreamingThumbnail();
 	void streamingReady(Streaming::Information &&info);
 	[[nodiscard]] bool createStreamingObjects();
 	void handleStreamingUpdate(Streaming::Update &&update);
 	void handleStreamingError(Streaming::Error &&error);
+	void updatePowerSaveBlocker(const Player::TrackState &state);
 
 	void initThemePreview();
 	void destroyThemePreview();
 	void updateThemePreviewGeometry();
 
-	void documentUpdated(DocumentData *doc);
+	void documentUpdated(not_null<DocumentData*> document);
 	void changingMsgId(not_null<HistoryItem*> row, MsgId oldId);
 
 	[[nodiscard]] int finalContentRotation() const;
@@ -374,7 +391,7 @@ private:
 		QRect clip,
 		float64 opacity);
 
-	void updateSaveMsgState();
+	[[nodiscard]] bool isSaveMsgShown() const;
 
 	void updateOverRect(OverState state);
 	bool updateOverState(OverState newState);
@@ -554,13 +571,13 @@ private:
 	QPoint _touchStart;
 
 	QString _saveMsgFilename;
-	crl::time _saveMsgStarted = 0;
-	anim::value _saveMsgOpacity;
 	QRect _saveMsg;
 	QImage _saveMsgImage;
-	base::Timer _saveMsgUpdater;
 	Ui::Text::String _saveMsgText;
 	SavePhotoVideo _savePhotoVideoWhenLoaded = SavePhotoVideo::None;
+	// _saveMsgAnimation -> _saveMsgTimer -> _saveMsgAnimation.
+	Ui::Animations::Simple _saveMsgAnimation;
+	base::Timer _saveMsgTimer;
 
 	base::flat_map<OverState, crl::time> _animations;
 	base::flat_map<OverState, anim::value> _animationOpacities;

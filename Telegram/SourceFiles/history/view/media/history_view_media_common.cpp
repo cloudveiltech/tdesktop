@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/format_values.h"
 #include "data/data_document.h"
 #include "data/data_wall_paper.h"
+#include "data/data_media_types.h"
 #include "history/view/history_view_element.h"
 #include "history/view/media/history_view_media_grouped.h"
 #include "history/view/media/history_view_photo.h"
@@ -63,6 +64,13 @@ void PaintInterpolatedIcon(
 std::unique_ptr<Media> CreateAttach(
 		not_null<Element*> parent,
 		DocumentData *document,
+		PhotoData *photo) {
+	return CreateAttach(parent, document, photo, {}, {});
+}
+
+std::unique_ptr<Media> CreateAttach(
+		not_null<Element*> parent,
+		DocumentData *document,
 		PhotoData *photo,
 		const std::vector<std::unique_ptr<Data::Media>> &collage,
 		const QString &webpageUrl) {
@@ -70,9 +78,13 @@ std::unique_ptr<Media> CreateAttach(
 		return std::make_unique<GroupedMedia>(parent, collage);
 	} else if (document) {
 		if (document->sticker()) {
+			const auto skipPremiumEffect = false;
 			return std::make_unique<UnwrappedMedia>(
 				parent,
-				std::make_unique<Sticker>(parent, document));
+				std::make_unique<Sticker>(
+					parent,
+					document,
+					skipPremiumEffect));
 		} else if (document->isAnimation() || document->isVideoFile()) {
 			return std::make_unique<Gif>(parent, parent->data(), document);
 		} else if (document->isWallPaper() || document->isTheme()) {

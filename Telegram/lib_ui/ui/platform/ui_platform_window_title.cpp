@@ -10,10 +10,12 @@
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/shadow.h"
 #include "ui/ui_utility.h"
+#include "ui/widgets/rp_window.h"
 #include "styles/style_widgets.h"
 #include "styles/palette.h"
 #include "base/algorithm.h"
 #include "base/event_filter.h"
+#include "base/platform/base_platform_info.h"
 
 #include <QtGui/QPainter>
 #include <QtGui/QtEvents>
@@ -34,6 +36,50 @@ void RemoveDuplicates(std::vector<T> &v) {
 }
 
 } // namespace
+
+bool SemiNativeSystemButtonProcessing() {
+	return ::Platform::IsWindows11OrGreater();
+}
+
+void SetupSemiNativeSystemButtons(
+		not_null<TitleControls*> controls,
+		not_null<RpWindow*> window,
+		rpl::lifetime &lifetime,
+		Fn<bool()> filter) {
+	if (!SemiNativeSystemButtonProcessing()) {
+		return;
+	}
+
+	window->systemButtonOver(
+	) | rpl::filter([=](HitTestResult button) {
+		return !filter || filter() || (button == HitTestResult::None);
+	}) | rpl::start_with_next([=](HitTestResult button) {
+		controls->buttonOver(button);
+	}, lifetime);
+
+	window->systemButtonDown(
+	) | rpl::filter([=](HitTestResult button) {
+		return !filter || filter() || (button == HitTestResult::None);
+	}) | rpl::start_with_next([=](HitTestResult button) {
+		controls->buttonDown(button);
+	}, lifetime);
+}
+
+class TitleControls::Button final : public IconButton {
+public:
+	using IconButton::IconButton;
+
+	void setOver(bool over) {
+		IconButton::setOver(over, StateChangeSource::ByPress);
+	}
+	void setDown(bool down) {
+		IconButton::setDown(
+			down,
+			StateChangeSource::ByPress,
+			{},
+			Qt::LeftButton);
+	}
+};
 
 TitleControls::TitleControls(
 	not_null<RpWidget*> parent,
@@ -121,12 +167,9 @@ void TitleControls::init(Fn<void(bool maximized)> maximize) {
 	});
 	_close->setPointerCursor(false);
 
-	parent()->widthValue(
-	) | rpl::start_with_next([=](int width) {
-		updateControlsPosition();
-	}, _close->lifetime());
-
-	TitleControlsLayoutChanged(
+	rpl::combine(
+		parent()->widthValue(),
+		TitleControlsLayoutValue()
 	) | rpl::start_with_next([=] {
 		updateControlsPosition();
 	}, _close->lifetime());
@@ -172,7 +215,49 @@ void TitleControls::raise() {
 	_close->raise();
 }
 
-Ui::IconButton *TitleControls::controlWidget(Control control) const {
+HitTestResult TitleControls::hitTest(QPoint point, int padding) const {
+	const auto test = [&](const object_ptr<Button> &button, bool close) {
+		return button && button->geometry().marginsAdded(
+			{ close ? padding : 0, padding, close ? padding : 0, 0 }
+		).contains(point);
+	};
+	if (test(_minimize, false)) {
+		return HitTestResult::Minimize;
+	} else if (test(_maximizeRestore, false)) {
+		return HitTestResult::MaximizeRestore;
+	} else if (test(_close, true)) {
+		return HitTestResult::Close;
+	}
+	return HitTestResult::None;
+}
+
+void TitleControls::buttonOver(HitTestResult testResult) {
+	const auto update = [&](
+			const object_ptr<Button> &button,
+			HitTestResult buttonTestResult) {
+		if (const auto raw = button.data()) {
+			raw->setOver(testResult == buttonTestResult);
+		}
+	};
+	update(_minimize, HitTestResult::Minimize);
+	update(_maximizeRestore, HitTestResult::MaximizeRestore);
+	update(_close, HitTestResult::Close);
+}
+
+void TitleControls::buttonDown(HitTestResult testResult) {
+	const auto update = [&](
+			const object_ptr<Button> &button,
+			HitTestResult buttonTestResult) {
+		if (const auto raw = button.data()) {
+			raw->setDown(testResult == buttonTestResult);
+		}
+	};
+	update(_minimize, HitTestResult::Minimize);
+	update(_maximizeRestore, HitTestResult::MaximizeRestore);
+	update(_close, HitTestResult::Close);
+}
+
+TitleControls::Button *TitleControls::controlWidget(Control control) const {
 	switch (control) {
 	case Control::Minimize: return _minimize;
 	case Control::Maximize: return _maximizeRestore;
@@ -329,6 +414,10 @@ not_null<const style::WindowTitle*> DefaultTitleWidget::st() const {
 	return _controls.st();
 }
 
+QRect DefaultTitleWidget::controlsGeometry() const {
+	return _controls.geometry();
+}
+
 void DefaultTitleWidget::setText(const QString &text) {
 	window()->setWindowTitle(text);
 }
@@ -357,7 +446,7 @@ void DefaultTitleWidget::mousePressEvent(QMouseEvent *e) {
 	if (e->button() == Qt::LeftButton) {
 		_mousePressed = true;
 	} else if (e->button() == Qt::RightButton) {
-		ShowWindowMenu(window()->windowHandle());
+		ShowWindowMenu(window(), e->windowPos().toPoint());
 	}
 }
 
@@ -380,6 +469,54 @@ void DefaultTitleWidget::mouseDoubleClickEvent(QMouseEvent *e) {
 	} else {
 		window()->setWindowState(state | Qt::WindowMaximized);
 	}
+}
+
+SeparateTitleControls::SeparateTitleControls(
+	QWidget *parent,
+	const style::WindowTitle &st,
+	Fn<void(bool maximized)> maximize)
+: wrap(parent)
+, controls(&wrap, st, std::move(maximize)) {
+}
+
+std::unique_ptr<SeparateTitleControls> SetupSeparateTitleControls(
+		not_null<RpWindow*> window,
+		const style::WindowTitle &st,
+		Fn<void(bool maximized)> maximize,
+		rpl::producer<int> controlsTop) {
+	auto result = std::make_unique<SeparateTitleControls>(
+		window->body(),
+		st,
+		std::move(maximize));
+
+	const auto raw = result.get();
+	auto &lifetime = raw->wrap.lifetime();
+	rpl::combine(
+		window->body()->widthValue(),
+		window->additionalContentPaddingValue(),
+		controlsTop ? std::move(controlsTop) : rpl::single(0)
+	) | rpl::start_with_next([=](int width, int padding, int top) {
+		raw->wrap.setGeometry(
+			padding,
+			top,
+			width - 2 * padding,
+			raw->controls.geometry().height());
+	}, lifetime);
+
+	window->hitTestRequests(
+	) | rpl::start_with_next([=](not_null<HitTestRequest*> request) {
+		const auto origin = raw->wrap.pos();
+		const auto relative = request->point - origin;
+		const auto padding = window->additionalContentPadding();
+		const auto controlsResult = raw->controls.hitTest(relative, padding);
+		if (controlsResult != HitTestResult::None) {
+			request->result = controlsResult;
+		}
+	}, lifetime);
+
+	SetupSemiNativeSystemButtons(&raw->controls, window, lifetime);
+
+	return result;
 }
 
 } // namespace Platform

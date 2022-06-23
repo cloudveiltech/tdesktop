@@ -86,6 +86,9 @@ struct CacheBackgroundResult {
 	bool waitingForNegativePattern = false;
 };
 
+[[nodiscard]] CacheBackgroundResult CacheBackground(
+	const CacheBackgroundRequest &request);
+
 struct CachedBackground {
 	CachedBackground() = default;
 	CachedBackground(CacheBackgroundResult &&result);
@@ -163,6 +166,7 @@ public:
 	[[nodiscard]] const BubblePattern *bubblesBackgroundPattern() const {
 		return _bubblesBackgroundPattern.get();
 	}
+	void finishCreateOnMain(); // Called on_main after setBubblesBackground.
 
 	[[nodiscard]] ChatPaintContext preparePaintContext(
 		not_null<const ChatStyle*> st,
@@ -173,6 +177,10 @@ public:
 	[[nodiscard]] rpl::producer<> repaintBackgroundRequests() const;
 	void rotateComplexGradientBackground();
 
+	[[nodiscard]] CacheBackgroundRequest cacheBackgroundRequest(
+		QSize area,
+		int addRotation = 0) const;
+
 private:
 	void cacheBackground();
 	void cacheBackgroundNow();
@@ -180,9 +188,6 @@ private:
 		const CacheBackgroundRequest &request,
 		Fn<void(CacheBackgroundResult&&)> done = nullptr);
 	void setCachedBackground(CacheBackgroundResult &&cached);
-	[[nodiscard]] CacheBackgroundRequest cacheBackgroundRequest(
-		QSize area,
-		int addRotation = 0) const;
 	[[nodiscard]] bool readyForBackgroundRotation() const;
 	void generateNextBackgroundRotation();
 

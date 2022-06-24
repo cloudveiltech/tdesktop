@@ -3,7 +3,7 @@
 #define MyAppPublisher "CloudVeil"
 #define MyAppURL "https://github.com/cloudveiltech"
 #define MyAppExeName "CloudVeilMessenger.exe"
-#define MyAppId "53F49750-6209-4FBF-9CA8-7A333C87D1ED"
+#define MyAppId "7BF3C861-C022-41EC-8C16-87EBECBDCE4B"  
 #define MyAppVersion "3.7.6"
 #define MyAppVersionFull "3.7.6"
 #define ReleasePath "..\..\out\Release"
@@ -65,6 +65,8 @@ Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescrip
 
 [Files]
 Source: "{#ReleasePath}\CloudVeilMessenger.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ReleasePath}\libcrypto-1_1-x64.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ReleasePath}\zlib1.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ReleasePath}\{#ModulesFolder}\d3d\d3dcompiler_47.dll"; DestDir: "{app}\{#ModulesFolder}\d3d"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 

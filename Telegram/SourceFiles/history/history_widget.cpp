@@ -1996,7 +1996,6 @@ void HistoryWidget::showHistory(
 		MsgId showAtMsgId,
 		bool reload) {
 	//CloudVeil start
-	bool block = false;
 	if (!GlobalSecuritySettings::getSettings().isDialogAllowed(session().data().peer(peerId))) {
 		Ui::showChatsList(&session());
 		Ui::show(Ui::MakeInformBox(tr::lng_dialog_forbidden()));
@@ -2020,8 +2019,8 @@ void HistoryWidget::showHistory(
 		Ui::show(Ui::MakeInformBox(tr::lng_blocked_for_protection(tr::now)));
 
 		GlobalSecuritySettings::getInstance()->addAdditionalDataToRequest(App::main()->session().data().peer(peerId));
-		GlobalSecuritySettings::getInstance()->updateFromServer(); 
-		block = true;
+		GlobalSecuritySettings::getInstance()->updateFromServer();
+		return;
 	}
 	//CloudVeil end
 
@@ -2355,11 +2354,6 @@ void HistoryWidget::showHistory(
 	session().data().itemVisibilitiesUpdated();
 
 	crl::on_main(this, [=] { controller()->widget()->setInnerFocus(); });
-	//CloudVeil start
-	if (block) {
-		escape();
-	}
-	//CloudVeil end
 }
 
 //CloudVeil start

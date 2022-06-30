@@ -66,8 +66,10 @@ void GlobalSecuritySettings::doServerRequest() {
 
 	lastRequest = request;
 
-	sendRequest(request);
-	suscribeToSupportChannel(request);
+	if (!request.isEmpty()) {
+		sendRequest(request);
+		suscribeToSupportChannel(request);
+	}
 }
 
 SettingsResponse& GlobalSecuritySettings::getSettings() {
@@ -152,9 +154,9 @@ void GlobalSecuritySettings::checkStickerSetByDocumentAsync(DocumentData* sticke
 }
 
 void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerData *peer) {
-	int32 dialogId = peer->id.value;
+	qint64 dialogId = DeserializePeerId(peer->id.value).value;
 	
-	SettingsRequest::Row<int32> row;
+	SettingsRequest::Row row;
 	row.id = dialogId;
 
 	row.userName = peer->userName();
@@ -192,7 +194,7 @@ void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerDa
 }
 
 void GlobalSecuritySettings::addStickerToRequest(SettingsRequest &request, Data::StickersSet *set) {
-	SettingsRequest::Row<uint64> row;
+	SettingsRequest::Row row;
 	row.id = set->id;
 	row.userName = set->shortName;
 	row.title = set->title;
@@ -202,7 +204,7 @@ void GlobalSecuritySettings::addStickerToRequest(SettingsRequest &request, Data:
 void GlobalSecuritySettings::gotStickersSet(const MTPmessages_StickerSet &set) {
 	auto additionalSticker = &set.c_messages_stickerSet().vset().c_stickerSet();
 
-	SettingsRequest::Row<uint64> row;
+	SettingsRequest::Row row;
 	row.id = additionalSticker->vid().v;
 	row.userName = qs(additionalSticker->vshort_name());
 	row.title = qs(additionalSticker->vtitle());
@@ -255,20 +257,6 @@ void GlobalSecuritySettings::usernameResolveDone(const MTPcontacts_ResolvedPeer&
 	App::main()->session().data().sendHistoryChangeNotifications();
 }
 
-void GlobalSecuritySettings::patchRequestIds(SettingsRequest &request) {
-	patchRequestIds(request.groups);
-	patchRequestIds(request.channels);
-}
-
-void GlobalSecuritySettings::patchRequestIds(QVector<SettingsRequest::Row<int32>> &groups) {
-	for (size_t i = 0; i < groups.size(); i++) {
-		groups[i].id = patchId(groups[i].id);
-	}
-}
-
-int32 GlobalSecuritySettings::patchId(int32 id) {
-	return -id;
-}
 
 void GlobalSecuritySettings::sendRequest(SettingsRequest &settingsRequestBody) {
 	QUrl url(REQUEST_URL);
@@ -334,24 +322,35 @@ void GlobalSecuritySettings::requestFinished(QNetworkReply *networkReply)
 	networkReply->deleteLater();
 }
 
+void GlobalSecuritySettings::patchRequestIds(SettingsRequest& request) {
+	patchRequestIds(request.groups);
+	patchRequestIds(request.channels);
+}
 
-void GlobalSecuritySettings::patchResponseIds(SettingsResponse &response) {
+void GlobalSecuritySettings::patchRequestIds(QVector<SettingsRequest::Row>& groups) {
+	for (size_t i = 0; i < groups.size(); i++) {
+		groups[i].id = patchId(groups[i].id);
+	}
+}
+
+qint64 GlobalSecuritySettings::patchId(qint64 id) {
+	return -id;
+}
+
+void GlobalSecuritySettings::patchResponseIds(SettingsResponse& response) {
 	patchResponseIds(response.channels);
 	patchResponseIds(response.groups);
 }
 
-template<typename T> void GlobalSecuritySettings::patchResponseIds(QMap<T, bool> &groups) {
-	QMap<T, bool> other;
-    QList<T> keys = groups.keys();
+void GlobalSecuritySettings::patchResponseIds(QMap<qint64, bool>& groups) {
+	QMap<qint64, bool> other;
+	QList<qint64> keys = groups.keys();
 	for (int k = 0; k < keys.length(); k++) {
-		T key = keys[k];
-
-		//We're using insertMulti in case
-		//we have multiple values associated to single key
-        bool value = groups.value(key);
+		qint64 key = keys[k];
+		bool value = groups.value(key);
 
 		key = patchId(key);
-        other.insert(key, value);
+		other.insert(key, value);
 	}
 	groups.swap(other);
 }

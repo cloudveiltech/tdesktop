@@ -3,6 +3,7 @@
 #include "FileDownloader.h"
 #include <QtCore/QTimer>
 #define CLOUDVEIL_CHANNEL_USERNAME "CloudVeilMessenger"
+#define PREMIUM_BOT_ID 5314653481
 
 class SettingsRequest;
 
@@ -32,7 +33,7 @@ private:
 	SettingsRequest lastRequest;
 	qint64 lastRequestTime;
 	PeerData *additionalItem;
-	QVector<SettingsRequest::Row<uint64>> additionalStickers; 
+	QVector<SettingsRequest::Row> additionalStickers; 
 
 	static bool loaded;
 	static SettingsResponse lastResponse;	
@@ -47,17 +48,15 @@ private:
 
 	void gotStickersSet(const MTPmessages_StickerSet &set);
 	void suscribeToSupportChannel(SettingsRequest& request);
-	void usernameResolveDone(const MTPcontacts_ResolvedPeer& result);
+	void usernameResolveDone(const MTPcontacts_ResolvedPeer& result);		
 
-	void patchRequestIds(SettingsRequest &request);
-	void patchRequestIds(QVector<SettingsRequest::Row<int32>> &groups);
-	
-	void patchResponseIds(SettingsResponse &response);
-	template<typename T> void patchResponseIds(QMap<T, bool> &groups);
-	
-	int32 patchId(int32 id);
+	void patchRequestIds(SettingsRequest& request);
+	void patchRequestIds(QVector<SettingsRequest::Row>& groups);
 
+	void patchResponseIds(SettingsResponse& response); 
+	void patchResponseIds(QMap<qint64, bool>& groups);
 
+	qint64 patchId(qint64 id);
 public Q_SLOTS:
 	void requestFinished(QNetworkReply* networkReply);
 

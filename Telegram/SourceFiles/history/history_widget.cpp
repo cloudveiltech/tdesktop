@@ -1996,6 +1996,7 @@ void HistoryWidget::showHistory(
 		MsgId showAtMsgId,
 		bool reload) {
 	//CloudVeil start
+	bool block = false;
 	if (!GlobalSecuritySettings::getSettings().isDialogAllowed(session().data().peer(peerId))) {
 		Ui::showChatsList(&session());
 		Ui::show(Ui::MakeInformBox(tr::lng_dialog_forbidden()));
@@ -2014,18 +2015,15 @@ void HistoryWidget::showHistory(
 			})
 		);
 		return;
-	}
-
-	bool inList = true;
+	}	
 	if (!GlobalSecuritySettings::getSettings().isDialogSecured(App::main()->session().data().peer(peerId))) {
 		Ui::show(Ui::MakeInformBox(tr::lng_blocked_for_protection(tr::now)));
 
 		GlobalSecuritySettings::getInstance()->addAdditionalDataToRequest(App::main()->session().data().peer(peerId));
-		GlobalSecuritySettings::getInstance()->updateFromServer();
-		inList = false;
+		GlobalSecuritySettings::getInstance()->updateFromServer(); 
+		block = true;
 	}
 	//CloudVeil end
-
 
 	_pinnedClickedId = FullMsgId();
 	_minPinnedId = std::nullopt;
@@ -2357,14 +2355,9 @@ void HistoryWidget::showHistory(
 	session().data().itemVisibilitiesUpdated();
 
 	crl::on_main(this, [=] { controller()->widget()->setInnerFocus(); });
-	//CloudVeil start	
-	if (!inList) {
-		if (_list != nullptr) {
-			_list->hide();
-		}
-		if (_scroll != nullptr) {
-			_scroll->hide();
-		}
+	//CloudVeil start
+	if (block) {
+		escape();
 	}
 	//CloudVeil end
 }

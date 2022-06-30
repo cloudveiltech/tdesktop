@@ -34,6 +34,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "payments/payments_checkout_process.h"
 #include "data/data_session.h"
 #include "styles/style_chat.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace {
 
@@ -118,7 +119,21 @@ void activateBotCommand(
 
 	case ButtonType::Buy: {
 		//CloudVeil start
-		Ui::show(Ui::MakeInformBox(tr::lng_blocked_for_protection(tr::now)));
+		if (const auto bot = msg->getMessageBot()) {
+			if (bot->id.value == PREMIUM_BOT_ID) {
+				Payments::CheckoutProcess::Start(
+					msg,
+					Payments::Mode::Payment,
+					crl::guard(sessionController, [=](auto) {
+						sessionController->widget()->activate();
+						}));
+			} else {
+				Ui::show(Ui::MakeInformBox(tr::lng_blocked_for_protection(tr::now)));
+			}
+		}
+		else {
+			Ui::show(Ui::MakeInformBox(tr::lng_blocked_for_protection(tr::now)));
+		}
 		//CloudVeil end
 	} break;
 

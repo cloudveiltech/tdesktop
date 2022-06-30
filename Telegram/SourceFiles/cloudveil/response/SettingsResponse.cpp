@@ -8,6 +8,8 @@
 #include "data/data_user.h"
 #include <QtCore/QJsonArray>
 
+#define EMOJI_STICKERSET_ID 1258816259751983
+
 void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 {
 	if (jsonObject.contains("disable_bio") && jsonObject["disable_bio"].isBool())
@@ -182,11 +184,13 @@ bool SettingsResponse::isDialogAllowed(PeerData *peer) {
 	if (!isInlineBot && !isDialogSecured(peer)) {//unknown dialogs assumed to be allowed
 		return true;
 	}
+
+	const auto dialogId = DeserializePeerId(peer->id.value).value;
 	if (peer->isChat() || peer->isMegagroup()) {
-		return groups.contains(peer->id.value) && groups[peer->id.value];
+		return groups.contains(dialogId) && groups[dialogId];
 	}
 	else if (peer->isChannel()) {
-		return channels.contains(peer->id.value) && channels[peer->id.value];
+		return channels.contains(dialogId) && channels[dialogId];
 	}
 	else if (peer->isUser()) {
 		if (peer->asUser()->botInfo == NULL) {
@@ -194,7 +198,7 @@ bool SettingsResponse::isDialogAllowed(PeerData *peer) {
 				if (peer->asUser()->isSelf()) {
 					return true;
 				}
-				return users.contains(peer->id.value) && users[peer->id.value];
+				return users.contains(dialogId) && users[dialogId];
 			}
 			else {
 				return true;
@@ -203,7 +207,7 @@ bool SettingsResponse::isDialogAllowed(PeerData *peer) {
 			if (peer->userName() == "cloudveilbot") {
 				return true;
 			}
-			return bots.contains(peer->id.value) && bots[peer->id.value];
+			return bots.contains(dialogId) && bots[dialogId];
 		}
 	}
 	return false;
@@ -213,17 +217,20 @@ bool SettingsResponse::isDialogSecured(PeerData *peer) {
 	if (peer == nullptr) {
 		return true;
 	}
-		
+	
 	if (peer->isUser() && !manageUsers) {
-		return true;
+		if (peer->asUser()->botInfo == NULL) {
+			return true;
+		}
 	}
 	if (peer->isUser() && peer->asUser()->isSelf()) {
 		return true;
 	}
-	return bots.contains(peer->id.value) ||
-		channels.contains(peer->id.value) ||
-		groups.contains(peer->id.value) ||
-		users.contains(peer->id.value);
+	const auto dialogId = DeserializePeerId(peer->id.value).value;
+	return bots.contains(dialogId) ||
+		channels.contains(dialogId) ||
+		groups.contains(dialogId) ||
+		users.contains(dialogId);
 }
 
 bool SettingsResponse::isStickerSetAllowed(Data::StickersSet &set) {
@@ -260,7 +267,7 @@ bool SettingsResponse::isStickerSetKnown(DocumentData *data) {
 }
 
 bool SettingsResponse::isStickerSetAllowed(uint64 id) {
-	if (id == 1258816259751983) {
+	if (id == EMOJI_STICKERSET_ID) {
 		return true;
 	}
 	return !disableStickers && stickers.contains(id) && stickers[id];

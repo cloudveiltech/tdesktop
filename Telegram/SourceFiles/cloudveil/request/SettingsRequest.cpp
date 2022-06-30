@@ -5,7 +5,7 @@
 
 void SettingsRequest::writeToJson(QJsonObject & json)
 {
-	json["user_id"] = userId;
+	json["user_id"] = (qint64)userId;
 	json["user_phone"] = userPhone;
 	json["user_name"] = userName;
 
@@ -30,11 +30,11 @@ void SettingsRequest::writeToJson(QJsonObject & json)
 	json["users"] = usersArray;
 }
 
-template<typename T> void SettingsRequest::writeArrayToJson(QJsonArray& jsonArray, QVector<Row<T>>& objects, bool writeIsMegagroup, bool writeIsPublic)
+void SettingsRequest::writeArrayToJson(QJsonArray& jsonArray, QVector<Row>& objects, bool writeIsMegagroup, bool writeIsPublic)
 {
 	for (int i = 0; i < objects.size(); i++)
 	{
-		Row<T>& row = objects[i];
+		Row& row = objects[i];
 		QJsonObject json;
 		row.writeToJson(json, writeIsMegagroup, writeIsPublic);
 		jsonArray.append(json);
@@ -57,15 +57,15 @@ bool SettingsRequest::equalsTo(SettingsRequest& request)
 
 }
 
-template<typename T> bool SettingsRequest::arraysEqual(QVector<Row<T>> array1, QVector<Row<T>> array2) {
+bool SettingsRequest::arraysEqual(QVector<Row> array1, QVector<Row> array2) {
 	if (array1.size() != array2.size()) {
 		return false;
 	}
 
 	for (int i = 0; i < array1.size(); i++)
 	{
-		Row<T>& row1 = array1[i];
-		Row<T>& row2 = array2[i];
+		Row& row1 = array1[i];
+		Row& row2 = array2[i];
 		if (!row1.equalsTo(row2)) {
 			return false;
 		}

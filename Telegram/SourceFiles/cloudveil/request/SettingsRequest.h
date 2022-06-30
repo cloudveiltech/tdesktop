@@ -2,9 +2,8 @@
 class SettingsRequest
 {
 public:
-	template<typename T> 
 	struct Row {
-		T id;
+		qint64 id;
 		QString title;
 		QString userName;
 		bool isMegagroup;
@@ -31,24 +30,31 @@ public:
 		}
 	};
 
-	int32 userId;
+	qint64 userId;
 	QString userPhone;
 	QString userName;
 
-	QVector<Row<int32>> groups;
-	QVector<Row<int32>> channels;
-	QVector<Row<int32>> bots;
-	QVector<Row<uint64>> stickers;
-	QVector<Row<int32>> users;
+	QVector<Row> groups;
+	QVector<Row> channels;
+	QVector<Row> bots;
+	QVector<Row> stickers;
+	QVector<Row> users;
 
 	void writeToJson(QJsonObject &json);
 	bool equalsTo(SettingsRequest& request);
+	bool isEmpty() const {
+		return groups.size() == 0 &&
+			channels.size() == 0 &&
+			bots.size() == 0 &&
+			stickers.size() == 0 &&
+			users.size() == 0;
+	}
 
 	SettingsRequest();
 	~SettingsRequest();
 
 private:
-	template<typename T> void writeArrayToJson(QJsonArray &jsonArray, QVector<Row<T>> &objects, bool writeIsMegagroup=false, bool writeIsPublic=false);
-	template<typename T> bool arraysEqual(QVector<Row<T>> array1, QVector<Row<T>> array2);
+	void writeArrayToJson(QJsonArray &jsonArray, QVector<Row> &objects, bool writeIsMegagroup=false, bool writeIsPublic=false);
+	bool arraysEqual(QVector<Row> array1, QVector<Row> array2);
 };
 

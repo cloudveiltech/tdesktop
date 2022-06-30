@@ -653,9 +653,11 @@ void CheckoutProcess::panelEditPhone() {
 }
 
 void CheckoutProcess::showForm() {
-	//CloudVeil start
-	return;
-	//CloudVeil end
+	_panel->showForm(
+		_form->invoice(),
+		_form->information(),
+		_form->paymentMethod().ui,
+		_form->shippingOptions());
 }
 
 void CheckoutProcess::showEditInformation(Ui::InformationField field) {

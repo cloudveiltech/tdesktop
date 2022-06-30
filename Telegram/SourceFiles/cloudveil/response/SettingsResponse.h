@@ -8,11 +8,11 @@ class History;
 class SettingsResponse
 {
 public:
-	QMap<int32, bool> channels;
-	QMap<int32, bool> bots;
-	QMap<int32, bool> groups;
-	QMap<uint64, bool> stickers;
-	QMap<int32, bool> users;
+	QMap<qint64, bool> channels;
+	QMap<qint64, bool> bots;
+	QMap<qint64, bool> groups;
+	QMap<qint64, bool> stickers;
+	QMap<qint64, bool> users;
 
 	bool disableBio;
 	bool disableBioChange;

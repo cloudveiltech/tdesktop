@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "cloudveil/SimpleUpdater.h"
 #include "cloudveil/response/UpdateResponse.h"
 #include "cloudveil/response/SettingsResponse.h"
+#define ONE_DAY_MSEC 24*60*60*1000
 //CloudVeil end
 
 struct HistoryMessageMarkupButton;
@@ -133,6 +134,7 @@ public:
 	
 	//CloudVeil start
 	void onSettingsUpdate();
+	void showOrganizationChangeRequired();
 	//CloudVeil end
 
 	[[nodiscard]] Main::Session &session() const;
@@ -409,6 +411,7 @@ private:
 	//CloudVeil start	
 	object_ptr<GlobalSecuritySettings> globalSettings;
 	object_ptr<SimpleUpdater> simpleUpdater;
+	qint64 lastOrganizationPopupShownTime;
 	//CloudVeil end
 };
 

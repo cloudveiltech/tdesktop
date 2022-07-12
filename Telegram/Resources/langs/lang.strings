@@ -3429,9 +3429,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_mac_hold_to_quit" = "Hold {text} to Quit";
 
+//CloudVeil Start
 "lng_dialog_forbidden" = "This channel/group/bot is blocked by our server policy. Please contact CloudVeil Support to request it be unblocked.";
 "lng_feature_forbidden" = "This feature is blocked by our server policy. Please contact CloudVeil Support at support@cloudveil.org to request it be unblocked.";
 "lng_blocked_for_protection" = "Content blocked for your protection.";
 "lng_download_click" = "Download";
 "lng_contact" = "Contact";
+"lng_change" = "Change";
+"lng_change_organization" = "Please Select Your Organization. It is important that you select your correct church organization so that your app works as expected. Unblock requests will NOT work correctly if you select the wrong group. This one-time step is required to allow organizations more flexibility in supporting their own members and is based off of church membership.";
+//CloudVeil end
 // Keys finished

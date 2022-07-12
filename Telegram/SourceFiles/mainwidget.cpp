@@ -234,7 +234,8 @@ MainWidget::MainWidget(
 , _playerPlaylist(this, _controller)
 , _changelogs(Core::Changelogs::Create(&controller->session())) //CloudVeil start
 , globalSettings(this)
-, simpleUpdater(this) {
+, simpleUpdater(this)
+, lastOrganizationPopupShownTime(0) {
 	//CloudVeil end
 	if (isPrimary()) {
 		setupConnectingWidget();
@@ -243,8 +244,7 @@ MainWidget::MainWidget(
 	//CloudVeil start
 	connect(this, &MainWidget::dialogsUpdated, this, &MainWidget::requestCloudVeil);
 	connect(simpleUpdater, &SimpleUpdater::updateReceived, this, &MainWidget::simpleUpdateReceived);
-	connect(globalSettings, &GlobalSecuritySettings::settingsReady, _dialogs, &Dialogs::Widget::refreshOnUpdate);
-	connect(globalSettings, &GlobalSecuritySettings::settingsReady, _history, &HistoryWidget::onSettingsUpdate);
+	connect(globalSettings, &GlobalSecuritySettings::settingsReady, this, &MainWidget::onSettingsUpdate);
 	//CloudVeil end
 
 	_history->cancelRequests(
@@ -396,6 +396,7 @@ MainWidget::MainWidget(
 void MainWidget::onSettingsUpdate() {
 	_dialogs->refreshOnUpdate();
 	_history->onSettingsUpdate();
+	showOrganizationChangeRequired();
 }
 
 void MainWidget::simpleUpdateReceived(UpdateResponse* response) {
@@ -412,6 +413,31 @@ void MainWidget::simpleUpdateReceived(UpdateResponse* response) {
 void MainWidget::requestCloudVeil() {
 	globalSettings->updateFromServer();
 	simpleUpdater->startUpdateChecking(AppVersion);
+}
+
+void MainWidget::showOrganizationChangeRequired() {
+	if (!globalSettings->getSettings().orgranization.needChange) {
+		return;
+	}
+	qint64 now = QDateTime::currentMSecsSinceEpoch();
+	if (now - lastOrganizationPopupShownTime < ONE_DAY_MSEC) {
+		return;
+	}
+	lastOrganizationPopupShownTime = now;
+
+	Ui::show(Ui::MakeConfirmBox({
+				.text = tr::lng_change_organization(),
+				.confirmed = [=](Fn<void()>&& close) {
+					Ui::hideLayer();
+					auto user = App::main()->session().user();
+					int userId = user->id.value;
+					QString url = QString("https://messenger.cloudveil.org/unblock_status/%1").arg(QString::number(userId));
+
+					QDesktopServices::openUrl(QUrl(url, QUrl::TolerantMode));
+				},
+				.confirmText = tr::lng_change(),
+
+		}));
 }
 //CloudVeil end
 

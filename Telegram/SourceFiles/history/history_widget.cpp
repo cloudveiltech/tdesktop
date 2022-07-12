@@ -1998,7 +1998,6 @@ void HistoryWidget::showHistory(
 	//CloudVeil start
 	if (!GlobalSecuritySettings::getSettings().isDialogAllowed(session().data().peer(peerId))) {
 		Ui::showChatsList(&session());
-		Ui::show(Ui::MakeInformBox(tr::lng_dialog_forbidden()));
 		Ui::show(Ui::MakeConfirmBox({
 					.text = tr::lng_dialog_forbidden(),
 					.confirmed = [=](Fn<void()>&& close) {

@@ -7,6 +7,16 @@ class History;
 
 class SettingsResponse
 {
+public: 
+	struct Organization {
+		QString name;
+		int id;
+		bool needChange;
+
+		QJsonObject toJsonObject();
+		void readFromJson(QJsonObject& object);
+	};
+
 public:
 	QMap<qint64, bool> channels;
 	QMap<qint64, bool> bots;
@@ -24,6 +34,7 @@ public:
 	bool disableProfileVideo;
 	bool disableProfileVideoChange;
 	bool manageUsers;
+	Organization orgranization;
 
 public:
 	void readFromJson(QJsonObject &jsonObject);

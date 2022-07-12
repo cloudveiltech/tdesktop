@@ -10,6 +10,27 @@
 
 #define EMOJI_STICKERSET_ID 1258816259751983
 
+
+QJsonObject SettingsResponse::Organization::toJsonObject() {
+	QJsonObject organizationObject;
+	organizationObject["id"] = id;
+	organizationObject["name"] = name;
+	organizationObject["need_change"] = needChange;
+	return organizationObject;
+}
+
+void SettingsResponse::Organization::readFromJson(QJsonObject& object) {
+	if (object.contains("id")) {
+		id = object["id"].toInt();
+	}
+	if (object.contains("name")) {
+		name = object["name"].toString();
+	}
+	if (object.contains("need_change") && object["need_change"].isBool()) {
+		needChange = object["need_change"].toBool();
+	}
+}
+
 void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 {
 	if (jsonObject.contains("disable_bio") && jsonObject["disable_bio"].isBool())
@@ -52,6 +73,12 @@ void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 		disableProfileVideoChange = jsonObject["disable_profile_video_change"].toBool();
 	}
 
+	if (jsonObject.contains("organization") && jsonObject["organization"].isObject())
+	{
+		auto organizationJson = jsonObject["organization"].toObject();
+		orgranization.readFromJson(organizationJson);
+	}
+
 	if (jsonObject.contains("access") && jsonObject["access"].isObject())
 	{
 		QJsonObject accessObject = jsonObject["access"].toObject();
@@ -63,6 +90,7 @@ void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 		readAcccessObject(accessObject, "users", users);
 	}
 }
+
 
 template<typename T> void SettingsResponse::readAcccessObject(QJsonObject& accessObject, QString key, QMap<T, bool> &objects) {
 	if (accessObject.contains(key) && accessObject[key].isArray()) {
@@ -111,6 +139,8 @@ void SettingsResponse::writeToJson(QJsonObject &json)
 	writeAcccessObject(accessObject, "users", users);
 
 	json["access"] = accessObject;
+
+	json["organization"] = orgranization.toJsonObject();
 }
 
 

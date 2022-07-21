@@ -133,6 +133,11 @@ void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 	request.userName = user->username;
 	request.userPhone = user->phone();
 
+	if (!sessionUids.contains(request.userId)) {
+		sessionUids[request.userId] = getUserSessionId(request.userId);
+	}
+	request.clientSessionId = sessionUids[request.userId];
+
 	patchRequestIds(request);
 }
 
@@ -353,4 +358,32 @@ void GlobalSecuritySettings::patchResponseIds(QMap<qint64, bool>& groups) {
 		other.insert(key, value);
 	}
 	groups.swap(other);
+}
+
+QString GlobalSecuritySettings::getUserSessionId(qint64 userId)
+{
+	QFile file(QStringLiteral("session.json"));
+
+	QString key = QString("session_id__%1").arg(userId);
+	if (!file.open(QIODevice::ReadWrite)) {
+		return "";
+	}	
+
+	QByteArray data = file.readAll();
+	QJsonDocument doc(QJsonDocument::fromJson(data));
+	QJsonObject jsonObject;
+	if (!doc.isEmpty()) {
+		jsonObject = doc.object();
+	}
+
+	if (!jsonObject.contains(key)) {
+		jsonObject[key] = QUuid::createUuid().toString(QUuid::StringFormat::WithoutBraces);
+		if (file.isWritable()) {		
+			file.write(QJsonDocument(jsonObject).toJson());
+		}
+	}
+
+	file.close();
+
+	return jsonObject[key].toString();
 }

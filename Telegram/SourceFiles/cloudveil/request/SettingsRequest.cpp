@@ -1,13 +1,17 @@
 #include "stdafx.h"
 #include "SettingsRequest.h"
 #include <QtCore/QJsonArray>
-
+#include <QtCore/QUuid>
 
 void SettingsRequest::writeToJson(QJsonObject & json)
 {
 	json["user_id"] = (qint64)userId;
 	json["user_phone"] = userPhone;
 	json["user_name"] = userName;
+	json["client_os_type"] = clientOsType;
+	json["client_session_id"] = clientSessionId;
+	json["client_version_code"] = clientVersionCode;
+	json["client_version_name"] = clientVersionName;
 
 	QJsonArray groupsArray;
 	writeArrayToJson(groupsArray, groups, true, true);	

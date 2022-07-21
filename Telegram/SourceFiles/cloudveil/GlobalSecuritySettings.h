@@ -39,6 +39,8 @@ private:
 	static SettingsResponse lastResponse;	
 	static GlobalSecuritySettings *instance;
 
+	QMap<qint64, QString> sessionUids;
+
 private:
 	void buildRequest(SettingsRequest &request);
 	void addDialogToRequest(SettingsRequest &request, PeerData *peerData);
@@ -55,6 +57,7 @@ private:
 
 	void patchResponseIds(SettingsResponse& response); 
 	void patchResponseIds(QMap<qint64, bool>& groups);
+	QString getUserSessionId(qint64 userId);
 
 	qint64 patchId(qint64 id);
 public Q_SLOTS:

@@ -33,6 +33,14 @@ public:
 	qint64 userId;
 	QString userPhone;
 	QString userName;
+#ifdef __APPLE__
+	QString clientOsType = "macOS";
+#else
+	QString clientOsType = "Windows";
+#endif
+	QString clientSessionId;
+	int clientVersionCode = AppVersion;
+	QString clientVersionName = AppVersionStr;
 
 	QVector<Row> groups;
 	QVector<Row> channels;

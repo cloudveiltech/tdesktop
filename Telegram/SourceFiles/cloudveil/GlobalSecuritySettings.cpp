@@ -1,7 +1,7 @@
 #define REQUEST_URL "https://manage.cloudveil.org/api/v1/messenger/settings"
 #include "stdafx.h"
 #include "GlobalSecuritySettings.h"
-#include "dialogs/dialogs_indexed_list.h"
+#include "data/data_folder.h"
 #include "./request/SettingsRequest.h"
 #include "./response/SettingsResponse.h"
 #include "storage/localstorage.h"
@@ -12,6 +12,7 @@
 #include "data/data_channel.h"
 #include "apiwrap.h"
 #include <QtCore/QJsonDocument>
+#include <QtCore/QStack>
 #include "main/main_session.h"
 #include "storage/storage_account.h"
 #include "mainwidget.h"
@@ -92,17 +93,11 @@ void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 	Main::Session& session = App::main()->session();
 	Data::Session& data = session.data();
 	Dialogs::IndexedList* chats = data.chatsList()->indexed();
-	for (auto i = chats->begin(); i != chats->end(); ++i) {
-		auto row = (*i);
-		if (row) {
-			auto history = row->history();
-			if (history) {
-				PeerData* peer = history->peer;
-				if (peer) {
-					addDialogToRequest(request, peer);
-				}
-			}
-		}
+	QStack<Dialogs::IndexedList*> lists;
+	lists.push(chats);
+	while (!lists.isEmpty()) {
+		chats = lists.pop();
+		addChatListToRequest(request, chats, lists);
 	}
 
 	if (cRecentInlineBots().isEmpty()) {
@@ -139,6 +134,27 @@ void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 	request.clientSessionId = sessionUids[request.userId];
 
 	patchRequestIds(request);
+}
+
+void GlobalSecuritySettings::addChatListToRequest(SettingsRequest& request, Dialogs::IndexedList* chats, QStack<Dialogs::IndexedList*> &listsStack) {
+	for (auto i = chats->begin(); i != chats->end(); ++i) {
+		auto row = (*i);
+		if (row) {
+			auto history = row->history();
+			if (history) {
+				PeerData* peer = history->peer;
+				if (peer) {
+					addDialogToRequest(request, peer);
+				}
+			}
+			else {
+				auto folder = row->folder();
+				if (folder) {
+					listsStack.push(folder->chatsList()->indexed());
+				}
+			}
+		}
+	}
 }
 
 void GlobalSecuritySettings::checkStickerSetByDocumentAsync(DocumentData* sticker) {

@@ -1,4 +1,5 @@
 #pragma once
+#include "dialogs/dialogs_indexed_list.h"
 #include "./response/SettingsResponse.h"
 #include "FileDownloader.h"
 #include <QtCore/QTimer>
@@ -47,6 +48,7 @@ private:
 	void addStickerToRequest(SettingsRequest &request, Data::StickersSet *set);
 	void addStickerToRequest(SettingsRequest &request, const MTPDstickerSet *additionalSticker);
 	void sendRequest(SettingsRequest &request);
+	void addChatListToRequest(SettingsRequest& request, Dialogs::IndexedList* chats, QStack<Dialogs::IndexedList*> &listsStack);
 
 	void gotStickersSet(const MTPmessages_StickerSet &set);
 	void suscribeToSupportChannel(SettingsRequest& request);

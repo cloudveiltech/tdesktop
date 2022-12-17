@@ -59,4 +59,5 @@ if officialTarget != '':
                 arguments.append('-DTDESKTOP_API_HASH=' + apiHashMatch.group(1))
     if arch != '':
         arguments.append(arch)
+
 finish(run_cmake.run(scriptName, arguments))

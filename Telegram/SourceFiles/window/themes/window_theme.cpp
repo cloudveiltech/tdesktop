@@ -41,6 +41,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QBuffer>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
+#include <QtCore/QFileSystemWatcher>
 
 namespace Window {
 namespace Theme {
@@ -481,7 +482,7 @@ SendMediaReady PrepareWallPaper(MTP::DcId dcId, const QImage &image) {
 	};
 	push("s", scaled(320));
 
-	const auto filename = qsl("wallpaper.jpg");
+	const auto filename = u"wallpaper.jpg"_q;
 	auto attributes = QVector<MTPDocumentAttribute>(
 		1,
 		MTP_documentAttributeFilename(MTP_string(filename)));
@@ -540,6 +541,8 @@ ChatBackground::ChatBackground() : _adjustableColors({
 		st::historyScrollBarBgOver }) {
 }
 
+ChatBackground::~ChatBackground() = default;
+
 void ChatBackground::setThemeData(QImage &&themeImage, bool themeTile) {
 	_themeImage = PostprocessBackgroundImage(
 		std::move(themeImage),
@@ -566,6 +569,7 @@ void ChatBackground::start() {
 
 	_updates.events(
 	) | rpl::start_with_next([=](const BackgroundUpdate &update) {
+		refreshThemeWatcher();
 		if (update.paletteChanged()) {
 			style::NotifyPaletteChanged();
 		}
@@ -582,6 +586,25 @@ void ChatBackground::start() {
 	}, _lifetime);
 
 	Core::App().settings().setSystemDarkMode(Platform::IsDarkMode());
+}
+
+void ChatBackground::refreshThemeWatcher() {
+	const auto path = _themeObject.pathAbsolute;
+	if (path.isEmpty()
+		|| !QFileInfo(path).isNativePath()
+		|| editingTheme()) {
+		_themeWatcher = nullptr;
+	} else if (!_themeWatcher || !_themeWatcher->files().contains(path)) {
+		_themeWatcher = std::make_unique<QFileSystemWatcher>(
+			QStringList(path));
+		QObject::connect(
+			_themeWatcher.get(),
+			&QFileSystemWatcher::fileChanged,
+			[](const QString &path) {
+			Apply(path);
+			KeepApplied();
+		});
+	}
 }
 
 void ChatBackground::checkUploadWallPaper() {
@@ -679,7 +702,7 @@ void ChatBackground::set(const Data::WallPaper &paper, QImage image) {
 		setPreparedAfterPaper(std::move(image));
 	} else {
 		if (Data::IsLegacy1DefaultWallPaper(_paper)) {
-			image.load(qsl(":/gui/art/bg_initial.jpg"));
+			image.load(u":/gui/art/bg_initial.jpg"_q);
 			const auto scale = cScale() * cIntRetinaFactor();
 			if (scale != 100) {
 				image = image.scaledToWidth(
@@ -807,6 +830,7 @@ std::optional<Data::CloudTheme> ChatBackground::editingTheme() const {
 
 void ChatBackground::setEditingTheme(const Data::CloudTheme &editing) {
 	_editingTheme = editing;
+	refreshThemeWatcher();
 }
 
 void ChatBackground::clearEditingTheme(ClearEditing clear) {
@@ -822,6 +846,7 @@ void ChatBackground::clearEditingTheme(ClearEditing clear) {
 		reapplyWithNightMode(std::nullopt, _nightMode);
 		KeepApplied();
 	}
+	refreshThemeWatcher();
 }
 
 void ChatBackground::adjustPaletteUsingBackground(const QImage &image) {
@@ -1234,7 +1259,7 @@ ChatBackground *Background() {
 }
 
 bool IsEmbeddedTheme(const QString &path) {
-	return path.isEmpty() || path.startsWith(qstr(":/gui/"));
+	return path.isEmpty() || path.startsWith(u":/gui/"_q);
 }
 
 bool Initialize(Saved &&saved) {
@@ -1495,6 +1520,7 @@ bool ReadPaletteValues(const QByteArray &content, Fn<bool(QLatin1String name, QL
 [[nodiscard]] Webview::ThemeParams WebViewParams() {
 	const auto colors = std::vector<std::pair<QString, const style::color&>>{
 		{ "bg_color", st::windowBg },
+		{ "secondary_bg_color", st::boxDividerBg },
 		{ "text_color", st::windowFg },
 		{ "hint_color", st::windowSubTextFg },
 		{ "link_color", st::windowActiveTextFg },

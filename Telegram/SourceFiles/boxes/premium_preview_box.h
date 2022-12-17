@@ -7,10 +7,18 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "base/object_ptr.h"
+
 class DocumentData;
 
+namespace Data {
+struct ReactionId;
+} // namespace Data
+
 namespace Ui {
+class BoxContent;
 class GenericBox;
+class GradientButton;
 } // namespace Ui
 
 namespace Window {
@@ -34,24 +42,21 @@ enum class PremiumPreview {
 	FasterDownload,
 	VoiceToText,
 	NoAds,
-	Reactions,
+	EmojiStatus,
+	InfiniteReactions,
 	Stickers,
+	AnimatedEmoji,
 	AdvancedChatManagement,
 	ProfileBadge,
 	AnimatedUserpics,
 
 	kCount,
 };
-enum class ReactionDisableType {
-	None,
-	Group,
-	Channel,
-};
 
 void ShowPremiumPreviewBox(
 	not_null<Window::SessionController*> controller,
 	PremiumPreview section,
-	const base::flat_map<QString, ReactionDisableType> &disabled = {});
+	Fn<void(not_null<Ui::BoxContent*>)> shown = nullptr);
 
 void ShowPremiumPreviewToBuy(
 	not_null<Window::SessionController*> controller,
@@ -59,3 +64,7 @@ void ShowPremiumPreviewToBuy(
 	Fn<void()> hiddenCallback);
 
 void PremiumUnavailableBox(not_null<Ui::GenericBox*> box);
+
+[[nodiscard]] object_ptr<Ui::GradientButton> CreateUnlockButton(
+	QWidget *parent,
+	rpl::producer<QString> text);

@@ -9,9 +9,14 @@
 #include "ui/ui_utility.h"
 #include "base/call_delayed.h"
 #include "base/invoke_queued.h"
+#include "base/platform/base_platform_info.h"
+
+#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
+#include "base/platform/linux/base_linux_xcb_utilities.h"
+#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
 
 #include <QtCore/QPointer>
-#include <QtCore/QCoreApplication>
+#include <QtWidgets/QApplication>
 
 namespace Ui {
 namespace {
@@ -40,15 +45,35 @@ void ActivateWindowDelayed(not_null<QWidget*> widget) {
 	} else if (std::exchange(Window, widget.get())) {
 		return;
 	}
-	crl::on_main(Window, [=] {
-		if (const auto widget = base::take(Window)) {
-			if (const auto window = widget->window()) {
-				if (!window->isHidden()) {
-					window->raise();
-					window->activateWindow();
-				}
-			}
+#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
+	const auto focusAncestor = [&] {
+		const auto focusWidget = QApplication::focusWidget();
+		if (!focusWidget || !widget->window()) {
+			return false;
 		}
+		return widget->window()->isAncestorOf(focusWidget);
+	}();
+#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
+	crl::on_main(Window, [=] {
+		const auto widget = base::take(Window);
+		if (!widget) {
+			return;
+		}
+		const auto window = widget->window();
+		if (!window || window->isHidden()) {
+			return;
+		}
+		window->raise();
+		window->activateWindow();
+#ifndef DESKTOP_APP_DISABLE_X11_INTEGRATION
+		if (::Platform::IsX11() && focusAncestor) {
+			xcb_set_input_focus(
+				base::Platform::XCB::GetConnectionFromQt(),
+				XCB_INPUT_FOCUS_PARENT,
+				window->winId(),
+				XCB_CURRENT_TIME);
+		}
+#endif // !DESKTOP_APP_DISABLE_X11_INTEGRATION
 	});
 }
 

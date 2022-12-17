@@ -9,7 +9,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "base/runtime_composer.h"
 #include "base/flags.h"
-#include "base/value_ordering.h"
 #include "data/data_media_types.h"
 #include "history/history_item_edition.h"
 #include "history/history_item_reply_markup.h"
@@ -42,9 +41,17 @@ struct RippleAnimation;
 namespace Data {
 struct MessagePosition;
 struct RecentReaction;
+struct ReactionId;
 class Media;
+struct MessageReaction;
 class MessageReactions;
+class ForumTopic;
+class Thread;
 } // namespace Data
+
+namespace Main {
+class Session;
+} // namespace Main
 
 namespace Window {
 class SessionController;
@@ -63,7 +70,7 @@ enum class Context : char;
 class ElementDelegate;
 } // namespace HistoryView
 
-struct HiddenSenderInfo;
+class HiddenSenderInfo;
 class History;
 
 [[nodiscard]] MessageFlags FlagsFromMTP(
@@ -116,13 +123,15 @@ public:
 		const QString &label,
 		const TextWithEntities &content);
 
-	not_null<History*> history() const {
+	[[nodiscard]] not_null<Data::Thread*> notificationThread() const;
+	[[nodiscard]] not_null<History*> history() const {
 		return _history;
 	}
-	not_null<PeerData*> from() const {
+	[[nodiscard]] Data::ForumTopic *topic() const;
+	[[nodiscard]] not_null<PeerData*> from() const {
 		return _from;
 	}
-	HistoryView::Element *mainView() const {
+	[[nodiscard]] HistoryView::Element *mainView() const {
 		return _mainView;
 	}
 	void setMainView(not_null<HistoryView::Element*> view) {
@@ -132,6 +141,8 @@ public:
 	void clearMainView();
 	void removeMainView();
 
+	void invalidateChatListEntry();
+
 	void destroy();
 	[[nodiscard]] bool out() const {
 		return _flags & MessageFlag::Outgoing;
@@ -139,7 +150,7 @@ public:
 	[[nodiscard]] bool isPinned() const {
 		return _flags & MessageFlag::Pinned;
 	}
-	[[nodiscard]] bool unread() const;
+	[[nodiscard]] bool unread(not_null<Data::Thread*> thread) const;
 	[[nodiscard]] bool showNotification() const;
 	void markClientSideAsRead();
 	[[nodiscard]] bool mentionsMe() const;
@@ -189,9 +200,6 @@ public:
 	[[nodiscard]] bool isGroupMigrate() const {
 		return isGroupEssential() && isEmpty();
 	}
-	[[nodiscard]] bool isIsolatedEmoji() const {
-		return _flags & MessageFlag::IsolatedEmoji;
-	}
 	[[nodiscard]] bool hasViews() const {
 		return _flags & MessageFlag::HasViews;
 	}
@@ -228,30 +236,15 @@ public:
 	[[nodiscard]] virtual bool externalReply() const {
 		return false;
 	}
+	[[nodiscard]] bool hasExtendedMediaPreview() const;
 
-	[[nodiscard]] virtual MsgId repliesInboxReadTill() const {
-		return MsgId(0);
+	virtual void setCommentsInboxReadTill(MsgId readTillId) {
 	}
-	virtual void setRepliesInboxReadTill(
-		MsgId readTillId,
-		std::optional<int> unreadCount) {
+	virtual void setCommentsMaxId(MsgId maxId) {
 	}
-	[[nodiscard]] virtual MsgId computeRepliesInboxReadTillFull() const {
-		return MsgId(0);
+	virtual void setCommentsPossibleMaxId(MsgId possibleMaxId) {
 	}
-	[[nodiscard]] virtual MsgId repliesOutboxReadTill() const {
-		return MsgId(0);
-	}
-	virtual void setRepliesOutboxReadTill(MsgId readTillId) {
-	}
-	[[nodiscard]] virtual MsgId computeRepliesOutboxReadTillFull() const {
-		return MsgId(0);
-	}
-	virtual void setRepliesMaxId(MsgId maxId) {
-	}
-	virtual void setRepliesPossibleMaxId(MsgId possibleMaxId) {
-	}
-	[[nodiscard]] virtual bool areRepliesUnread() const {
+	[[nodiscard]] virtual bool areCommentsUnread() const {
 		return false;
 	}
 
@@ -269,6 +262,8 @@ public:
 	virtual void applyEdition(HistoryMessageEdition &&edition) {
 	}
 	virtual void applyEdition(const MTPDmessageService &message) {
+	}
+	virtual void applyEdition(const MTPMessageExtendedMedia &media) {
 	}
 	void applyEditionToHistoryCleared();
 	virtual void updateSentContent(
@@ -308,7 +303,6 @@ public:
 	[[nodiscard]] virtual ItemPreview toPreview(
 		ToPreviewOptions options) const;
 	[[nodiscard]] virtual TextWithEntities inReplyText() const;
-	[[nodiscard]] virtual Ui::Text::IsolatedEmoji isolatedEmoji() const;
 	[[nodiscard]] virtual TextWithEntities originalText() const {
 		return TextWithEntities();
 	}
@@ -316,6 +310,8 @@ public:
 	-> TextWithEntities {
 		return TextWithEntities();
 	}
+	[[nodiscard]] virtual auto customTextLinks() const
+		-> const std::vector<ClickHandlerPtr> &;
 	[[nodiscard]] virtual TextForMimeData clipboardText() const {
 		return TextForMimeData();
 	}
@@ -329,29 +325,27 @@ public:
 	}
 	virtual void clearReplies() {
 	}
-	virtual void changeRepliesCount(
-		int delta,
-		PeerId replier,
-		std::optional<bool> unread) {
+	virtual void changeRepliesCount(int delta, PeerId replier) {
 	}
-	virtual void setReplyToTop(MsgId replyToTop) {
-	}
+	virtual void setReplyFields(
+		MsgId replyTo,
+		MsgId replyToTop,
+		bool isForumPost) = 0;
 	virtual void setPostAuthor(const QString &author) {
 	}
 	virtual void setRealId(MsgId newId);
 	virtual void incrementReplyToTopCounter() {
 	}
-	virtual void hideSpoilers() {
-	}
 
 	[[nodiscard]] bool emptyText() const {
-		return _text.isEmpty();
+		return _text.empty();
 	}
 
 	[[nodiscard]] bool canPin() const;
 	[[nodiscard]] bool canBeEdited() const;
 	[[nodiscard]] bool canStopPoll() const;
 	[[nodiscard]] bool forbidsForward() const;
+	[[nodiscard]] bool forbidsSaving() const;
 	[[nodiscard]] virtual bool allowsSendNow() const;
 	[[nodiscard]] virtual bool allowsForward() const;
 	[[nodiscard]] virtual bool allowsEdit(TimeId now) const;
@@ -362,18 +356,25 @@ public:
 	[[nodiscard]] bool suggestDeleteAllReport() const;
 
 	[[nodiscard]] bool canReact() const;
-	void addReaction(const QString &reaction);
-	void toggleReaction(const QString &reaction);
+	enum class ReactionSource {
+		Selector,
+		Quick,
+		Existing,
+	};
+	void toggleReaction(
+		const Data::ReactionId &reaction,
+		ReactionSource source);
 	void updateReactions(const MTPMessageReactions *reactions);
 	void updateReactionsUnknown();
-	[[nodiscard]] const base::flat_map<QString, int> &reactions() const;
+	[[nodiscard]] auto reactions() const
+		-> const std::vector<Data::MessageReaction> &;
 	[[nodiscard]] auto recentReactions() const
-	-> const base::flat_map<
-		QString,
-		std::vector<Data::RecentReaction>> &;
+		-> const base::flat_map<
+			Data::ReactionId,
+			std::vector<Data::RecentReaction>> &;
 	[[nodiscard]] bool canViewReactions() const;
-	[[nodiscard]] QString chosenReaction() const;
-	[[nodiscard]] QString lookupUnreadReaction(
+	[[nodiscard]] std::vector<Data::ReactionId> chosenReactions() const;
+	[[nodiscard]] Data::ReactionId lookupUnreadReaction(
 		not_null<UserData*> from) const;
 	[[nodiscard]] crl::time lastReactionsRefreshTime() const;
 
@@ -389,14 +390,14 @@ public:
 	[[nodiscard]] Data::Media *media() const {
 		return _media.get();
 	}
+	[[nodiscard]] bool computeDropForwardedInfo() const;
 	virtual void setText(const TextWithEntities &textWithEntities) {
 	}
-	[[nodiscard]] virtual bool textHasLinks() const {
-		return false;
-	}
 
-	[[nodiscard]] MsgId replyToId() const;
-	[[nodiscard]] MsgId replyToTop() const;
+	[[nodiscard]] virtual MsgId replyToId() const = 0;
+	[[nodiscard]] virtual MsgId replyToTop() const = 0;
+	[[nodiscard]] virtual MsgId topicRootId() const = 0;
+	[[nodiscard]] bool inThread(MsgId rootId) const;
 
 	[[nodiscard]] not_null<PeerData*> author() const;
 
@@ -431,6 +432,7 @@ public:
 
 	void updateDate(TimeId newDate);
 	[[nodiscard]] bool canUpdateDate() const;
+	void customEmojiRepaint();
 
 	[[nodiscard]] TimeId ttlDestroyAt() const {
 		return _ttlDestroyAt;
@@ -462,17 +464,13 @@ protected:
 	const not_null<PeerData*> _from;
 	MessageFlags _flags = 0;
 
-	void invalidateChatListEntry();
-
 	void setGroupId(MessageGroupId groupId);
 
 	void applyTTL(const MTPDmessage &data);
 	void applyTTL(const MTPDmessageService &data);
 	void applyTTL(TimeId destroyAt);
 
-	Ui::Text::String _text = { st::msgMinWidth };
-	int _textWidth = -1;
-	int _textHeight = 0;
+	TextWithEntities _text;
 
 	struct SavedMediaData {
 		TextWithEntities text;

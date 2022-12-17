@@ -16,8 +16,13 @@ struct phrase;
 
 enum lngtag_count : int;
 
+namespace Data {
+struct SubscriptionOption;
+} // namespace Data
+
 namespace style {
 struct RoundImageCheckbox;
+struct PremiumOption;
 struct TextStyle;
 } // namespace style
 
@@ -70,6 +75,7 @@ void AddAccountsRow(
 [[nodiscard]] QGradientStops ButtonGradientStops();
 [[nodiscard]] QGradientStops LockGradientStops();
 [[nodiscard]] QGradientStops FullHeightGradientStops();
+[[nodiscard]] QGradientStops GiftGradientStops();
 
 struct ListEntry final {
 	rpl::producer<QString> subtitle;
@@ -81,6 +87,13 @@ struct ListEntry final {
 void ShowListBox(
 	not_null<Ui::GenericBox*> box,
 	std::vector<ListEntry> entries);
+
+void AddGiftOptions(
+	not_null<Ui::VerticalLayout*> parent,
+	std::shared_ptr<Ui::RadiobuttonGroup> group,
+	std::vector<Data::SubscriptionOption> gifts,
+	const style::PremiumOption &st,
+	bool topBadges = false);
 
 } // namespace Premium
 } // namespace Ui

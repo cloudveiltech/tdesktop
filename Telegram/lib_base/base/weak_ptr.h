@@ -65,12 +65,18 @@ public:
 	}
 
 	friend inline void invalidate_weak_ptrs(has_weak_ptr *object) {
-		if (auto alive = object->_alive.load()) {
+		if (auto alive = object ? object->_alive.load() : nullptr) {
 			if (object->_alive.compare_exchange_strong(alive, nullptr)) {
 				alive->value.store(nullptr);
 				details::decrement(alive);
 			}
 		}
+	}
+	friend inline int weak_ptrs_count(has_weak_ptr *object) {
+		if (const auto alive = object ? object->_alive.load() : nullptr) {
+			return alive->counter.load();
+		}
+		return 0;
 	}
 
 private:
@@ -99,6 +105,9 @@ public:
 	weak_ptr() = default;
 	weak_ptr(T *value)
 	: _alive(value ? value->incrementAliveTracker() : nullptr) {
+	}
+	weak_ptr(gsl::not_null<T*> value)
+	: _alive(value->incrementAliveTracker()) {
 	}
 	weak_ptr(const std::unique_ptr<T> &value)
 	: weak_ptr(value.get()) {
@@ -132,6 +141,10 @@ public:
 
 	weak_ptr &operator=(T *value) {
 		reset(value);
+		return *this;
+	}
+	weak_ptr &operator=(gsl::not_null<T*> value) {
+		reset(value.get());
 		return *this;
 	}
 	weak_ptr &operator=(const std::unique_ptr<T> &value) {
@@ -187,6 +200,9 @@ public:
 		destroy();
 	}
 
+	[[nodiscard]] bool null() const {
+		return !_alive;
+	}
 	[[nodiscard]] bool empty() const {
 		return !_alive || !_alive->value;
 	}
@@ -207,6 +223,10 @@ public:
 	[[nodiscard]] T *operator->() const noexcept {
 		return get();
 	}
+
+	friend inline auto operator<=>(
+		weak_ptr,
+		weak_ptr) noexcept = default;
 
 	void reset(T *value = nullptr) {
 		if (get() != value) {
@@ -253,6 +273,13 @@ template <
 	typename T,
 	typename = std::enable_if_t<std::is_base_of_v<has_weak_ptr, T>>>
 weak_ptr<T> make_weak(T *value) {
+	return value;
+}
+
+template <
+	typename T,
+	typename = std::enable_if_t<std::is_base_of_v<has_weak_ptr, T>>>
+weak_ptr<T> make_weak(gsl::not_null<T*> value) {
 	return value;
 }
 
@@ -318,7 +345,7 @@ struct guard_traits<
 	std::enable_if_t<
 		std::is_base_of_v<base::has_weak_ptr, std::remove_cv_t<T>>>> {
 	static base::weak_ptr<T> create(gsl::not_null<T*> value) {
-		return value.get();
+		return value;
 	}
 	static bool check(const base::weak_ptr<T> &guard) {
 		return guard.get() != nullptr;

@@ -3,7 +3,7 @@ This file is part of CloudVeil Messenger Desktop,
 the official desktop application for the CloudVeil Messenger messaging service.
 
 For license and copyright information please follow this link:
-https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
+https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 */
 "lng_language_name" = "English";
 "lng_switch_to_this" = "Continue in English";
@@ -17,6 +17,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_menu_night_mode" = "Night Mode";
 "lng_menu_add_account" = "Add Account";
 "lng_menu_activate" = "Activate";
+"lng_menu_set_status" = "Set Emoji Status";
+"lng_menu_change_status" = "Change Emoji Status";
 
 "lng_disable_notifications_from_tray" = "Disable notifications";
 "lng_enable_notifications_from_tray" = "Enable notifications";
@@ -167,8 +169,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_channels_limit_title" = "Too Many Communities";
 "lng_channels_limit1#one" = "You are a member of **{count}** groups and channels.";
 "lng_channels_limit1#other" = "You are a member of **{count}** groups and channels.";
-"lng_channels_limit2#one" = "Please leave some before joining a new one - or upgrade to **CloudVeil Messenger Premium** to doulbe the limit to **{count}** groups and channels.";
-"lng_channels_limit2#other" = "Please leave some before joining a new one - or upgrade to **CloudVeil Messenger Premium** to doulbe the limit to **{count}** groups and channels.";
+"lng_channels_limit2#one" = "Please leave some before joining a new one - or upgrade to **CloudVeil Messenger Premium** to double the limit to **{count}** groups and channels.";
+"lng_channels_limit2#other" = "Please leave some before joining a new one - or upgrade to **CloudVeil Messenger Premium** to double the limit to **{count}** groups and channels.";
 "lng_channels_limit2_final" = "Please leave some before joining a new one.";
 "lng_channels_leave_title" = "Least active communities";
 "lng_channels_leave_status" = "{type}, inactive {time}";
@@ -202,6 +204,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_filter_pin_limit2#one" = "Unpin some of the currently pinned ones or subscribe to **CloudVeil Messenger Premium** to double the limit to **{count}** chat.";
 "lng_filter_pin_limit2#other" = "Unpin some of the currently pinned ones or subscribe to **CloudVeil Messenger Premium** to double the limit to **{count}** chats.";
 
+"lng_forum_pin_limit#one" = "Sorry, you can't pin more than **{count}** topic to the top.";
+"lng_forum_pin_limit#other" = "Sorry, you can't pin more than **{count}** topics to the top.";
+
 "lng_fave_sticker_limit_title#one" = "The Limit of {count} Stickers Reached";
 "lng_fave_sticker_limit_title#other" = "The Limit of {count} Stickers Reached";
 "lng_fave_sticker_limit_more#one" = "An older sticker was replaced with this one.\nYou can {link} to {count} sticker.";
@@ -230,9 +235,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_limits_increase" = "Increase Limit";
 
-"lng_sticker_premium_title" = "With Effects";
 "lng_sticker_premium_text" = "This pack contains premium stickers like this one.";
 "lng_sticker_premium_view" = "View";
+"lng_animated_emoji_text" = "Subscribe to **CloudVeil Messenger Premium** to unlock this emoji.";
+"lng_animated_emoji_saved" = "Try sending these emoji in **Saved Messages** for free to test.";
+"lng_animated_emoji_saved_open" = "Open";
 "lng_reaction_premium_info" = "Click on the reaction to preview the animation.";
 "lng_reaction_premium_no_group" = "Some reactions are restricted in this group.";
 "lng_reaction_premium_no_channel" = "Some reactions are restricted in this channel.";
@@ -265,7 +272,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_proxy_unsupported" = "Your CloudVeil Messenger Desktop version doesn't support this proxy type or the proxy link is invalid. Please update CloudVeil Messenger Desktop to the latest version.";
 
 "lng_edit_deleted" = "This message was deleted";
-"lng_edit_too_long" = "Your message text is too long";
+"lng_edit_limit_reached#one" = "You've reached the message text limit. Please make the text shorter by {count} character.";
+"lng_edit_limit_reached#other" = "You've reached the message text limit. Please make the text shorter by {count} characters.";
 "lng_edit_message" = "Edit message";
 "lng_edit_message_text" = "New message text...";
 "lng_deleted" = "Deleted Account";
@@ -309,7 +317,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_intro_qr_title" = "Scan From Mobile CloudVeil Messenger";
 "lng_intro_qr_step1" = "Open CloudVeil Messenger on your phone";
-"lng_intro_qr_step2" = "Go to Settings > Devices > Scan QR Code";
+"lng_intro_qr_step2" = "Go to Settings > Devices > Link Desktop";
 "lng_intro_qr_step3" = "Scan this image to Log In";
 "lng_intro_qr_skip" = "Or log in using your phone number";
 
@@ -394,6 +402,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_username_invalid" = "This username is invalid.";
 "lng_username_occupied" = "This username is already occupied.";
 "lng_username_too_short" = "This username is too short.";
+"lng_username_purchase_available" = "Sorry, this link is occupied by someone. But it's available for purchase through\nofficial {link}.";
 "lng_username_bad_symbols" = "Only a-z, 0-9, and underscores allowed.";
 "lng_username_available" = "This username is available.";
 "lng_username_not_found" = "User @{user} not found.";
@@ -401,6 +410,24 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_username_link_willbe" = "This link will open a chat with you:";
 "lng_username_link" = "This link opens a chat with you:";
 "lng_username_copied" = "Link copied to clipboard.";
+
+"lng_usernames_edit" = "click to edit";
+"lng_usernames_active" = "active";
+"lng_usernames_non_active" = "non active";
+"lng_usernames_subtitle" = "Usernames order";
+"lng_usernames_activate_error#one" = "Sorry, you can't activate more than **{count}** usernames.";
+"lng_usernames_activate_error#other" = "Sorry, you can't activate more than **{count}** usernames.";
+"lng_usernames_activate_description" = "Do you want to show this username on your info page?";
+"lng_usernames_activate_confirm" = "Show";
+"lng_channel_usernames_subtitle" = "Links order";
+"lng_usernames_deactivate_description" = "Do you want to hide this username from your info page?";
+"lng_usernames_deactivate_confirm" = "Hide";
+"lng_usernames_description" = "Drag and drop links to change the order in which they will be displayed on your info page.";
+
+"lng_channel_usernames_activate_description" = "Do you want to show this link on the channel info page?";
+"lng_channel_usernames_deactivate_description" = "Do you want to hide this link from the channel info page?";
+"lng_channel_usernames_deactivate_error" = "Sorry, you can't deactivate this link from the channel info page. ";
+"lng_channel_usernames_description" = "Drag and drop links to change the order in which they will be displayed on the channel info page.";
 
 "lng_bio_title" = "Edit your bio";
 "lng_bio_placeholder" = "Bio";
@@ -499,6 +526,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_section_chat_settings" = "Chat Settings";
 "lng_settings_replace_emojis" = "Replace emoji";
 "lng_settings_suggest_emoji" = "Suggest emoji replacements";
+"lng_settings_suggest_animated_emoji" = "Suggest animated emoji";
 "lng_settings_suggest_by_emoji" = "Suggest popular stickers by emoji";
 "lng_settings_loop_stickers" = "Loop animated stickers";
 "lng_settings_large_emoji" = "Large emoji";
@@ -508,6 +536,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_send_cmdenter" = "Send by Cmd+Enter";
 "lng_settings_chat_quick_action_reply" = "Reply with double click";
 "lng_settings_chat_quick_action_react" = "Send reaction with double click";
+"lng_settings_chat_corner_reaction" = "Reaction button on messages";
 
 "lng_settings_chat_reactions_title" = "Quick Reaction";
 "lng_settings_chat_reactions_subtitle" = "Choose your favorite reaction";
@@ -558,6 +587,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_phone_number_privacy" = "Phone number";
 "lng_settings_forwards_privacy" = "Forwarded messages";
 "lng_settings_profile_photo_privacy" = "Profile photo";
+"lng_settings_voices_privacy" = "Voice messages";
+"lng_settings_privacy_premium" = "Only subscribers of {link} can restrict receiving voice messages.";
+"lng_settings_privacy_premium_link" = "CloudVeil Messenger Premium";
 "lng_settings_sessions_about" = "Control your sessions on other devices.";
 "lng_settings_passcode_disable" = "Disable Passcode";
 "lng_settings_passcode_disable_sure" = "Are you sure you want to disable passcode?";
@@ -634,6 +666,38 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_cloud_password_save" = "Save and Finish";
 "lng_settings_cloud_password_email_confirm" = "Confirm and Finish";
 "lng_settings_cloud_password_reset_in" = "You can reset your password in {duration}.";
+
+"lng_settings_ttl_title" = "Auto-Delete Messages";
+"lng_settings_ttl_about" = "Automatically delete messages for everyone after a period of time in all new chats you start.";
+"lng_settings_ttl_after" = "After {after_duration}";
+"lng_settings_ttl_after_hours#one" = "{count} hour";
+"lng_settings_ttl_after_hours#other" = "{count} hours";
+"lng_settings_ttl_after_days#one" = "{count} day";
+"lng_settings_ttl_after_days#other" = "{count} days";
+"lng_settings_ttl_after_weeks#one" = "{count} week";
+"lng_settings_ttl_after_weeks#other" = "{count} weeks";
+"lng_settings_ttl_after_months#one" = "{count} month";
+"lng_settings_ttl_after_months#other" = "{count} months";
+"lng_settings_ttl_after_years#one" = "{count} year";
+"lng_settings_ttl_after_years#other" = "{count} years";
+"lng_settings_ttl_after_off" = "Off";
+"lng_settings_ttl_after_custom" = "Set Custom Time";
+"lng_settings_ttl_after_about" = "If enabled, all new messages in chats you start will be automatically deleted for everyone at some point after they have been sent. You can also {link}.";
+"lng_settings_ttl_after_about_link" = "apply this setting for your existing chats";
+"lng_settings_ttl_after_subtitle" = "Self-destruct timer";
+"lng_settings_ttl_after_sure" = "Are you sure you want all messages in new chats started by you to be automatically deleted for everyone {after_duration} after they have been sent?";
+"lng_settings_ttl_after_toast" = "Messages in all new chats you start will be automatically deleted after {after_duration}.";
+
+"lng_settings_ttl_select_chats_title" = "Select Chats";
+"lng_settings_ttl_select_chats_subtitle" = "to apply the self-destruct timer";
+"lng_settings_ttl_select_chats_subtitle_chosen" = "will have the self-destruct timer";
+"lng_settings_ttl_select_chats_sorry" = "Sorry, you can't set self-destruct timer for this chat.";
+"lng_settings_ttl_select_chats_status" = "auto-delete after {after_duration}";
+"lng_settings_ttl_select_chats_status_disabled" = "auto-deletion disabled";
+"lng_settings_ttl_select_chats_toast#one" = "Self-destruct timer for {duration} has been enabled in {count} selected chat.";
+"lng_settings_ttl_select_chats_toast#other" = "Self-destruct timer for {duration} has been enabled in {count} selected chats.";
+"lng_settings_ttl_select_chats_disabled_toast#one" = "Self-destruct timer has been disabled in {count} selected chat.";
+"lng_settings_ttl_select_chats_disabled_toast#other" = "Self-destruct timer has been disabled in {count} selected chats.";
 
 "lng_clear_payment_info_title" = "Clear payment info";
 "lng_clear_payment_info_sure" = "Are you sure you want to clear your payment and shipping info?";
@@ -988,6 +1052,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_edit_privacy_profile_photo_always_title" = "Always allow";
 "lng_edit_privacy_profile_photo_never_title" = "Never allow";
 
+"lng_edit_privacy_voices_title" = "Voice messages settings";
+"lng_edit_privacy_voices_header" = "Who can send me voice messages";
+"lng_edit_privacy_voices_always_empty" = "Always allow";
+"lng_edit_privacy_voices_never_empty" = "Never allow";
+"lng_edit_privacy_voices_exceptions" = "These users will or will not be able to send voice and video messages to you regardless of the settings above.";
+"lng_edit_privacy_voices_always_title" = "Always allow";
+"lng_edit_privacy_voices_never_title" = "Never allow";
+
 "lng_self_destruct_title" = "Account self-destruction";
 "lng_self_destruct_description" = "If you don't come online at least once within this period, your account will be deleted along with all groups, messages and contacts.";
 "lng_self_destruct_sessions_title" = "Session termination";
@@ -1110,6 +1182,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_info_mobile_label" = "Mobile";
 "lng_info_mobile_hidden" = "Hidden";
 "lng_info_username_label" = "Username";
+"lng_info_usernames_label" = "also";
 "lng_info_bio_label" = "Bio";
 "lng_info_link_label" = "Link";
 "lng_info_location_label" = "Location";
@@ -1118,6 +1191,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_info_bot_title" = "Bot Info";
 "lng_info_group_title" = "Group Info";
 "lng_info_channel_title" = "Channel Info";
+"lng_info_topic_title" = "Topic Info";
 "lng_profile_enable_notifications" = "Notifications";
 "lng_profile_send_message" = "Send Message";
 "lng_info_add_as_contact" = "Add to contacts";
@@ -1141,6 +1215,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_profile_unblock_user" = "Unblock user";
 "lng_profile_export_chat" = "Export history";
 "lng_profile_export_channel" = "Export history";
+"lng_profile_gift_premium" = "Gift Premium";
 "lng_media_selected_photo#one" = "{count} Photo";
 "lng_media_selected_photo#other" = "{count} Photos";
 "lng_media_selected_gif#one" = "{count} GIF";
@@ -1179,14 +1254,26 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_manage_peer_permissions" = "Permissions";
 "lng_manage_peer_invite_links" = "Invite links";
 "lng_manage_peer_reactions" = "Reactions";
+"lng_manage_peer_reactions_on" = "All";
 "lng_manage_peer_reactions_off" = "Off";
 "lng_manage_peer_requests" = "Member Requests";
 "lng_manage_peer_requests_channel" = "Subscriber Requests";
 
 "lng_manage_peer_reactions_enable" = "Enable Reactions";
-"lng_manage_peer_reactions_about" = "Allow members to react to group messages.";
 "lng_manage_peer_reactions_about_channel" = "Allow subscribers to react to channel posts.";
+"lng_manage_peer_reactions_all" = "All reactions";
+"lng_manage_peer_reactions_all_about" = "Members of the group can use any emoji as reactions to messages.";
+"lng_manage_peer_reactions_some" = "Some reactions";
+"lng_manage_peer_reactions_some_about" = "You can select emoji that will allow members of your group to react to messages.";
+"lng_manage_peer_reactions_none" = "No reactions";
+"lng_manage_peer_reactions_none_about" = "Members of the group can't add any reactions to messages.";
+"lng_manage_peer_reactions_some_title" = "Only allow these reactions";
 "lng_manage_peer_reactions_available" = "Available reactions";
+
+"lng_manage_peer_antispam" = "Aggressive Anti-Spam";
+"lng_manage_peer_antispam_about" = "CloudVeil Messenger will filter more spam but may occasionally affect ordinary messages. You can report False Positives in Recent Actions.";
+"lng_manage_peer_antispam_not_enough#one" = "Aggressive filtering can be enabled only in groups with more than **{count} member**.";
+"lng_manage_peer_antispam_not_enough#other" = "Aggressive filtering can be enabled only in groups with more than **{count} members**.";
 
 "lng_manage_peer_group_type" = "Group type";
 "lng_manage_peer_channel_type" = "Channel type";
@@ -1247,6 +1334,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_ttl_edit_about" = "Automatically delete new messages after a certain period of time for you and {user}.";
 "lng_ttl_edit_about_group" = "Automatically delete new messages sent in this chat after a certain period of time.";
 "lng_ttl_edit_about_channel" = "Automatically delete new messages sent in this channel after a certain period of time.";
+"lng_ttl_edit_about2" = "You can also set your default {link} for all chats in Settings.";
+"lng_ttl_edit_about2_link" = "self-destruct timer";
 "lng_ttl_edit_save" = "Confirm";
 "lng_ttl_about_tooltip" = "New messages in this chat will be automatically deleted in {duration}.";
 "lng_ttl_about_tooltip_channel" = "New messages in this chat will be automatically deleted in {duration}.";
@@ -1258,6 +1347,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_report_message_title" = "Report message";
 "lng_report_profile_photo_title" = "Report profile photo";
 "lng_report_profile_video_title" = "Report profile video";
+"lng_report_group_photo_title" = "Report group photo";
+"lng_report_group_video_title" = "Report group video";
+"lng_report_channel_photo_title" = "Report channel photo";
+"lng_report_channel_video_title" = "Report channel video";
 "lng_report_please_select_messages" = "Please select messages to report.";
 "lng_report_select_messages" = "Select messages";
 "lng_report_messages_none" = "Select Messages";
@@ -1299,12 +1392,18 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_participant_filter" = "Search";
 "lng_participant_invite" = "Invite";
+"lng_participant_invite_history" = "Show the last 100 messages";
+"lng_participant_invite_sure" = "Are you sure you want to add **{user}** to **{group}**?";
+"lng_participant_invite_sure_many#one" = "Are you sure you want to add {count} member to **{group}**?";
+"lng_participant_invite_sure_many#other" = "Are you sure you want to add {count} members to **{group}**?";
 "lng_participant_invite_sorry#one" = "Sorry, you can only add the first {count} member to a channel personally.\n\nFrom now on, people will need to join via your invite link.";
 "lng_participant_invite_sorry#other" = "Sorry, you can only add the first {count} members to a channel personally.\n\nFrom now on, people will need to join via your invite link.";
+
 "lng_create_group_back" = "Back";
 "lng_create_group_next" = "Next";
 "lng_create_group_create" = "Create";
 "lng_create_group_title" = "New Group";
+"lng_create_group_ttl_about" = "Automatically delete messages in this group for everyone after a period of time.";
 "lng_create_channel_title" = "New Channel";
 "lng_create_public_channel_title" = "Public Channel";
 "lng_create_public_channel_about" = "Anyone can find the channel in search and join";
@@ -1327,6 +1426,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_create_channel_link_too_short" = "Sorry, this link is too short";
 "lng_create_channel_link_bad_symbols" = "Only 0-9, a-z, and underscores allowed.";
 "lng_create_channel_link_available" = "This link is available";
+"lng_create_channel_link_pending" = "Checking name...";
 "lng_create_channel_link_copied" = "Link copied to clipboard";
 
 "lng_create_group_crop" = "Select an area for group photo";
@@ -1398,6 +1498,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_action_ttl_changed" = "{from} has set messages to auto-delete in {duration}";
 "lng_action_ttl_changed_you" = "You set messages to auto-delete in {duration}";
 "lng_action_ttl_changed_channel" = "New messages will auto-delete in {duration}";
+"lng_action_ttl_global" = "{from} uses a self-destruct timer for all chats. All new messages in this chat will be automatically deleted after {duration} they've been sent.";
 "lng_action_ttl_removed" = "{from} has set messages not to auto-delete";
 "lng_action_ttl_removed_you" = "You disabled the auto-delete timer";
 "lng_action_ttl_removed_channel" = "New messages will not auto-delete";
@@ -1447,10 +1548,31 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_action_you_theme_disabled" = "You disabled chat theme";
 "lng_action_theme_disabled" = "{from} disabled chat theme";
 "lng_action_proximity_distance_m#one" = "{count} meter";
-"lng_action_proximity_distance_m#other" = "{count} metres";
+"lng_action_proximity_distance_m#other" = "{count} meters";
 "lng_action_proximity_distance_km#one" = "{count} km";
 "lng_action_proximity_distance_km#other" = "{count} km";
 "lng_action_webview_data_done" = "You have just successfully transferred data from the «{text}» button to the bot.";
+"lng_action_gift_received" = "{user} sent you a gift for {cost}";
+"lng_action_gift_received_me" = "You sent to {user} a gift for {cost}";
+"lng_action_topic_created_inside" = "Topic created";
+"lng_action_topic_closed_inside" = "Topic closed";
+"lng_action_topic_reopened_inside" = "Topic reopened";
+"lng_action_topic_hidden_inside" = "Topic hidden";
+"lng_action_topic_unhidden_inside" = "Topic unhidden";
+"lng_action_topic_created" = "«{topic}» was created";
+"lng_action_topic_closed" = "«{topic}» was closed";
+"lng_action_topic_reopened" = "«{topic}» was reopened";
+"lng_action_topic_hidden" = "«{topic}» was hidden";
+"lng_action_topic_unhidden" = "«{topic}» was unhidden";
+"lng_action_topic_placeholder" = "topic";
+"lng_action_topic_renamed" = "{from} renamed the {link} to «{title}»";
+"lng_action_topic_icon_changed" = "{from} changed the {link} icon to {emoji}";
+"lng_action_topic_icon_removed" = "{from} removed the {link} icon";
+
+"lng_premium_gift_duration_months#one" = "for {count} month";
+"lng_premium_gift_duration_months#other" = "for {count} months";
+"lng_premium_gift_duration_years#one" = "for {count} year";
+"lng_premium_gift_duration_years#other" = "for {count} years";
 
 "lng_ttl_photo_received" = "{from} sent you a self-destructing photo. Please view it on your mobile.";
 "lng_ttl_photo_sent" = "You sent a self-destructing photo.";
@@ -1602,10 +1724,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_edited" = "edited";
 "lng_edited_date" = "Edited: {date}";
 "lng_sent_date" = "Sent: {date}";
+"lng_views_tooltip#one" = "Views: {count}";
+"lng_views_tooltip#other" = "Views: {count}";
+"lng_forwards_tooltip#one" = "Forwards: {count}";
+"lng_forwards_tooltip#other" = "Forwards: {count}";
 "lng_imported" = "imported";
 "lng_admin_badge" = "admin";
 "lng_owner_badge" = "owner";
 "lng_channel_badge" = "channel";
+"lng_topic_author_badge" = "Topic Author";
 "lng_fast_reply" = "Reply";
 "lng_cancel_edit_post_sure" = "Cancel editing?";
 "lng_cancel_edit_post_yes" = "Yes";
@@ -1672,24 +1799,49 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_premium_more_about" = "More About CloudVeil Messenger Premium";
 "lng_premium_unlock_reactions" = "Unlock Premium Reactions";
 "lng_premium_unlock_stickers" = "Unlock Premium Stickers";
+"lng_premium_unlock_emoji" = "Unlock Animated Emoji";
+"lng_premium_unlock_status" = "Unlock Emoji Status";
+
+"lng_premium_subscribe_months_12" = "Annual";
+"lng_premium_subscribe_months_6" = "Semiannual";
+"lng_premium_subscribe_months_1" = "Monthly";
+"lng_premium_subscribe_total" = "{cost} per year";
+"lng_premium_subscribe_button" = "Subscribe for {cost} per month";
+
+"lng_premium_emoji_status_title" = "{user} set this emoji from {link} as their current status.";
+"lng_premium_emoji_status_title_colored" = "{user} set this emoji as their current status.";
+"lng_premium_emoji_status_about" = "Emoji status is a premium feature. Other features included in **CloudVeil Messenger Premium**:";
+"lng_premium_emoji_status_button" = "Unlock Emoji Status";
+
+"lng_premium_summary_user_title" = "{user} is a subscriber of CloudVeil Messenger Premium.";
+"lng_premium_summary_user_about" = "Owners of CloudVeil Messenger Premium accounts have exclusive access to multiple additional features.";
+"lng_premium_summary_user_button" = "Learn More";
 
 "lng_premium_summary_title" = "CloudVeil Messenger Premium";
 "lng_premium_summary_top_about" = "Go **beyond the limits**, get **exclusive features** and support us by subscribing to **CloudVeil Messenger Premium**.";
 "lng_premium_summary_title_subscribed" = "You are all set!";
+"lng_premium_summary_subtitle_gift#one" = "{user} has gifted you a {count}-month subscription for CloudVeil Messenger Premium.";
+"lng_premium_summary_subtitle_gift#other" = "{user} has gifted you a {count}-months subscription for CloudVeil Messenger Premium.";
+"lng_premium_summary_subtitle_gift_me#one" = "You gifted {user} a {count}-month subscription for CloudVeil Messenger Premium.";
+"lng_premium_summary_subtitle_gift_me#other" = "You gifted {user} a {count}-months subscription for CloudVeil Messenger Premium.";
 "lng_premium_summary_subtitle_double_limits" = "Doubled Limits";
 "lng_premium_summary_about_double_limits" = "Up to 1000 channels, 20 folders, 10 pins, 20 public links, 4 accounts and more.";
 "lng_premium_summary_subtitle_more_upload" = "4Gb Upload Size";
-"lng_premium_summary_about_more_upload" = "Increased upload size from 2Gb to 4Gb to per document, unlimited storage overall.";
+"lng_premium_summary_about_more_upload" = "Increased upload size from 2Gb to 4Gb per document, unlimited storage overall.";
 "lng_premium_summary_subtitle_faster_download" = "Faster Download Speed";
 "lng_premium_summary_about_faster_download" = "No more limits on the speed with which media and documents are downloaded.";
 "lng_premium_summary_subtitle_voice_to_text" = "Voice-to-Text Conversion";
 "lng_premium_summary_about_voice_to_text" = "Ability to read the transcript of any incoming voice message.";
 "lng_premium_summary_subtitle_no_ads" = "No Ads";
 "lng_premium_summary_about_no_ads" = "No more ads in public channels where CloudVeil Messenger sometimes shows ads.";
-"lng_premium_summary_subtitle_unique_reactions" = "Unique Reactions";
-"lng_premium_summary_about_unique_reactions" = "Additional animated reactions on messages available only to the Premium subscribers.";
+"lng_premium_summary_subtitle_emoji_status" = "Emoji Status";
+"lng_premium_summary_about_emoji_status" = "Add any of thousands emoji next to your name to display current activity.";
+"lng_premium_summary_subtitle_infinite_reactions" = "Infinite Reactions";
+"lng_premium_summary_about_infinite_reactions" = "React with thousands of emoji — with multiple reactions per message.";
 "lng_premium_summary_subtitle_premium_stickers" = "Premium Stickers";
 "lng_premium_summary_about_premium_stickers" = "Exclusive enlarged stickers featuring additional effects, updated monthly.";
+"lng_premium_summary_subtitle_animated_emoji" = "Animated Emoji";
+"lng_premium_summary_about_animated_emoji" = "Include animated emoji from different emoji sets in any message you send.";
 "lng_premium_summary_subtitle_advanced_chat_management" = "Advanced Chat Management";
 "lng_premium_summary_about_advanced_chat_management" = "Tools to set default folder, auto-archive and hide new chats from non-contacts.";
 "lng_premium_summary_subtitle_profile_badge" = "Profile Badge";
@@ -1743,10 +1895,21 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_premium_double_limits_about_accounts#other" = "Connect {count} accounts with different mobile numbers";
 //
 
+"lng_premium_gift_title" = "Gift CloudVeil Messenger Premium";
+"lng_premium_gift_about" = "Let **{user}** enjoy exclusive features of CloudVeil Messenger with **CloudVeil Messenger Premium**.";
+"lng_premium_gift_button" = "Gift Subscription for {cost}";
+"lng_premium_gift_per" = "{cost} / month";
+"lng_premium_gift_terms" = "You can review the list of features and terms of use for CloudVeil Messenger Premium {link}.";
+"lng_premium_gift_terms_link" = "here";
+
 "lng_accounts_limit_title" = "Limit Reached";
 "lng_accounts_limit1#one" = "You have reached the limit of **{count}** connected accounts.";
 "lng_accounts_limit1#other" = "You have reached the limit of **{count}** connected accounts.";
 "lng_accounts_limit2" = "You can free one space by subscribing to **CloudVeil Messenger Premium** with one of these connected accounts:";
+
+"lng_emoji_status_for_title" = "Set Status for...";
+"lng_emoji_status_for_submit" = "Set Status";
+"lng_emoji_status_menu_duration_any" = "Set Status for {duration}";
 
 "lng_group_about_header" = "You have created a group.";
 "lng_group_about_text" = "Groups can have:";
@@ -1760,6 +1923,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_switch_gifs" = "GIFs";
 "lng_switch_masks" = "Masks";
 "lng_stickers_featured_add" = "Add";
+"lng_emoji_featured_unlock" = "Unlock";
+"lng_emoji_premium_restore" = "Restore";
 "lng_gifs_search" = "Search GIFs";
 "lng_gifs_no_saved" = "You have no saved GIFs yet.";
 
@@ -1775,11 +1940,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_stickers_remove_pack" = "Remove «{sticker_pack}»?";
 "lng_stickers_add_pack" = "Add stickers";
 "lng_stickers_add_masks" = "Add masks";
+"lng_stickers_add_emoji" = "Add emoji";
 "lng_stickers_share_pack" = "Share Stickers";
 "lng_stickers_share_masks" = "Share Masks";
+"lng_stickers_share_emoji" = "Share Emoji";
 "lng_stickers_not_found" = "Sticker pack not found.";
 "lng_stickers_packs_archived" = "Some of your unused stickers have been archived to make room for the sets you've activated.";
 "lng_stickers_copied" = "Sticker pack link copied to clipboard.";
+"lng_stickers_copied_emoji" = "Emoji pack link copied to clipboard.";
 "lng_stickers_default_set" = "Great Minds";
 "lng_stickers_you_have" = "Manage sticker packs";
 "lng_stickers_return" = "Undo";
@@ -1787,7 +1955,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_stickers_count#other" = "{count} stickers";
 "lng_masks_count#one" = "{count} mask";
 "lng_masks_count#other" = "{count} masks";
+"lng_custom_emoji_count#one" = "{count} emoji";
+"lng_custom_emoji_count#other" = "{count} emoji";
 "lng_stickers_attached_sets" = "Sets of attached stickers";
+"lng_custom_emoji_used_sets" = "Sets of used emoji";
+"lng_custom_emoji_remove_pack_button" = "Remove Emoji";
 "lng_stickers_group_set" = "Group sticker set";
 "lng_stickers_remove_group_set" = "Remove group sticker set?";
 "lng_stickers_group_from_your" = "Choose from your stickers";
@@ -1796,8 +1968,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_stickers_nothing_found" = "No stickers found";
 "lng_stickers_remove_pack_confirm" = "Remove";
 "lng_stickers_archive_pack" = "Archive Stickers";
+"lng_stickers_remove_pack_button" = "Remove Stickers";
 "lng_stickers_has_been_archived" = "Sticker pack has been archived.";
 "lng_masks_archive_pack" = "Archive Masks";
+"lng_masks_remove_pack_button" = "Remove Masks";
 "lng_masks_has_been_archived" = "Mask pack has been archived.";
 "lng_masks_installed" = "Mask pack has been installed.";
 
@@ -1812,6 +1986,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_in_dlg_sticker" = "Sticker";
 "lng_in_dlg_sticker_emoji" = "{emoji} Sticker";
 "lng_in_dlg_poll" = "Poll";
+"lng_in_dlg_media_count#one" = "{count} media";
+"lng_in_dlg_media_count#other" = "{count} media";
+"lng_in_dlg_photo_count#one" = "{count} photo";
+"lng_in_dlg_photo_count#other" = "{count} photos";
+"lng_in_dlg_video_count#one" = "{count} video";
+"lng_in_dlg_video_count#other" = "{count} videos";
+"lng_in_dlg_file_count#one" = "{count} file";
+"lng_in_dlg_file_count#other" = "{count} files";
+"lng_in_dlg_audio_count#one" = "{count} audio";
+"lng_in_dlg_audio_count#other" = "{count} audio";
 
 "lng_ban_user" = "Ban User";
 "lng_delete_all_from_user" = "Delete all from {user}";
@@ -1832,6 +2016,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_new_contact_unarchive" = "Unarchive";
 "lng_new_contact_from_request_channel" = "{user} is an admin of {name}, a channel you requested to join.";
 "lng_new_contact_from_request_group" = "{user} is an admin of {name}, a group you requested to join.";
+"lng_new_contact_about_status" = "This account uses {emoji} as a custom status next to its\nname. Such emoji statuses are available to all\nsubscribers of {link}.";
+"lng_new_contact_about_status_link" = "CloudVeil Messenger Premium";
 "lng_from_request_title_channel" = "Chat with channel's admin";
 "lng_from_request_title_group" = "Chat with group's admin";
 "lng_from_request_body" = "You received this message because you requested to join {name} on {date}.";
@@ -1861,6 +2047,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_send_anonymous_ph" = "Send anonymously...";
 "lng_send_as_title" = "Send message as...";
 "lng_send_as_anonymous_admin" = "Anonymous admin";
+"lng_send_as_premium_required" = "Subscribe to {link} to be able to comment on behalf of your channels in group chats.";
+"lng_send_as_premium_required_link" = "CloudVeil Messenger Premium";
 "lng_record_cancel" = "Release outside this field to cancel";
 "lng_record_lock_cancel_sure" = "Are you sure you want to stop recording and discard your voice message?";
 "lng_record_listen_cancel_sure" = "Are you sure you want to discard your recorded voice message?";
@@ -1896,6 +2084,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_replies_header#one" = "{count} reply";
 "lng_replies_header#other" = "{count} replies";
 "lng_replies_header_none" = "Replies";
+"lng_replies_view_topic" = "View in Topic";
 "lng_comments_header#one" = "{count} comment";
 "lng_comments_header#other" = "{count} comments";
 "lng_comments_header_none" = "Comments";
@@ -1920,6 +2109,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_dialogs_text_from_wrapped" = "{from}:";
 "lng_dialogs_text_media" = "{media_part} {caption}";
 "lng_dialogs_text_media_wrapped" = "{media},";
+"lng_dialogs_text_from_in_topic" = "{from} {topic}";
 "lng_dialogs_show_all_chats" = "Show all chats";
 "lng_dialogs_hide_muted_chats" = "Hide muted chats";
 "lng_dialogs_skip_archive_in_search" = "Skip results from archive";
@@ -1971,6 +2161,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_bot_menu_not_supported" = "This bot isn't supported in the attach menu.";
 "lng_bot_menu_already_added" = "This bot is already added in your attach menu.";
 "lng_bot_menu_button" = "Menu";
+"lng_bot_close_warning_title" = "Warning";
+"lng_bot_close_warning" = "Changes that you made may not be saved.";
+"lng_bot_close_warning_sure" = "Close anyway";
 
 "lng_typing" = "typing";
 "lng_user_typing" = "{user} is typing";
@@ -2024,6 +2217,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_context_send_message" = "Send message";
 "lng_context_view_group" = "View group info";
 "lng_context_view_channel" = "View channel info";
+"lng_context_view_topic" = "View topic info";
 "lng_context_hide_psa" = "Hide this announcement";
 "lng_context_pin_to_top" = "Pin to top";
 "lng_context_unpin_from_top" = "Unpin from top";
@@ -2052,6 +2246,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_context_copy_link" = "Copy Link";
 "lng_context_copy_message_link" = "Copy Message Link";
 "lng_context_copy_post_link" = "Copy Post Link";
+"lng_context_copy_topic_link" = "Copy Topic Link";
 "lng_context_copy_email" = "Copy Email Address";
 "lng_context_copy_hashtag" = "Copy Hashtag";
 "lng_context_copy_mention" = "Copy Username";
@@ -2090,6 +2285,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_context_send_now_selected" = "Send selected now";
 "lng_context_reschedule_selected" = "Reschedule Selected";
 "lng_context_delete_selected" = "Delete Selected";
+"lng_context_save_images_selected" = "Save Selected";
+"lng_context_save_documents_selected" = "Download Selected";
 "lng_context_clear_selection" = "Clear Selection";
 "lng_context_seen_loading" = "Loading...";
 "lng_context_seen_text#one" = "{count} Seen";
@@ -2109,6 +2306,16 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_context_delete_from_disk" = "Delete from disk";
 "lng_context_delete_all_files" = "Delete all files";
 "lng_context_save_custom_sound" = "Save for notifications";
+"lng_context_translate" = "Translate";
+"lng_context_translate_selected" = "Translate Selected Text";
+
+"lng_context_animated_emoji" = "This message contains emoji from **{name} pack**.";
+"lng_context_animated_emoji_many#one" = "This message contains emoji from **{count} pack**.";
+"lng_context_animated_emoji_many#other" = "This message contains emoji from **{count} packs**.";
+"lng_context_animated_reaction" = "This reaction is from **{name} pack**.";
+"lng_context_animated_reactions" = "Reactions contain emoji from **{name} pack**.";
+"lng_context_animated_reactions_many#one" = "Reactions contain emoji from **{count} pack**.";
+"lng_context_animated_reactions_many#other" = "Reactions contain emoji from **{count} packs**.";
 
 "lng_downloads_section" = "Downloads";
 "lng_downloads_view_in_chat" = "View in chat";
@@ -2262,6 +2469,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_mediaview_report_profile_photo" = "Report";
 
 "lng_mediaview_saved_to" = "Image was saved to your {downloads} folder";
+"lng_mediaview_saved_images_to" = "Images were saved to your {downloads} folder";
 "lng_mediaview_downloads" = "Downloads";
 "lng_mediaview_video_loading" = "Loading - {percent}";
 "lng_mediaview_playback_speed" = "Playback speed: {speed}";
@@ -2346,12 +2554,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_theme_editor_menu_show" = "Show palette file";
 
 "lng_payments_not_supported" = "Sorry, CloudVeil Messenger Desktop doesn't support payments yet. Please use one of our mobile apps to do this.";
-"lng_payments_webview_no_card" = "Unfortunately, you can't add a new card with current system configuration.";
 "lng_payments_webview_no_use" = "Unfortunately, you can't use payments with current system configuration.";
 "lng_payments_webview_install_edge" = "Please install {link}.";
 "lng_payments_webview_install_webkit" = "Please install WebKitGTK (webkit2gtk-5.0/webkit2gtk-4.1/webkit2gtk-4.0) using your package manager.";
-"lng_payments_webview_switch_mutter" = "Qt's window embedding doesn't work well with Mutter window manager. Please switch to another window manager or desktop environment.";
-"lng_payments_webview_switch_wayland" = "There is no way to embed WebView window on Wayland. Please switch to X11.";
 "lng_payments_webview_update_windows" = "Please update your system to Windows 8.1 or later.";
 "lng_payments_sure_close" = "Are you sure you want to close this payment form? The changes you made will be lost.";
 "lng_payments_receipt_label" = "Receipt";
@@ -2668,6 +2873,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_menu_start_group_call" = "Start video chat";
 "lng_menu_start_group_call_scheduled" = "Schedule video chat";
 "lng_menu_start_group_call_with" = "Stream with...";
+"lng_menu_start_group_call_join" = "Join video chat";
+"lng_menu_start_group_call_options" = "Video chat";
 "lng_menu_start_group_call_channel" = "Start live stream";
 "lng_menu_start_group_call_scheduled_channel" = "Schedule live stream";
 "lng_menu_start_group_call_with_channel" = "Stream with...";
@@ -2725,6 +2932,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_slowmode_enabled"= "Slow mode is enabled. You can send your next message in {left}.";
 "lng_slowmode_no_many" = "Slow mode is enabled. You can't send more than one message at a time.";
 "lng_slowmode_too_long" = "Sorry, this text is too long to send as one message.\n\nSlow mode is enabled. You can't send more than one message at a time.";
+"lng_slowmode_seconds#one" = "{count} second";
+"lng_slowmode_seconds#other" = "{count} seconds";
 
 "lng_rights_gigagroup_title" = "Broadcast group";
 "lng_rights_gigagroup_convert" = "Convert to Broadcast Group";
@@ -2751,6 +2960,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_rights_group_invite_link" = "Invite users via link";
 "lng_rights_group_invite" = "Add users";
 "lng_rights_group_pin" = "Pin messages";
+"lng_rights_group_topics" = "Manage topics";
+"lng_rights_group_add_topics" = "Create topics";
 "lng_rights_group_manage_calls" = "Manage voice chats";
 "lng_rights_group_delete" = "Delete messages";
 "lng_rights_group_anonymous" = "Remain Anonymous";
@@ -2813,6 +3024,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_restricted_send_public_polls" = "Sorry, public polls can't be forwarded to channels.";
 
+"lng_restricted_send_voice_messages" = "{user} restricted sending of voice messages to them.";
+"lng_restricted_send_video_messages" = "{user} restricted sending of video messages to them.";
+
 "lng_exceptions_list_title" = "Exceptions";
 "lng_removed_list_title" = "Removed users";
 
@@ -2833,6 +3047,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_admin_log_filter_voice_chats_channel" = "Live stream";
 "lng_admin_log_filter_invite_links" = "Invite links";
 "lng_admin_log_filter_members_removed" = "Leaving members";
+"lng_admin_log_filter_topics" = "Topics";
 "lng_admin_log_filter_all_admins" = "All users and admins";
 "lng_admin_log_about" = "What is this?";
 "lng_admin_log_about_text" = "This is a list of all service actions taken by the group's members and admins in the last 48 hours.";
@@ -2857,6 +3072,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_admin_log_changed_link_channel" = "{from} changed channel link:";
 "lng_admin_log_removed_link_channel" = "{from} removed channel link";
 "lng_admin_log_previous_link" = "Previous link";
+"lng_admin_log_reordered_link_group" = "{from} reordered group links:";
+"lng_admin_log_reordered_link_channel" = "{from} reordered channel links:";
+"lng_admin_log_previous_links_order" = "Previous order";
+"lng_admin_log_activated_link" = "{from} activated @{link} username";
+"lng_admin_log_deactivated_link" = "{from} deactivated @{link} username";
 "lng_admin_log_changed_photo_group" = "{from} changed group photo";
 "lng_admin_log_changed_photo_channel" = "{from} changed channel photo";
 "lng_admin_log_removed_photo_group" = "{from} removed group photo";
@@ -2924,18 +3144,33 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_admin_log_disallowed_unmute_self_channel" = "{from} started muting new live stream members";
 "lng_admin_log_participant_volume" = "{from} changed voice chat volume for {user} to {percent}";
 "lng_admin_log_participant_volume_channel" = "{from} changed live stream volume for {user} to {percent}";
+"lng_admin_log_antispam_enabled" = "{from} enabled aggressive anti-spam";
+"lng_admin_log_antispam_disabled" = "{from} disabled aggressive anti-spam";
 "lng_admin_log_user_with_username" = "{name} ({mention})";
 "lng_admin_log_messages_ttl_set" = "{from} enabled messages auto-delete after {duration}";
 "lng_admin_log_messages_ttl_changed" = "{from} changed messages auto-delete period from {previous} to {duration}";
 "lng_admin_log_messages_ttl_removed" = "{from} disabled messages auto-deletion after {duration}";
 "lng_admin_log_reactions_disabled" = "{from} disabled reactions";
 "lng_admin_log_reactions_updated" = "{from} updated the list of allowed reactions to: {emoji}";
+"lng_admin_log_reactions_allowed_all" = "{from} allowed all reactions";
+"lng_admin_log_reactions_allowed_official" = "{from} allowed all official reactions";
 "lng_admin_log_edited_invite_link" = "edited invite link {link}";
 "lng_admin_log_invite_link_expire_date" = "Expire date: {previous} -> {limit}";
 "lng_admin_log_invite_link_usage_limit" = "Usage limit: {previous} -> {limit}";
 "lng_admin_log_invite_link_label" = "Name: {previous} -> {limit}";
 "lng_admin_log_invite_link_request_needed" = "Now admin approval is required to join.";
 "lng_admin_log_invite_link_request_not_needed" = "Now admin approval is not required to join.";
+"lng_admin_log_topics_enabled" = "{from} enabled topics";
+"lng_admin_log_topics_disabled" = "{from} disabled topics";
+"lng_admin_log_topics_created" = "{from} created topic {topic}";
+"lng_admin_log_topics_changed" = "{from} changed topic {topic} to {new_topic}";
+"lng_admin_log_topics_closed" = "{from} closed topic {topic}";
+"lng_admin_log_topics_reopened" = "{from} reopened topic {topic}";
+"lng_admin_log_topics_hidden" = "{from} hid topic {topic}";
+"lng_admin_log_topics_unhidden" = "{from} unhid topic {topic}";
+"lng_admin_log_topics_deleted" = "{from} deleted topic {topic}";
+"lng_admin_log_topics_pinned" = "{from} pinned topic {topic}";
+"lng_admin_log_topics_unpinned" = "{from} unpinned topic {topic}";
 "lng_admin_log_restricted_forever" = "indefinitely";
 "lng_admin_log_restricted_until" = "until {date}";
 "lng_admin_log_banned_view_messages" = "Read messages";
@@ -2952,9 +3187,15 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_admin_log_admin_invite_users" = "Add members";
 "lng_admin_log_admin_invite_link" = "Invite users via link";
 "lng_admin_log_admin_pin_messages" = "Pin messages";
+"lng_admin_log_admin_manage_topics" = "Manage topics";
+"lng_admin_log_admin_create_topics" = "Create topics";
 "lng_admin_log_admin_manage_calls" = "Manage voice chats";
 "lng_admin_log_admin_manage_calls_channel" = "Manage live streams";
 "lng_admin_log_admin_add_admins" = "Add new admins";
+
+"lng_admin_log_antispam_menu_report" = "Report False Positive";
+"lng_admin_log_antispam_menu_report_toast" = "You can manage anti-spam settings in {link}.";
+"lng_admin_log_antispam_menu_report_toast_link" = "Group Info > Administrators";
 
 "lng_terms_signup" = "By signing up,\nyou agree to the {link}.";
 "lng_terms_signup_link" = "Terms of Service";
@@ -3202,6 +3443,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_language_not_ready_about" = "Unfortunately, this custom language pack ({lang_name}) doesn't contain data for CloudVeil Messenger Desktop. You can contribute to this language pack using the {link}.";
 "lng_language_not_ready_link" = "translations platform";
 
+"lng_translate_box_original" = "Original";
+"lng_translate_box_error" = "Translate failed.";
+
+"lng_translate_settings_subtitle" = "Translate Messages";
+"lng_translate_settings_show" = "Show Translate Button";
+"lng_translate_settings_choose" = "Do Not Translate";
+"lng_translate_settings_about" = "The 'Translate' button will appear when you open a context menu on a text message.";
+
 "lng_launch_exe_warning" = "This file has a {extension} extension.\nAre you sure you want to run it?";
 "lng_launch_svg_warning" = "Opening this file can potentially expose your IP address to its sender. Continue?";
 "lng_launch_exe_sure" = "Run";
@@ -3351,7 +3600,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_sponsored_info_description1" = "Unlike other apps, CloudVeil Messenger never uses your private data to target ads. Sponsored messages on CloudVeil Messenger are based solely on the topic of the public channels in which they are shown. This means that no user data is mined or analyzed to display ads, and every user viewing a channel on CloudVeil Messenger sees the same sponsored messages.\n\nUnlike other apps, CloudVeil Messenger doesn't track whether you tapped on a sponsored message and doesn't profile you based on your activity. We also prevent external links in sponsored messages to ensure that third parties can’t spy on our users. We believe that everyone has the right to privacy, and technological platforms should respect that.\n\nCloudVeil Messenger offers a free and unlimited service to hundreds of millions of users, which involves significant server and traffic costs. In order to remain independent and stay true to its values, CloudVeil Messenger developed a paid tool to promote messages with user privacy in mind. We welcome responsible advertisers at:";
 "lng_sponsored_info_description2" = "Sponsored Messages are currently in test mode. Once they are fully launched and allow CloudVeil Messenger to cover its basic costs, we will start sharing ad revenue with the owners of public channels in which sponsored messages are displayed.\n\nOnline ads should no longer be synonymous with abuse of user privacy. Let us redefine how a tech company should operate – together.";
 
-"lng_telegram_features_url" = "https://t.me/TelegramTips";
+"lng_telegram_features_url" = "https://t.me/CloudVeil MessengerTips";
 
 "lng_ringtones_box_title" = "Notification Sound";
 "lng_ringtones_box_cloud_subtitle" = "Choose your tone";
@@ -3363,6 +3612,33 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_ringtones_toast_added" = "Sound added!";
 "lng_ringtones_error_max_size" = "Sorry, but your file is too big. The maximum size for ringtones is {size}.";
 "lng_ringtones_error_max_duration" = "Sorry, but your file is too long. The maximum duration for ringtones is {duration}.";
+
+"lng_forum_topic_new" = "New Topic";
+"lng_forum_topic_edit" = "Edit Topic";
+"lng_forum_topic_title" = "Topic Title";
+"lng_forum_topic_close" = "Close Topic";
+"lng_forum_topic_reopen" = "Reopen Topic";
+"lng_forum_topic_closed" = "This topic is now closed.";
+"lng_forum_topic_delete" = "Delete";
+"lng_forum_topic_delete_sure" = "Are you sure you want to delete this topic?";
+"lng_forum_topic_created_title_my" = "Almost done!";
+"lng_forum_topic_created_body_my" = "Send the first message\nto start this topic.";
+"lng_forum_topic_created_title" = "Topic started!";
+"lng_forum_topic_created_body" = "Send a message to open\nthe discussion.";
+"lng_forum_topics_switch" = "Topics";
+"lng_forum_topics_not_enough#one" = "Only groups with more than **{count} member** can have topics enabled.";
+"lng_forum_topics_not_enough#other" = "Only groups with more than **{count} members** can have topics enabled.";
+"lng_forum_topics_no_discussion" = "Topics can't be enabled in discussion groups at the moment.";
+"lng_forum_choose_title_and_icon" = "Choose title and icon for your topic";
+"lng_forum_replies_only" = "You can reply to messages in topics.";
+"lng_forum_no_topics" = "No topics currently created in this forum.";
+"lng_forum_create_topic" = "Create topic";
+"lng_forum_discard_sure" = "Are you sure you want to discard this topic?";
+"lng_forum_view_as_messages" = "View as Messages";
+"lng_forum_no_messages" = "No messages";
+"lng_forum_messages#one" = "{count} message";
+"lng_forum_messages#other" = "{count} messages";
+"lng_forum_show_topics_list" = "Show Topics List";
 
 // Wnd specific
 
@@ -3428,7 +3704,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_mac_touchbar_favorite_stickers" = "Favorite stickers";
 
 "lng_mac_hold_to_quit" = "Hold {text} to Quit";
-
 //CloudVeil Start
 "lng_dialog_forbidden" = "This channel/group/bot is blocked by our server policy. Please contact CloudVeil Support to request it be unblocked.";
 "lng_feature_forbidden" = "This feature is blocked by our server policy. Please contact CloudVeil Support at support@cloudveil.org to request it be unblocked.";

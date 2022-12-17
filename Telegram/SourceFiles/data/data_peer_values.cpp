@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_chat.h"
 #include "data/data_user.h"
 #include "data/data_changes.h"
+#include "data/data_forum_topic.h"
 #include "data/data_session.h"
 #include "data/data_message_reactions.h"
 #include "main/main_session.h"
@@ -201,10 +202,11 @@ rpl::producer<bool> CanWriteValue(ChatData *chat) {
 		});
 }
 
-rpl::producer<bool> CanWriteValue(ChannelData *channel) {
+rpl::producer<bool> CanWriteValue(ChannelData *channel, bool checkForForum) {
 	using Flag = ChannelDataFlag;
 	const auto mask = 0
 		| Flag::Left
+		| Flag::Forum
 		| Flag::JoinToWrite
 		| Flag::HasLink
 		| Flag::Forbidden
@@ -221,15 +223,19 @@ rpl::producer<bool> CanWriteValue(ChannelData *channel) {
 		DefaultRestrictionValue(
 			channel,
 			ChatRestriction::SendMessages),
-		[](
+		[=](
 				ChannelDataFlags flags,
 				bool postMessagesRight,
 				bool sendMessagesRestriction,
 				bool defaultSendMessagesRestriction) {
 			const auto notAmInFlags = Flag::Left | Flag::Forbidden;
+			const auto forumRestriction = checkForForum
+				&& (flags & Flag::Forum);
 			const auto allowed = !(flags & notAmInFlags)
 				|| ((flags & Flag::HasLink) && !(flags & Flag::JoinToWrite));
-			return allowed && (postMessagesRight
+			return allowed
+				&& !forumRestriction
+				&& (postMessagesRight
 					|| (flags & Flag::Creator)
 					|| (!(flags & Flag::Broadcast)
 						&& !sendMessagesRestriction
@@ -237,15 +243,50 @@ rpl::producer<bool> CanWriteValue(ChannelData *channel) {
 		});
 }
 
-rpl::producer<bool> CanWriteValue(not_null<PeerData*> peer) {
+rpl::producer<bool> CanWriteValue(
+		not_null<PeerData*> peer,
+		bool checkForForum) {
 	if (auto user = peer->asUser()) {
 		return CanWriteValue(user);
 	} else if (auto chat = peer->asChat()) {
 		return CanWriteValue(chat);
 	} else if (auto channel = peer->asChannel()) {
-		return CanWriteValue(channel);
+		return CanWriteValue(channel, checkForForum);
 	}
 	Unexpected("Bad peer value in CanWriteValue");
+}
+
+rpl::producer<bool> CanWriteValue(not_null<ForumTopic*> topic) {
+	using Flag = ChannelDataFlag;
+	const auto mask = 0
+		| Flag::Left
+		| Flag::JoinToWrite
+		| Flag::Forum
+		| Flag::Forbidden;
+	const auto channel = topic->channel();
+	return rpl::combine(
+		PeerFlagsValue(channel.get(), mask),
+		RestrictionValue(
+			channel,
+			ChatRestriction::SendMessages),
+		DefaultRestrictionValue(
+			channel,
+			ChatRestriction::SendMessages),
+		topic->session().changes().topicFlagsValue(
+			topic,
+			TopicUpdate::Flag::Closed),
+		[=](
+				ChannelDataFlags flags,
+				bool sendMessagesRestriction,
+				bool defaultSendMessagesRestriction,
+				auto) {
+			const auto notAmInFlags = Flag::Left | Flag::Forbidden;
+			const auto allowed = !(flags & notAmInFlags);
+			return allowed
+				&& !sendMessagesRestriction
+				&& !defaultSendMessagesRestriction
+				&& (!topic->closed() || topic->canToggleClosed());
+		});
 }
 
 // This is duplicated in PeerData::canPinMessages().
@@ -399,14 +440,15 @@ QString OnlineText(TimeId online, TimeId now) {
 	}
 	const auto onlineFull = base::unixtime::parse(online);
 	const auto nowFull = base::unixtime::parse(now);
+	const auto locale = QLocale();
 	if (onlineFull.date() == nowFull.date()) {
-		const auto onlineTime = onlineFull.time().toString(cTimeFormat());
+		const auto onlineTime = locale.toString(onlineFull.time(), cTimeFormat());
 		return tr::lng_status_lastseen_today(tr::now, lt_time, onlineTime);
 	} else if (onlineFull.date().addDays(1) == nowFull.date()) {
-		const auto onlineTime = onlineFull.time().toString(cTimeFormat());
+		const auto onlineTime = locale.toString(onlineFull.time(), cTimeFormat());
 		return tr::lng_status_lastseen_yesterday(tr::now, lt_time, onlineTime);
 	}
-	const auto date = onlineFull.date().toString(cDateFormat());
+	const auto date = locale.toString(onlineFull.date(), cDateFormat());
 	return tr::lng_status_lastseen_date(tr::now, lt_date, date);
 }
 
@@ -425,15 +467,16 @@ QString OnlineTextFull(not_null<UserData*> user, TimeId now) {
 	}
 	const auto onlineFull = base::unixtime::parse(user->onlineTill);
 	const auto nowFull = base::unixtime::parse(now);
+	const auto locale = QLocale();
 	if (onlineFull.date() == nowFull.date()) {
-		const auto onlineTime = onlineFull.time().toString(cTimeFormat());
+		const auto onlineTime = locale.toString(onlineFull.time(), cTimeFormat());
 		return tr::lng_status_lastseen_today(tr::now, lt_time, onlineTime);
 	} else if (onlineFull.date().addDays(1) == nowFull.date()) {
-		const auto onlineTime = onlineFull.time().toString(cTimeFormat());
+		const auto onlineTime = locale.toString(onlineFull.time(), cTimeFormat());
 		return tr::lng_status_lastseen_yesterday(tr::now, lt_time, onlineTime);
 	}
-	const auto date = onlineFull.date().toString(cDateFormat());
-	const auto time = onlineFull.time().toString(cTimeFormat());
+	const auto date = locale.toString(onlineFull.date(), cDateFormat());
+	const auto time = locale.toString(onlineFull.time(), cTimeFormat());
 	return tr::lng_status_lastseen_date_time(tr::now, lt_date, date, lt_time, time);
 }
 
@@ -458,8 +501,11 @@ bool OnlineTextActive(not_null<UserData*> user, TimeId now) {
 	return OnlineTextActive(user->onlineTill, now);
 }
 
-bool IsUserOnline(not_null<UserData*> user) {
-	return OnlineTextActive(user, base::unixtime::now());
+bool IsUserOnline(not_null<UserData*> user, TimeId now) {
+	if (!now) {
+		now = base::unixtime::now();
+	}
+	return OnlineTextActive(user, now);
 }
 
 bool ChannelHasActiveCall(not_null<ChannelData*> channel) {
@@ -469,17 +515,10 @@ bool ChannelHasActiveCall(not_null<ChannelData*> channel) {
 rpl::producer<QImage> PeerUserpicImageValue(
 		not_null<PeerData*> peer,
 		int size) {
-	return PeerUserpicImageValue(peer, size, ImageRoundRadius::Ellipse);
-}
-
-rpl::producer<QImage> PeerUserpicImageValue(
-		not_null<PeerData*> peer,
-		int size,
-		ImageRoundRadius radius) {
 	return [=](auto consumer) {
 		auto result = rpl::lifetime();
 		struct State {
-			std::shared_ptr<CloudImageView> view;
+			Ui::PeerUserpicView view;
 			rpl::lifetime waiting;
 			InMemoryKey key = {};
 			bool empty = true;
@@ -488,7 +527,7 @@ rpl::producer<QImage> PeerUserpicImageValue(
 		const auto state = result.make_state<State>();
 		state->push = [=] {
 			const auto key = peer->userpicUniqueKey(state->view);
-			const auto loading = state->view && !state->view->image();
+			const auto loading = Ui::PeerUserpicLoading(state->view);
 
 			if (loading && !state->waiting) {
 				peer->session().downloaderTaskFinished(
@@ -502,8 +541,7 @@ rpl::producer<QImage> PeerUserpicImageValue(
 			}
 			state->key = key;
 			state->empty = false;
-			consumer.put_next(
-				peer->generateUserpicImage(state->view, size, radius));
+			consumer.put_next(peer->generateUserpicImage(state->view, size));
 		};
 		peer->session().changes().peerFlagsValue(
 			peer,
@@ -513,20 +551,21 @@ rpl::producer<QImage> PeerUserpicImageValue(
 	};
 }
 
-std::optional<base::flat_set<QString>> PeerAllowedReactions(
-		not_null<PeerData*> peer) {
+const AllowedReactions &PeerAllowedReactions(not_null<PeerData*> peer) {
 	if (const auto chat = peer->asChat()) {
 		return chat->allowedReactions();
 	} else if (const auto channel = peer->asChannel()) {
 		return channel->allowedReactions();
 	} else {
-		return std::nullopt;
+		static const auto result = AllowedReactions{
+			.type = AllowedReactionsType::All,
+		};
+		return result;
 	}
 }
 
- auto PeerAllowedReactionsValue(
-	not_null<PeerData*> peer)
--> rpl::producer<std::optional<base::flat_set<QString>>> {
+ rpl::producer<AllowedReactions> PeerAllowedReactionsValue(
+		not_null<PeerData*> peer) {
 	return peer->session().changes().peerFlagsValue(
 		peer,
 		Data::PeerUpdate::Flag::Reactions
@@ -535,13 +574,20 @@ std::optional<base::flat_set<QString>> PeerAllowedReactions(
 	});
 }
 
+int UniqueReactionsLimit(not_null<Main::AppConfig*> config) {
+	return config->get<int>("reactions_uniq_max", 11);
+}
+
+int UniqueReactionsLimit(not_null<PeerData*> peer) {
+	return UniqueReactionsLimit(&peer->session().account().appConfig());
+}
+
 rpl::producer<int> UniqueReactionsLimitValue(
-		not_null<Main::Session*> session) {
-	const auto config = &session->account().appConfig();
+		not_null<PeerData*> peer) {
+	const auto config = &peer->session().account().appConfig();
 	return config->value(
 	) | rpl::map([=] {
-		return int(base::SafeRound(
-			config->get<double>("reactions_uniq_max", 11)));
+		return UniqueReactionsLimit(config);
 	}) | rpl::distinct_until_changed();
 }
 

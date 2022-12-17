@@ -10,12 +10,14 @@
 #include "ui/text/text.h"
 #include "ui/emoji_config.h"
 #include "ui/ui_utility.h"
+#include "ui/painter.h"
 #include "base/invoke_queued.h"
 #include "base/random.h"
 #include "base/platform/base_platform_info.h"
 #include "emoji_suggestions_helper.h"
-#include "styles/palette.h"
+#include "base/qthelp_regex.h"
 #include "base/qt/qt_common_adapters.h"
+#include "styles/palette.h"
 
 #include <QtWidgets/QCommonStyle>
 #include <QtWidgets/QScrollBar>
@@ -34,6 +36,9 @@ constexpr auto kInstantReplaceWhatId = QTextFormat::UserProperty + 1;
 constexpr auto kInstantReplaceWithId = QTextFormat::UserProperty + 2;
 constexpr auto kReplaceTagId = QTextFormat::UserProperty + 3;
 constexpr auto kTagProperty = QTextFormat::UserProperty + 4;
+constexpr auto kCustomEmojiText = QTextFormat::UserProperty + 5;
+constexpr auto kCustomEmojiLink = QTextFormat::UserProperty + 6;
+constexpr auto kCustomEmojiId = QTextFormat::UserProperty + 7;
 const auto kObjectReplacementCh = QChar(QChar::ObjectReplacementCharacter);
 const auto kObjectReplacement = QString::fromRawData(
 	&kObjectReplacementCh,
@@ -45,12 +50,17 @@ const auto &kTagStrikeOut = InputField::kTagStrikeOut;
 const auto &kTagCode = InputField::kTagCode;
 const auto &kTagPre = InputField::kTagPre;
 const auto &kTagSpoiler = InputField::kTagSpoiler;
-const auto kTagCheckLinkMeta = QString("^:/:/:^");
+const auto &kCustomEmojiFormat = InputField::kCustomEmojiFormat;
+const auto kTagCheckLinkMeta = u"^:/:/:^"_q;
 const auto kNewlineChars = QString("\r\n")
 	+ QChar(0xfdd0) // QTextBeginningOfFrame
 	+ QChar(0xfdd1) // QTextEndOfFrame
 	+ QChar(QChar::ParagraphSeparator)
 	+ QChar(QChar::LineSeparator);
+
+// We need unique tags otherwise same custom emoji would join in a single
+// QTextCharFormat with the same properties, including kCustomEmojiText.
+auto GlobalCustomEmojiCounter = 0;
 
 class InputDocument : public QTextDocument {
 public:
@@ -103,6 +113,30 @@ bool IsNewline(QChar ch) {
 
 [[nodiscard]] bool IsValidMarkdownLink(QStringView link) {
 	return (link.indexOf('.') >= 0) || (link.indexOf(':') >= 0);
+}
+
+[[nodiscard]] bool IsCustomEmojiLink(QStringView link) {
+	return link.startsWith(Ui::InputField::kCustomEmojiTagStart);
+}
+
+[[nodiscard]] QString MakeUniqueCustomEmojiLink(QStringView link) {
+	if (!IsCustomEmojiLink(link)) {
+		return link.toString();
+	}
+	const auto index = link.indexOf('?');
+	return u"%1?%2"_q
+		.arg((index < 0) ? link : base::StringViewMid(link, 0, index))
+		.arg(++GlobalCustomEmojiCounter);
+}
+
+[[nodiscard]] uint64 CustomEmojiIdFromLink(QStringView link) {
+	const auto skip = Ui::InputField::kCustomEmojiTagStart.size();
+	const auto index = link.indexOf('?', skip + 1);
+	return base::StringViewMid(
+		link,
+		skip,
+		(index <= skip) ? -1 : (index - skip - 1)
+	).toULongLong();
 }
 
 [[nodiscard]] QString CheckFullTextTag(
@@ -170,8 +204,11 @@ public:
 	TagAccumulator(TextWithTags::Tags &tags) : _tags(tags) {
 	}
 
-	bool changed() const {
+	[[nodiscard]] bool changed() const {
 		return _changed;
+	}
+	[[nodiscard]] QString currentTag() const {
+		return _currentTagId;
 	}
 
 	void feed(const QString &randomTagId, int currentPosition) {
@@ -180,7 +217,7 @@ public:
 		}
 
 		if (!_currentTagId.isEmpty()) {
-			const auto tag = TextWithTags::Tag {
+			const auto tag = TextWithTags::Tag{
 				_currentStart,
 				currentPosition - _currentStart,
 				_currentTagId
@@ -703,8 +740,18 @@ QTextCharFormat PrepareTagFormat(
 	auto font = st.font;
 	auto color = std::optional<style::color>();
 	auto bg = std::optional<style::color>();
+	auto replaceWhat = QString();
+	auto replaceWith = QString();
 	const auto applyOne = [&](QStringView tag) {
-		if (IsValidMarkdownLink(tag)) {
+		if (IsCustomEmojiLink(tag)) {
+			replaceWhat = tag.toString();
+			replaceWith = MakeUniqueCustomEmojiLink(tag);
+			result.setObjectType(kCustomEmojiFormat);
+			result.setProperty(kCustomEmojiLink, replaceWith);
+			result.setProperty(
+				kCustomEmojiId,
+				CustomEmojiIdFromLink(replaceWith));
+		} else if (IsValidMarkdownLink(tag)) {
 			color = st::defaultTextPalette.linkFg;
 		} else if (tag == kTagBold) {
 			font = font->bold();
@@ -718,7 +765,7 @@ QTextCharFormat PrepareTagFormat(
 			color = st::defaultTextPalette.monoFg;
 			font = font->monospace();
 		} else if (tag == kTagSpoiler) {
-			bg = st::defaultTextPalette.spoilerActiveBg;
+			bg = st::msgInDateFg;
 		}
 	};
 	for (const auto &tag : TextUtilities::SplitTags(tag)) {
@@ -726,15 +773,53 @@ QTextCharFormat PrepareTagFormat(
 	}
 	result.setFont(font);
 	result.setForeground(color.value_or(st.textFg));
-	result.setProperty(kTagProperty, tag);
+	result.setProperty(
+		kTagProperty,
+		(replaceWhat.isEmpty()
+			? tag
+			: std::move(tag).replace(replaceWhat, replaceWith)));
 	if (bg) {
 		result.setBackground(*bg);
+	} else {
+		result.setBackground(QBrush());
 	}
 	return result;
 }
 
+[[nodiscard]] QString TagWithoutCustomEmoji(QStringView tag) {
+	auto tags = TextUtilities::SplitTags(tag);
+	for (auto i = tags.begin(); i != tags.end();) {
+		if (IsCustomEmojiLink(*i)) {
+			i = tags.erase(i);
+		} else {
+			++i;
+		}
+	}
+	return TextUtilities::JoinTag(tags);
+}
+
+void RemoveCustomEmojiTag(
+		const style::InputField &st,
+		not_null<QTextDocument*> document,
+		const QString &existingTags,
+		int from,
+		int end) {
+	auto cursor = QTextCursor(document);
+	cursor.setPosition(from);
+	cursor.setPosition(end, QTextCursor::KeepAnchor);
+
+	auto format = PrepareTagFormat(st, TagWithoutCustomEmoji(existingTags));
+	format.setProperty(kCustomEmojiLink, QString());
+	format.setProperty(kCustomEmojiId, QString());
+	cursor.mergeCharFormat(format);
+}
+
 void ApplyTagFormat(QTextCharFormat &to, const QTextCharFormat &from) {
-	to.setProperty(kTagProperty, from.property(kTagProperty));
+	if (from.hasProperty(kTagProperty)) {
+		to.setProperty(
+			kTagProperty,
+			TagWithoutCustomEmoji(from.property(kTagProperty).toString()));
+	}
 	to.setProperty(kReplaceTagId, from.property(kReplaceTagId));
 	to.setFont(from.font());
 	to.setForeground(from.foreground());
@@ -748,7 +833,7 @@ int ProcessInsertedTags(
 		int changedPosition,
 		int changedEnd,
 		const TextWithTags::Tags &tags,
-		InputField::TagMimeProcessor *processor) {
+		Fn<QString(QStringView)> processor) {
 	int firstTagStart = changedEnd;
 	int applyNoTagFrom = changedEnd;
 	for (const auto &tag : tags) {
@@ -756,7 +841,7 @@ int ProcessInsertedTags(
 		int tagTo = tagFrom + tag.length;
 		accumulate_max(tagFrom, changedPosition);
 		accumulate_min(tagTo, changedEnd);
-		auto tagId = processor ? processor->tagFromMimeTag(tag.id) : tag.id;
+		auto tagId = processor ? processor(tag.id) : tag.id;
 		if (tagTo > tagFrom && !tagId.isEmpty()) {
 			accumulate_min(firstTagStart, tagFrom);
 
@@ -772,7 +857,6 @@ int ProcessInsertedTags(
 			QTextCursor c(document);
 			c.setPosition(tagFrom);
 			c.setPosition(tagTo, QTextCursor::KeepAnchor);
-
 			c.mergeCharFormat(PrepareTagFormat(st, tagId));
 
 			applyNoTagFrom = tagTo;
@@ -801,7 +885,9 @@ bool WasInsertTillTheEndOfTag(
 			const auto outsideInsertion = (position >= insertionEnd);
 			if (outsideInsertion) {
 				const auto format = fragment.charFormat();
-				return (format.property(kTagProperty) != insertTagName);
+				const auto tag = format.property(kTagProperty).toString();
+				return TagWithoutCustomEmoji(tag)
+					!= TagWithoutCustomEmoji(insertTagName.toString());
 			}
 			const auto end = position + fragment.length();
 			const auto notFullFragmentInserted = (end > insertionEnd);
@@ -824,6 +910,8 @@ struct FormattingAction {
 	enum class Type {
 		Invalid,
 		InsertEmoji,
+		InsertCustomEmoji,
+		RemoveCustomEmoji,
 		TildeFont,
 		RemoveTag,
 		RemoveNewline,
@@ -834,6 +922,9 @@ struct FormattingAction {
 	EmojiPtr emoji = nullptr;
 	bool isTilde = false;
 	QString tildeTag;
+	QString existingTags;
+	QString customEmojiText;
+	QString customEmojiLink;
 	int intervalStart = 0;
 	int intervalEnd = 0;
 
@@ -850,6 +941,9 @@ const QString InputField::kTagStrikeOut = QStringLiteral("~~");
 const QString InputField::kTagCode = QStringLiteral("`");
 const QString InputField::kTagPre = QStringLiteral("```");
 const QString InputField::kTagSpoiler = QStringLiteral("||");
+const QString InputField::kCustomEmojiTagStart = u"custom-emoji://"_q;
+const int InputField::kCustomEmojiFormat
+	= QTextFormat::UserObject + 1;
 
 class InputField::Inner final : public QTextEdit {
 public:
@@ -878,6 +972,19 @@ protected:
 	void inputMethodEvent(QInputMethodEvent *e) override {
 		return outer()->inputMethodEventInner(e);
 	}
+	void paintEvent(QPaintEvent *e) override {
+		return outer()->paintEventInner(e);
+	}
+
+	void mousePressEvent(QMouseEvent *e) override {
+		return outer()->mousePressEventInner(e);
+	}
+	void mouseReleaseEvent(QMouseEvent *e) override {
+		return outer()->mouseReleaseEventInner(e);
+	}
+	void mouseMoveEvent(QMouseEvent *e) override {
+		return outer()->mouseMoveEventInner(e);
+	}
 
 	bool canInsertFromMimeData(const QMimeData *source) const override {
 		return outer()->canInsertFromMimeDataInner(source);
@@ -901,6 +1008,25 @@ void InsertEmojiAtCursor(QTextCursor cursor, EmojiPtr emoji) {
 	const auto currentFormat = cursor.charFormat();
 	auto format = PrepareEmojiFormat(emoji, currentFormat.font());
 	ApplyTagFormat(format, currentFormat);
+	cursor.insertText(kObjectReplacement, format);
+}
+
+void InsertCustomEmojiAtCursor(
+		QTextCursor cursor,
+		const QString &text,
+		const QString &link) {
+	const auto currentFormat = cursor.charFormat();
+	const auto unique = MakeUniqueCustomEmojiLink(link);
+	auto format = QTextCharFormat();
+	format.setObjectType(kCustomEmojiFormat);
+	format.setProperty(kCustomEmojiText, text);
+	format.setProperty(kCustomEmojiLink, unique);
+	format.setProperty(kCustomEmojiId, CustomEmojiIdFromLink(link));
+	format.setVerticalAlignment(QTextCharFormat::AlignBottom);
+	ApplyTagFormat(format, currentFormat);
+	format.setProperty(kTagProperty, TextUtilities::TagWithAdded(
+		format.property(kTagProperty).toString(),
+		unique));
 	cursor.insertText(kObjectReplacement, format);
 }
 
@@ -955,314 +1081,66 @@ const InstantReplaces &InstantReplaces::TextOnly() {
 	return result;
 }
 
-FlatInput::FlatInput(
-	QWidget *parent,
-	const style::FlatInput &st,
-	rpl::producer<QString> placeholder,
-	const QString &v)
-: Parent(v, parent)
-, _oldtext(v)
-, _placeholderFull(std::move(placeholder))
-, _placeholderVisible(!v.length())
-, _st(st)
-, _textMrg(_st.textMrg) {
-	setCursor(style::cur_text);
-	resize(_st.width, _st.height);
+CustomEmojiObject::CustomEmojiObject(Factory factory, Fn<bool()> paused)
+: _factory(std::move(factory))
+, _paused(std::move(paused))
+, _now(crl::now()) {
+}
 
-	setFont(_st.font->f);
-	setAlignment(_st.align);
+CustomEmojiObject::~CustomEmojiObject() = default;
 
-	_placeholderFull.value(
-	) | rpl::start_with_next([=](const QString &text) {
-		refreshPlaceholder(text);
-	}, lifetime());
+QSizeF CustomEmojiObject::intrinsicSize(
+		QTextDocument *doc,
+		int posInDocument,
+		const QTextFormat &format) {
+	const auto size = st::emojiSize * 1.;
+	const auto width = size + st::emojiPadding * 2.;
+	const auto font = format.toCharFormat().font();
+	const auto height = std::min(QFontMetrics(font).height() * 1., size);
+	if (!_skip) {
+		const auto emoji = Ui::Text::AdjustCustomEmojiSize(st::emojiSize);
+		_skip = (st::emojiSize - emoji) / 2;
+	}
+	return { width, height };
+}
 
-	style::PaletteChanged(
-	) | rpl::start_with_next([=] {
-		updatePalette();
-	}, lifetime());
-	updatePalette();
-
-	connect(this, SIGNAL(textChanged(const QString &)), this, SLOT(onTextChange(const QString &)));
-	connect(this, SIGNAL(textEdited(const QString &)), this, SLOT(onTextEdited()));
-	connect(this, &FlatInput::selectionChanged, [] {
-		Integration::Instance().textActionsUpdated();
+void CustomEmojiObject::drawObject(
+		QPainter *painter,
+		const QRectF &rect,
+		QTextDocument *doc,
+		int posInDocument,
+		const QTextFormat &format) {
+	const auto id = format.property(kCustomEmojiId).toULongLong();
+	if (!id) {
+		return;
+	}
+	auto i = _emoji.find(id);
+	if (i == end(_emoji)) {
+		const auto link = format.property(kCustomEmojiLink).toString();
+		const auto data = InputField::CustomEmojiEntityData(link);
+		if (auto emoji = _factory(data)) {
+			i = _emoji.emplace(id, std::move(emoji)).first;
+		}
+	}
+	if (i == end(_emoji)) {
+		return;
+	}
+	i->second->paint(*painter, {
+		.preview = st::windowBgRipple->c,
+		.now = _now,
+		.position = QPoint(
+			int(base::SafeRound(rect.x())) + st::emojiPadding + _skip,
+			int(base::SafeRound(rect.y())) + _skip),
+		.paused = _paused && _paused(),
 	});
-
-	setStyle(InputStyle::instance());
-	QLineEdit::setTextMargins(0, 0, 0, 0);
-	setContentsMargins(_textMrg + QMargins(-2, -1, -2, -1));
-	setFrame(false);
-
-	setAttribute(Qt::WA_AcceptTouchEvents);
-	_touchTimer.setSingleShot(true);
-	connect(&_touchTimer, SIGNAL(timeout()), this, SLOT(onTouchTimer()));
 }
 
-void FlatInput::updatePalette() {
-	auto p = palette();
-	p.setColor(QPalette::Text, _st.textColor->c);
-	p.setColor(QPalette::Highlight, st::msgInBgSelected->c);
-	p.setColor(QPalette::HighlightedText, st::historyTextInFgSelected->c);
-	setPalette(p);
+void CustomEmojiObject::clear() {
+	_emoji.clear();
 }
 
-void FlatInput::customUpDown(bool custom) {
-	_customUpDown = custom;
-}
-
-void FlatInput::onTouchTimer() {
-	_touchRightButton = true;
-}
-
-bool FlatInput::eventHook(QEvent *e) {
-	if (e->type() == QEvent::TouchBegin
-		|| e->type() == QEvent::TouchUpdate
-		|| e->type() == QEvent::TouchEnd
-		|| e->type() == QEvent::TouchCancel) {
-		const auto ev = static_cast<QTouchEvent*>(e);
-		if (ev->device()->type() == base::TouchDevice::TouchScreen) {
-			touchEvent(ev);
-		}
-	}
-	return Parent::eventHook(e);
-}
-
-void FlatInput::touchEvent(QTouchEvent *e) {
-	switch (e->type()) {
-	case QEvent::TouchBegin: {
-		if (_touchPress || e->touchPoints().isEmpty()) return;
-		_touchTimer.start(QApplication::startDragTime());
-		_touchPress = true;
-		_touchMove = _touchRightButton = false;
-		_touchStart = e->touchPoints().cbegin()->screenPos().toPoint();
-	} break;
-
-	case QEvent::TouchUpdate: {
-		if (!_touchPress || e->touchPoints().isEmpty()) return;
-		if (!_touchMove && (e->touchPoints().cbegin()->screenPos().toPoint() - _touchStart).manhattanLength() >= QApplication::startDragDistance()) {
-			_touchMove = true;
-		}
-	} break;
-
-	case QEvent::TouchEnd: {
-		if (!_touchPress) return;
-		auto weak = MakeWeak(this);
-		if (!_touchMove && window()) {
-			QPoint mapped(mapFromGlobal(_touchStart));
-
-			if (_touchRightButton) {
-				QContextMenuEvent contextEvent(QContextMenuEvent::Mouse, mapped, _touchStart);
-				contextMenuEvent(&contextEvent);
-			} else {
-				QGuiApplication::inputMethod()->show();
-			}
-		}
-		if (weak) {
-			_touchTimer.stop();
-			_touchPress = _touchMove = _touchRightButton = false;
-		}
-	} break;
-
-	case QEvent::TouchCancel: {
-		_touchPress = false;
-		_touchTimer.stop();
-	} break;
-	}
-}
-
-void FlatInput::setTextMrg(const QMargins &textMrg) {
-	_textMrg = textMrg;
-	setContentsMargins(_textMrg + QMargins(-2, -1, -2, -1));
-	refreshPlaceholder(_placeholderFull.current());
-	update();
-}
-
-void FlatInput::finishAnimations() {
-	_placeholderFocusedAnimation.stop();
-	_placeholderVisibleAnimation.stop();
-}
-
-void FlatInput::paintEvent(QPaintEvent *e) {
-	Painter p(this);
-
-	auto placeholderFocused = _placeholderFocusedAnimation.value(_focused ? 1. : 0.);
-	auto pen = anim::pen(_st.borderColor, _st.borderActive, placeholderFocused);
-	pen.setWidth(_st.borderWidth);
-	p.setPen(pen);
-	p.setBrush(anim::brush(_st.bgColor, _st.bgActive, placeholderFocused));
-	{
-		PainterHighQualityEnabler hq(p);
-		p.drawRoundedRect(QRectF(0, 0, width(), height()).marginsRemoved(QMarginsF(_st.borderWidth / 2., _st.borderWidth / 2., _st.borderWidth / 2., _st.borderWidth / 2.)), st::roundRadiusSmall - (_st.borderWidth / 2.), st::roundRadiusSmall - (_st.borderWidth / 2.));
-	}
-
-	if (!_st.icon.empty()) {
-		_st.icon.paint(p, 0, 0, width());
-	}
-
-	const auto placeholderOpacity = _placeholderVisibleAnimation.value(
-		_placeholderVisible ? 1. : 0.);
-	if (placeholderOpacity > 0.) {
-		p.setOpacity(placeholderOpacity);
-
-		auto left = anim::interpolate(_st.phShift, 0, placeholderOpacity);
-
-		p.save();
-		p.setClipRect(rect());
-		QRect phRect(placeholderRect());
-		phRect.moveLeft(phRect.left() + left);
-		phPrepare(p, placeholderFocused);
-		p.drawText(phRect, _placeholder, QTextOption(_st.phAlign));
-		p.restore();
-	}
-	QLineEdit::paintEvent(e);
-}
-
-void FlatInput::focusInEvent(QFocusEvent *e) {
-	if (!_focused) {
-		_focused = true;
-		_placeholderFocusedAnimation.start(
-			[=] { update(); },
-			0.,
-			1.,
-			_st.phDuration);
-		update();
-	}
-	QLineEdit::focusInEvent(e);
-	focused();
-}
-
-void FlatInput::focusOutEvent(QFocusEvent *e) {
-	if (_focused) {
-		_focused = false;
-		_placeholderFocusedAnimation.start(
-			[=] { update(); },
-			1.,
-			0.,
-			_st.phDuration);
-		update();
-	}
-	QLineEdit::focusOutEvent(e);
-	blurred();
-}
-
-void FlatInput::resizeEvent(QResizeEvent *e) {
-	refreshPlaceholder(_placeholderFull.current());
-	return QLineEdit::resizeEvent(e);
-}
-
-void FlatInput::setPlaceholder(rpl::producer<QString> placeholder) {
-	_placeholderFull = std::move(placeholder);
-}
-
-void FlatInput::refreshPlaceholder(const QString &text) {
-	const auto availw = width() - _textMrg.left() - _textMrg.right() - _st.phPos.x() - 1;
-	if (_st.font->width(text) > availw) {
-		_placeholder = _st.font->elided(text, availw);
-	} else {
-		_placeholder = text;
-	}
-	update();
-}
-
-void FlatInput::contextMenuEvent(QContextMenuEvent *e) {
-	if (const auto menu = createStandardContextMenu()) {
-		_contextMenu = base::make_unique_q<PopupMenu>(this, menu);
-		_contextMenu->popup(e->globalPos());
-	}
-}
-
-QSize FlatInput::sizeHint() const {
-	return geometry().size();
-}
-
-QSize FlatInput::minimumSizeHint() const {
-	return geometry().size();
-}
-
-void FlatInput::updatePlaceholder() {
-	auto hasText = !text().isEmpty();
-	if (!hasText) {
-		hasText = _lastPreEditTextNotEmpty;
-	} else {
-		_lastPreEditTextNotEmpty = false;
-	}
-	auto placeholderVisible = !hasText;
-	if (_placeholderVisible != placeholderVisible) {
-		_placeholderVisible = placeholderVisible;
-		_placeholderVisibleAnimation.start(
-			[=] { update(); },
-			_placeholderVisible ? 0. : 1.,
-			_placeholderVisible ? 1. : 0.,
-			_st.phDuration);
-	}
-}
-
-void FlatInput::inputMethodEvent(QInputMethodEvent *e) {
-	QLineEdit::inputMethodEvent(e);
-	auto lastPreEditTextNotEmpty = !e->preeditString().isEmpty();
-	if (_lastPreEditTextNotEmpty != lastPreEditTextNotEmpty) {
-		_lastPreEditTextNotEmpty = lastPreEditTextNotEmpty;
-		updatePlaceholder();
-	}
-}
-
-QRect FlatInput::placeholderRect() const {
-	return QRect(_textMrg.left() + _st.phPos.x(), _textMrg.top() + _st.phPos.y(), width() - _textMrg.left() - _textMrg.right(), height() - _textMrg.top() - _textMrg.bottom());
-}
-
-void FlatInput::correctValue(const QString &was, QString &now) {
-}
-
-void FlatInput::phPrepare(QPainter &p, float64 placeholderFocused) {
-	p.setFont(_st.font);
-	p.setPen(anim::pen(_st.phColor, _st.phFocusColor, placeholderFocused));
-}
-
-void FlatInput::keyPressEvent(QKeyEvent *e) {
-	QString wasText(_oldtext);
-
-	if (_customUpDown && (e->key() == Qt::Key_Up || e->key() == Qt::Key_Down || e->key() == Qt::Key_PageUp || e->key() == Qt::Key_PageDown)) {
-		e->ignore();
-	} else {
-		QLineEdit::keyPressEvent(e);
-	}
-
-	QString newText(text());
-	if (wasText == newText) { // call correct manually
-		correctValue(wasText, newText);
-		_oldtext = newText;
-		if (wasText != _oldtext) changed();
-		updatePlaceholder();
-	}
-	if (e->key() == Qt::Key_Escape) {
-		cancelled();
-	} else if (e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter) {
-		submitted(e->modifiers());
-#ifdef Q_OS_MAC
-	} else if (e->key() == Qt::Key_E && e->modifiers().testFlag(Qt::ControlModifier)) {
-		auto selected = selectedText();
-		if (!selected.isEmpty() && echoMode() == QLineEdit::Normal) {
-			QGuiApplication::clipboard()->setText(selected, QClipboard::FindBuffer);
-		}
-#endif // Q_OS_MAC
-	}
-}
-
-void FlatInput::onTextEdited() {
-	QString wasText(_oldtext), newText(text());
-
-	correctValue(wasText, newText);
-	_oldtext = newText;
-	if (wasText != _oldtext) changed();
-	updatePlaceholder();
-
-	Integration::Instance().textActionsUpdated();
-}
-
-void FlatInput::onTextChange(const QString &text) {
-	_oldtext = text;
-	Integration::Instance().textActionsUpdated();
+void CustomEmojiObject::setNow(crl::time now) {
+	_now = now;
 }
 
 InputField::InputField(
@@ -1310,7 +1188,8 @@ InputField::InputField(
 	_inner->setAcceptRichText(false);
 	resize(_st.width, _minHeight);
 
-	if (_st.textBg->c.alphaF() >= 1.) {
+	if (_st.textBg->c.alphaF() >= 1.
+		&& !_st.borderRadius) {
 		setAttribute(Qt::WA_OpaquePaintEvent);
 	}
 
@@ -1394,7 +1273,10 @@ bool InputField::viewportEventInner(QEvent *e) {
 		const auto ev = static_cast<QTouchEvent*>(e);
 		if (ev->device()->type() == base::TouchDevice::TouchScreen) {
 			handleTouchEvent(ev);
+			return false;
 		}
+	} else if (e->type() == QEvent::Paint && _customEmojiObject) {
+		_customEmojiObject->setNow(crl::now());
 	}
 	return _inner->QTextEdit::viewportEvent(e);
 }
@@ -1441,7 +1323,8 @@ void InputField::updatePalette() {
 		auto format = cursor.charFormat();
 		format.merge(PrepareTagFormat(
 			_st,
-			format.property(kTagProperty).toString()));
+			TagWithoutCustomEmoji(
+				format.property(kTagProperty).toString())));
 		cursor.setCharFormat(format);
 		setTextCursor(cursor);
 	}
@@ -1488,13 +1371,41 @@ void InputField::setMarkdownReplacesEnabled(rpl::producer<bool> enabled) {
 	}, lifetime());
 }
 
-void InputField::setTagMimeProcessor(
-		std::unique_ptr<TagMimeProcessor> &&processor) {
+void InputField::setTagMimeProcessor(Fn<QString(QStringView)> processor) {
 	_tagMimeProcessor = std::move(processor);
 }
 
+void InputField::setCustomEmojiFactory(
+		CustomEmojiFactory factory,
+		Fn<bool()> paused) {
+	_customEmojiObject = std::make_unique<CustomEmojiObject>([=](
+			QStringView data) {
+		return factory(data, [=] { customEmojiRepaint(); });
+	}, std::move(paused));
+	_inner->document()->documentLayout()->registerHandler(
+		kCustomEmojiFormat,
+		_customEmojiObject.get());
+}
+
+void InputField::customEmojiRepaint() {
+	if (_customEmojiRepaintScheduled) {
+		return;
+	}
+	_customEmojiRepaintScheduled = true;
+	_inner->update();
+}
+
+void InputField::paintEventInner(QPaintEvent *e) {
+	_customEmojiRepaintScheduled = false;
+	_inner->QTextEdit::paintEvent(e);
+}
+
 void InputField::setAdditionalMargin(int margin) {
-	_additionalMargin = margin;
+	setAdditionalMargins({ margin, margin, margin, margin });
+}
+
+void InputField::setAdditionalMargins(QMargins margins) {
+	_additionalMargins = margins;
 	QResizeEvent e(size(), size());
 	QCoreApplication::sendEvent(this, &e);
 }
@@ -1623,7 +1534,8 @@ bool InputField::heightAutoupdated() {
 	const auto contentHeight = int(std::ceil(document()->size().height()))
 		+ _st.textMargins.top()
 		+ _st.textMargins.bottom()
-		+ 2 * _additionalMargin;
+		+ _additionalMargins.top()
+		+ _additionalMargins.bottom();
 	const auto newHeight = std::clamp(contentHeight, _minHeight, _maxHeight);
 	if (height() != newHeight) {
 		resize(width(), newHeight);
@@ -1641,7 +1553,9 @@ void InputField::checkContentHeight() {
 void InputField::handleTouchEvent(QTouchEvent *e) {
 	switch (e->type()) {
 	case QEvent::TouchBegin: {
-		if (_touchPress || e->touchPoints().isEmpty()) return;
+		if (_touchPress || e->touchPoints().isEmpty()) {
+			return;
+		}
 		_touchTimer.start(QApplication::startDragTime());
 		_touchPress = true;
 		_touchMove = _touchRightButton = false;
@@ -1649,29 +1563,13 @@ void InputField::handleTouchEvent(QTouchEvent *e) {
 	} break;
 
 	case QEvent::TouchUpdate: {
-		if (!_touchPress || e->touchPoints().isEmpty()) return;
-		if (!_touchMove && (e->touchPoints().cbegin()->screenPos().toPoint() - _touchStart).manhattanLength() >= QApplication::startDragDistance()) {
-			_touchMove = true;
+		if (!e->touchPoints().isEmpty()) {
+			touchUpdate(e->touchPoints().cbegin()->screenPos().toPoint());
 		}
 	} break;
 
 	case QEvent::TouchEnd: {
-		if (!_touchPress) return;
-		auto weak = MakeWeak(this);
-		if (!_touchMove && window()) {
-			QPoint mapped(mapFromGlobal(_touchStart));
-
-			if (_touchRightButton) {
-				QContextMenuEvent contextEvent(QContextMenuEvent::Mouse, mapped, _touchStart);
-				contextMenuEvent(&contextEvent);
-			} else {
-				QGuiApplication::inputMethod()->show();
-			}
-		}
-		if (weak) {
-			_touchTimer.stop();
-			_touchPress = _touchMove = _touchRightButton = false;
-		}
+		touchFinish();
 	} break;
 
 	case QEvent::TouchCancel: {
@@ -1681,20 +1579,90 @@ void InputField::handleTouchEvent(QTouchEvent *e) {
 	}
 }
 
-void InputField::paintEvent(QPaintEvent *e) {
-	Painter p(this);
+void InputField::touchUpdate(QPoint globalPosition) {
+	if (_touchPress
+		&& !_touchMove
+		&& ((globalPosition - _touchStart).manhattanLength()
+			>= QApplication::startDragDistance())) {
+		_touchMove = true;
+	}
+}
 
-	auto r = rect().intersected(e->rect());
+void InputField::touchFinish() {
+	if (!_touchPress) {
+		return;
+	}
+	const auto weak = MakeWeak(this);
+	if (!_touchMove && window()) {
+		QPoint mapped(mapFromGlobal(_touchStart));
+
+		if (_touchRightButton) {
+			QContextMenuEvent contextEvent(
+				QContextMenuEvent::Mouse,
+				mapped,
+				_touchStart);
+			contextMenuEvent(&contextEvent);
+		} else {
+			QGuiApplication::inputMethod()->show();
+		}
+	}
+	if (weak) {
+		_touchTimer.stop();
+		_touchPress
+			= _touchMove
+			= _touchRightButton
+			= _mousePressedInTouch = false;
+	}
+}
+
+void InputField::paintSurrounding(
+		QPainter &p,
+		QRect clip,
+		float64 errorDegree,
+		float64 focusedDegree) {
+	if (_st.borderRadius > 0) {
+		paintRoundSurrounding(p, clip, errorDegree, focusedDegree);
+	} else {
+		paintFlatSurrounding(p, clip, errorDegree, focusedDegree);
+	}
+}
+
+void InputField::paintRoundSurrounding(
+		QPainter &p,
+		QRect clip,
+		float64 errorDegree,
+		float64 focusedDegree) {
+	auto pen = anim::pen(_st.borderFg, _st.borderFgActive, focusedDegree);
+	pen.setWidth(_st.border);
+	p.setPen(pen);
+	p.setBrush(anim::brush(_st.textBg, _st.textBgActive, focusedDegree));
+
+	PainterHighQualityEnabler hq(p);
+	const auto radius = _st.borderRadius - (_st.border / 2.);
+	p.drawRoundedRect(
+		QRectF(0, 0, width(), height()).marginsRemoved(
+			QMarginsF(
+				_st.border / 2.,
+				_st.border / 2.,
+				_st.border / 2.,
+				_st.border / 2.)),
+		radius,
+		radius);
+}
+
+void InputField::paintFlatSurrounding(
+		QPainter &p,
+		QRect clip,
+		float64 errorDegree,
+		float64 focusedDegree) {
 	if (_st.textBg->c.alphaF() > 0.) {
-		p.fillRect(r, _st.textBg);
+		p.fillRect(clip, _st.textBg);
 	}
 	if (_st.border) {
 		p.fillRect(0, height() - _st.border, width(), _st.border, _st.borderFg);
 	}
-	auto errorDegree = _a_error.value(_error ? 1. : 0.);
-	auto focusedDegree = _a_focused.value(_focused ? 1. : 0.);
-	auto borderShownDegree = _a_borderShown.value(1.);
-	auto borderOpacity = _a_borderOpacity.value(_borderVisible ? 1. : 0.);
+	const auto borderShownDegree = _a_borderShown.value(1.);
+	const auto borderOpacity = _a_borderOpacity.value(_borderVisible ? 1. : 0.);
 	if (_st.borderActive && (borderOpacity > 0.)) {
 		auto borderStart = std::clamp(_borderAnimationStart, 0, width());
 		auto borderFrom = qRound(borderStart * (1. - borderShownDegree));
@@ -1706,6 +1674,15 @@ void InputField::paintEvent(QPaintEvent *e) {
 			p.setOpacity(1);
 		}
 	}
+}
+
+void InputField::paintEvent(QPaintEvent *e) {
+	auto p = QPainter(this);
+
+	const auto r = rect().intersected(e->rect());
+	const auto errorDegree = _a_error.value(_error ? 1. : 0.);
+	const auto focusedDegree = _a_focused.value(_focused ? 1. : 0.);
+	paintSurrounding(p, r, errorDegree, focusedDegree);
 
 	if (_st.placeholderScale > 0. && !_placeholderPath.isEmpty()) {
 		auto placeholderShiftDegree = _a_placeholderShifted.value(_placeholderShifted ? 1. : 0.);
@@ -1799,6 +1776,29 @@ void InputField::focusInEvent(QFocusEvent *e) {
 void InputField::mousePressEvent(QMouseEvent *e) {
 	_borderAnimationStart = e->pos().x();
 	InvokeQueued(this, [=] { onFocusInner(); });
+}
+
+void InputField::mousePressEventInner(QMouseEvent *e) {
+	if (_touchPress && e->button() == Qt::LeftButton) {
+		_mousePressedInTouch = true;
+		_touchStart = e->globalPos();
+	}
+	_inner->QTextEdit::mousePressEvent(e);
+}
+
+void InputField::mouseReleaseEventInner(QMouseEvent *e) {
+	if (_mousePressedInTouch) {
+		touchFinish();
+	} else {
+		_inner->QTextEdit::mouseReleaseEvent(e);
+	}
+}
+
+void InputField::mouseMoveEventInner(QMouseEvent *e) {
+	if (_mousePressedInTouch) {
+		touchUpdate(e->globalPos());
+	}
+	_inner->QTextEdit::mouseMoveEvent(e);
 }
 
 void InputField::onFocusInner() {
@@ -1940,7 +1940,7 @@ QString InputField::getTextPart(
 						return emoji->text();
 					}
 				}
-				return QString();
+				return format.property(kCustomEmojiText).toString();
 			}();
 			auto text = [&] {
 				const auto result = fragment.text();
@@ -1992,6 +1992,9 @@ QString InputField::getTextPart(
 
 		block = block.next();
 		if (block != till) {
+			tagAccumulator.feed(
+				TagWithoutCustomEmoji(tagAccumulator.currentTag()),
+				result.size());
 			result.append('\n');
 			markdownTagAccumulator.feed(newline, 1, lastTag);
 		}
@@ -2027,8 +2030,8 @@ void InputField::processFormatting(int insertPosition, int insertEnd) {
 	auto document = _inner->document();
 
 	// Apply inserted tags.
-	auto insertedTagsProcessor = _insertedTagsAreFromMime
-		? _tagMimeProcessor.get()
+	const auto insertedTagsProcessor = _insertedTagsAreFromMime
+		? _tagMimeProcessor
 		: nullptr;
 	const auto breakTagOnNotLetterTill = ProcessInsertedTags(
 		_st,
@@ -2086,6 +2089,22 @@ void InputField::processFormatting(int insertPosition, int insertEnd) {
 				auto *textStart = fragmentText.constData();
 				auto *textEnd = textStart + fragmentText.size();
 
+				if (_customEmojiObject
+					&& format.objectType() == kCustomEmojiFormat) {
+					if (fragmentText == kObjectReplacement) {
+						checkedTill = fragmentEnd;
+						continue;
+					}
+					action.type = ActionType::InsertCustomEmoji;
+					action.intervalStart = fragmentPosition;
+					action.intervalEnd = fragmentPosition
+						+ fragmentText.size();
+					action.customEmojiText = fragmentText;
+					action.customEmojiLink = format.property(
+						kCustomEmojiLink).toString();
+					break;
+				}
+
 				const auto with = format.property(kInstantReplaceWithId);
 				if (with.isValid()) {
 					const auto string = with.toString();
@@ -2101,6 +2120,15 @@ void InputField::processFormatting(int insertPosition, int insertEnd) {
 					}
 				}
 
+				if (format.hasProperty(kCustomEmojiLink)
+					&& !format.property(kCustomEmojiLink).toString().isEmpty()) {
+					action.type = ActionType::RemoveCustomEmoji;
+					action.existingTags = format.property(kTagProperty).toString();
+					action.intervalStart = fragmentPosition;
+					action.intervalEnd = fragmentPosition
+						+ fragmentText.size();
+					break;
+				}
 				if (!startTagFound) {
 					startTagFound = true;
 					auto tagName = format.property(kTagProperty).toString();
@@ -2205,8 +2233,16 @@ void InputField::processFormatting(int insertPosition, int insertEnd) {
 			auto cursor = QTextCursor(document);
 			cursor.setPosition(action.intervalStart);
 			cursor.setPosition(action.intervalEnd, QTextCursor::KeepAnchor);
-			if (action.type == ActionType::InsertEmoji) {
-				InsertEmojiAtCursor(cursor, action.emoji);
+			if (action.type == ActionType::InsertEmoji
+				|| action.type == ActionType::InsertCustomEmoji) {
+				if (action.type == ActionType::InsertEmoji) {
+					InsertEmojiAtCursor(cursor, action.emoji);
+				} else {
+					InsertCustomEmojiAtCursor(
+						cursor,
+						action.customEmojiText,
+						action.customEmojiLink);
+				}
 				insertPosition = action.intervalStart + 1;
 				if (insertEnd >= action.intervalEnd) {
 					insertEnd -= action.intervalEnd
@@ -2217,6 +2253,13 @@ void InputField::processFormatting(int insertPosition, int insertEnd) {
 				RemoveDocumentTags(
 					_st,
 					document,
+					action.intervalStart,
+					action.intervalEnd);
+			} else if (action.type == ActionType::RemoveCustomEmoji) {
+				RemoveCustomEmojiTag(
+					_st,
+					document,
+					action.existingTags,
 					action.intervalStart,
 					action.intervalEnd);
 			} else if (action.type == ActionType::TildeFont) {
@@ -2376,6 +2419,11 @@ void InputField::handleContentsChanged() {
 		checkContentHeight();
 	}
 	startPlaceholderAnimation();
+	if (_lastTextWithTags.text.isEmpty()) {
+		if (const auto object = _customEmojiObject.get()) {
+			object->clear();
+		}
+	}
 	Integration::Instance().textActionsUpdated();
 }
 
@@ -2651,6 +2699,9 @@ TextWithTags InputField::getTextWithAppliedMarkdown() const {
 void InputField::clear() {
 	_inner->clear();
 	startPlaceholderAnimation();
+	if (const auto object = _customEmojiObject.get()) {
+		object->clear();
+	}
 }
 
 bool InputField::hasFocus() const {
@@ -2858,7 +2909,7 @@ auto InputField::selectionEditLinkData(EditLinkSelection selection) const
 				kTagCheckLinkMeta)
 			: QString();
 	}();
-	const auto simple = EditLinkData {
+	const auto simple = EditLinkData{
 		selection.from,
 		selection.till,
 		QString()
@@ -3095,20 +3146,34 @@ void InputField::applyInstantReplace(
 	} else if (position < length) {
 		return;
 	}
-	commitInstantReplacement(position - length, position, with, what, true);
-}
-
-void InputField::commitInstantReplacement(
-		int from,
-		int till,
-		const QString &with) {
-	commitInstantReplacement(from, till, with, std::nullopt, false);
+	commitInstantReplacement(
+		position - length,
+		position,
+		with,
+		QString(),
+		what,
+		true);
 }
 
 void InputField::commitInstantReplacement(
 		int from,
 		int till,
 		const QString &with,
+		const QString &customEmojiData) {
+	commitInstantReplacement(
+		from,
+		till,
+		with,
+		customEmojiData,
+		std::nullopt,
+		false);
+}
+
+void InputField::commitInstantReplacement(
+		int from,
+		int till,
+		const QString &with,
+		const QString &customEmojiData,
 		std::optional<QString> checkOriginal,
 		bool checkIfInMonospace) {
 	const auto original = getTextWithTagsPart(from, till).text;
@@ -3131,17 +3196,32 @@ void InputField::commitInstantReplacement(
 	cursor.setPosition(from);
 	cursor.setPosition(till, QTextCursor::KeepAnchor);
 
+	const auto link = customEmojiData.isEmpty()
+		? QString()
+		: CustomEmojiLink(customEmojiData);
+	const auto unique = link.isEmpty()
+		? QString()
+		: MakeUniqueCustomEmojiLink(link);
 	auto format = [&]() -> QTextCharFormat {
 		auto emojiLength = 0;
 		const auto emoji = Emoji::Find(with, &emojiLength);
 		if (!emoji || with.size() != emojiLength) {
 			return _defaultCharFormat;
+		} else if (!customEmojiData.isEmpty()) {
+			auto result = QTextCharFormat();
+			result.setObjectType(kCustomEmojiFormat);
+			result.setProperty(kCustomEmojiText, with);
+			result.setProperty(kCustomEmojiLink, unique);
+			result.setProperty(kCustomEmojiId, CustomEmojiIdFromLink(link));
+			result.setVerticalAlignment(QTextCharFormat::AlignBottom);
+			return result;
 		}
 		const auto use = Integration::Instance().defaultEmojiVariant(
 			emoji);
 		return PrepareEmojiFormat(use, _st.font);
 	}();
-	const auto replacement = format.isImageFormat()
+	const auto replacement = (format.isImageFormat()
+		|| format.objectType() == kCustomEmojiFormat)
 		? kObjectReplacement
 		: with;
 	format.setProperty(kInstantReplaceWhatId, original);
@@ -3150,6 +3230,11 @@ void InputField::commitInstantReplacement(
 		kInstantReplaceRandomId,
 		base::RandomValue<uint32>());
 	ApplyTagFormat(format, cursor.charFormat());
+	if (!unique.isEmpty()) {
+		format.setProperty(kTagProperty, TextUtilities::TagWithAdded(
+			format.property(kTagProperty).toString(),
+			unique));
+	}
 	cursor.insertText(replacement, format);
 }
 
@@ -3345,7 +3430,24 @@ void InputField::finishMarkdownTagChange(
 }
 
 bool InputField::IsValidMarkdownLink(QStringView link) {
-	return ::Ui::IsValidMarkdownLink(link);
+	return ::Ui::IsValidMarkdownLink(link) && !::Ui::IsCustomEmojiLink(link);
+}
+
+bool InputField::IsCustomEmojiLink(QStringView link) {
+	return ::Ui::IsCustomEmojiLink(link);
+}
+
+QString InputField::CustomEmojiLink(QStringView entityData) {
+	return MakeUniqueCustomEmojiLink(u"%1%2"_q
+		.arg(kCustomEmojiTagStart)
+		.arg(entityData));
+}
+
+QString InputField::CustomEmojiEntityData(QStringView link) {
+	const auto match = qthelp::regex_match(
+		"^(\\d+)(\\?|$)",
+		base::StringViewMid(link, kCustomEmojiTagStart.size()));
+	return match ? match->captured(1) : QString();
 }
 
 void InputField::commitMarkdownLinkEdit(
@@ -3680,7 +3782,8 @@ void InputField::insertFromMimeDataInner(const QMimeData *source) {
 
 void InputField::resizeEvent(QResizeEvent *e) {
 	refreshPlaceholder(_placeholderFull.current());
-	_inner->setGeometry(rect().marginsRemoved(_st.textMargins + _additionalMargin));
+	_inner->setGeometry(rect().marginsRemoved(
+		_st.textMargins + _additionalMargins));
 	_borderAnimationStart = width() / 2;
 	RpWidget::resizeEvent(e);
 	checkContentHeight();
@@ -3858,37 +3961,23 @@ bool MaskedInputField::eventHook(QEvent *e) {
 void MaskedInputField::touchEvent(QTouchEvent *e) {
 	switch (e->type()) {
 	case QEvent::TouchBegin: {
-		if (_touchPress || e->touchPoints().isEmpty()) return;
+		if (_touchPress || e->touchPoints().isEmpty()) {
+			return;
+		}
 		_touchTimer.start(QApplication::startDragTime());
 		_touchPress = true;
-		_touchMove = _touchRightButton = false;
+		_touchMove = _touchRightButton = _mousePressedInTouch = false;
 		_touchStart = e->touchPoints().cbegin()->screenPos().toPoint();
 	} break;
 
 	case QEvent::TouchUpdate: {
-		if (!_touchPress || e->touchPoints().isEmpty()) return;
-		if (!_touchMove && (e->touchPoints().cbegin()->screenPos().toPoint() - _touchStart).manhattanLength() >= QApplication::startDragDistance()) {
-			_touchMove = true;
+		if (!e->touchPoints().isEmpty()) {
+			touchUpdate(e->touchPoints().cbegin()->screenPos().toPoint());
 		}
 	} break;
 
 	case QEvent::TouchEnd: {
-		if (!_touchPress) return;
-		auto weak = MakeWeak(this);
-		if (!_touchMove && window()) {
-			QPoint mapped(mapFromGlobal(_touchStart));
-
-			if (_touchRightButton) {
-				QContextMenuEvent contextEvent(QContextMenuEvent::Mouse, mapped, _touchStart);
-				contextMenuEvent(&contextEvent);
-			} else {
-				QGuiApplication::inputMethod()->show();
-			}
-		}
-		if (weak) {
-			_touchTimer.stop();
-			_touchPress = _touchMove = _touchRightButton = false;
-		}
+		touchFinish();
 	} break;
 
 	case QEvent::TouchCancel: {
@@ -3898,8 +3987,44 @@ void MaskedInputField::touchEvent(QTouchEvent *e) {
 	}
 }
 
+void MaskedInputField::touchUpdate(QPoint globalPosition) {
+	if (_touchPress
+		&& !_touchMove
+		&& ((globalPosition - _touchStart).manhattanLength()
+			>= QApplication::startDragDistance())) {
+		_touchMove = true;
+	}
+}
+
+void MaskedInputField::touchFinish() {
+	if (!_touchPress) {
+		return;
+	}
+	const auto weak = MakeWeak(this);
+	if (!_touchMove && window()) {
+		QPoint mapped(mapFromGlobal(_touchStart));
+
+		if (_touchRightButton) {
+			QContextMenuEvent contextEvent(
+				QContextMenuEvent::Mouse,
+				mapped,
+				_touchStart);
+			contextMenuEvent(&contextEvent);
+		} else {
+			QGuiApplication::inputMethod()->show();
+		}
+	}
+	if (weak) {
+		_touchTimer.stop();
+		_touchPress
+			= _touchMove
+			= _touchRightButton
+			= _mousePressedInTouch = false;
+	}
+}
+
 void MaskedInputField::paintEvent(QPaintEvent *e) {
-	Painter p(this);
+	auto p = QPainter(this);
 
 	auto r = rect().intersected(e->rect());
 	p.fillRect(r, _st.textBg);
@@ -3970,6 +4095,28 @@ void MaskedInputField::paintEvent(QPaintEvent *e) {
 
 	paintAdditionalPlaceholder(p);
 	QLineEdit::paintEvent(e);
+}
+
+void MaskedInputField::mousePressEvent(QMouseEvent *e) {
+	if (_touchPress && e->button() == Qt::LeftButton) {
+		_mousePressedInTouch = true;
+		_touchStart = e->globalPos();
+	}
+	return QLineEdit::mousePressEvent(e);
+}
+
+void MaskedInputField::mouseReleaseEvent(QMouseEvent *e) {
+	if (_mousePressedInTouch) {
+		touchFinish();
+	}
+	return QLineEdit::mouseReleaseEvent(e);
+}
+
+void MaskedInputField::mouseMoveEvent(QMouseEvent *e) {
+	if (_mousePressedInTouch) {
+		touchUpdate(e->globalPos());
+	}
+	return QLineEdit::mouseMoveEvent(e);
 }
 
 void MaskedInputField::startBorderAnimation() {
@@ -4115,7 +4262,7 @@ QRect MaskedInputField::placeholderRect() const {
 	return rect().marginsRemoved(_textMargins + _st.placeholderMargins);
 }
 
-void MaskedInputField::placeholderAdditionalPrepare(Painter &p) {
+void MaskedInputField::placeholderAdditionalPrepare(QPainter &p) {
 	p.setFont(_st.font);
 	p.setPen(_st.placeholderFg);
 }

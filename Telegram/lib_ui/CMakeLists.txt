@@ -6,7 +6,7 @@
 
 add_library(lib_ui STATIC)
 add_library(desktop-app::lib_ui ALIAS lib_ui)
-init_target(lib_ui)
+init_target(lib_ui ltcg)
 
 include(cmake/generate_palette.cmake)
 include(cmake/generate_styles.cmake)
@@ -25,7 +25,6 @@ generate_styles(lib_ui ${src_loc} "${style_files}" ui/colors.palette)
 generate_emoji(lib_ui emoji.txt emoji_suggestions/emoji_autocomplete.json)
 
 set_target_properties(lib_ui PROPERTIES AUTOMOC ON)
-target_prepare_qrc(lib_ui)
 
 target_precompile_headers(lib_ui PRIVATE $<$<COMPILE_LANGUAGE:CXX,OBJCXX>:${src_loc}/ui/ui_pch.h>)
 nice_target_sources(lib_ui ${src_loc}
@@ -47,6 +46,8 @@ PRIVATE
     ui/effects/cross_line.h
     ui/effects/fade_animation.cpp
     ui/effects/fade_animation.h
+    ui/effects/frame_generator.cpp
+    ui/effects/frame_generator.h
     ui/effects/gradient.cpp
     ui/effects/gradient.h
     ui/effects/numbers_animation.cpp
@@ -59,10 +60,14 @@ PRIVATE
     ui/effects/radial_animation.h
     ui/effects/ripple_animation.cpp
     ui/effects/ripple_animation.h
+    ui/effects/round_area_with_shadow.cpp
+    ui/effects/round_area_with_shadow.h
     ui/effects/show_animation.cpp
     ui/effects/show_animation.h
     ui/effects/slide_animation.cpp
     ui/effects/slide_animation.h
+    ui/effects/spoiler_mess.cpp
+    ui/effects/spoiler_mess.h
     ui/gl/gl_detection.cpp
     ui/gl/gl_detection.h
     ui/gl/gl_image.cpp
@@ -145,13 +150,23 @@ PRIVATE
     ui/style/style_core_types.h
     ui/style/style_palette_colorizer.cpp
     ui/style/style_palette_colorizer.h
+    ui/text/custom_emoji_instance.cpp
+    ui/text/custom_emoji_instance.h
     ui/text/text.cpp
     ui/text/text.h
     ui/text/text_block.cpp
     ui/text/text_block.h
+    ui/text/text_custom_emoji.cpp
+    ui/text/text_custom_emoji.h
     ui/text/text_entity.cpp
     ui/text/text_entity.h
     ui/text/text_isolated_emoji.h
+    ui/text/text_parser.cpp
+    ui/text/text_parser.h
+    ui/text/text_renderer.cpp
+    ui/text/text_renderer.h
+    ui/text/text_spoiler_data.cpp
+    ui/text/text_spoiler_data.h
     ui/text/text_utilities.cpp
     ui/text/text_utilities.h
     ui/text/text_variant.cpp
@@ -218,6 +233,8 @@ PRIVATE
     ui/widgets/tooltip.h
     ui/wrap/fade_wrap.cpp
     ui/wrap/fade_wrap.h
+    ui/wrap/follow_slide_wrap.cpp
+    ui/wrap/follow_slide_wrap.h
     ui/wrap/padding_wrap.cpp
     ui/wrap/padding_wrap.h
     ui/wrap/slide_wrap.cpp
@@ -229,6 +246,8 @@ PRIVATE
     ui/wrap/wrap.h
     ui/abstract_button.cpp
     ui/abstract_button.h
+    ui/animated_icon.cpp
+    ui/animated_icon.h
     ui/basic_click_handlers.cpp
     ui/basic_click_handlers.h
     ui/cached_special_layer_shadow_corners.cpp
@@ -254,8 +273,6 @@ PRIVATE
     ui/rect_part.h
     ui/round_rect.cpp
     ui/round_rect.h
-    ui/spoiler_click_handler.cpp
-    ui/spoiler_click_handler.h
     ui/rp_widget.cpp
     ui/rp_widget.h
     ui/ui_utility.cpp
@@ -277,18 +294,13 @@ if (DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
 elseif(LINUX)
     remove_target_sources(lib_ui ${src_loc} ui/platform/linux/ui_linux_wayland_integration_dummy.cpp)
 
-    if (DESKTOP_APP_QT6)
-        qt6_generate_wayland_protocol_client_sources(lib_ui
-        FILES
-            ${third_party_loc}/wayland-protocols/stable/xdg-shell/xdg-shell.xml
-        )
-    else()
-        message(FATAL_ERROR "This piece of cmake code is not ported to Qt 5")
-    endif()
+    qt_generate_wayland_protocol_client_sources(lib_ui
+    FILES
+        ${third_party_loc}/wayland-protocols/stable/xdg-shell/xdg-shell.xml
+    )
 
     target_link_libraries(lib_ui
     PUBLIC
-        desktop-app::lib_waylandshells
         desktop-app::external_wayland_client
     )
 endif()
@@ -305,4 +317,8 @@ PUBLIC
 PRIVATE
     desktop-app::external_zlib
     desktop-app::external_jpeg
+    desktop-app::external_lz4
+    desktop-app::external_xxhash
 )
+
+target_prepare_qrc(lib_ui)

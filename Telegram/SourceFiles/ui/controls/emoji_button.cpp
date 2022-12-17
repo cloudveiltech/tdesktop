@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "ui/effects/radial_animation.h"
 #include "ui/effects/ripple_animation.h"
+#include "ui/painter.h"
 #include "styles/style_chat.h"
 
 namespace Ui {
@@ -24,7 +25,7 @@ EmojiButton::EmojiButton(QWidget *parent, const style::IconButton &st)
 }
 
 void EmojiButton::paintEvent(QPaintEvent *e) {
-	Painter p(this);
+	auto p = QPainter(this);
 
 	p.fillRect(e->rect(), st::historyComposeAreaBg);
 	paintRipple(p, _st.rippleAreaPosition.x(), _st.rippleAreaPosition.y(), _rippleOverride ? &(*_rippleOverride)->c : nullptr);
@@ -121,7 +122,7 @@ QPoint EmojiButton::prepareRippleStartPosition() const {
 }
 
 QImage EmojiButton::prepareRippleMask() const {
-	return RippleAnimation::ellipseMask(QSize(_st.rippleAreaSize, _st.rippleAreaSize));
+	return RippleAnimation::EllipseMask(QSize(_st.rippleAreaSize, _st.rippleAreaSize));
 }
 
 } // namespace Ui

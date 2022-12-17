@@ -38,6 +38,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/toast/toast.h"
 #include "ui/empty_userpic.h"
 #include "ui/emoji_config.h"
+#include "ui/painter.h"
 #include "core/application.h"
 #include "lang/lang_keys.h"
 #include "main/main_session.h"
@@ -45,6 +46,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/platform_specific.h"
 #include "base/platform/base_platform_info.h"
 #include "base/power_save_blocker.h"
+#include "media/streaming/media_streaming_utility.h"
 #include "window/main_window.h"
 #include "webrtc/webrtc_video_track.h"
 #include "webrtc/webrtc_media_devices.h"
@@ -124,7 +126,7 @@ void Panel::replaceCall(not_null<Call*> call) {
 void Panel::initWindow() {
 	window()->setAttribute(Qt::WA_OpaquePaintEvent);
 	window()->setAttribute(Qt::WA_NoSystemBackground);
-	window()->setTitle(_user->name);
+	window()->setTitle(_user->name());
 	window()->setTitleStyle(st::callTitle);
 
 	window()->events(
@@ -335,16 +337,10 @@ void Panel::refreshIncomingGeometry() {
 		return;
 	}
 	const auto to = widget()->size();
-	const auto small = _incomingFrameSize.scaled(to, Qt::KeepAspectRatio);
-	const auto big = _incomingFrameSize.scaled(
+	const auto use = ::Media::Streaming::DecideFrameResize(
 		to,
-		Qt::KeepAspectRatioByExpanding);
-
-	// If we cut out no more than 0.25 of the original, let's use expanding.
-	const auto use = ((big.width() * 3 <= to.width() * 4)
-		&& (big.height() * 3 <= to.height() * 4))
-		? big
-		: small;
+		_incomingFrameSize
+	).result;
 	const auto pos = QPoint(
 		(to.width() - use.width()) / 2,
 		(to.height() - use.height()) / 2);
@@ -473,7 +469,10 @@ void Panel::reinitWithCall(Call *call) {
 			case ErrorType::NoCamera:
 				return tr::lng_call_error_no_camera(tr::now);
 			case ErrorType::NotVideoCall:
-				return tr::lng_call_error_camera_outdated(tr::now, lt_user, _user->name);
+				return tr::lng_call_error_camera_outdated(
+					tr::now,
+					lt_user,
+					_user->name());
 			case ErrorType::NotStartedCall:
 				return tr::lng_call_error_camera_not_started(tr::now);
 				//case ErrorType::NoMicrophone:
@@ -490,7 +489,7 @@ void Panel::reinitWithCall(Call *call) {
 		});
 	}, _callLifetime);
 
-	_name->setText(_user->name);
+	_name->setText(_user->name());
 	updateStatusText(_call->state());
 
 	_answerHangupRedial->raise();
@@ -552,7 +551,7 @@ void Panel::initLayout() {
 		// _user may change for the same Panel.
 		return (_call != nullptr) && (update.peer == _user);
 	}) | rpl::start_with_next([=](const Data::PeerUpdate &update) {
-		_name->setText(_call->user()->name);
+		_name->setText(_call->user()->name());
 		updateControlsGeometry();
 	}, widget()->lifetime());
 
@@ -773,7 +772,7 @@ void Panel::updateStatusGeometry() {
 }
 
 void Panel::paint(QRect clip) {
-	Painter p(widget());
+	auto p = QPainter(widget());
 
 	auto region = QRegion(clip);
 	if (!_incoming->widget()->isHidden()) {

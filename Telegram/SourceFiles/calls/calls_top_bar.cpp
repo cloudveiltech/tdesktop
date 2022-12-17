@@ -147,7 +147,7 @@ DebugInfoBox::DebugInfoBox(QWidget*, base::weak_ptr<Call> call)
 }
 
 void DebugInfoBox::prepare() {
-	setTitle(rpl::single(qsl("Call Debug")));
+	setTitle(rpl::single(u"Call Debug"_q));
 
 	addButton(tr::lng_close(), [this] { closeBox(); });
 	_text = setInnerWidget(
@@ -204,7 +204,7 @@ public:
 protected:
 	bool eventFilter(QObject *object, QEvent *event) {
 		if (event->type() == QEvent::Paint) {
-			Painter p(this);
+			auto p = QPainter(this);
 			paintRipple(
 				p,
 				_st.rippleAreaPosition.x(),
@@ -545,7 +545,7 @@ void TopBar::initBlobsUnder(
 			return;
 		}
 
-		Painter p(_blobs);
+		auto p = QPainter(_blobs);
 		if (hidden > 0.) {
 			p.setOpacity(1. - hidden);
 		}
@@ -644,14 +644,14 @@ void TopBar::updateInfoLabels() {
 void TopBar::setInfoLabels() {
 	if (const auto call = _call.get()) {
 		const auto user = call->user();
-		const auto fullName = user->name;
+		const auto fullName = user->name();
 		const auto shortName = user->firstName;
 		_fullInfoLabel->setText(fullName);
 		_shortInfoLabel->setText(shortName);
 	} else if (const auto group = _groupCall.get()) {
 		const auto peer = group->peer();
 		const auto real = peer->groupCall();
-		const auto name = peer->name;
+		const auto name = peer->name();
 		const auto text = _isGroupConnecting.current()
 			? tr::lng_group_call_connecting(tr::now)
 			: (real && real->id() == group->id() && !real->title().isEmpty())
@@ -751,7 +751,7 @@ void TopBar::updateControlsGeometry() {
 }
 
 void TopBar::paintEvent(QPaintEvent *e) {
-	Painter p(this);
+	auto p = QPainter(this);
 	auto brush = _groupCall
 		? _groupBrush
 		: (_muted ? st::callBarBgMuted : st::callBarBg);

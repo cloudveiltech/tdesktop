@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "data/data_session.h"
 #include "data/data_document.h"
+#include "ui/chat/attach/attach_prepare.h"
 #include "ui/image/image_location_factory.h"
 #include "storage/localimageloader.h"
 #include "base/unixtime.h"
@@ -65,8 +66,7 @@ void DicePack::applySet(const MTPDmessages_stickerSet &data) {
 	auto index = 0;
 	auto documents = base::flat_map<DocumentId, not_null<DocumentData*>>();
 	for (const auto &sticker : data.vdocuments().v) {
-		const auto document = _session->data().processDocument(
-			sticker);
+		const auto document = _session->data().processDocument(sticker);
 		if (document->sticker()) {
 			if (isSlotMachine) {
 				_map.emplace(index++, document);
@@ -128,7 +128,7 @@ void DicePack::generateLocal(int index, const QString &name) {
 		QByteArray(),
 		nullptr,
 		SendMediaType::File,
-		FileLoadTo(0, {}, 0, 0),
+		FileLoadTo(0, {}, 0, 0, 0),
 		{});
 	task.process({ .generateGoodThumbnail = false });
 	const auto result = task.peekResult();

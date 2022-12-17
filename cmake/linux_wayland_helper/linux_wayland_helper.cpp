@@ -53,9 +53,6 @@ int (*wl_cursor_frame_and_duration)(
 
 void (*wl_proxy_destroy)(struct wl_proxy *proxy);
 uint32_t (*wl_proxy_get_version)(struct wl_proxy *proxy);
-void (*wl_array_init)(struct wl_array *array);
-void (*wl_array_release)(struct wl_array *array);
-void *(*wl_array_add)(struct wl_array *array, size_t size);
 int (*wl_proxy_add_listener)(
 	struct wl_proxy *proxy,
 	void (**implementation)(void),
@@ -79,7 +76,6 @@ void (*wl_event_queue_destroy)(struct wl_event_queue *queue);
 int (*wl_display_prepare_read)(struct wl_display *display);
 int (*wl_display_dispatch_pending)(struct wl_display *display);
 struct wl_display *(*wl_display_connect)(const char *name);
-struct wl_display *(*wl_display_connect_to_fd)(int fd);
 void (*wl_display_disconnect)(struct wl_display *display);
 void *(*wl_proxy_create_wrapper)(void *proxy);
 void (*wl_proxy_wrapper_destroy)(void *proxy_wrapper);
@@ -230,9 +226,6 @@ bool Resolve() {
 			&& LoadLibrary(client, "libwayland-client.so.0")
 			&& LOAD_SYMBOL(client, wl_proxy_destroy)
 			&& LOAD_SYMBOL(client, wl_proxy_get_version)
-			&& LOAD_SYMBOL(client, wl_array_init)
-			&& LOAD_SYMBOL(client, wl_array_release)
-			&& LOAD_SYMBOL(client, wl_array_add)
 			&& LOAD_SYMBOL(client, wl_proxy_add_listener)
 			&& LOAD_SYMBOL(client, wl_proxy_set_user_data)
 			&& LOAD_SYMBOL(client, wl_proxy_get_user_data)
@@ -249,7 +242,6 @@ bool Resolve() {
 			&& LOAD_SYMBOL(client, wl_display_prepare_read)
 			&& LOAD_SYMBOL(client, wl_display_dispatch_pending)
 			&& LOAD_SYMBOL(client, wl_display_connect)
-			&& LOAD_SYMBOL(client, wl_display_connect_to_fd)
 			&& LOAD_SYMBOL(client, wl_display_disconnect)
 			&& LOAD_SYMBOL(client, wl_proxy_create_wrapper)
 			&& LOAD_SYMBOL(client, wl_proxy_wrapper_destroy)
@@ -357,24 +349,6 @@ uint32_t wl_proxy_get_version(struct wl_proxy *proxy) {
 	return W::wl_proxy_get_version(proxy);
 }
 
-void wl_array_init(struct wl_array *array) {
-	Expects(W::wl_array_init != nullptr);
-
-	W::wl_array_init(array);
-}
-
-void wl_array_release(struct wl_array *array) {
-	Expects(W::wl_array_release != nullptr);
-
-	W::wl_array_release(array);
-}
-
-void *wl_array_add(struct wl_array *array, size_t size) {
-	Expects(W::wl_array_add != nullptr);
-
-	return W::wl_array_add(array, size);
-}
-
 int wl_proxy_add_listener(
 		struct wl_proxy *proxy,
 		void (**implementation)(void),
@@ -478,14 +452,6 @@ struct wl_display *wl_display_connect(const char *name) {
 		return nullptr;
 	}
 	return W::wl_display_connect(name);
-}
-
-struct wl_display *wl_display_connect_to_fd(int fd) {
-	if (!W::Resolve()) {
-		errno = ENOENT;
-		return nullptr;
-	}
-	return W::wl_display_connect_to_fd(fd);
 }
 
 void wl_display_disconnect(struct wl_display *display) {
@@ -681,7 +647,7 @@ struct wl_proxy *wl_proxy_marshal_flags(
 			args,
 			interface,
 			version);
-		
+
 		if (flags & WL_MARSHAL_FLAG_DESTROY) {
 			wl_proxy_destroy(proxy);
 		}

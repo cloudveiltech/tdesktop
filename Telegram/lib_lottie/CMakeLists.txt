@@ -6,7 +6,7 @@
 
 add_library(lib_lottie OBJECT)
 add_library(desktop-app::lib_lottie ALIAS lib_lottie)
-init_target(lib_lottie)
+init_target(lib_lottie ltcg)
 
 get_filename_component(src_loc . REALPATH)
 
@@ -21,6 +21,8 @@ PRIVATE
     lottie/lottie_animation.h
     lottie/lottie_common.cpp
     lottie/lottie_common.h
+    lottie/lottie_frame_generator.cpp
+    lottie/lottie_frame_generator.h
     lottie/lottie_multi_player.cpp
     lottie/lottie_multi_player.h
     lottie/lottie_player.h

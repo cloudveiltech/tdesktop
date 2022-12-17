@@ -14,6 +14,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/view/media_view_pip.h"
 #include "webrtc/webrtc_video_track.h"
 #include "ui/image/image_prepare.h"
+#include "ui/painter.h"
 #include "lang/lang_keys.h"
 #include "styles/style_calls.h"
 #include "styles/palette.h"
@@ -79,7 +80,7 @@ void Viewport::RendererSW::validateUserpicFrame(
 		tile->row()->peer()->generateUserpicImage(
 			tile->row()->ensureUserpicView(),
 			size.width(),
-			ImageRoundRadius::None),
+			0),
 		kBlurRadius);
 }
 

@@ -6,10 +6,12 @@
 
 add_library(lib_ffmpeg OBJECT)
 add_library(desktop-app::lib_ffmpeg ALIAS lib_ffmpeg)
-init_target(lib_ffmpeg)
+init_target(lib_ffmpeg ltcg)
 
 nice_target_sources(lib_ffmpeg ${src_loc}
 PRIVATE
+    ffmpeg/ffmpeg_frame_generator.cpp
+    ffmpeg/ffmpeg_frame_generator.h
     ffmpeg/ffmpeg_utility.cpp
     ffmpeg/ffmpeg_utility.h
 )
@@ -22,6 +24,7 @@ PUBLIC
 target_link_libraries(lib_ffmpeg
 PUBLIC
     desktop-app::lib_base
+    desktop-app::lib_ui
     desktop-app::external_ffmpeg
 )
 

@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_document.h"
 #include "data/data_session.h"
 #include "data/data_user.h"
+#include "data/data_channel.h"
 #include "data/data_download_manager.h"
 #include "base/timer.h"
 #include "base/event_filter.h"
@@ -74,6 +75,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/text_options.h"
 #include "ui/emoji_config.h"
 #include "ui/effects/animations.h"
+#include "ui/effects/spoiler_mess.h"
 #include "ui/cached_round_corners.h"
 #include "storage/serialize_common.h"
 #include "storage/storage_domain.h"
@@ -89,6 +91,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/premium_limits_box.h"
 #include "ui/boxes/confirm_box.h"
 
+#include <QtCore/QStandardPaths>
 #include <QtCore/QMimeDatabase>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QScreen>
@@ -233,9 +236,10 @@ void Application::run() {
 
 	refreshGlobalProxy(); // Depends on app settings being read.
 
-	if (Local::oldSettingsVersion() < AppVersion) {
+	if (const auto old = Local::oldSettingsVersion(); old < AppVersion) {
+		Platform::InstallLauncher();
 		RegisterUrlScheme();
-		psNewVersion();
+		Platform::NewVersionLaunched(old);
 	}
 
 	if (cAutoStart() && !Platform::AutostartSupported()) {
@@ -248,6 +252,15 @@ void Application::run() {
 		return;
 	}
 
+	if (KSandbox::isInside()) {
+		const auto path = settings().downloadPath();
+		if (!path.isEmpty()
+			&& path != FileDialog::Tmp()
+			&& !base::CanReadDirectory(path)) {
+			settings().setDownloadPath(QString());
+		}
+	}
+
 	_translator = std::make_unique<Lang::Translator>();
 	QCoreApplication::instance()->installTranslator(_translator.get());
 
@@ -255,6 +268,7 @@ void Application::run() {
 	Ui::InitTextOptions();
 	Ui::StartCachedCorners();
 	Ui::Emoji::Init();
+	Ui::PrepareTextSpoilerMask();
 	startEmojiImageLoader();
 	startSystemDarkModeViewer();
 	Media::Player::start(_audio.get());
@@ -270,13 +284,13 @@ void Application::run() {
 
 	DEBUG_LOG(("Application Info: inited..."));
 
-	cChangeDateFormat(QLocale::system().dateFormat(QLocale::ShortFormat));
-	cChangeTimeFormat(QLocale::system().timeFormat(QLocale::ShortFormat));
+	cChangeDateFormat(QLocale().dateFormat(QLocale::ShortFormat));
+	cChangeTimeFormat(QLocale().timeFormat(QLocale::ShortFormat));
 
 	DEBUG_LOG(("Application Info: starting app..."));
 
 	// Create mime database, so it won't be slow later.
-	QMimeDatabase().mimeTypeForName(qsl("text/plain"));
+	QMimeDatabase().mimeTypeForName(u"text/plain"_q);
 
 	_primaryWindow = std::make_unique<Window::Controller>();
 	_lastActiveWindow = _primaryWindow.get();
@@ -556,7 +570,7 @@ bool Application::eventFilter(QObject *object, QEvent *e) {
 			const auto event = static_cast<QFileOpenEvent*>(e);
 			const auto url = QString::fromUtf8(
 				event->url().toEncoded().trimmed());
-			if (url.startsWith(qstr("tg://"), Qt::CaseInsensitive)) {
+			if (url.startsWith(u"tg://"_q, Qt::CaseInsensitive)) {
 				cSetStartUrl(url.mid(0, 8192));
 				checkStartUrl();
 			}
@@ -582,6 +596,18 @@ void Application::saveSettingsDelayed(crl::time delay) {
 
 void Application::saveSettings() {
 	Local::writeSettings();
+}
+
+bool Application::canSaveFileWithoutAskingForPath() const {
+	if (Core::App().settings().askDownloadPath()) {
+		return false;
+	} else if (KSandbox::isInside()
+		&& Core::App().settings().downloadPath().isEmpty()) {
+		const auto path = QStandardPaths::writableLocation(
+			QStandardPaths::DownloadLocation);
+		return base::CanReadDirectory(path);
+	}
+	return true;
 }
 
 MTP::Config &Application::fallbackProductionConfig() const {
@@ -766,7 +792,7 @@ void Application::forceLogOut(
 	}));
 	box->setCloseByEscape(false);
 	box->setCloseByOutsideClick(false);
-	const auto weak = base::make_weak(account.get());
+	const auto weak = base::make_weak(account);
 	connect(box, &QObject::destroyed, [=] {
 		crl::on_main(weak, [=] {
 			account->forcedLogOut();
@@ -820,10 +846,6 @@ rpl::producer<bool> Application::appDeactivatedValue() const {
 	});
 }
 
-void Application::call_handleObservables() {
-	base::HandleObservables();
-}
-
 void Application::switchDebugMode() {
 	if (Logs::DebugEnabled()) {
 		Logs::SetDebugEnabled(false);
@@ -833,16 +855,18 @@ void Application::switchDebugMode() {
 		Logs::SetDebugEnabled(true);
 		_launcher->writeDebugModeSetting();
 		DEBUG_LOG(("Debug logs started."));
-		Ui::hideLayer();
+		if (_primaryWindow) {
+			_primaryWindow->hideLayer();
+		}
 	}
 }
 
 void Application::switchFreeType() {
 	if (cUseFreeType()) {
-		QFile(cWorkingDir() + qsl("tdata/withfreetype")).remove();
+		QFile(cWorkingDir() + u"tdata/withfreetype"_q).remove();
 		cSetUseFreeType(false);
 	} else {
-		QFile f(cWorkingDir() + qsl("tdata/withfreetype"));
+		QFile f(cWorkingDir() + u"tdata/withfreetype"_q);
 		if (f.open(QIODevice::WriteOnly)) {
 			f.write("1");
 			f.close();
@@ -944,6 +968,12 @@ bool Application::canApplyLangPackWithoutRestart() const {
 	return true;
 }
 
+void Application::checkSendPaths() {
+	if (!cSendPaths().isEmpty() && _primaryWindow && !_primaryWindow->locked()) {
+		_primaryWindow->widget()->sendPaths();
+	}
+}
+
 void Application::checkStartUrl() {
 	if (!cStartUrl().isEmpty() && _primaryWindow && !_primaryWindow->locked()) {
 		const auto url = cStartUrl();
@@ -1030,11 +1060,15 @@ void Application::preventOrInvoke(Fn<void()> &&callback) {
 }
 
 void Application::lockByPasscode() {
+	enumerateWindows([&](not_null<Window::Controller*> w) {
+		_passcodeLock = true;
+		w->setupPasscodeLock();
+	});
+}
+
+void Application::maybeLockByPasscode() {
 	preventOrInvoke([=] {
-		enumerateWindows([&](not_null<Window::Controller*> w) {
-			_passcodeLock = true;
-			w->setupPasscodeLock();
-		});
+		lockByPasscode();
 	});
 }
 
@@ -1137,14 +1171,6 @@ bool Application::hasActiveWindow(not_null<Main::Session*> session) const {
 	return false;
 }
 
-void Application::saveCurrentDraftsToHistories() {
-	if (!_primaryWindow) {
-		return;
-	} else if (const auto controller = _primaryWindow->sessionController()) {
-		controller->content()->saveFieldToHistoryLocalDraft();
-	}
-}
-
 Window::Controller *Application::primaryWindow() const {
 	return _primaryWindow.get();
 }
@@ -1203,11 +1229,9 @@ void Application::closeWindow(not_null<Window::Controller*> window) {
 
 void Application::closeChatFromWindows(not_null<PeerData*> peer) {
 	for (const auto &[history, window] : _secondaryWindows) {
-		if (!window) {
-			continue;
-		}
 		if (history->peer == peer) {
 			closeWindow(window.get());
+			break;
 		} else if (const auto session = window->sessionController()) {
 			if (session->activeChatCurrent().peer() == peer) {
 				session->showPeerHistory(
@@ -1220,10 +1244,12 @@ void Application::closeChatFromWindows(not_null<PeerData*> peer) {
 		const auto primary = _primaryWindow->sessionController();
 		if ((primary->activeChatCurrent().peer() == peer)
 			&& (&primary->session() == &peer->session())) {
-			// showChatsList
-			primary->showPeerHistory(
-				PeerId(0),
-				Window::SectionShow::Way::ClearStack);
+			primary->clearSectionStack();
+		}
+		if (const auto forum = primary->shownForum().current()) {
+			if (peer->forum() == forum) {
+				primary->closeForum();
+			}
 		}
 	}
 }
@@ -1427,7 +1453,7 @@ void Application::startShortcuts() {
 		});
 		request->check(Command::Lock) && request->handle([=] {
 			if (!passcodeLocked() && _domain->local().hasLocalPasscode()) {
-				lockByPasscode();
+				maybeLockByPasscode();
 				return true;
 			}
 			return false;
@@ -1444,10 +1470,12 @@ void Application::startShortcuts() {
 void Application::RegisterUrlScheme() {
 	base::Platform::RegisterUrlScheme(base::Platform::UrlSchemeDescriptor{
 		.executable = cExeDir() + cExeName(),
-		.arguments = qsl("-workdir \"%1\"").arg(cWorkingDir()),
-		.protocol = qsl("tg"),
-		.protocolName = qsl("Telegram Link"),
-		.shortAppName = qsl("tdesktop"),
+		.arguments = Sandbox::Instance().customWorkingDir()
+			? u"-workdir \"%1\""_q.arg(cWorkingDir())
+			: QString(),
+		.protocol = u"tg"_q,
+		.protocolName = u"Telegram Link"_q,
+		.shortAppName = u"tdesktop"_q,
 		.longAppName = QCoreApplication::applicationName(),
 		.displayAppName = AppName.utf16(),
 		.displayAppDescription = AppName.utf16(),

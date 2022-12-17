@@ -24,6 +24,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_domain.h"
 #include "info/info_memento.h"
 #include "info/info_controller.h"
+#include "window/window_controller.h"
 #include "window/window_session_controller.h"
 #include "settings/settings_advanced.h"
 #include "settings/settings_intro.h"
@@ -31,6 +32,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
+
+#include <ksandbox.h>
 
 extern "C" {
 #include <openssl/rsa.h>
@@ -225,7 +228,7 @@ std::shared_ptr<Updater> GetUpdaterInstance() {
 }
 
 QString UpdatesFolder() {
-	return cWorkingDir() + qsl("tupdates");
+	return cWorkingDir() + u"tupdates"_q;
 }
 
 void ClearAll() {
@@ -256,10 +259,10 @@ QString FindUpdateFile() {
 }
 
 QString ExtractFilename(const QString &url) {
-	const auto expression = QRegularExpression(qsl("/([^/\\?]+)(\\?|$)"));
+	const auto expression = QRegularExpression(u"/([^/\\?]+)(\\?|$)"_q);
 	if (const auto match = expression.match(url); match.hasMatch()) {
 		return match.captured(1).replace(
-			QRegularExpression(qsl("[^a-zA-Z0-9_\\-]")),
+			QRegularExpression(u"[^a-zA-Z0-9_\\-]"_q),
 			QString());
 	}
 	return QString();
@@ -287,7 +290,7 @@ bool UnpackUpdate(const QString &filepath) {
 	}
 	input.close();
 
-	QString tempDirPath = cWorkingDir() + qsl("tupdates/temp"), readyFilePath = cWorkingDir() + qsl("tupdates/temp/ready");
+	QString tempDirPath = cWorkingDir() + u"tupdates/temp"_q, readyFilePath = cWorkingDir() + u"tupdates/temp/ready"_q;
 	base::Platform::DeleteDirectory(tempDirPath);
 
 	QDir tempDir(tempDirPath);
@@ -482,7 +485,7 @@ bool UnpackUpdate(const QString &filepath) {
 		}
 
 		// create tdata/version file
-		tempDir.mkdir(QDir(tempDirPath + qsl("/tdata")).absolutePath());
+		tempDir.mkdir(QDir(tempDirPath + u"/tdata"_q).absolutePath());
 		std::wstring versionString = FormatVersionDisplay(version).toStdWString();
 
 		const auto versionNum = VersionInt(version);
@@ -490,9 +493,9 @@ bool UnpackUpdate(const QString &filepath) {
 		VersionChar versionStr[32];
 		memcpy(versionStr, versionString.c_str(), versionLen);
 
-		QFile fVersion(tempDirPath + qsl("/tdata/version"));
+		QFile fVersion(tempDirPath + u"/tdata/version"_q);
 		if (!fVersion.open(QIODevice::WriteOnly)) {
-			LOG(("Update Error: cant write version file '%1'").arg(tempDirPath + qsl("/version")));
+			LOG(("Update Error: cant write version file '%1'").arg(tempDirPath + u"/version"_q));
 			return false;
 		}
 		fVersion.write((const char*)&versionNum, sizeof(VersionInt));
@@ -720,7 +723,7 @@ std::optional<QString> HttpChecker::parseOldResponse(
 		const QByteArray &response) const {
 	const auto string = QString::fromLatin1(response);
 	const auto old = QRegularExpression(
-		qsl("^\\s*(\\d+)\\s*:\\s*([\\x21-\\x7f]+)\\s*$")
+		u"^\\s*(\\d+)\\s*:\\s*([\\x21-\\x7f]+)\\s*$"_q
 	).match(string);
 	if (!old.hasMatch()) {
 		return std::nullopt;
@@ -868,7 +871,7 @@ void HttpLoaderActor::gotMetaData() {
 	const auto pairs = _reply->rawHeaderPairs();
 	for (const auto &pair : pairs) {
 		if (QString::fromUtf8(pair.first).toLower() == "content-range") {
-			const auto m = QRegularExpression(qsl("/(\\d+)([^\\d]|$)")).match(QString::fromUtf8(pair.second));
+			const auto m = QRegularExpression(u"/(\\d+)([^\\d]|$)"_q).match(QString::fromUtf8(pair.second));
 			if (m.hasMatch()) {
 				_parent->writeChunk({}, m.captured(1).toInt());
 			}
@@ -1505,16 +1508,16 @@ int UpdateChecker::size() const {
 //}
 
 bool checkReadyUpdate() {
-	QString readyFilePath = cWorkingDir() + qsl("tupdates/temp/ready"), readyPath = cWorkingDir() + qsl("tupdates/temp");
+	QString readyFilePath = cWorkingDir() + u"tupdates/temp/ready"_q, readyPath = cWorkingDir() + u"tupdates/temp"_q;
 	if (!QFile(readyFilePath).exists() || cExeName().isEmpty()) {
-		if (QDir(cWorkingDir() + qsl("tupdates/ready")).exists() || QDir(cWorkingDir() + qsl("tupdates/temp")).exists()) {
+		if (QDir(cWorkingDir() + u"tupdates/ready"_q).exists() || QDir(cWorkingDir() + u"tupdates/temp"_q).exists()) {
 			ClearAll();
 		}
 		return false;
 	}
 
 	// check ready version
-	QString versionPath = readyPath + qsl("/tdata/version");
+	QString versionPath = readyPath + u"/tdata/version"_q;
 	{
 		QFile fVersion(versionPath);
 		if (!fVersion.open(QIODevice::ReadOnly)) {
@@ -1549,14 +1552,14 @@ bool checkReadyUpdate() {
 	}
 
 #ifdef Q_OS_WIN
-	QString curUpdater = (cExeDir() + qsl("Updater.exe"));
-	QFileInfo updater(cWorkingDir() + qsl("tupdates/temp/Updater.exe"));
+	QString curUpdater = (cExeDir() + u"Updater.exe"_q);
+	QFileInfo updater(cWorkingDir() + u"tupdates/temp/Updater.exe"_q);
 #elif defined Q_OS_MAC // Q_OS_WIN
-	QString curUpdater = (cExeDir() + cExeName() + qsl("/Contents/Frameworks/Updater"));
-	QFileInfo updater(cWorkingDir() + qsl("tupdates/temp/Telegram.app/Contents/Frameworks/Updater"));
+	QString curUpdater = (cExeDir() + cExeName() + u"/Contents/Frameworks/Updater"_q);
+	QFileInfo updater(cWorkingDir() + u"tupdates/temp/Telegram.app/Contents/Frameworks/Updater"_q);
 #elif defined Q_OS_UNIX // Q_OS_MAC
-	QString curUpdater = (cExeDir() + qsl("Updater"));
-	QFileInfo updater(cWorkingDir() + qsl("tupdates/temp/Updater"));
+	QString curUpdater = (cExeDir() + u"Updater"_q);
+	QFileInfo updater(cWorkingDir() + u"tupdates/temp/Updater"_q);
 #endif // Q_OS_UNIX
 	if (!updater.exists()) {
 		QFileInfo current(curUpdater);
@@ -1636,21 +1639,22 @@ void UpdateApplication() {
 			return "https://www.microsoft.com/en-us/store/p/telegram-desktop/9nztwsqntd0s";
 #elif defined OS_MAC_STORE // OS_WIN_STORE
 			return "https://itunes.apple.com/ae/app/telegram-desktop/id946399090";
-#elif defined Q_OS_UNIX && !defined Q_OS_MAC // OS_WIN_STORE || OS_MAC_STORE
-			if (Platform::InFlatpak()) {
+#else // OS_WIN_STORE || OS_MAC_STORE
+			if (KSandbox::isFlatpak()) {
 				return "https://flathub.org/apps/details/org.telegram.desktop";
-			} else if (Platform::InSnap()) {
+			} else if (KSandbox::isSnap()) {
 				return "https://snapcraft.io/telegram-desktop";
 			}
 			return "https://desktop.telegram.org";
-#else // OS_WIN_STORE || OS_MAC_STORE || (defined Q_OS_UNIX && !defined Q_OS_MAC)
-			return "https://desktop.telegram.org";
-#endif // OS_WIN_STORE || OS_MAC_STORE || (defined Q_OS_UNIX && !defined Q_OS_MAC)
+#endif // OS_WIN_STORE || OS_MAC_STORE
 		}();
 		UrlClickHandler::Open(url);
 	} else {
 		cSetAutoUpdate(true);
-		if (const auto window = App::wnd()) {
+		const auto window = Core::IsAppLaunched()
+			? Core::App().primaryWindow()
+			: nullptr;
+		if (window) {
 			if (const auto controller = window->sessionController()) {
 				controller->showSection(
 					std::make_shared<Info::Memento>(
@@ -1658,11 +1662,11 @@ void UpdateApplication() {
 						::Settings::Advanced::Id()),
 					Window::SectionShow());
 			} else {
-				window->showSpecialLayer(
-					Box<::Settings::LayerWidget>(&window->controller()),
+				window->widget()->showSpecialLayer(
+					Box<::Settings::LayerWidget>(window),
 					anim::type::normal);
 			}
-			window->showFromTray();
+			window->widget()->showFromTray();
 		}
 		cSetLastUpdateCheck(0);
 		Core::UpdateChecker().start();

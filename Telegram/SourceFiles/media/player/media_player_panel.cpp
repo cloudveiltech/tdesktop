@@ -135,7 +135,7 @@ void Panel::updateSize() {
 }
 
 void Panel::paintEvent(QPaintEvent *e) {
-	Painter p(this);
+	auto p = QPainter(this);
 
 	if (!_cache.isNull()) {
 		bool animating = _a_appearance.animating();
@@ -160,8 +160,7 @@ void Panel::paintEvent(QPaintEvent *e) {
 		| (rtl() ? RectPart::Left : RectPart::Right)
 		| RectPart::Top;
 	Ui::Shadow::paint(p, shadowedRect, width(), st::defaultRoundShadow, shadowedSides);
-	auto parts = RectPart::Full;
-	Ui::FillRoundRect(p, shadowedRect, st::menuBg, Ui::MenuCorners, nullptr, parts);
+	Ui::FillRoundRect(p, shadowedRect, st::menuBg, Ui::MenuCorners);
 }
 
 void Panel::enterEventHook(QEnterEvent *e) {

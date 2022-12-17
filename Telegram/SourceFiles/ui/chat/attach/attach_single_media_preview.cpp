@@ -74,13 +74,13 @@ bool SingleMediaPreview::drawBackground() const {
 	return !_sticker;
 }
 
-bool SingleMediaPreview::tryPaintAnimation(Painter &p) {
+bool SingleMediaPreview::tryPaintAnimation(QPainter &p) {
 	if (_gifPreview && _gifPreview->started()) {
 		const auto paused = _gifPaused();
 		const auto frame = _gifPreview->current({
 			.frame = QSize(previewWidth(), previewHeight()),
 		}, paused ? 0 : crl::now());
-		p.drawPixmap(previewLeft(), previewTop(), frame);
+		p.drawImage(previewLeft(), previewTop(), frame);
 		return true;
 	} else if (_lottiePreview && _lottiePreview->ready()) {
 		const auto frame = _lottiePreview->frame();

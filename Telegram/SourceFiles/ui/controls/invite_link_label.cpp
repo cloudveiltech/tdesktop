@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/controls/invite_link_label.h"
 
+#include "ui/painter.h"
 #include "ui/rp_widget.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/buttons.h"
@@ -20,7 +21,7 @@ InviteLinkLabel::InviteLinkLabel(
 	rpl::producer<QString> text,
 	Fn<base::unique_qptr<PopupMenu>()> createMenu)
 : _outer(std::in_place, parent) {
-	_outer->resize(_outer->width(), st::inviteLinkField.height);
+	_outer->resize(_outer->width(), st::inviteLinkFieldHeight);
 	const auto label = CreateChild<FlatLabel>(
 		_outer.get(),
 		std::move(text),
@@ -33,7 +34,7 @@ InviteLinkLabel::InviteLinkLabel(
 
 	_outer->widthValue(
 	) | rpl::start_with_next([=](int width) {
-		const auto margin = st::inviteLinkField.textMrg;
+		const auto margin = st::inviteLinkFieldMargin;
 		label->resizeToWidth(width - margin.left() - margin.right());
 		label->moveToLeft(margin.left(), margin.top());
 		button->moveToRight(0, 0);
@@ -43,7 +44,7 @@ InviteLinkLabel::InviteLinkLabel(
 	) | rpl::start_with_next([=] {
 		auto p = QPainter(_outer.get());
 		p.setPen(Qt::NoPen);
-		p.setBrush(st::inviteLinkField.bgColor);
+		p.setBrush(st::filterInputInactiveBg);
 		{
 			PainterHighQualityEnabler hq(p);
 			p.drawRoundedRect(

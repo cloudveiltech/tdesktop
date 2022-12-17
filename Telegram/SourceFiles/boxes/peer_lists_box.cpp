@@ -278,7 +278,7 @@ void PeerListsBox::resizeEvent(QResizeEvent *e) {
 }
 
 void PeerListsBox::paintEvent(QPaintEvent *e) {
-	Painter p(this);
+	auto p = QPainter(this);
 
 	const auto &bg = (firstController()->listSt()
 		? *firstController()->listSt()
@@ -402,7 +402,9 @@ void PeerListsBox::addSelectItem(
 	addSelectItem(
 		peer->id.value,
 		peer->shortName(),
-		PaintUserpicCallback(peer, false),
+		(peer->isForum()
+			? ForceRoundUserpicCallback(peer)
+			: PaintUserpicCallback(peer, false)),
 		animated);
 }
 
@@ -412,7 +414,7 @@ void PeerListsBox::addSelectItem(
 	addSelectItem(
 		row->id(),
 		row->generateShortName(),
-		row->generatePaintUserpicCallback(),
+		row->generatePaintUserpicCallback(true),
 		animated);
 }
 

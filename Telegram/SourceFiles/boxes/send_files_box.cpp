@@ -25,7 +25,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/file_utilities.h"
 #include "core/mime_type.h"
 #include "base/event_filter.h"
+#include "base/call_delayed.h"
 #include "boxes/premium_limits_box.h"
+#include "boxes/premium_preview_box.h"
 #include "ui/boxes/confirm_box.h"
 #include "ui/effects/animations.h"
 #include "ui/effects/scroll_content_shadow.h"
@@ -44,16 +46,18 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/text_options.h"
 #include "ui/toast/toast.h"
 #include "ui/controls/emoji_button.h"
+#include "ui/painter.h"
 #include "lottie/lottie_single_player.h"
 #include "data/data_document.h"
 #include "data/data_user.h"
 #include "data/data_premium_limits.h"
+#include "data/stickers/data_stickers.h"
+#include "data/stickers/data_custom_emoji.h"
 #include "media/clip/media_clip_reader.h"
 #include "api/api_common.h"
 #include "window/window_session_controller.h"
 #include "core/application.h"
 #include "core/core_settings.h"
-#include "facades.h" // App::LambdaDelayed.
 #include "styles/style_chat.h"
 #include "styles/style_layers.h"
 #include "styles/style_boxes.h"
@@ -98,7 +102,9 @@ void FileDialogCallback(
 rpl::producer<QString> FieldPlaceholder(
 		const Ui::PreparedList &list,
 		SendFilesWay way) {
-	return list.canAddCaption(way.groupFiles() && way.sendImagesAsPhotos())
+	return list.canAddCaption(
+			way.groupFiles() && way.sendImagesAsPhotos(),
+			way.sendImagesAsPhotos())
 		? tr::lng_photo_caption()
 		: tr::lng_photos_comment();
 }
@@ -249,21 +255,18 @@ SendFilesBox::SendFilesBox(
 	not_null<Window::SessionController*> controller,
 	Ui::PreparedList &&list,
 	const TextWithTags &caption,
-	SendLimit limit,
+	not_null<PeerData*> peer,
 	Api::SendType sendType,
 	SendMenu::Type sendMenuType)
 : _controller(controller)
 , _sendType(sendType)
 , _titleHeight(st::boxTitleHeight)
 , _list(std::move(list))
-, _sendLimit(limit)
+, _sendLimit(peer->slowmodeApplied() ? SendLimit::One : SendLimit::Many)
 , _sendMenuType(sendMenuType)
-, _caption(
-	this,
-	st::confirmCaptionArea,
-	Ui::InputField::Mode::MultiLine,
-	nullptr,
-	caption)
+, _allowEmojiWithoutPremium(Data::AllowEmojiWithoutPremium(peer))
+, _caption(this, st::confirmCaptionArea, Ui::InputField::Mode::MultiLine)
+, _prefilledCaptionText(std::move(caption))
 , _scroll(this, st::boxScroll)
 , _inner(
 	_scroll->setOwnedWidget(
@@ -350,7 +353,7 @@ void SendFilesBox::prepare() {
 
 	_addFile = addLeftButton(
 		tr::lng_stickers_featured_add(),
-		App::LambdaDelayed(st::historyAttach.ripple.hideDuration, this, [=] {
+		base::fn_delayed(st::historyAttach.ripple.hideDuration, this, [=] {
 			openDialogToAddFileToAlbum();
 		}));
 	setupDragArea();
@@ -389,6 +392,11 @@ void SendFilesBox::refreshAllAfterChanges(int fromItem) {
 			break;
 		}
 	}
+	{
+		auto sendWay = _sendWay.current();
+		sendWay.setHasCompressedStickers(_list.hasSticker());
+		_sendWay = sendWay;
+	}
 	generatePreviewFrom(fromBlock);
 	_inner->resizeToWidth(st::boxWideWidth);
 	refreshControls();
@@ -426,6 +434,7 @@ void SendFilesBox::openDialogToAddFileToAlbum() {
 void SendFilesBox::initSendWay() {
 	_sendWay = [&] {
 		auto result = Core::App().settings().sendFilesWay();
+		result.setHasCompressedStickers(_list.hasSticker());
 		if (_sendLimit == SendLimit::One) {
 			result.setGroupFiles(true);
 			return result;
@@ -454,7 +463,9 @@ void SendFilesBox::updateCaptionPlaceholder() {
 		return;
 	}
 	const auto way = _sendWay.current();
-	if (!_list.canAddCaption(way.groupFiles() && way.sendImagesAsPhotos())
+	if (!_list.canAddCaption(
+			way.groupFiles() && way.sendImagesAsPhotos(),
+			way.sendImagesAsPhotos())
 		&& _sendLimit == SendLimit::One) {
 		_caption->hide();
 		if (_emojiToggle) {
@@ -667,14 +678,38 @@ void SendFilesBox::updateSendWayControlsVisibility() {
 
 	_hintLabel->setVisible(
 		_controller->session().settings().photoEditorHintShown()
-			? _list.hasSendImagesAsPhotosOption(false)
+			? _list.canHaveEditorHintLabel()
 			: false);
 }
 
 void SendFilesBox::setupCaption() {
-	_caption->setMaxLength(kMaxMessageLength);
+	const auto allow = [=](const auto&) {
+		return _allowEmojiWithoutPremium;
+	};
+	InitMessageFieldHandlers(
+		_controller,
+		_caption.data(),
+		Window::GifPauseReason::Layer,
+		allow);
+	Ui::Emoji::SuggestionsController::Init(
+		getDelegate()->outerContainer(),
+		_caption,
+		&_controller->session(),
+		{ .suggestCustomEmoji = true, .allowCustomWithoutPremium = allow });
+
+	if (!_prefilledCaptionText.text.isEmpty()) {
+		_caption->setTextWithTags(
+			_prefilledCaptionText,
+			Ui::InputField::HistoryAction::Clear);
+
+		auto cursor = _caption->textCursor();
+		cursor.movePosition(QTextCursor::End);
+		_caption->setTextCursor(cursor);
+	}
 	_caption->setSubmitSettings(
 		Core::App().settings().sendSubmitWay());
+	_caption->setMaxLength(kMaxMessageLength);
+
 	connect(_caption, &Ui::InputField::resized, [=] {
 		captionResized();
 	});
@@ -696,21 +731,6 @@ void SendFilesBox::setupCaption() {
 		}
 		Unexpected("action in MimeData hook.");
 	});
-	const auto show = std::make_shared<Window::Show>(_controller);
-	const auto session = &_controller->session();
-
-	_caption->setInstantReplaces(Ui::InstantReplaces::Default());
-	_caption->setInstantReplacesEnabled(
-		Core::App().settings().replaceEmojiValue());
-	_caption->setMarkdownReplacesEnabled(rpl::single(true));
-	_caption->setEditLinkCallback(
-		DefaultEditLinkCallback(show, session, _caption));
-	Ui::Emoji::SuggestionsController::Init(
-		getDelegate()->outerContainer(),
-		_caption,
-		session);
-
-	InitSpellchecker(show, session, _caption);
 
 	updateCaptionPlaceholder();
 	setupEmojiPanel();
@@ -720,21 +740,39 @@ void SendFilesBox::setupEmojiPanel() {
 	Expects(_caption != nullptr);
 
 	const auto container = getDelegate()->outerContainer();
+	using Selector = ChatHelpers::TabbedSelector;
 	_emojiPanel = base::make_unique_q<ChatHelpers::TabbedPanel>(
 		container,
 		_controller,
-		object_ptr<ChatHelpers::TabbedSelector>(
+		object_ptr<Selector>(
 			nullptr,
 			_controller,
-			ChatHelpers::TabbedSelector::Mode::EmojiOnly));
+			Window::GifPauseReason::Layer,
+			Selector::Mode::EmojiOnly));
 	_emojiPanel->setDesiredHeightValues(
 		1.,
 		st::emojiPanMinHeight / 2,
 		st::emojiPanMinHeight);
 	_emojiPanel->hide();
+	_emojiPanel->selector()->setAllowEmojiWithoutPremium(
+		_allowEmojiWithoutPremium);
 	_emojiPanel->selector()->emojiChosen(
-	) | rpl::start_with_next([=](EmojiPtr emoji) {
-		Ui::InsertEmojiAtCursor(_caption->textCursor(), emoji);
+	) | rpl::start_with_next([=](ChatHelpers::EmojiChosen data) {
+		Ui::InsertEmojiAtCursor(_caption->textCursor(), data.emoji);
+	}, lifetime());
+	_emojiPanel->selector()->customEmojiChosen(
+	) | rpl::start_with_next([=](ChatHelpers::FileChosen data) {
+		const auto info = data.document->sticker();
+		if (info
+			&& info->setType == Data::StickersType::Emoji
+			&& !_controller->session().premium()
+			&& !_allowEmojiWithoutPremium) {
+			ShowPremiumPreviewBox(
+				_controller,
+				PremiumPreview::AnimatedEmoji);
+		} else {
+			Data::InsertCustomEmoji(_caption.data(), data.document);
+		}
 	}, lifetime());
 
 	const auto filterCallback = [=](not_null<QEvent*> event) {
@@ -777,13 +815,13 @@ void SendFilesBox::captionResized() {
 }
 
 bool SendFilesBox::canAddFiles(not_null<const QMimeData*> data) const {
-	return (data->hasUrls() && CanAddUrls(data->urls())) || data->hasImage();
+	return CanAddUrls(base::GetMimeUrls(data)) || data->hasImage();
 }
 
 bool SendFilesBox::addFiles(not_null<const QMimeData*> data) {
 	const auto premium = _controller->session().premium();
 	auto list = [&] {
-		const auto urls = data->hasUrls() ? data->urls() : QList<QUrl>();
+		const auto urls = base::GetMimeUrls(data);
 		auto result = CanAddUrls(urls)
 			? Storage::PrepareMediaList(
 				urls,
@@ -961,10 +999,10 @@ void SendFilesBox::updateControlsGeometry() {
 }
 
 void SendFilesBox::setInnerFocus() {
-	if (!_caption || _caption->isHidden()) {
-		setFocus();
-	} else {
+	if (_caption && !_caption->isHidden()) {
 		_caption->setFocusFast();
+	} else {
+		BoxContent::setInnerFocus();
 	}
 }
 
@@ -991,7 +1029,8 @@ bool SendFilesBox::validateLength(const QString &text) const {
 	const auto way = _sendWay.current();
 	if (remove <= 0
 		|| !_list.canAddCaption(
-			way.groupFiles() && way.sendImagesAsPhotos())) {
+			way.groupFiles() && way.sendImagesAsPhotos(),
+			way.sendImagesAsPhotos())) {
 		return true;
 	}
 	_controller->show(Box(CaptionLimitReachedBox, session, remove));

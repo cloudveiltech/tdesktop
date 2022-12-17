@@ -28,6 +28,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/file_utilities.h"
 #include "core/application.h"
 #include "ui/boxes/confirm_box.h"
+#include "ui/painter.h"
 #include "editor/photo_editor_layer_widget.h"
 #include "media/streaming/media_streaming_instance.h"
 #include "media/streaming/media_streaming_player.h"
@@ -59,6 +60,7 @@ bool IsCameraAvailable() {
 void CameraBox(
 		not_null<Ui::GenericBox*> box,
 		not_null<Window::Controller*> controller,
+		PeerData *peer,
 		Fn<void(QImage &&image)> &&doneCallback) {
 	using namespace Webrtc;
 
@@ -87,6 +89,9 @@ void CameraBox(
 		Editor::PrepareProfilePhoto(
 			box,
 			controller,
+			((peer && peer->isForum())
+				? ImageRoundRadius::Large
+				: ImageRoundRadius::Ellipse),
 			std::move(done),
 			track->frame(FrameRequest()).mirrored(true, false));
 	});
@@ -127,7 +132,7 @@ HistoryDownButton::HistoryDownButton(QWidget *parent, const style::TwoIconButton
 }
 
 QImage HistoryDownButton::prepareRippleMask() const {
-	return Ui::RippleAnimation::ellipseMask(QSize(_st.rippleAreaSize, _st.rippleAreaSize));
+	return Ui::RippleAnimation::EllipseMask(QSize(_st.rippleAreaSize, _st.rippleAreaSize));
 }
 
 QPoint HistoryDownButton::prepareRippleStartPosition() const {
@@ -135,7 +140,7 @@ QPoint HistoryDownButton::prepareRippleStartPosition() const {
 }
 
 void HistoryDownButton::paintEvent(QPaintEvent *e) {
-	Painter p(this);
+	auto p = QPainter(this);
 
 	const auto over = isOver();
 	const auto down = isDown();
@@ -149,7 +154,7 @@ void HistoryDownButton::paintEvent(QPaintEvent *e) {
 		st.align = style::al_center;
 		st.font = st::historyToDownBadgeFont;
 		st.size = st::historyToDownBadgeSize;
-		st.sizeId = Dialogs::Ui::UnreadBadgeInHistoryToDown;
+		st.sizeId = Dialogs::Ui::UnreadBadgeSize::HistoryToDown;
 		Dialogs::Ui::PaintUnreadBadge(p, unreadString, width(), 0, st, 4);
 	}
 }
@@ -295,6 +300,9 @@ void UserpicButton::choosePhotoLocally() {
 			Editor::PrepareProfilePhotoFromFile(
 				this,
 				_window,
+				((_peer && _peer->isForum())
+					? ImageRoundRadius::Large
+					: ImageRoundRadius::Ellipse),
 				callback);
 		}));
 	};
@@ -304,7 +312,7 @@ void UserpicButton::choosePhotoLocally() {
 		_menu = base::make_unique_q<Ui::PopupMenu>(this);
 		_menu->addAction(tr::lng_attach_file(tr::now), chooseFile);
 		_menu->addAction(tr::lng_attach_camera(tr::now), [=] {
-			_window->show(Box(CameraBox, _window, callback));
+			_window->show(Box(CameraBox, _window, _peer, callback));
 		});
 		_menu->popup(QCursor::pos());
 	}
@@ -318,7 +326,6 @@ void UserpicButton::changePhotoLocally(bool requestToUpload) {
 void UserpicButton::openPeerPhoto() {
 	Expects(_peer != nullptr);
 	Expects(_controller != nullptr);
-
 	//CloudVeil start
 	if (GlobalSecuritySettings::getSettings().disableProfilePhoto) {
 		return;
@@ -334,7 +341,7 @@ void UserpicButton::openPeerPhoto() {
 	if (!id) {
 		return;
 	}
-	const auto photo = _peer->owner().photo(id);	
+	const auto photo = _peer->owner().photo(id);
 	//CloudVeil start
 	bool isVideoDisallowed = GlobalSecuritySettings::getSettings().disableProfileVideo && photo->hasVideoUnfiltered();
 
@@ -360,7 +367,7 @@ void UserpicButton::setupPeerViewers() {
 	) | rpl::filter([=] {
 		return _waiting;
 	}) | rpl::start_with_next([=] {
-		if (!_userpicView || _userpicView->image()) {
+		if (!Ui::PeerUserpicLoading(_userpicView)) {
 			_waiting = false;
 			startNewPhotoShowing();
 		}
@@ -401,19 +408,18 @@ void UserpicButton::paintEvent(QPaintEvent *e) {
 		paintUserpicFrame(p, photoPosition);
 	}
 
+	const auto fillTranslatedShape = [&](const style::color &color) {
+		p.translate(photoLeft, photoTop);
+		fillShape(p, color);
+		p.translate(-photoLeft, -photoTop);
+	};
+
 	if (_role == Role::ChangePhoto || _role == Role::ChoosePhoto) {
 		auto over = isOver() || isDown();
 		if (over) {
-			PainterHighQualityEnabler hq(p);
-			p.setPen(Qt::NoPen);
-			p.setBrush(_userpicHasImage
+			fillTranslatedShape(_userpicHasImage
 				? st::msgDateImgBg
 				: _st.changeButton.textBgOver);
-			p.drawEllipse(
-				photoLeft,
-				photoTop,
-				_st.photoSize,
-				_st.photoSize);
 		}
 		paintRipple(
 			p,
@@ -451,16 +457,7 @@ void UserpicButton::paintEvent(QPaintEvent *e) {
 				_st.photoSize,
 				barHeight);
 			p.setClipRect(rect);
-			{
-				PainterHighQualityEnabler hq(p);
-				p.setPen(Qt::NoPen);
-				p.setBrush(_st.uploadBg);
-				p.drawEllipse(
-					photoLeft,
-					photoTop,
-					_st.photoSize,
-					_st.photoSize);
-			}
+			fillTranslatedShape(_st.uploadBg);
 			auto iconLeft = (_st.uploadIconPosition.x() < 0)
 				? (_st.photoSize - _st.uploadIcon.width()) / 2
 				: _st.uploadIconPosition.x();
@@ -482,8 +479,9 @@ void UserpicButton::paintUserpicFrame(Painter &p, QPoint photoPosition) {
 	checkStreamedIsStarted();
 	//CloudVeil start
 	bool isVideoEnabled = !GlobalSecuritySettings::getSettings().disableProfilePhoto && !GlobalSecuritySettings::getSettings().disableProfileVideo;
-	if (isVideoEnabled 
+	if (isVideoEnabled
 		//CloudVeil end
+		&& _streamed
 		&& _streamed->player().ready()
 		&& !_streamed->player().videoSize().isEmpty()) {
 		const auto paused = _controller
@@ -492,9 +490,22 @@ void UserpicButton::paintUserpicFrame(Painter &p, QPoint photoPosition) {
 			: false;
 		auto request = Media::Streaming::FrameRequest();
 		auto size = QSize{ _st.photoSize, _st.photoSize };
-		request.outer = size * cIntRetinaFactor();
-		request.resize = size * cIntRetinaFactor();
-		request.radius = ImageRoundRadius::Ellipse;
+		const auto ratio = style::DevicePixelRatio();
+		request.outer = request.resize = size * ratio;
+		const auto forum = _peer && _peer->isForum();
+		if (forum) {
+			const auto radius = int(_st.photoSize
+				* Ui::ForumUserpicRadiusMultiplier());
+			if (_roundingCorners[0].width() != radius * ratio) {
+				_roundingCorners = Images::CornersMask(radius);
+			}
+			request.rounding = Images::CornersMaskRef(_roundingCorners);
+		} else {
+			if (_ellipseMask.size() != request.outer) {
+				_ellipseMask = Images::EllipseMask(size);
+			}
+			request.mask = _ellipseMask;
+		}
 		p.drawImage(QRect(photoPosition, size), _streamed->frame(request));
 		if (!paused) {
 			_streamed->markFrameShown();
@@ -515,7 +526,7 @@ QPoint UserpicButton::countPhotoPosition() const {
 }
 
 QImage UserpicButton::prepareRippleMask() const {
-	return Ui::RippleAnimation::ellipseMask(QSize(
+	return Ui::RippleAnimation::EllipseMask(QSize(
 		_st.photoSize,
 		_st.photoSize));
 }
@@ -530,7 +541,7 @@ void UserpicButton::processPeerPhoto() {
 	Expects(_peer != nullptr);
 
 	_userpicView = _peer->createUserpicView();
-	_waiting = _userpicView && !_userpicView->image();
+	_waiting = Ui::PeerUserpicLoading(_userpicView);
 	if (_waiting) {
 		_peer->loadUserpic();
 	}
@@ -728,13 +739,11 @@ void UserpicButton::startAnimation() {
 
 void UserpicButton::switchChangePhotoOverlay(bool enabled) {
 	Expects(_role == Role::OpenPhoto);
-
 	//CloudVeil start
 	if (GlobalSecuritySettings::getSettings().disableProfilePhotoChange) {
 		enabled = false;
 	}
 	//CloudVeil end
-
 	if (_changeOverlayEnabled != enabled) {
 		_changeOverlayEnabled = enabled;
 		if (enabled) {
@@ -797,7 +806,10 @@ void UserpicButton::setImage(QImage &&image) {
 		size * cIntRetinaFactor(),
 		Qt::IgnoreAspectRatio,
 		Qt::SmoothTransformation);
-	_userpic = Ui::PixmapFromImage(Images::Circle(std::move(small)));
+	const auto forum = _peer && _peer->isForum();
+	_userpic = Ui::PixmapFromImage(forum
+		? Images::Round(std::move(small), Images::Option::RoundLarge)
+		: Images::Circle(std::move(small)));
 	_userpic.setDevicePixelRatio(cRetinaFactor());
 	_userpicCustom = _userpicHasImage = true;
 	_result = std::move(image);
@@ -805,25 +817,32 @@ void UserpicButton::setImage(QImage &&image) {
 	startNewPhotoShowing();
 }
 
+void UserpicButton::fillShape(QPainter &p, const style::color &color) const {
+	PainterHighQualityEnabler hq(p);
+	p.setPen(Qt::NoPen);
+	p.setBrush(color);
+	const auto size = _st.photoSize;
+	if (_peer && _peer->isForum()) {
+		const auto radius = size * Ui::ForumUserpicRadiusMultiplier();
+		p.drawRoundedRect(0, 0, size, size, radius, radius);
+	} else {
+		p.drawEllipse(0, 0, size, size);
+	}
+}
+
 void UserpicButton::prepareUserpicPixmap() {
 	if (_userpicCustom) {
 		return;
 	}
 	auto size = _st.photoSize;
-	auto paintButton = [&](Painter &p, const style::color &color) {
-		PainterHighQualityEnabler hq(p);
-		p.setBrush(color);
-		p.setPen(Qt::NoPen);
-		p.drawEllipse(0, 0, size, size);
-	};
 	_userpicHasImage = _peer
-		? (_peer->currentUserpic(_userpicView) || _role != Role::ChangePhoto)
-		: false;
+		&& (_peer->userpicCloudImage(_userpicView)
+			|| _role != Role::ChangePhoto);
 	_userpic = CreateSquarePixmap(size, [&](Painter &p) {
 		if (_userpicHasImage) {
 			_peer->paintUserpic(p, _userpicView, 0, 0, _st.photoSize);
 		} else {
-			paintButton(p, _st.changeButton.textBg);
+			fillShape(p, _st.changeButton.textBg);
 		}
 	});
 	_userpicUniqueKey = _userpicHasImage
@@ -842,7 +861,7 @@ SilentToggle::SilentToggle(QWidget *parent, not_null<ChannelData*> channel)
 
 	paintRequest(
 	) | rpl::start_with_next([=](const QRect &clip) {
-		Painter p(this);
+		auto p = QPainter(this);
 		paintRipple(p, _st.rippleAreaPosition, nullptr);
 
 		//const auto checked = _crossLineAnimation.value(_checked ? 1. : 0.);
@@ -915,7 +934,7 @@ QPoint SilentToggle::prepareRippleStartPosition() const {
 }
 
 QImage SilentToggle::prepareRippleMask() const {
-	return RippleAnimation::ellipseMask(
+	return RippleAnimation::EllipseMask(
 		QSize(_st.rippleAreaSize, _st.rippleAreaSize));
 }
 

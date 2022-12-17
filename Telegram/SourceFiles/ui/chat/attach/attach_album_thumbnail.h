@@ -33,9 +33,10 @@ public:
 	void resetLayoutAnimation();
 
 	int photoHeight() const;
+	int fileHeight() const;
 
 	void paintInAlbum(
-		Painter &p,
+		QPainter &p,
 		int left,
 		int top,
 		float64 shrinkProgress,
@@ -53,7 +54,10 @@ public:
 	void suggestMove(float64 delta, Fn<void()> callback);
 	void finishAnimations();
 
-	void updateFileRow(int row);
+	void setButtonVisible(bool value);
+	void moveButtons(int thumbTop);
+
+	bool isCompressedSticker() const;
 
 	static constexpr auto kShrinkDuration = crl::time(150);
 
@@ -61,9 +65,9 @@ private:
 	QRect countRealGeometry() const;
 	QRect countCurrentGeometry(float64 progress) const;
 	void prepareCache(QSize size, int shrink);
-	void drawSimpleFrame(Painter &p, QRect to, QSize size) const;
+	void drawSimpleFrame(QPainter &p, QRect to, QSize size) const;
 	QRect paintButtons(
-		Painter &p,
+		QPainter &p,
 		QPoint point,
 		int outerWidth,
 		float64 shrinkProgress);
@@ -88,6 +92,8 @@ private:
 	Animations::Simple _suggestedMoveAnimation;
 	int _lastShrinkValue = 0;
 	AttachControls _buttons;
+
+	bool _isCompressedSticker = false;
 
 	QRect _lastRectOfModify;
 	QRect _lastRectOfButtons;

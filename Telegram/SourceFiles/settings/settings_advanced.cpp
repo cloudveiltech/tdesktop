@@ -30,6 +30,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "core/update_checker.h"
 #include "core/application.h"
+#include "tray.h"
 #include "storage/localstorage.h"
 #include "storage/storage_domain.h"
 #include "data/data_session.h"
@@ -455,8 +456,7 @@ void SetupSystemIntegrationContent(
 	const auto closeToTaskbarShown = std::make_shared<rpl::variable<bool>>(false);
 	Core::App().settings().workModeValue(
 	) | rpl::start_with_next([=](WorkMode workMode) {
-		*closeToTaskbarShown = (workMode == WorkMode::WindowOnly)
-			|| !Platform::TrayIconSupported();
+		*closeToTaskbarShown = !Core::App().tray().has();
 	}, closeToTaskbar->lifetime());
 
 	closeToTaskbar->toggleOn(closeToTaskbarShown->value());
@@ -799,6 +799,19 @@ void Advanced::setupContent(not_null<Window::SessionController*> controller) {
 
 	if (cAutoUpdate()) {
 		addUpdate();
+	}
+	if (!HasUpdate()) {
+		AddSkip(content);
+		AddDivider(content);
+		AddSkip(content);
+		content->add(
+			CreateButton(
+				content,
+				tr::lng_settings_experimental(),
+				st::settingsButtonNoIcon)
+		)->setClickedCallback([=] {
+			_showOther.fire_copy(Experimental::Id());
+		});
 	}
 
 	AddSkip(content);

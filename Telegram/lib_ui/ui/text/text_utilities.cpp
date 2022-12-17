@@ -43,11 +43,23 @@ TextWithEntities Link(const QString &text, const QString &url) {
 }
 
 TextWithEntities Link(const QString &text, int index) {
-	return Link(text, QString("internal:index") + QChar(index));
+	return Link(text, u"internal:index"_q + QChar(index));
+}
+
+TextWithEntities Link(TextWithEntities text, const QString &url) {
+	return Wrapped(std::move(text), EntityType::CustomUrl, url);
+}
+
+TextWithEntities Link(TextWithEntities text, int index) {
+	return Link(std::move(text), u"internal:index"_q + QChar(index));
 }
 
 TextWithEntities PlainLink(const QString &text) {
 	return WithSingleEntity(text, EntityType::PlainLink);
+}
+
+TextWithEntities PlainLink(TextWithEntities text) {
+	return Wrapped(std::move(text), EntityType::PlainLink, QString());
 }
 
 TextWithEntities Wrapped(
@@ -90,6 +102,13 @@ TextWithEntities RichLangValue(const QString &text) {
 		offset = till + tag.size();
 	}
 	return result;
+}
+
+TextWithEntities SingleCustomEmoji(QString data) {
+	return {
+		u"@"_q,
+		{ EntityInText(EntityType::CustomEmoji, 0, 1, data) },
+	};
 }
 
 TextWithEntities Mid(const TextWithEntities &text, int position, int n) {

@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "ui/effects/ripple_animation.h"
 #include "ui/text/text_options.h"
+#include "ui/painter.h"
 #include "data/data_peer.h"
 #include "data/data_cloud_file.h"
 #include "main/main_session.h"
@@ -98,8 +99,8 @@ void PeerListWidget::paintItem(Painter &p, int x, int y, Item *item, bool select
 
 	if (item->name.isEmpty()) {
 		item->name.setText(
-			st::msgNameStyle,
-			item->peer->name,
+			st::semiboldTextStyle,
+			item->peer->name(),
 			Ui::NameTextOptions());
 	}
 	int nameLeft = x + _st.namePosition.x();
@@ -148,7 +149,7 @@ void PeerListWidget::mousePressEvent(QMouseEvent *e) {
 		const auto item = _items[_pressed];
 		if (!item->ripple) {
 			auto memberRowWidth = rowWidth();
-			auto mask = Ui::RippleAnimation::rectMask(QSize(memberRowWidth, _st.height));
+			auto mask = Ui::RippleAnimation::RectMask(QSize(memberRowWidth, _st.height));
 			item->ripple = std::make_unique<Ui::RippleAnimation>(_st.button.ripple, std::move(mask), [this, index = _pressed] {
 				repaintRow(index);
 			});

@@ -9,13 +9,21 @@
 #include "base/unique_qptr.h"
 #include "ui/rp_widget.h"
 #include "ui/widgets/menu/menu_common.h"
-#include "styles/style_widgets.h"
 
 #include <QtWidgets/QMenu>
 
 namespace Ui {
 struct ScrollToRequest;
 } // namespace Ui
+
+namespace style {
+struct Menu;
+struct MenuSeparator;
+} // namespace style
+
+namespace st {
+extern const style::Menu &defaultMenu;
+} // namespace st
 
 namespace Ui::Menu {
 
@@ -43,8 +51,13 @@ public:
 		std::unique_ptr<QMenu> submenu,
 		const style::icon *icon = nullptr,
 		const style::icon *iconOver = nullptr);
-	not_null<QAction*> addSeparator();
+	not_null<QAction*> addSeparator(
+		const style::MenuSeparator *st = nullptr);
+	not_null<QAction*> insertAction(
+		int position,
+		base::unique_qptr<ItemBase> widget);
 	void clearActions();
+	void clearLastSeparator();
 	void finishAnimating();
 
 	bool empty() const;

@@ -23,6 +23,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/format_values.h"
 #include "ui/style/style_palette_colorizer.h"
 #include "ui/widgets/fields/special_fields.h"
+#include "ui/painter.h"
 #include "ui/ui_utility.h"
 #include "main/main_account.h"
 #include "main/main_session.h"
@@ -235,7 +236,7 @@ void ImportFromFile(
 		not_null<Main::Session*> session,
 		not_null<QWidget*> parent) {
 	auto filters = QStringList(
-		qsl("Theme files (*.tdesktop-theme *.tdesktop-palette)"));
+		u"Theme files (*.tdesktop-theme *.tdesktop-palette)"_q);
 	filters.push_back(FileDialog::AllFilesFilter());
 	const auto callback = crl::guard(session, [=](
 		const FileDialog::OpenResult &result) {
@@ -249,7 +250,7 @@ void ImportFromFile(
 	FileDialog::GetOpenPath(
 		parent.get(),
 		tr::lng_theme_editor_menu_import(tr::now),
-		filters.join(qsl(";;")),
+		filters.join(u";;"_q),
 		crl::guard(parent, callback));
 }
 
@@ -419,7 +420,7 @@ SendMediaReady PrepareThemeMedia(
 	push("s", std::move(thumbnail), thumbnailBytes);
 
 	const auto filename = base::FileNameFromUserString(name)
-		+ qsl(".tdesktop-theme");
+		+ u".tdesktop-theme"_q;
 	auto attributes = QVector<MTPDocumentAttribute>(
 		1,
 		MTP_documentAttributeFilename(MTP_string(filename)));
@@ -611,7 +612,7 @@ Fn<void()> SavePreparedTheme(
 		)).done([=](const MTPTheme &result) {
 			save();
 		}).fail([=](const MTP::Error &error) {
-			if (error.type() == qstr("THEME_FILE_INVALID")) {
+			if (error.type() == u"THEME_FILE_INVALID"_q) {
 				save();
 			} else {
 				fail(SaveErrorType::Other, error.type());
@@ -737,8 +738,7 @@ void SaveTheme(
 	if (cloud.id) {
 		window->account().session().api().request(MTPaccount_GetTheme(
 			MTP_string(Data::CloudThemes::Format()),
-			MTP_inputTheme(MTP_long(cloud.id), MTP_long(cloud.accessHash)),
-			MTP_long(0)
+			MTP_inputTheme(MTP_long(cloud.id), MTP_long(cloud.accessHash))
 		)).done([=](const MTPTheme &result) {
 			result.match([&](const MTPDtheme &data) {
 				save(CloudTheme::Parse(&window->account().session(), data));
@@ -822,7 +822,7 @@ void SaveThemeBox(
 	const auto link = Ui::CreateChild<Ui::UsernameInput>(
 		linkWrap,
 		st::createThemeLink,
-		rpl::single(qsl("link")),
+		rpl::single(u"link"_q),
 		cloud.slug.isEmpty() ? GenerateSlug() : cloud.slug,
 		window->account().session().createInternalLink(QString()));
 	linkWrap->widthValue(
@@ -835,7 +835,7 @@ void SaveThemeBox(
 		linkWrap->resize(linkWrap->width(), height);
 	}, link->lifetime());
 	link->setLinkPlaceholder(
-		window->account().session().createInternalLink(qsl("addtheme/")));
+		window->account().session().createInternalLink(u"addtheme/"_q));
 	link->setPlaceholderHidden(false);
 	link->setMaxLength(kMaxSlugSize);
 
@@ -887,11 +887,11 @@ void SaveThemeBox(
 				const QString &error) {
 			*saving = false;
 			box->showLoading(false);
-			if (error == qstr("THEME_TITLE_INVALID")) {
+			if (error == u"THEME_TITLE_INVALID"_q) {
 				type = SaveErrorType::Name;
-			} else if (error == qstr("THEME_SLUG_INVALID")) {
+			} else if (error == u"THEME_SLUG_INVALID"_q) {
 				type = SaveErrorType::Link;
-			} else if (error == qstr("THEME_SLUG_OCCUPIED")) {
+			} else if (error == u"THEME_SLUG_OCCUPIED"_q) {
 				Ui::Toast::Show(
 					Ui::BoxShow(box).toastParent(),
 					tr::lng_create_channel_link_occupied(tr::now));

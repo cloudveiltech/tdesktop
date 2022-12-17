@@ -215,6 +215,11 @@ void ChangePhone::EnterPhone::sendPhoneDone(
 		return data;
 	});
 
+	const auto bad = [&](const char *type) {
+		LOG(("API Error: Should not be '%1'.").arg(type));
+		showError(Lang::Hard::ServerError());
+		return false;
+	};
 	auto codeLength = 0;
 	const auto hasLength = data.vtype().match([&](
 			const MTPDauth_sentCodeTypeApp &typeData) {
@@ -224,17 +229,20 @@ void ChangePhone::EnterPhone::sendPhoneDone(
 	}, [&](const MTPDauth_sentCodeTypeSms &typeData) {
 		codeLength = typeData.vlength().v;
 		return true;
+	}, [&](const MTPDauth_sentCodeTypeFragmentSms &typeData) {
+		codeLength = typeData.vlength().v;
+		return true;
 	}, [&](const MTPDauth_sentCodeTypeCall &typeData) {
 		codeLength = typeData.vlength().v;
 		return true;
-	}, [&](const MTPDauth_sentCodeTypeFlashCall &typeData) {
-		LOG(("Error: should not be flashcall!"));
-		showError(Lang::Hard::ServerError());
-		return false;
-	}, [&](const MTPDauth_sentCodeTypeMissedCall &data) {
-		LOG(("Error: should not be missedcall!"));
-		showError(Lang::Hard::ServerError());
-		return false;
+	}, [&](const MTPDauth_sentCodeTypeFlashCall &) {
+		return bad("FlashCall");
+	}, [&](const MTPDauth_sentCodeTypeMissedCall &) {
+		return bad("MissedCall");
+	}, [&](const MTPDauth_sentCodeTypeEmailCode &) {
+		return bad("EmailCode");
+	}, [&](const MTPDauth_sentCodeTypeSetUpEmailRequired &) {
+		return bad("SetUpEmailRequired");
 	});
 	if (!hasLength) {
 		return;
@@ -265,11 +273,11 @@ void ChangePhone::EnterPhone::sendPhoneFail(
 		const QString &phoneNumber) {
 	if (MTP::IsFloodError(error)) {
 		showError(tr::lng_flood_error(tr::now));
-	} else if (error.type() == qstr("PHONE_NUMBER_INVALID")) {
+	} else if (error.type() == u"PHONE_NUMBER_INVALID"_q) {
 		showError(tr::lng_bad_phone(tr::now));
-	} else if (error.type() == qstr("PHONE_NUMBER_BANNED")) {
+	} else if (error.type() == u"PHONE_NUMBER_BANNED"_q) {
 		Ui::ShowPhoneBannedError(&_controller->window(), phoneNumber);
-	} else if (error.type() == qstr("PHONE_NUMBER_OCCUPIED")) {
+	} else if (error.type() == u"PHONE_NUMBER_OCCUPIED"_q) {
 		_controller->show(
 			Ui::MakeInformBox(
 				tr::lng_change_phone_occupied(
@@ -423,13 +431,13 @@ void ChangePhone::EnterCode::showError(const QString &text) {
 void ChangePhone::EnterCode::sendCodeFail(const MTP::Error &error) {
 	if (MTP::IsFloodError(error)) {
 		showError(tr::lng_flood_error(tr::now));
-	} else if (error.type() == qstr("PHONE_CODE_EMPTY")
-		|| error.type() == qstr("PHONE_CODE_INVALID")) {
+	} else if (error.type() == u"PHONE_CODE_EMPTY"_q
+		|| error.type() == u"PHONE_CODE_INVALID"_q) {
 		showError(tr::lng_bad_code(tr::now));
-	} else if (error.type() == qstr("PHONE_CODE_EXPIRED")
-		|| error.type() == qstr("PHONE_NUMBER_BANNED")) {
+	} else if (error.type() == u"PHONE_CODE_EXPIRED"_q
+		|| error.type() == u"PHONE_NUMBER_BANNED"_q) {
 		closeBox(); // Go back to phone input.
-	} else if (error.type() == qstr("PHONE_NUMBER_INVALID")) {
+	} else if (error.type() == u"PHONE_NUMBER_INVALID"_q) {
 		showError(tr::lng_bad_phone(tr::now));
 	} else {
 		showError(Lang::Hard::ServerError());

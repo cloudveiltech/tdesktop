@@ -20,6 +20,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/platform/ui_platform_utility.h"
 #include "ui/layers/layer_widget.h"
 #include "ui/layers/show.h"
+#include "ui/painter.h"
 #include "base/debug_log.h"
 #include "styles/style_widgets.h"
 #include "styles/style_layers.h"
@@ -89,15 +90,16 @@ PanelShow::operator bool() const {
 
 } // namespace
 
-SeparatePanel::SeparatePanel(QWidget *parent)
-: RpWidget(parent)
+SeparatePanel::SeparatePanel(SeparatePanelArgs &&args)
+: RpWidget(args.parent)
 , _close(this, st::separatePanelClose)
 , _back(this, object_ptr<Ui::IconButton>(this, st::separatePanelBack))
-, _body(this) {
+, _body(this)
+, _titleHeight(st::separatePanelTitleHeight) {
 	setMouseTracking(true);
 	setWindowIcon(QGuiApplication::windowIcon());
 	initControls();
-	initLayout();
+	initLayout(args);
 }
 
 void SeparatePanel::setTitle(rpl::producer<QString> title) {
@@ -105,6 +107,11 @@ void SeparatePanel::setTitle(rpl::producer<QString> title) {
 	_title->setAttribute(Qt::WA_TransparentForMouseEvents);
 	_title->show();
 	updateTitleGeometry(width());
+}
+
+void SeparatePanel::setTitleHeight(int height) {
+	_titleHeight = height;
+	updateControlsGeometry();
 }
 
 void SeparatePanel::initControls() {
@@ -127,6 +134,9 @@ void SeparatePanel::initControls() {
 	}, _back->lifetime());
 	_back->hide(anim::type::instant);
 	_titleLeft.stop();
+
+	_back->raise();
+	_close->raise();
 }
 
 void SeparatePanel::updateTitleGeometry(int newWidth) {
@@ -271,7 +281,7 @@ bool SeparatePanel::eventHook(QEvent *e) {
 	return RpWidget::eventHook(e);
 }
 
-void SeparatePanel::initLayout() {
+void SeparatePanel::initLayout(const SeparatePanelArgs &args) {
 	setWindowFlags(Qt::WindowFlags(Qt::FramelessWindowHint)
 		| Qt::WindowStaysOnTopHint
 		| Qt::NoDropShadowWindowHint
@@ -287,7 +297,9 @@ void SeparatePanel::initLayout() {
 		Ui::ForceFullRepaint(this);
 	}, lifetime());
 
-	Ui::Platform::InitOnTopPanel(this);
+	if (args.onAllSpaces) {
+		Ui::Platform::InitOnTopPanel(this);
+	}
 }
 
 void SeparatePanel::createBorderImage() {
@@ -300,7 +312,7 @@ void SeparatePanel::createBorderImage() {
 	cache.setDevicePixelRatio(style::DevicePixelRatio());
 	cache.fill(Qt::transparent);
 	{
-		Painter p(&cache);
+		auto p = QPainter(&cache);
 		auto inner = QRect(0, 0, cacheSize, cacheSize).marginsRemoved(
 			shadowPadding);
 		Ui::Shadow::paint(p, inner, cacheSize, st::callShadow);
@@ -515,7 +527,7 @@ void SeparatePanel::initGeometry(QSize size) {
 	if (center.y() - size.height() / 2 < available.y()) {
 		center.setY(available.y() + size.height() / 2);
 	}
-	_useTransparency = Ui::Platform::TranslucentWindowsSupported(center);
+	_useTransparency = Ui::Platform::TranslucentWindowsSupported();
 	_padding = _useTransparency
 		? st::callShadow.extend
 		: style::margins(
@@ -552,7 +564,7 @@ void SeparatePanel::resizeEvent(QResizeEvent *e) {
 }
 
 void SeparatePanel::updateControlsGeometry() {
-	const auto top = _padding.top() + st::separatePanelTitleHeight;
+	const auto top = _padding.top() + _titleHeight;
 	_body->setGeometry(
 		_padding.left(),
 		top,
@@ -561,7 +573,7 @@ void SeparatePanel::updateControlsGeometry() {
 }
 
 void SeparatePanel::paintEvent(QPaintEvent *e) {
-	Painter p(this);
+	auto p = QPainter(this);
 	if (!_animationCache.isNull()) {
 		auto opacity = _opacityAnimation.value(_visible ? 1. : 0.);
 		if (!_opacityAnimation.animating()) {
@@ -594,7 +606,7 @@ void SeparatePanel::paintEvent(QPaintEvent *e) {
 	}
 }
 
-void SeparatePanel::paintShadowBorder(Painter &p) const {
+void SeparatePanel::paintShadowBorder(QPainter &p) const {
 	const auto factor = style::DevicePixelRatio();
 	const auto size = st::separatePanelBorderCacheSize;
 	const auto part1 = size / 3;
@@ -674,7 +686,7 @@ void SeparatePanel::paintShadowBorder(Painter &p) const {
 		st::windowBg);
 }
 
-void SeparatePanel::paintOpaqueBorder(Painter &p) const {
+void SeparatePanel::paintOpaqueBorder(QPainter &p) const {
 	const auto border = st::windowShadowFgFallback;
 	p.fillRect(0, 0, width(), _padding.top(), border);
 	p.fillRect(
@@ -716,7 +728,7 @@ void SeparatePanel::mousePressEvent(QMouseEvent *e) {
 		_padding.left(),
 		_padding.top(),
 		width() - _padding.left() - _padding.right(),
-		st::separatePanelTitleHeight);
+		_titleHeight);
 	if (e->button() == Qt::LeftButton) {
 		if (dragArea.contains(e->pos())) {
 			const auto dragViaSystem = [&] {

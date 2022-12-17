@@ -31,7 +31,7 @@ constexpr auto kUniversalSize = 72;
 constexpr auto kImagesPerRow = 32;
 constexpr auto kImageRowsPerSprite = 16;
 
-constexpr auto kSetVersion = uint32(3);
+constexpr auto kSetVersion = uint32(4);
 constexpr auto kCacheVersion = uint32(7);
 constexpr auto kMaxId = uint32(1 << 8);
 
@@ -124,12 +124,9 @@ uint32 ComputeVersion(int id) {
 	static_assert(kCacheVersion > 0 && kCacheVersion < (1 << 16));
 	static_assert(kSetVersion > 0 && kSetVersion < (1 << 8));
 
-	auto result = uint32(kCacheVersion);
-	if (!id) {
-		return result;
-	}
-	result |= (uint32(id) << 24) | (uint32(kSetVersion) << 16);
-	return result;
+	return uint32(kCacheVersion)
+		| (uint32(kSetVersion) << 16)
+		| (uint32(id) << 24);
 }
 
 int ReadCurrentSetId() {
@@ -490,8 +487,8 @@ void Init() {
 	const auto persprite = kImagesPerRow * kImageRowsPerSprite;
 	SpritesCount = (count / persprite) + ((count % persprite) ? 1 : 0);
 
-	SizeNormal = style::ConvertScale(18, style::Scale() * style::DevicePixelRatio());
-	SizeLarge = int(style::ConvertScale(18 * 4 / 3., style::Scale() * style::DevicePixelRatio()));
+	SizeNormal = st::emojiSize * style::DevicePixelRatio();
+	SizeLarge = int(style::ConvertScale(18 * 4 / 3., style::Scale())) * style::DevicePixelRatio();
 	Universal = std::make_shared<UniversalImages>(ReadCurrentSetId());
 	CanClearUniversal = false;
 

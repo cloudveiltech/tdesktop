@@ -16,12 +16,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "media/streaming/media_streaming_instance.h"
 #include "media/streaming/media_streaming_player.h"
 #include "media/streaming/media_streaming_document.h"
+#include "media/streaming/media_streaming_utility.h"
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
 #include "ui/image/image.h"
 #include "ui/chat/chat_style.h"
 #include "ui/grouped_layout.h"
 #include "ui/cached_round_corners.h"
+#include "ui/painter.h"
 #include "data/data_session.h"
 #include "data/data_streaming.h"
 #include "data/data_photo.h"
@@ -42,7 +44,10 @@ using Data::PhotoSize;
 struct Photo::Streamed {
 	explicit Streamed(std::shared_ptr<::Media::Streaming::Document> shared);
 	::Media::Streaming::Instance instance;
+	::Media::Streaming::FrameRequest frozenRequest;
 	QImage frozenFrame;
+	std::array<QImage, 4> roundingCorners;
+	QImage roundingMask;
 };
 
 Photo::Streamed::Streamed(
@@ -133,9 +138,15 @@ bool Photo::hasHeavyPart() const {
 void Photo::unloadHeavyPart() {
 	stopAnimation();
 	_dataMedia = nullptr;
+	_imageCache = QImage();
+	_caption.unloadPersistentAnimation();
 }
 
 QSize Photo::countOptimalSize() {
+	if (_serviceWidth > 0) {
+		return { _serviceWidth, _serviceWidth };
+	}
+
 	if (_parent->media() != this) {
 		_caption = Ui::Text::String();
 	} else if (_caption.hasSkipBlock()) {
@@ -144,36 +155,27 @@ QSize Photo::countOptimalSize() {
 			_parent->skipBlockHeight());
 	}
 
-	auto maxWidth = 0;
-	auto minHeight = 0;
-
-	auto tw = style::ConvertScale(_data->width());
-	auto th = style::ConvertScale(_data->height());
-	if (!tw || !th) {
-		tw = th = 1;
-	}
-	if (tw > st::maxMediaSize) {
-		th = (st::maxMediaSize * th) / tw;
-		tw = st::maxMediaSize;
-	}
-	if (th > st::maxMediaSize) {
-		tw = (st::maxMediaSize * tw) / th;
-		th = st::maxMediaSize;
-	}
-
-	if (_serviceWidth > 0) {
-		return { _serviceWidth, _serviceWidth };
-	}
+	const auto dimensions = QSize(_data->width(), _data->height());
+	const auto scaled = CountDesiredMediaSize(dimensions);
 	const auto minWidth = std::clamp(
 		_parent->minWidthForMedia(),
-		(_parent->hasBubble() ? st::historyPhotoBubbleMinWidth : st::minPhotoSize),
+		(_parent->hasBubble()
+			? st::historyPhotoBubbleMinWidth
+			: st::minPhotoSize),
 		st::maxMediaSize);
-	const auto maxActualWidth = qMax(tw, minWidth);
-	maxWidth = qMax(maxActualWidth, th);
-	minHeight = qMax(th, st::minPhotoSize);
+	const auto maxActualWidth = qMax(scaled.width(), minWidth);
+	auto maxWidth = qMax(maxActualWidth, scaled.height());
+	auto minHeight = qMax(scaled.height(), st::minPhotoSize);
 	if (_parent->hasBubble() && !_caption.isEmpty()) {
-		auto captionw = maxActualWidth - st::msgPadding.left() - st::msgPadding.right();
-		minHeight += st::mediaCaptionSkip + _caption.countHeight(captionw);
+		maxWidth = qMax(
+			maxWidth,
+			(st::msgPadding.left()
+				+ _caption.maxWidth()
+				+ st::msgPadding.right()));
+		minHeight = adjustHeightForLessCrop(
+			dimensions,
+			{ maxWidth, minHeight });
+		minHeight += st::mediaCaptionSkip + _caption.minHeight();
 		if (isBubbleBottom()) {
 			minHeight += st::msgPadding.bottom();
 		}
@@ -182,38 +184,33 @@ QSize Photo::countOptimalSize() {
 }
 
 QSize Photo::countCurrentSize(int newWidth) {
-	auto tw = style::ConvertScale(_data->width());
-	auto th = style::ConvertScale(_data->height());
-	if (tw > st::maxMediaSize) {
-		th = (st::maxMediaSize * th) / tw;
-		tw = st::maxMediaSize;
+	if (_serviceWidth) {
+		return { _serviceWidth, _serviceWidth };
 	}
-	if (th > st::maxMediaSize) {
-		tw = (st::maxMediaSize * tw) / th;
-		th = st::maxMediaSize;
-	}
-
-	_pixw = qMin(newWidth, maxWidth());
-	_pixh = th;
-	if (tw > _pixw) {
-		_pixh = (_pixw * _pixh / tw);
-	} else {
-		_pixw = tw;
-	}
-	if (_pixh > newWidth) {
-		_pixw = (_pixw * newWidth) / _pixh;
-		_pixh = newWidth;
-	}
-	if (_pixw < 1) _pixw = 1;
-	if (_pixh < 1) _pixh = 1;
-
+	const auto thumbMaxWidth = qMin(newWidth, st::maxMediaSize);
 	const auto minWidth = std::clamp(
 		_parent->minWidthForMedia(),
-		(_parent->hasBubble() ? st::historyPhotoBubbleMinWidth : st::minPhotoSize),
-		std::min(newWidth, st::maxMediaSize));
-	newWidth = qMax(_pixw, minWidth);
-	auto newHeight = qMax(_pixh, st::minPhotoSize);
+		(_parent->hasBubble()
+			? st::historyPhotoBubbleMinWidth
+			: st::minPhotoSize),
+		thumbMaxWidth);
+	const auto dimensions = QSize(_data->width(), _data->height());
+	auto pix = CountPhotoMediaSize(
+		CountDesiredMediaSize(dimensions),
+		newWidth,
+		maxWidth());
+	newWidth = qMax(pix.width(), minWidth);
+	auto newHeight = qMax(pix.height(), st::minPhotoSize);
 	if (_parent->hasBubble() && !_caption.isEmpty()) {
+		const auto maxWithCaption = qMin(
+			st::msgMaxWidth,
+			(st::msgPadding.left()
+				+ _caption.maxWidth()
+				+ st::msgPadding.right()));
+		newWidth = qMin(qMax(newWidth, maxWithCaption), thumbMaxWidth);
+		newHeight = adjustHeightForLessCrop(
+			dimensions,
+			{ newWidth, newHeight });
 		const auto captionw = newWidth
 			- st::msgPadding.left()
 			- st::msgPadding.right();
@@ -223,6 +220,16 @@ QSize Photo::countCurrentSize(int newWidth) {
 		}
 	}
 	return { newWidth, newHeight };
+}
+
+int Photo::adjustHeightForLessCrop(QSize dimensions, QSize current) const {
+	if (dimensions.isEmpty()
+		|| !::Media::Streaming::FrameResizeMayExpand(current, dimensions)) {
+		return current.height();
+	}
+	return qMax(
+		current.height(),
+		current.width() * dimensions.height() / dimensions.width());
 }
 
 void Photo::draw(Painter &p, const PaintContext &context) const {
@@ -254,6 +261,9 @@ void Photo::draw(Painter &p, const PaintContext &context) const {
 	if (_serviceWidth > 0) {
 		paintUserpicFrame(p, context, rthumb.topLeft());
 	} else {
+		const auto rounding = inWebPage
+			? std::optional<Ui::BubbleRounding>()
+			: adjustedBubbleRoundingWithCaption(_caption);
 		if (bubble) {
 			if (!_caption.isEmpty()) {
 				painth -= st::mediaCaptionSkip + _caption.countHeight(captionw);
@@ -263,37 +273,13 @@ void Photo::draw(Painter &p, const PaintContext &context) const {
 				rthumb = style::rtlrect(paintx, painty, paintw, painth, width());
 			}
 		} else {
-			Ui::FillRoundShadow(p, 0, 0, paintw, painth, sti->msgShadow, sti->msgShadowCorners);
+			Assert(rounding.has_value());
+			fillImageShadow(p, rthumb, *rounding, context);
 		}
-		const auto inWebPage = (_parent->media() != this);
-		const auto roundRadius = inWebPage
-			? ImageRoundRadius::Small
-			: ImageRoundRadius::Large;
-		const auto roundCorners = inWebPage ? RectPart::AllCorners : ((isBubbleTop() ? (RectPart::TopLeft | RectPart::TopRight) : RectPart::None)
-			| ((isRoundedInBubbleBottom() && _caption.isEmpty()) ? (RectPart::BottomLeft | RectPart::BottomRight) : RectPart::None));
-		const auto pix = [&] {
-			const auto size = QSize(_pixw, _pixh);
-			const auto args = Images::PrepareArgs{
-				.options = Images::RoundOptions(roundRadius, roundCorners),
-				.outer = QSize(paintw, painth),
-			};
-			if (const auto large = _dataMedia->image(PhotoSize::Large)) {
-				return large->pixSingle(size, args);
-			} else if (const auto thumbnail = _dataMedia->image(
-					PhotoSize::Thumbnail)) {
-				return thumbnail->pixSingle(size, args.blurred());
-			} else if (const auto small = _dataMedia->image(
-					PhotoSize::Small)) {
-				return small->pixSingle(size, args.blurred());
-			} else if (const auto blurred = _dataMedia->thumbnailInline()) {
-				return blurred->pixSingle(size, args.blurred());
-			} else {
-				return QPixmap();
-			}
-		}();
-		p.drawPixmap(rthumb.topLeft(), pix);
+		validateImageCache(rthumb.size(), rounding);
+		p.drawImage(rthumb.topLeft(), _imageCache);
 		if (context.selected()) {
-			Ui::FillComplexOverlayRect(p, st, rthumb, roundRadius, roundCorners);
+			fillImageOverlay(p, rthumb, rounding, context);
 		}
 	}
 	if (radial || (!loaded && !_data->loading())) {
@@ -335,7 +321,18 @@ void Photo::draw(Painter &p, const PaintContext &context) const {
 	// date
 	if (!_caption.isEmpty()) {
 		p.setPen(stm->historyTextFg);
-		_caption.draw(p, st::msgPadding.left(), painty + painth + st::mediaCaptionSkip, captionw, style::al_left, 0, -1, context.selection);
+		_parent->prepareCustomEmojiPaint(p, context, _caption);
+		_caption.draw(p, {
+			.position = QPoint(
+				st::msgPadding.left(),
+				painty + painth + st::mediaCaptionSkip),
+			.availableWidth = captionw,
+			.palette = &stm->textPalette,
+			.spoiler = Ui::Text::DefaultSpoilerCache(),
+			.now = context.now,
+			.paused = context.paused,
+			.selection = context.selection,
+		});
 	} else if (!inWebPage) {
 		auto fullRight = paintx + paintw;
 		auto fullBottom = painty + painth;
@@ -356,6 +353,86 @@ void Photo::draw(Painter &p, const PaintContext &context) const {
 	}
 }
 
+void Photo::validateUserpicImageCache(QSize size, bool forum) const {
+	const auto forumValue = forum ? 1 : 0;
+	const auto large = _dataMedia->image(PhotoSize::Large);
+	const auto ratio = style::DevicePixelRatio();
+	const auto blurredValue = large ? 0 : 1;
+	if (_imageCache.size() == (size * ratio)
+		&& _imageCacheForum == forumValue
+		&& _imageCacheBlurred == blurredValue) {
+		return;
+	}
+	auto original = [&] {
+		if (large) {
+			return large->original();
+		} else if (const auto thumbnail = _dataMedia->image(
+				PhotoSize::Thumbnail)) {
+			return thumbnail->original();
+		} else if (const auto small = _dataMedia->image(
+				PhotoSize::Small)) {
+			return small->original();
+		} else if (const auto blurred = _dataMedia->thumbnailInline()) {
+			return blurred->original();
+		} else {
+			return Image::Empty()->original();
+		}
+	}();
+	auto args = Images::PrepareArgs();
+	if (blurredValue) {
+		args = args.blurred();
+	}
+	original = Images::Prepare(std::move(original), size * ratio, args);
+	if (forumValue) {
+		original = Images::Round(
+			std::move(original),
+			Images::CornersMask(std::min(size.width(), size.height())
+				* Ui::ForumUserpicRadiusMultiplier()));
+	} else {
+		original = Images::Circle(std::move(original));
+	}
+	_imageCache = std::move(original);
+	_imageCacheForum = forumValue;
+	_imageCacheBlurred = blurredValue;
+}
+
+void Photo::validateImageCache(
+		QSize outer,
+		std::optional<Ui::BubbleRounding> rounding) const {
+	const auto large = _dataMedia->image(PhotoSize::Large);
+	const auto ratio = style::DevicePixelRatio();
+	const auto blurredValue = large ? 0 : 1;
+	if (_imageCache.size() == (outer * ratio)
+		&& _imageCacheRounding == rounding
+		&& _imageCacheBlurred == blurredValue) {
+		return;
+	}
+	_imageCache = Images::Round(
+		prepareImageCache(outer),
+		MediaRoundingMask(rounding));
+	_imageCacheRounding = rounding;
+	_imageCacheBlurred = blurredValue;
+}
+
+QImage Photo::prepareImageCache(QSize outer) const {
+	using Size = PhotoSize;
+	const auto large = _dataMedia->image(Size::Large);
+	auto blurred = (Image*)nullptr;
+	if (const auto embedded = _dataMedia->thumbnailInline()) {
+		blurred = embedded;
+	} else if (const auto thumbnail = _dataMedia->image(Size::Thumbnail)) {
+		blurred = thumbnail;
+	} else if (const auto small = _dataMedia->image(Size::Small)) {
+		blurred = small;
+	} else {
+		blurred = large;
+	}
+	const auto resize = large
+		? ::Media::Streaming::DecideFrameResize(outer, large->size())
+		: ::Media::Streaming::ExpandDecision();
+	return PrepareWithBlurredBackground(outer, resize, large, blurred);
+}
+
 void Photo::paintUserpicFrame(
 		Painter &p,
 		const PaintContext &context,
@@ -368,53 +445,50 @@ void Photo::paintUserpicFrame(
 		checkStreamedIsStarted();
 	}
 
-	const auto size = QSize{ _pixw, _pixh };
+	const auto size = QSize(width(), height());
 	const auto rect = QRect(photoPosition, size);
 	const auto st = context.st;
 	const auto sti = context.imageStyle();
+	const auto forum = _parent->data()->history()->isForum();
 
 	if (_streamed
 		&& _streamed->instance.player().ready()
 		&& !_streamed->instance.player().videoSize().isEmpty()) {
-		const auto paused = _parent->delegate()->elementIsGifPaused();
+		const auto ratio = style::DevicePixelRatio();
 		auto request = ::Media::Streaming::FrameRequest();
-		request.outer = size * cIntRetinaFactor();
-		request.resize = size * cIntRetinaFactor();
-		request.radius = ImageRoundRadius::Ellipse;
+		request.outer = request.resize = size * ratio;
+		if (forum) {
+			const auto radius = int(std::min(size.width(), size.height())
+				* Ui::ForumUserpicRadiusMultiplier());
+			if (_streamed->roundingCorners[0].width() != radius * ratio) {
+				_streamed->roundingCorners = Images::CornersMask(radius);
+			}
+			request.rounding = Images::CornersMaskRef(
+				_streamed->roundingCorners);
+		} else {
+			if (_streamed->roundingMask.size() != request.outer) {
+				_streamed->roundingMask = Images::EllipseMask(size);
+			}
+			request.mask = _streamed->roundingMask;
+		}
 		if (_streamed->instance.playerLocked()) {
-			if (_streamed->frozenFrame.isNull()) {
+			if (_streamed->frozenFrame.isNull()
+				|| _streamed->frozenRequest != request) {
+				_streamed->frozenRequest = request;
 				_streamed->frozenFrame = _streamed->instance.frame(request);
 			}
 			p.drawImage(rect, _streamed->frozenFrame);
 		} else {
 			_streamed->frozenFrame = QImage();
 			p.drawImage(rect, _streamed->instance.frame(request));
-			if (!paused) {
+			if (!context.paused) {
 				_streamed->instance.markFrameShown();
 			}
 		}
 		return;
 	}
-	const auto pix = [&] {
-		const auto size = QSize(_pixw, _pixh);
-		const auto args = Images::PrepareArgs{
-			.options = Images::Option::RoundCircle,
-		};
-		if (const auto large = _dataMedia->image(PhotoSize::Large)) {
-			return large->pix(size, args);
-		} else if (const auto thumbnail = _dataMedia->image(
-				PhotoSize::Thumbnail)) {
-			return thumbnail->pix(size, args.blurred());
-		} else if (const auto small = _dataMedia->image(
-				PhotoSize::Small)) {
-			return small->pix(size, args.blurred());
-		} else if (const auto blurred = _dataMedia->thumbnailInline()) {
-			return blurred->pix(size, args.blurred());
-		} else {
-			return QPixmap();
-		}
-	}();
-	p.drawPixmap(rect, pix);
+	validateUserpicImageCache(size, forum);
+	p.drawImage(rect, _imageCache);
 
 	if (_data->videoCanBePlayed() && !_streamed) {
 		const auto innerSize = st::msgFileLayout.thumbSize;
@@ -481,14 +555,16 @@ TextState Photo::textState(QPoint point, StateRequest request) const {
 			point,
 			InfoDisplayType::Image);
 		if (bottomInfoResult.link
-			|| bottomInfoResult.cursor != CursorState::None) {
+			|| bottomInfoResult.cursor != CursorState::None
+			|| bottomInfoResult.customTooltip) {
 			return bottomInfoResult;
 		}
 		if (const auto size = bubble ? std::nullopt : _parent->rightActionSize()) {
 			auto fastShareLeft = (fullRight + st::historyFastShareLeft);
 			auto fastShareTop = (fullBottom - st::historyFastShareBottom - size->height());
 			if (QRect(fastShareLeft, fastShareTop, size->width(), size->height()).contains(point)) {
-				result.link = _parent->rightActionLink();
+				result.link = _parent->rightActionLink(point
+					- QPoint(fastShareLeft, fastShareTop));
 			}
 		}
 	}
@@ -510,14 +586,14 @@ void Photo::drawGrouped(
 		const PaintContext &context,
 		const QRect &geometry,
 		RectParts sides,
-		RectParts corners,
+		Ui::BubbleRounding rounding,
 		float64 highlightOpacity,
 		not_null<uint64*> cacheKey,
 		not_null<QPixmap*> cache) const {
 	ensureDataMediaCreated();
 	_dataMedia->automaticLoad(_realParent->fullId(), _parent->data());
 
-	validateGroupedCache(geometry, corners, cacheKey, cache);
+	validateGroupedCache(geometry, rounding, cacheKey, cache);
 
 	const auto st = context.st;
 	const auto sti = context.imageStyle();
@@ -539,10 +615,9 @@ void Photo::drawGrouped(
 		: highlightOpacity;
 	if (overlayOpacity > 0.) {
 		p.setOpacity(overlayOpacity);
-		const auto roundRadius = ImageRoundRadius::Large;
-		Ui::FillComplexOverlayRect(p, st, geometry, roundRadius, corners);
+		fillImageOverlay(p, geometry, rounding, context);
 		if (!context.selected()) {
-			Ui::FillComplexOverlayRect(p, st, geometry, roundRadius, corners);
+			fillImageOverlay(p, geometry, rounding, context);
 		}
 		p.setOpacity(1.);
 	}
@@ -646,7 +721,7 @@ bool Photo::needInfoDisplay() const {
 
 void Photo::validateGroupedCache(
 		const QRect &geometry,
-		RectParts corners,
+		Ui::BubbleRounding rounding,
 		not_null<uint64*> cacheKey,
 		not_null<QPixmap*> cache) const {
 	using Option = Images::Option;
@@ -663,18 +738,11 @@ void Photo::validateGroupedCache(
 		: 0;
 	const auto width = geometry.width();
 	const auto height = geometry.height();
-	const auto corner = [&](RectPart part, Option skip) {
-		return !(corners & part) ? skip : Option();
-	};
-	const auto options = Option::RoundLarge
-		| (loaded ? Option() : Option::Blur)
-		| corner(RectPart::TopLeft, Option::RoundSkipTopLeft)
-		| corner(RectPart::TopRight, Option::RoundSkipTopRight)
-		| corner(RectPart::BottomLeft, Option::RoundSkipBottomLeft)
-		| corner(RectPart::BottomRight, Option::RoundSkipBottomRight);
+	const auto options = (loaded ? Option() : Option::Blur);
 	const auto key = (uint64(width) << 48)
 		| (uint64(height) << 32)
 		| (uint64(options) << 16)
+		| (uint64(rounding.key()) << 8)
 		| (uint64(loadLevel));
 	if (*cacheKey == key) {
 		return;
@@ -697,9 +765,14 @@ void Photo::validateGroupedCache(
 		: Image::BlankMedia().get();
 
 	*cacheKey = key;
-	*cache = image->pixNoCache(
+	auto scaled = Images::Prepare(
+		image->original(),
 		pixSize * ratio,
 		{ .options = options, .outer = { width, height } });
+	auto rounded = Images::Round(
+		std::move(scaled),
+		MediaRoundingMask(rounding));
+	*cache = Ui::PixmapFromImage(std::move(rounded));
 }
 
 bool Photo::createStreamingObjects() {
@@ -761,7 +834,7 @@ void Photo::handleStreamingError(::Media::Streaming::Error &&error) {
 void Photo::repaintStreamedContent() {
 	if (_streamed && !_streamed->frozenFrame.isNull()) {
 		return;
-	} else if (_parent->delegate()->elementIsGifPaused()) {
+	} else if (_parent->delegate()->elementAnimationsPaused()) {
 		return;
 	}
 	repaint();
@@ -842,7 +915,8 @@ bool Photo::needsBubble() const {
 			|| item->viaBot()
 			|| _parent->displayedReply()
 			|| _parent->displayForwardedFrom()
-			|| _parent->displayFromName());
+			|| _parent->displayFromName()
+			|| _parent->displayedTopicButton());
 }
 
 QPoint Photo::resolveCustomInfoRightBottom() const {

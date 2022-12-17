@@ -16,24 +16,35 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/media/history_view_media_grouped.h"
 #include "history/view/media/history_view_sticker.h"
 #include "history/view/media/history_view_large_emoji.h"
-#include "history/view/history_view_react_animation.h"
-#include "history/view/history_view_react_button.h"
+#include "history/view/media/history_view_custom_emoji.h"
+#include "history/view/reactions/history_view_reactions_button.h"
+#include "history/view/reactions/history_view_reactions.h"
 #include "history/view/history_view_cursor_state.h"
+#include "history/view/history_view_spoiler_click_handler.h"
 #include "history/history.h"
+#include "history/history_service.h"
 #include "base/unixtime.h"
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "core/click_handler_types.h"
+#include "core/ui_integration.h"
 #include "main/main_session.h"
 #include "main/main_domain.h"
 #include "chat_helpers/stickers_emoji_pack.h"
 #include "window/window_session_controller.h"
 #include "ui/effects/path_shift_gradient.h"
+#include "ui/effects/reaction_fly_animation.h"
 #include "ui/chat/chat_style.h"
 #include "ui/toast/toast.h"
 #include "ui/toasts/common_toasts.h"
+#include "ui/text/text_options.h"
+#include "ui/text/text_utilities.h"
+#include "ui/item_text_options.h"
+#include "ui/painter.h"
 #include "data/data_session.h"
 #include "data/data_groups.h"
+#include "data/data_forum.h"
+#include "data/data_forum_topic.h"
 #include "data/data_media_types.h"
 #include "data/data_sponsored_messages.h"
 #include "data/data_message_reactions.h"
@@ -168,7 +179,7 @@ void SimpleElementDelegate::elementShowTooltip(
 	Fn<void()> hiddenCallback) {
 }
 
-bool SimpleElementDelegate::elementIsGifPaused() {
+bool SimpleElementDelegate::elementAnimationsPaused() {
 	return _controller->isGifPausedAtLeastFor(Window::GifPauseReason::Any);
 }
 
@@ -178,7 +189,7 @@ bool SimpleElementDelegate::elementHideReply(not_null<const Element*> view) {
 
 bool SimpleElementDelegate::elementShownUnread(
 		not_null<const Element*> view) {
-	return view->data()->unread();
+	return view->data()->unread(view->data()->history());
 }
 
 void SimpleElementDelegate::elementSendBotCommand(
@@ -214,7 +225,9 @@ void SimpleElementDelegate::elementCancelPremium(
 	not_null<const Element*> view) {
 }
 
-void SimpleElementDelegate::elementShowSpoilerAnimation() {
+QString SimpleElementDelegate::elementAuthorRank(
+		not_null<const Element*> view) {
+	return {};
 }
 
 TextSelection UnshiftItemSelection(
@@ -246,19 +259,20 @@ TextSelection ShiftItemSelection(
 }
 
 QString DateTooltipText(not_null<Element*> view) {
-	const auto format = QLocale::system().dateTimeFormat(QLocale::LongFormat);
-	auto dateText = view->dateTime().toString(format);
+	const auto locale = QLocale();
+	const auto format = QLocale::LongFormat;
+	auto dateText = locale.toString(view->dateTime(), format);
 	if (const auto editedDate = view->displayedEditDate()) {
 		dateText += '\n' + tr::lng_edited_date(
 			tr::now,
 			lt_date,
-			base::unixtime::parse(editedDate).toString(format));
+			locale.toString(base::unixtime::parse(editedDate), format));
 	}
 	if (const auto forwarded = view->data()->Get<HistoryMessageForwarded>()) {
 		dateText += '\n' + tr::lng_forwarded_date(
 			tr::now,
 			lt_date,
-			base::unixtime::parse(forwarded->originalDate).toString(format));
+			locale.toString(base::unixtime::parse(forwarded->originalDate), format));
 		if (forwarded->imported) {
 			dateText = tr::lng_forwarded_imported(tr::now)
 				+ "\n\n" + dateText;
@@ -352,23 +366,22 @@ void DateBadge::paint(
 	ServiceMessagePainter::PaintDate(p, st, text, width, y, w, chatWide);
 }
 
-ReactionAnimationArgs ReactionAnimationArgs::translated(
-		QPoint point) const {
-	return {
-		.emoji = emoji,
-		.flyIcon = flyIcon,
-		.flyFrom = flyFrom.translated(point),
-	};
-}
-
 Element::Element(
 	not_null<ElementDelegate*> delegate,
 	not_null<HistoryItem*> data,
-	Element *replacing)
+	Element *replacing,
+	Flag serviceFlag)
 : _delegate(delegate)
 , _data(data)
-, _isScheduledUntilOnline(IsItemScheduledUntilOnline(data))
-, _dateTime(_isScheduledUntilOnline ? QDateTime() : ItemDateTime(data))
+, _dateTime(IsItemScheduledUntilOnline(data)
+	? QDateTime()
+	: ItemDateTime(data))
+, _text(st::msgMinWidth)
+, _flags(serviceFlag
+	| Flag::NeedsResize
+	| (IsItemScheduledUntilOnline(data)
+		? Flag::ScheduledUntilOnline
+		: Flag()))
 , _context(delegate->elementContext()) {
 	history()->owner().registerItemView(this);
 	refreshMedia(replacing);
@@ -412,18 +425,67 @@ void Element::setY(int y) {
 void Element::refreshDataIdHook() {
 }
 
-//void Element::externalLottieProgressing(bool external) const {
-//	if (const auto media = _media.get()) {
-//		media->externalLottieProgressing(external);
-//	}
-//}
-//
-//bool Element::externalLottieTill(ExternalLottieInfo info) const {
-//	if (const auto media = _media.get()) {
-//		return media->externalLottieTill(info);
-//	}
-//	return true;
-//}
+void Element::clearSpecialOnlyEmoji() {
+	if (!(_flags & Flag::SpecialOnlyEmoji)) {
+		return;
+	}
+	history()->session().emojiStickersPack().remove(this);
+	_flags &= ~Flag::SpecialOnlyEmoji;
+}
+
+void Element::checkSpecialOnlyEmoji() {
+	if (history()->session().emojiStickersPack().add(this)) {
+		_flags |= Flag::SpecialOnlyEmoji;
+	}
+}
+
+void Element::hideSpoilers() {
+	if (_text.hasSpoilers()) {
+		_text.setSpoilerRevealed(false, anim::type::instant);
+	}
+}
+
+void Element::customEmojiRepaint() {
+	if (!(_flags & Flag::CustomEmojiRepainting)) {
+		_flags |= Flag::CustomEmojiRepainting;
+		history()->owner().requestViewRepaint(this);
+	}
+}
+
+void Element::clearCustomEmojiRepaint() const {
+	_flags &= ~Flag::CustomEmojiRepainting;
+	data()->_flags &= ~MessageFlag::CustomEmojiRepainting;
+}
+
+void Element::prepareCustomEmojiPaint(
+		Painter &p,
+		const PaintContext &context,
+		const Ui::Text::String &text) const {
+	if (!text.hasPersistentAnimation()) {
+		return;
+	}
+	clearCustomEmojiRepaint();
+	p.setInactive(context.paused);
+	if (!_heavyCustomEmoji) {
+		_heavyCustomEmoji = true;
+		history()->owner().registerHeavyViewPart(const_cast<Element*>(this));
+	}
+}
+
+void Element::prepareCustomEmojiPaint(
+		Painter &p,
+		const PaintContext &context,
+		const Reactions::InlineList &reactions) const {
+	if (!reactions.hasCustomEmoji()) {
+		return;
+	}
+	clearCustomEmojiRepaint();
+	p.setInactive(context.paused);
+	if (!_heavyCustomEmoji) {
+		_heavyCustomEmoji = true;
+		history()->owner().registerHeavyViewPart(const_cast<Element*>(this));
+	}
+}
 
 void Element::repaint() const {
 	history()->owner().requestViewRepaint(this);
@@ -496,6 +558,18 @@ bool Element::isAttachedToNext() const {
 	return _flags & Flag::AttachedToNext;
 }
 
+bool Element::isBubbleAttachedToPrevious() const {
+	return _flags & Flag::BubbleAttachedToPrevious;
+}
+
+bool Element::isBubbleAttachedToNext() const {
+	return _flags & Flag::BubbleAttachedToNext;
+}
+
+bool Element::isTopicRootReply() const {
+	return _flags & Flag::TopicRootReply;
+}
+
 int Element::skipBlockWidth() const {
 	return st::msgDateSpace + infoWidth() - st::msgDateDelta.x();
 }
@@ -528,30 +602,33 @@ void Element::refreshMedia(Element *replacing) {
 	_flags &= ~Flag::HiddenByGroup;
 
 	const auto item = data();
-	const auto media = item->media();
-	if (media && media->canBeGrouped()) {
-		if (const auto group = history()->owner().groups().find(item)) {
-			if (group->items.front() != item) {
-				_media = nullptr;
-				_flags |= Flag::HiddenByGroup;
-			} else {
-				_media = std::make_unique<GroupedMedia>(
-					this,
-					group->items);
-				if (!pendingResize()) {
-					history()->owner().requestViewResize(this);
+	if (const auto media = item->media()) {
+		if (media->canBeGrouped()) {
+			if (const auto group = history()->owner().groups().find(item)) {
+				if (group->items.front() != item) {
+					_media = nullptr;
+					_flags |= Flag::HiddenByGroup;
+				} else {
+					_media = std::make_unique<GroupedMedia>(
+						this,
+						group->items);
+					if (!pendingResize()) {
+						history()->owner().requestViewResize(this);
+					}
 				}
+				return;
 			}
-			return;
 		}
-	}
-	const auto session = &history()->session();
-	if (const auto media = _data->media()) {
 		_media = media->createView(this, replacing);
-	} else if (_data->isIsolatedEmoji()
+	} else if (isOnlyCustomEmoji()
 		&& Core::App().settings().largeEmoji()) {
-		const auto emoji = _data->isolatedEmoji();
-		const auto emojiStickers = &session->emojiStickersPack();
+		_media = std::make_unique<UnwrappedMedia>(
+			this,
+			std::make_unique<CustomEmoji>(this, onlyCustomEmoji()));
+	} else if (isIsolatedEmoji()
+		&& Core::App().settings().largeEmoji()) {
+		const auto emoji = isolatedEmoji();
+		const auto emojiStickers = &history()->session().emojiStickersPack();
 		const auto skipPremiumEffect = false;
 		if (const auto sticker = emojiStickers->stickerForEmoji(emoji)) {
 			_media = std::make_unique<UnwrappedMedia>(
@@ -569,6 +646,237 @@ void Element::refreshMedia(Element *replacing) {
 		}
 	} else {
 		_media = nullptr;
+	}
+}
+
+Ui::Text::IsolatedEmoji Element::isolatedEmoji() const {
+	return _text.toIsolatedEmoji();
+}
+
+Ui::Text::OnlyCustomEmoji Element::onlyCustomEmoji() const {
+	return _text.toOnlyCustomEmoji();
+}
+
+const Ui::Text::String &Element::text() const {
+	return _text;
+}
+
+int Element::textHeightFor(int textWidth) {
+	validateText();
+	if (_textWidth != textWidth) {
+		_textWidth = textWidth;
+		_textHeight = _text.countHeight(textWidth);
+	}
+	return _textHeight;
+}
+
+auto Element::contextDependentServiceText() -> TextWithLinks {
+	const auto item = data();
+	const auto info = item->Get<HistoryServiceTopicInfo>();
+	if (!info) {
+		return {};
+	}
+	if (_delegate->elementContext() == Context::Replies) {
+		if (info->created()) {
+			return { { tr::lng_action_topic_created_inside(tr::now) } };
+		}
+		return {};
+	} else if (info->created()) {
+		return{};
+	}
+	const auto peerId = item->history()->peer->id;
+	const auto topicRootId = item->topicRootId();
+	if (!peerIsChannel(peerId)) {
+		return {};
+	}
+	const auto from = item->from();
+	const auto topicUrl =  u"internal:url:https://t.me/c/%1/%2"_q
+		.arg(peerToChannel(peerId).bare)
+		.arg(topicRootId.bare);
+	const auto fromLink = [&](int index) {
+		return Ui::Text::Link(from->name(), index);
+	};
+	const auto placeholderLink = [&] {
+		return Ui::Text::Link(
+			tr::lng_action_topic_placeholder(tr::now),
+			topicUrl);
+	};
+	const auto wrapTopic = [&](
+			const QString &title,
+			std::optional<DocumentId> iconId) {
+		return Ui::Text::Link(
+			Data::ForumTopicIconWithTitle(
+				topicRootId,
+				iconId.value_or(0),
+				title),
+			topicUrl);
+	};
+	const auto wrapParentTopic = [&] {
+		const auto forum = history()->asForum();
+		if (!forum || forum->topicDeleted(topicRootId)) {
+			return wrapTopic(
+				tr::lng_deleted_message(tr::now),
+				std::nullopt);
+		} else if (const auto topic = forum->topicFor(topicRootId)) {
+			return wrapTopic(topic->title(), topic->iconId());
+		} else {
+			forum->requestTopic(topicRootId, crl::guard(this, [=] {
+				itemTextUpdated();
+				history()->owner().requestViewResize(this);
+			}));
+			return wrapTopic(
+				tr::lng_profile_loading(tr::now),
+				std::nullopt);
+		}
+	};
+
+	if (info->closed) {
+		return {
+			tr::lng_action_topic_closed(
+				tr::now,
+				lt_topic,
+				wrapParentTopic(),
+				Ui::Text::WithEntities),
+		};
+	} else if (info->reopened) {
+		return {
+			tr::lng_action_topic_reopened(
+				tr::now,
+				lt_topic,
+				wrapParentTopic(),
+				Ui::Text::WithEntities),
+		};
+	} else if (info->hidden) {
+		return {
+			tr::lng_action_topic_hidden(
+				tr::now,
+				lt_topic,
+				wrapParentTopic(),
+				Ui::Text::WithEntities),
+		};
+	} else if (info->unhidden) {
+		return {
+			tr::lng_action_topic_unhidden(
+				tr::now,
+				lt_topic,
+				wrapParentTopic(),
+				Ui::Text::WithEntities),
+		};
+	} else if (info->renamed) {
+		return {
+			tr::lng_action_topic_renamed(
+				tr::now,
+				lt_from,
+				fromLink(1),
+				lt_link,
+				placeholderLink(),
+				lt_title,
+				wrapTopic(
+					info->title,
+					(info->reiconed
+						? info->iconId
+						: std::optional<DocumentId>())),
+				Ui::Text::WithEntities),
+			{ from->createOpenLink() },
+		};
+	} else if (info->reiconed) {
+		if (const auto iconId = info->iconId) {
+			return {
+				tr::lng_action_topic_icon_changed(
+					tr::now,
+					lt_from,
+					fromLink(1),
+					lt_link,
+					placeholderLink(),
+					lt_emoji,
+					Data::SingleCustomEmoji(iconId),
+					Ui::Text::WithEntities),
+				{ from->createOpenLink() },
+			};
+		} else {
+			return {
+				tr::lng_action_topic_icon_removed(
+					tr::now,
+					lt_from,
+					fromLink(1),
+					lt_link,
+					placeholderLink(),
+					Ui::Text::WithEntities),
+				{ from->createOpenLink() },
+			};
+		}
+	} else {
+		return {};
+	}
+}
+
+void Element::validateText() {
+	const auto item = data();
+	const auto &text = item->_text;
+	if (_text.isEmpty() == text.empty()) {
+		return;
+	}
+	const auto context = Core::MarkedTextContext{
+		.session = &history()->session(),
+		.customEmojiRepaint = [=] { customEmojiRepaint(); },
+	};
+	if (_flags & Flag::ServiceMessage) {
+		const auto contextDependentText = contextDependentServiceText();
+		const auto &markedText = contextDependentText.text.empty()
+			? text
+			: contextDependentText.text;
+		const auto &customLinks = contextDependentText.text.empty()
+			? item->customTextLinks()
+			: contextDependentText.links;
+		_text.setMarkedText(
+			st::serviceTextStyle,
+			markedText,
+			Ui::ItemTextServiceOptions(),
+			context);
+		auto linkIndex = 0;
+		for (const auto &link : customLinks) {
+			// Link indices start with 1.
+			_text.setLink(++linkIndex, link);
+		}
+	} else {
+		clearSpecialOnlyEmoji();
+		const auto context = Core::MarkedTextContext{
+			.session = &history()->session(),
+			.customEmojiRepaint = [=] { customEmojiRepaint(); },
+		};
+		_text.setMarkedText(
+			st::messageTextStyle,
+			item->originalTextWithLocalEntities(),
+			Ui::ItemTextOptions(item),
+			context);
+		if (!text.empty() && _text.isEmpty()) {
+			// If server has allowed some text that we've trim-ed entirely,
+			// just replace it with something so that UI won't look buggy.
+			_text.setMarkedText(
+				st::messageTextStyle,
+				{ u":-("_q },
+				Ui::ItemTextOptions(item));
+		}
+		if (!item->media()) {
+			checkSpecialOnlyEmoji();
+			refreshMedia(nullptr);
+		}
+	}
+	FillTextWithAnimatedSpoilers(this, _text);
+	_textWidth = -1;
+	_textHeight = 0;
+}
+
+void Element::validateTextSkipBlock(bool has, int width, int height) {
+	validateText();
+	if (!has) {
+		if (_text.removeSkipBlock()) {
+			_textWidth = -1;
+			_textHeight = 0;
+		}
+	} else if (_text.updateSkipBlock(width, height)) {
+		_textWidth = -1;
+		_textHeight = 0;
 	}
 }
 
@@ -608,10 +916,13 @@ bool Element::computeIsAttachToPrevious(not_null<Element*> previous) {
 	const auto item = data();
 	if (!Has<DateBadge>() && !Has<UnreadBar>()) {
 		const auto prev = previous->data();
+		const auto previousMarkup = prev->inlineReplyMarkup();
 		const auto possible = (std::abs(prev->date() - item->date())
 				< kAttachMessageToPreviousSecondsDelta)
 			&& mayBeAttached(this)
-			&& mayBeAttached(previous);
+			&& mayBeAttached(previous)
+			&& (!previousMarkup || previousMarkup->hiddenBy(prev->media()))
+			&& (item->topicRootId() == prev->topicRootId());
 		if (possible) {
 			const auto forwarded = item->Get<HistoryMessageForwarded>();
 			const auto prevForwarded = prev->Get<HistoryMessageForwarded>();
@@ -715,10 +1026,10 @@ void Element::destroyUnreadBar() {
 		return;
 	}
 	RemoveComponents(UnreadBar::Bit());
-	history()->owner().requestViewResize(this);
 	if (data()->mainView() == this) {
 		recountAttachToPreviousInBlocks();
 	}
+	history()->owner().requestViewResize(this);
 }
 
 int Element::displayedDateHeight() const {
@@ -746,11 +1057,12 @@ void Element::recountAttachToPreviousInBlocks() {
 		return;
 	}
 	auto attachToPrevious = false;
-	if (const auto previous = previousDisplayedInBlocks()) {
+	const auto previous = previousDisplayedInBlocks();
+	if (previous) {
 		attachToPrevious = computeIsAttachToPrevious(previous);
-		previous->setAttachToNext(attachToPrevious);
+		previous->setAttachToNext(attachToPrevious, this);
 	}
-	setAttachToPrevious(attachToPrevious);
+	setAttachToPrevious(attachToPrevious, previous);
 }
 
 void Element::recountDisplayDateInBlocks() {
@@ -773,22 +1085,41 @@ void Element::recountDisplayDateInBlocks() {
 }
 
 QSize Element::countOptimalSize() {
+	_flags &= ~Flag::NeedsResize;
 	return performCountOptimalSize();
 }
 
 QSize Element::countCurrentSize(int newWidth) {
 	if (_flags & Flag::NeedsResize) {
-		_flags &= ~Flag::NeedsResize;
 		initDimensions();
 	}
 	return performCountCurrentSize(newWidth);
+}
+
+void Element::refreshIsTopicRootReply() {
+	const auto topicRootReply = countIsTopicRootReply();
+	if (topicRootReply) {
+		_flags |= Flag::TopicRootReply;
+	} else {
+		_flags &= ~Flag::TopicRootReply;
+	}
+}
+
+bool Element::countIsTopicRootReply() const {
+	const auto item = data();
+	if (!item->history()->isForum()) {
+		return false;
+	}
+	const auto replyTo = item->replyToId();
+	return !replyTo || (item->topicRootId() == replyTo);
 }
 
 void Element::setDisplayDate(bool displayDate) {
 	const auto item = data();
 	if (displayDate && !Has<DateBadge>()) {
 		AddComponents(DateBadge::Bit());
-		Get<DateBadge>()->init(ItemDateText(item, _isScheduledUntilOnline));
+		Get<DateBadge>()->init(
+			ItemDateText(item, (_flags & Flag::ScheduledUntilOnline)));
 		setPendingResize();
 	} else if (!displayDate && Has<DateBadge>()) {
 		RemoveComponents(DateBadge::Bit());
@@ -796,22 +1127,50 @@ void Element::setDisplayDate(bool displayDate) {
 	}
 }
 
-void Element::setAttachToNext(bool attachToNext) {
+void Element::setAttachToNext(bool attachToNext, Element *next) {
+	Expects(next || !attachToNext);
+
+	auto pending = false;
 	if (attachToNext && !(_flags & Flag::AttachedToNext)) {
 		_flags |= Flag::AttachedToNext;
-		setPendingResize();
+		pending = true;
 	} else if (!attachToNext && (_flags & Flag::AttachedToNext)) {
 		_flags &= ~Flag::AttachedToNext;
+		pending = true;
+	}
+	const auto bubble = attachToNext && !next->unwrapped();
+	if (bubble && !(_flags & Flag::BubbleAttachedToNext)) {
+		_flags |= Flag::BubbleAttachedToNext;
+		pending = true;
+	} else if (!bubble && (_flags & Flag::BubbleAttachedToNext)) {
+		_flags &= ~Flag::BubbleAttachedToNext;
+		pending = true;
+	}
+	if (pending) {
 		setPendingResize();
 	}
 }
 
-void Element::setAttachToPrevious(bool attachToPrevious) {
+void Element::setAttachToPrevious(bool attachToPrevious, Element *previous) {
+	Expects(previous || !attachToPrevious);
+
+	auto pending = false;
 	if (attachToPrevious && !(_flags & Flag::AttachedToPrevious)) {
 		_flags |= Flag::AttachedToPrevious;
-		setPendingResize();
+		pending = true;
 	} else if (!attachToPrevious && (_flags & Flag::AttachedToPrevious)) {
 		_flags &= ~Flag::AttachedToPrevious;
+		pending = true;
+	}
+	const auto bubble = attachToPrevious && !previous->unwrapped();
+	if (bubble && !(_flags & Flag::BubbleAttachedToPrevious)) {
+		_flags |= Flag::BubbleAttachedToPrevious;
+		pending = true;
+	} else if (!bubble && (_flags & Flag::BubbleAttachedToPrevious)) {
+		_flags &= ~Flag::BubbleAttachedToPrevious;
+		pending = true;
+	}
+	if (pending) {
 		setPendingResize();
 	}
 }
@@ -832,6 +1191,10 @@ bool Element::displayFromName() const {
 	return false;
 }
 
+TopicButton *Element::displayedTopicButton() const {
+	return nullptr;
+}
+
 bool Element::displayForwardedFrom() const {
 	return false;
 }
@@ -846,6 +1209,10 @@ bool Element::drawBubble() const {
 
 bool Element::hasBubble() const {
 	return false;
+}
+
+bool Element::unwrapped() const {
+	return true;
 }
 
 bool Element::hasFastReply() const {
@@ -868,7 +1235,8 @@ void Element::drawRightAction(
 	int outerWidth) const {
 }
 
-ClickHandlerPtr Element::rightActionLink() const {
+ClickHandlerPtr Element::rightActionLink(
+		std::optional<QPoint> pressPoint) const {
 	return ClickHandlerPtr();
 }
 
@@ -897,7 +1265,7 @@ auto Element::verticalRepaintRange() const -> VerticalRepaintRange {
 }
 
 bool Element::hasHeavyPart() const {
-	return false;
+	return _heavyCustomEmoji;
 }
 
 void Element::checkHeavyPart() {
@@ -913,10 +1281,30 @@ bool Element::isSignedAuthorElided() const {
 void Element::itemDataChanged() {
 }
 
+void Element::itemTextUpdated() {
+	if (const auto media = _media.get()) {
+		media->parentTextUpdated();
+	}
+	clearSpecialOnlyEmoji();
+	_text = Ui::Text::String(st::msgMinWidth);
+	_textWidth = -1;
+	_textHeight = 0;
+	if (_media && !data()->media()) {
+		refreshMedia(nullptr);
+	}
+}
+
 void Element::unloadHeavyPart() {
 	history()->owner().unregisterHeavyViewPart(this);
 	if (_media) {
 		_media->unloadHeavyPart();
+	}
+	if (_heavyCustomEmoji) {
+		_heavyCustomEmoji = false;
+		_text.unloadPersistentAnimation();
+		if (const auto reply = data()->Get<HistoryMessageReply>()) {
+			reply->replyToText.unloadPersistentAnimation();
+		}
 	}
 }
 
@@ -1059,11 +1447,6 @@ void Element::clickHandlerActiveChanged(
 void Element::clickHandlerPressedChanged(
 		const ClickHandlerPtr &handler,
 		bool pressed) {
-	if (const auto markup = _data->Get<HistoryMessageReplyMarkup>()) {
-		if (const auto keyboard = markup->inlineKeyboard.get()) {
-			keyboard->clickHandlerPressedChanged(handler, pressed);
-		}
-	}
 	PressedLink(pressed ? this : nullptr);
 	repaint();
 	if (const auto media = this->media()) {
@@ -1071,26 +1454,33 @@ void Element::clickHandlerPressedChanged(
 	}
 }
 
-void Element::animateReaction(ReactionAnimationArgs &&args) {
+void Element::animateReaction(Ui::ReactionFlyAnimationArgs &&args) {
 }
 
 void Element::animateUnreadReactions() {
 	const auto &recent = data()->recentReactions();
-	for (const auto &[emoji, list] : recent) {
+	for (const auto &[id, list] : recent) {
 		if (ranges::contains(list, true, &Data::RecentReaction::unread)) {
-			animateReaction({ .emoji = emoji });
+			animateReaction({ .id = id });
 		}
 	}
 }
 
 auto Element::takeReactionAnimations()
--> base::flat_map<QString, std::unique_ptr<Reactions::Animation>> {
+-> base::flat_map<
+		Data::ReactionId,
+		std::unique_ptr<Ui::ReactionFlyAnimation>> {
 	return {};
 }
 
 Element::~Element() {
 	// Delete media while owner still exists.
 	base::take(_media);
+	if (_heavyCustomEmoji) {
+		_heavyCustomEmoji = false;
+		_text.unloadPersistentAnimation();
+		checkHeavyPart();
+	}
 	if (_data->mainView() == this) {
 		_data->clearMainView();
 	}

@@ -15,6 +15,10 @@ Available Availability() {
 	};
 }
 
+bool ProvidesQWidget() {
+	return false;
+}
+
 std::unique_ptr<Interface> CreateInstance(Config config) {
 	return nullptr;
 }
@@ -24,9 +28,6 @@ int Exec() {
 }
 
 void SetSocketPath(const std::string &socketPath) {
-}
-
-void SetDebug(const std::string &debug) {
 }
 
 } // namespace Webview::WebKit2Gtk

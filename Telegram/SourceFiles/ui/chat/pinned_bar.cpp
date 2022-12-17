@@ -18,9 +18,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Ui {
 
-PinnedBar::PinnedBar(not_null<QWidget*> parent)
+PinnedBar::PinnedBar(not_null<QWidget*> parent, Fn<bool()> customEmojiPaused)
 : _wrap(parent, object_ptr<RpWidget>(parent))
-, _shadow(std::make_unique<PlainShadow>(_wrap.parentWidget())) {
+, _shadow(std::make_unique<PlainShadow>(_wrap.parentWidget()))
+, _customEmojiPaused(std::move(customEmojiPaused)) {
 	_wrap.hide(anim::type::instant);
 	_shadow->hide();
 
@@ -81,20 +82,26 @@ void PinnedBar::setContent(rpl::producer<Ui::MessageBarContent> content) {
 }
 
 void PinnedBar::setRightButton(object_ptr<Ui::RpWidget> button) {
+	const auto hasPrevious = (_right.button != nullptr);
 	if (auto previous = _right.button.release()) {
-		_right.previousButtonLifetime.make_state<RightButton>(
-			RightButton::fromRaw(std::move(previous)));
-		_right.previousButtonLifetime = previous->toggledValue(
+		using Unique = base::unique_qptr<Ui::FadeWrapScaled<Ui::RpWidget>>;
+		_right.previousButtonLifetime = previous->shownValue(
 		) | rpl::filter(!rpl::mappers::_1) | rpl::start_with_next([=] {
 			_right.previousButtonLifetime.destroy();
 		});
 		previous->hide(anim::type::normal);
+		_right.previousButtonLifetime.make_state<Unique>(Unique{ previous });
 	}
 	_right.button.create(_wrap.entity(), std::move(button));
 	if (_right.button) {
 		_right.button->setParent(_wrap.entity());
-		_right.button->setDuration(st::defaultMessageBar.duration);
-		_right.button->show(anim::type::normal);
+		if (hasPrevious) {
+			_right.button->setDuration(st::defaultMessageBar.duration);
+			_right.button->show(anim::type::normal);
+		} else {
+			_right.button->setDuration(0);
+			_right.button->show(anim::type::instant);
+		}
 	}
 	if (_bar) {
 		updateControlsGeometry(_wrap.geometry());
@@ -133,7 +140,8 @@ void PinnedBar::createControls() {
 
 	_bar = std::make_unique<MessageBar>(
 		_wrap.entity(),
-		st::defaultMessageBar);
+		st::defaultMessageBar,
+		_customEmojiPaused);
 	if (_right.button) {
 		_right.button->raise();
 	}
@@ -142,10 +150,12 @@ void PinnedBar::createControls() {
 	_bar->widget()->setCursor(style::cur_pointer);
 	_bar->widget()->events(
 	) | rpl::filter([=](not_null<QEvent*> event) {
-		return (event->type() == QEvent::MouseButtonPress);
+		return (event->type() == QEvent::MouseButtonPress)
+			&& (static_cast<QMouseEvent*>(event.get())->button()
+					== Qt::LeftButton);
 	}) | rpl::map([=] {
 		return _bar->widget()->events(
-		) | rpl::filter([=](not_null<QEvent*> event) {
+		) | rpl::filter([](not_null<QEvent*> event) {
 			return (event->type() == QEvent::MouseButtonRelease);
 		}) | rpl::take(1) | rpl::filter([=](not_null<QEvent*> event) {
 			return _bar->widget()->rect().contains(
@@ -205,6 +215,12 @@ void PinnedBar::raise() {
 	_shadow->raise();
 }
 
+void PinnedBar::customEmojiRepaint() {
+	if (_bar) {
+		_bar->customEmojiRepaint();
+	}
+}
+
 void PinnedBar::finishAnimating() {
 	_wrap.finishAnimating();
 }
@@ -231,6 +247,18 @@ rpl::producer<int> PinnedBar::heightValue() const {
 
 rpl::producer<> PinnedBar::barClicks() const {
 	return _barClicks.events();
+}
+
+rpl::producer<> PinnedBar::contextMenuRequested() const {
+	return _wrap.entity()->paintRequest(
+	) | rpl::filter([=] {
+		return _bar && _bar->widget();
+	}) | rpl::map([=] {
+		return _bar->widget()->events(
+		) | rpl::filter([](not_null<QEvent*> event) {
+			return (event->type() == QEvent::ContextMenu);
+		}) | rpl::to_empty;
+	}) | rpl::flatten_latest();
 }
 
 } // namespace Ui

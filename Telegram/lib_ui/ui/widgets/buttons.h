@@ -270,10 +270,12 @@ public:
 	rpl::producer<bool> toggledChanges() const;
 	rpl::producer<bool> toggledValue() const;
 
+	void setToggleLocked(bool locked);
 	void setColorOverride(std::optional<QColor> textColorOverride);
 	void setPaddingOverride(style::margins padding);
 
 	[[nodiscard]] const style::SettingsButton &st() const;
+	[[nodiscard]] int fullTextWidth() const;
 
 protected:
 	int resizeGetHeight(int newWidth) override;

@@ -15,14 +15,38 @@ class Service;
 
 struct HistoryServiceDependentData {
 	PeerId peerId = 0;
-	MsgId msgId = 0;
 	HistoryItem *msg = nullptr;
 	ClickHandlerPtr lnk;
+	MsgId msgId = 0;
+	MsgId topId = 0;
+	bool topicPost = false;
 };
 
 struct HistoryServicePinned
 : public RuntimeComponent<HistoryServicePinned, HistoryItem>
 , public HistoryServiceDependentData {
+};
+
+struct HistoryServiceTopicInfo
+: public RuntimeComponent<HistoryServiceTopicInfo, HistoryItem>
+, public HistoryServiceDependentData {
+	QString title;
+	DocumentId iconId = 0;
+	bool closed = false;
+	bool reopened = false;
+	bool reiconed = false;
+	bool renamed = false;
+	bool hidden = false;
+	bool unhidden = false;
+
+	[[nodiscard]] bool created() const {
+		return !closed
+			&& !reopened
+			&& !reiconed
+			&& !renamed
+			&& !hidden
+			&& !unhidden;
+	}
 };
 
 struct HistoryServiceGameScore
@@ -59,6 +83,16 @@ struct HistoryServiceOngoingCall
 	rpl::lifetime lifetime;
 };
 
+struct HistoryServiceChatThemeChange
+: public RuntimeComponent<HistoryServiceChatThemeChange, HistoryItem> {
+	ClickHandlerPtr link;
+};
+
+struct HistoryServiceTTLChange
+: public RuntimeComponent<HistoryServiceTTLChange, HistoryItem> {
+	ClickHandlerPtr link;
+};
+
 namespace HistoryView {
 class ServiceMessagePainter;
 } // namespace HistoryView
@@ -67,7 +101,7 @@ class HistoryService : public HistoryItem {
 public:
 	struct PreparedText {
 		TextWithEntities text;
-		QList<ClickHandlerPtr> links;
+		std::vector<ClickHandlerPtr> links;
 	};
 
 	HistoryService(
@@ -85,7 +119,7 @@ public:
 		MsgId id,
 		MessageFlags flags,
 		TimeId date,
-		const PreparedText &message,
+		PreparedText &&message,
 		PeerId from = 0,
 		PhotoData *photo = nullptr);
 
@@ -103,6 +137,8 @@ public:
 		return true;
 	}
 
+	const std::vector<ClickHandlerPtr> &customTextLinks() const override;
+
 	void applyEdition(const MTPDmessageService &message) override;
 	crl::time getSelfDestructIn(crl::time now) override;
 
@@ -117,13 +153,19 @@ public:
 	ItemPreview toPreview(ToPreviewOptions options) const override;
 	TextWithEntities inReplyText() const override;
 
+	MsgId replyToId() const override;
+	MsgId replyToTop() const override;
+	MsgId topicRootId() const override;
+	void setReplyFields(
+		MsgId replyTo,
+		MsgId replyToTop,
+		bool isForumPost) override;
+
 	std::unique_ptr<HistoryView::Element> createView(
 		not_null<HistoryView::ElementDelegate*> delegate,
 		HistoryView::Element *replacing = nullptr) override;
 
-	void setServiceText(const PreparedText &prepared);
-
-	void hideSpoilers() override;
+	void setServiceText(PreparedText &&prepared);
 
 	~HistoryService();
 
@@ -139,12 +181,14 @@ protected:
 
 private:
 	HistoryServiceDependentData *GetDependentData() {
-		if (auto pinned = Get<HistoryServicePinned>()) {
+		if (const auto pinned = Get<HistoryServicePinned>()) {
 			return pinned;
-		} else if (auto gamescore = Get<HistoryServiceGameScore>()) {
+		} else if (const auto gamescore = Get<HistoryServiceGameScore>()) {
 			return gamescore;
-		} else if (auto payment = Get<HistoryServicePayment>()) {
+		} else if (const auto payment = Get<HistoryServicePayment>()) {
 			return payment;
+		} else if (const auto info = Get<HistoryServiceTopicInfo>()) {
+			return info;
 		}
 		return nullptr;
 	}
@@ -155,6 +199,8 @@ private:
 	void updateDependentText();
 	void updateText(PreparedText &&text);
 	void clearDependency();
+	void setupChatThemeChange();
+	void setupTTLChange();
 
 	void createFromMtp(const MTPDmessage &message);
 	void createFromMtp(const MTPDmessageService &message);
@@ -174,6 +220,8 @@ private:
 		TimeId scheduleDate);
 
 	friend class HistoryView::Service;
+
+	std::vector<ClickHandlerPtr> _textLinks;
 
 };
 

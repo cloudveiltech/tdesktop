@@ -7,7 +7,6 @@
 option(TDESKTOP_API_TEST "Use test API credentials." OFF)
 set(TDESKTOP_API_ID "0" CACHE STRING "Provide 'api_id' for the Telegram API access.")
 set(TDESKTOP_API_HASH "" CACHE STRING "Provide 'api_hash' for the Telegram API access.")
-set(TDESKTOP_LAUNCHER_BASENAME "" CACHE STRING "Desktop file base name (Linux only).")
 
 if (TDESKTOP_API_TEST)
     set(TDESKTOP_API_ID 17349)
@@ -50,8 +49,3 @@ endif()
 if (DESKTOP_APP_SPECIAL_TARGET)
     target_compile_definitions(Telegram PRIVATE TDESKTOP_ALLOW_CLOSED_ALPHA)
 endif()
-
-if (NOT TDESKTOP_LAUNCHER_BASENAME)
-    set(TDESKTOP_LAUNCHER_BASENAME "telegramdesktop")
-endif()
-target_compile_definitions(Telegram PRIVATE TDESKTOP_LAUNCHER_BASENAME=${TDESKTOP_LAUNCHER_BASENAME})

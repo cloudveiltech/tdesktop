@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/linux/file_utilities_linux.h"
 
 #ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
+#include "base/platform/linux/base_linux_app_launch_context.h"
 #include "platform/linux/linux_xdp_open_with_dialog.h"
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
@@ -24,10 +25,12 @@ namespace File {
 void UnsafeOpenUrl(const QString &url) {
 #ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 	try {
-		if (Gio::AppInfo::launch_default_for_uri(url.toStdString())) {
+		if (Gio::AppInfo::launch_default_for_uri(
+			url.toStdString(),
+			base::Platform::AppLaunchContext())) {
 			return;
 		}
-	} catch (const Glib::Error &e) {
+	} catch (const std::exception &e) {
 		LOG(("App Error: %1").arg(QString::fromStdString(e.what())));
 	}
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
@@ -36,7 +39,7 @@ void UnsafeOpenUrl(const QString &url) {
 }
 
 void UnsafeOpenEmailLink(const QString &email) {
-	UnsafeOpenUrl(qstr("mailto:") + email);
+	UnsafeOpenUrl(u"mailto:"_q + email);
 }
 
 bool UnsafeShowOpenWith(const QString &filepath) {
@@ -53,10 +56,11 @@ void UnsafeLaunch(const QString &filepath) {
 #ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 	try {
 		if (Gio::AppInfo::launch_default_for_uri(
-			Glib::filename_to_uri(filepath.toStdString()))) {
+			Glib::filename_to_uri(filepath.toStdString()),
+			base::Platform::AppLaunchContext())) {
 			return;
 		}
-	} catch (const Glib::Error &e) {
+	} catch (const std::exception &e) {
 		LOG(("App Error: %1").arg(QString::fromStdString(e.what())));
 	}
 

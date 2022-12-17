@@ -21,9 +21,7 @@ namespace Main {
 class Session;
 } // namespace Main
 
-namespace Data {
-
-namespace details {
+namespace Data::details {
 
 template <typename Flag>
 inline constexpr int CountBit(Flag Last = Flag::LastUsedBit) {
@@ -35,7 +33,11 @@ inline constexpr int CountBit(Flag Last = Flag::LastUsedBit) {
 	return i;
 }
 
-} // namespace details
+} // namespace Data::details
+
+namespace Data {
+
+class ForumTopic;
 
 struct NameUpdate {
 	NameUpdate(
@@ -65,6 +67,7 @@ struct PeerUpdate {
 		IsBlocked         = (1ULL << 8),
 		MessagesTTL       = (1ULL << 9),
 		FullInfo          = (1ULL << 10),
+		Usernames         = (1ULL << 11),
 
 		// For users
 		CanShareContact   = (1ULL << 11),
@@ -78,26 +81,27 @@ struct PeerUpdate {
 		HasCalls          = (1ULL << 19),
 		SupportInfo       = (1ULL << 20),
 		IsBot             = (1ULL << 21),
+		EmojiStatus       = (1ULL << 22),
 
 		// For chats and channels
-		InviteLinks       = (1ULL << 22),
-		Members           = (1ULL << 23),
-		Admins            = (1ULL << 24),
-		BannedUsers       = (1ULL << 25),
-		Rights            = (1ULL << 26),
-		PendingRequests   = (1ULL << 27),
-		Reactions         = (1ULL << 28),
+		InviteLinks       = (1ULL << 23),
+		Members           = (1ULL << 24),
+		Admins            = (1ULL << 25),
+		BannedUsers       = (1ULL << 26),
+		Rights            = (1ULL << 27),
+		PendingRequests   = (1ULL << 28),
+		Reactions         = (1ULL << 29),
 
 		// For channels
-		ChannelAmIn       = (1ULL << 29),
-		StickersSet       = (1ULL << 30),
-		ChannelLinkedChat = (1ULL << 31),
-		ChannelLocation   = (1ULL << 32),
-		Slowmode          = (1ULL << 33),
-		GroupCall         = (1ULL << 34),
+		ChannelAmIn       = (1ULL << 30),
+		StickersSet       = (1ULL << 31),
+		ChannelLinkedChat = (1ULL << 32),
+		ChannelLocation   = (1ULL << 33),
+		Slowmode          = (1ULL << 34),
+		GroupCall         = (1ULL << 35),
 
 		// For iteration
-		LastUsedBit       = (1ULL << 34),
+		LastUsedBit       = (1ULL << 35),
 	};
 	using Flags = base::flags<Flag>;
 	friend inline constexpr auto is_flag_type(Flag) { return true; }
@@ -121,19 +125,42 @@ struct HistoryUpdate {
 		ChatOccupied       = (1U << 7),
 		MessageSent        = (1U << 8),
 		ScheduledSent      = (1U << 9),
-		ForwardDraft       = (1U << 10),
-		OutboxRead         = (1U << 11),
-		BotKeyboard        = (1U << 12),
-		CloudDraft         = (1U << 13),
-		LocalDraftSet      = (1U << 14),
-		PinnedMessages     = (1U << 15),
+		OutboxRead         = (1U << 10),
+		BotKeyboard        = (1U << 11),
+		CloudDraft         = (1U << 12),
 
-		LastUsedBit        = (1U << 15),
+		LastUsedBit        = (1U << 12),
 	};
 	using Flags = base::flags<Flag>;
 	friend inline constexpr auto is_flag_type(Flag) { return true; }
 
 	not_null<History*> history;
+	Flags flags = 0;
+
+};
+
+struct TopicUpdate {
+	enum class Flag : uint32 {
+		None = 0,
+
+		UnreadView = (1U << 1),
+		UnreadMentions = (1U << 2),
+		UnreadReactions = (1U << 3),
+		Notifications = (1U << 4),
+		Title = (1U << 5),
+		IconId = (1U << 6),
+		ColorId = (1U << 7),
+		CloudDraft = (1U << 8),
+		Closed = (1U << 9),
+		Creator = (1U << 10),
+		Destroyed = (1U << 11),
+
+		LastUsedBit = (1U << 11),
+	};
+	using Flags = base::flags<Flag>;
+	friend inline constexpr auto is_flag_type(Flag) { return true; }
+
+	not_null<ForumTopic*> topic;
 	Flags flags = 0;
 
 };
@@ -150,7 +177,7 @@ struct MessageUpdate {
 		ReplyMarkup        = (1U << 5),
 		BotCallbackSent    = (1U << 6),
 		NewMaybeAdded      = (1U << 7),
-		RepliesUnreadCount = (1U << 8),
+		ReplyToTopAdded    = (1U << 8),
 		NewUnreadReaction  = (1U << 9),
 
 		LastUsedBit        = (1U << 9),
@@ -168,8 +195,13 @@ struct EntryUpdate {
 		None = 0,
 
 		Repaint = (1U << 0),
+		HasPinnedMessages = (1U << 1),
+		ForwardDraft = (1U << 2),
+		LocalDraftSet = (1U << 3),
+		Height = (1U << 4),
+		Destroyed = (1U << 5),
 
-		LastUsedBit = (1U << 0),
+		LastUsedBit = (1U << 5),
 	};
 	using Flags = base::flags<Flag>;
 	friend inline constexpr auto is_flag_type(Flag) { return true; }
@@ -218,6 +250,21 @@ public:
 	[[nodiscard]] rpl::producer<HistoryUpdate> realtimeHistoryUpdates(
 		HistoryUpdate::Flag flag) const;
 
+	void topicUpdated(
+		not_null<ForumTopic*> topic,
+		TopicUpdate::Flags flags);
+	[[nodiscard]] rpl::producer<TopicUpdate> topicUpdates(
+		TopicUpdate::Flags flags) const;
+	[[nodiscard]] rpl::producer<TopicUpdate> topicUpdates(
+		not_null<ForumTopic*> topic,
+		TopicUpdate::Flags flags) const;
+	[[nodiscard]] rpl::producer<TopicUpdate> topicFlagsValue(
+		not_null<ForumTopic*> topic,
+		TopicUpdate::Flags flags) const;
+	[[nodiscard]] rpl::producer<TopicUpdate> realtimeTopicUpdates(
+		TopicUpdate::Flag flag) const;
+	void topicRemoved(not_null<ForumTopic*> topic);
+
 	void messageUpdated(
 		not_null<HistoryItem*> item,
 		MessageUpdate::Flags flags);
@@ -245,6 +292,7 @@ public:
 		EntryUpdate::Flags flags) const;
 	[[nodiscard]] rpl::producer<EntryUpdate> realtimeEntryUpdates(
 		EntryUpdate::Flag flag) const;
+	void entryRemoved(not_null<Dialogs::Entry*> entry);
 
 	void sendNotifications();
 
@@ -269,6 +317,8 @@ private:
 		[[nodiscard]] rpl::producer<UpdateType> realtimeUpdates(
 			Flag flag) const;
 
+		void drop(not_null<DataType*> data);
+
 		void sendNotifications();
 
 	private:
@@ -291,6 +341,7 @@ private:
 	rpl::event_stream<NameUpdate> _nameStream;
 	Manager<PeerData, PeerUpdate> _peerChanges;
 	Manager<History, HistoryUpdate> _historyChanges;
+	Manager<ForumTopic, TopicUpdate> _topicChanges;
 	Manager<HistoryItem, MessageUpdate> _messageChanges;
 	Manager<Dialogs::Entry, EntryUpdate> _entryChanges;
 

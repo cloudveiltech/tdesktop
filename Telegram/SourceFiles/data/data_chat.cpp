@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_changes.h"
 #include "data/data_group_call.h"
 #include "data/data_message_reactions.h"
+#include "data/notify/data_notify_settings.h"
 #include "history/history.h"
 #include "main/main_session.h"
 #include "apiwrap.h"
@@ -56,7 +57,7 @@ ChatAdminRightsInfo ChatData::defaultAdminRights(not_null<UserData*> user) {
 		| Flag::ChangeInfo
 		| Flag::DeleteMessages
 		| Flag::BanUsers
-		| Flag::InviteUsers
+		| Flag::InviteByLinkOrAdd
 		| Flag::PinMessages
 		| Flag::ManageCall
 		| (isCreator ? Flag::AddAdmins : Flag(0)));
@@ -95,7 +96,7 @@ bool ChatData::canDeleteMessages() const {
 }
 
 bool ChatData::canAddMembers() const {
-	return amIn() && !amRestricted(ChatRestriction::InviteUsers);
+	return amIn() && !amRestricted(ChatRestriction::AddParticipants);
 }
 
 bool ChatData::canSendPolls() const {
@@ -112,11 +113,11 @@ bool ChatData::canBanMembers() const {
 }
 
 bool ChatData::anyoneCanAddMembers() const {
-	return !(defaultRestrictions() & ChatRestriction::InviteUsers);
+	return !(defaultRestrictions() & ChatRestriction::AddParticipants);
 }
 
 void ChatData::setName(const QString &newName) {
-	updateNameDelayed(newName.isEmpty() ? name : newName, QString(), QString());
+	updateNameDelayed(newName.isEmpty() ? name() : newName, {}, {});
 }
 
 void ChatData::applyEditAdmin(not_null<UserData*> user, bool isAdmin) {
@@ -146,7 +147,7 @@ void ChatData::setInviteLink(const QString &newInviteLink) {
 
 bool ChatData::canHaveInviteLink() const {
 	return amCreator()
-		|| (adminRights() & ChatAdminRight::InviteUsers);
+		|| (adminRights() & ChatAdminRight::InviteByLinkOrAdd);
 }
 
 void ChatData::setAdminRights(ChatAdminRights rights) {
@@ -284,20 +285,23 @@ void ChatData::setPendingRequestsCount(
 	}
 }
 
-void ChatData::setAllowedReactions(base::flat_set<QString> list) {
-	if (_allowedReactions != list) {
-		const auto toggled = (_allowedReactions.empty() != list.empty());
-		_allowedReactions = std::move(list);
-		if (toggled) {
-			owner().reactions().updateAllInHistory(
-				this,
-				!_allowedReactions.empty());
+void ChatData::setAllowedReactions(Data::AllowedReactions value) {
+	if (_allowedReactions != value) {
+		const auto enabled = [](const Data::AllowedReactions &allowed) {
+			return (allowed.type != Data::AllowedReactionsType::Some)
+				|| !allowed.some.empty();
+		};
+		const auto was = enabled(_allowedReactions);
+		_allowedReactions = std::move(value);
+		const auto now = enabled(_allowedReactions);
+		if (was != now) {
+			owner().reactions().updateAllInHistory(this, now);
 		}
 		session().changes().peerUpdated(this, UpdateFlag::Reactions);
 	}
 }
 
-const base::flat_set<QString> &ChatData::allowedReactions() const {
+const Data::AllowedReactions &ChatData::allowedReactions() const {
 	return _allowedReactions;
 }
 
@@ -475,17 +479,18 @@ void ApplyChatUpdate(not_null<ChatData*> chat, const MTPDchatFull &update) {
 	}
 	chat->checkFolder(update.vfolder_id().value_or_empty());
 	chat->setThemeEmoji(qs(update.vtheme_emoticon().value_or_empty()));
-	chat->setAllowedReactions(
-		Data::Reactions::ParseAllowed(update.vavailable_reactions()));
+	if (const auto allowed = update.vavailable_reactions()) {
+		chat->setAllowedReactions(Data::Parse(*allowed));
+	} else {
+		chat->setAllowedReactions({});
+	}
 	chat->fullUpdated();
 	chat->setAbout(qs(update.vabout()));
 	chat->setPendingRequestsCount(
 		update.vrequests_pending().value_or_empty(),
 		update.vrecent_requesters().value_or_empty());
 
-	chat->session().api().applyNotifySettings(
-		MTP_inputNotifyPeer(chat->input),
-		update.vnotify_settings());
+	chat->owner().notifySettings().apply(chat, update.vnotify_settings());
 }
 
 void ApplyChatUpdate(

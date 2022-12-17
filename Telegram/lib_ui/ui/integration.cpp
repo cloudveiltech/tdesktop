@@ -8,6 +8,7 @@
 
 #include "ui/gl/gl_detection.h"
 #include "ui/text/text_entity.h"
+#include "ui/text/text_block.h"
 #include "ui/basic_click_handlers.h"
 #include "base/platform/base_platform_info.h"
 
@@ -66,6 +67,16 @@ std::shared_ptr<ClickHandler> Integration::createLinkHandler(
 				data.shown == EntityLinkShown::Full)
 			: nullptr;
 	}
+	return nullptr;
+}
+
+std::unique_ptr<Text::CustomEmoji> Integration::createCustomEmoji(
+		const QString &data,
+		const std::any &context) {
+	return nullptr;
+}
+
+Fn<void()> Integration::createSpoilerRepaint(const std::any &context) {
 	return nullptr;
 }
 
@@ -147,8 +158,38 @@ QString Integration::phraseButtonOk() {
 	return "OK";
 }
 
+QString Integration::phraseButtonClose() {
+	return "Close";
+}
+
 QString Integration::phraseButtonCancel() {
 	return "Cancel";
 }
+
+QString Integration::phrasePanelCloseWarning() {
+	return "Warning";
+}
+
+QString Integration::phrasePanelCloseUnsaved() {
+	return "Changes that you made may not be saved.";
+}
+
+QString Integration::phrasePanelCloseAnyway() {
+	return "Close anyway";
+}
+
+#if 0 // disabled for now
+QString Integration::phraseBotSharePhone() {
+	return "Do you want to share your phone number with this bot?";
+}
+
+QString Integration::phraseBotSharePhoneTitle() {
+	return "Phone number";
+}
+
+QString Integration::phraseBotSharePhoneConfirm() {
+	return "Share";
+}
+#endif
 
 } // namespace Ui

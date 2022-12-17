@@ -7,46 +7,59 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/settings_premium.h"
 
-#include "base/random.h"
+#include "boxes/premium_preview_box.h"
+#include "boxes/sticker_set_box.h"
+#include "chat_helpers/stickers_lottie.h" // LottiePlayerFromDocument.
 #include "core/application.h"
 #include "core/click_handler_types.h"
+#include "core/local_url_handlers.h" // Core::TryConvertUrlToLocal.
+#include "core/ui_integration.h" // MarkedTextContext.
+#include "data/data_document.h"
+#include "data/data_document_media.h"
 #include "data/data_peer_values.h"
+#include "data/data_session.h"
+#include "data/stickers/data_custom_emoji.h" // SerializeCustomEmojiId.
+#include "data/stickers/data_stickers.h"
+#include "history/view/media/history_view_sticker.h" // EmojiSize.
+#include "history/view/media/history_view_sticker_player.h"
 #include "info/info_wrap_widget.h" // Info::Wrap.
+#include "info/profile/info_profile_values.h"
 #include "info/settings/info_settings_widget.h" // SectionCustomTopBarData.
 #include "lang/lang_keys.h"
-#include "boxes/premium_preview_box.h"
+#include "main/main_account.h"
+#include "main/main_app_config.h"
+#include "main/main_session.h"
 #include "settings/settings_common.h"
 #include "settings/settings_premium.h"
 #include "ui/abstract_button.h"
 #include "ui/basic_click_handlers.h"
-#include "ui/effects/animation_value_f.h"
+#include "ui/color_contrast.h"
 #include "ui/effects/gradient.h"
 #include "ui/effects/premium_graphics.h"
-#include "ui/text/text_utilities.h"
-#include "ui/text/format_values.h"
+#include "ui/effects/premium_stars_colored.h"
 #include "ui/layers/generic_box.h"
+#include "ui/text/format_values.h"
+#include "ui/text/text_utilities.h"
+#include "ui/text/text_utilities.h"
+#include "ui/widgets/checkbox.h" // Ui::RadiobuttonGroup.
 #include "ui/widgets/gradient_round_button.h"
 #include "ui/widgets/labels.h"
 #include "ui/wrap/fade_wrap.h"
 #include "ui/wrap/padding_wrap.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/wrap/vertical_layout.h"
+#include "ui/painter.h"
 #include "window/window_controller.h"
-#include "main/main_session.h"
-#include "main/main_account.h"
-#include "main/main_app_config.h"
 #include "window/window_session_controller.h"
 #include "base/unixtime.h"
 #include "apiwrap.h"
 #include "api/api_premium.h"
 #include "styles/style_boxes.h"
-#include "styles/style_chat_helpers.h"
+#include "styles/style_premium.h"
 #include "styles/style_info.h"
 #include "styles/style_intro.h"
 #include "styles/style_layers.h"
 #include "styles/style_settings.h"
-
-#include <QSvgRenderer>
 
 namespace Settings {
 namespace {
@@ -54,11 +67,136 @@ namespace {
 using SectionCustomTopBarData = Info::Settings::SectionCustomTopBarData;
 
 constexpr auto kBodyAnimationPart = 0.90;
-constexpr auto kTitleAnimationPart = 0.15;
-
 constexpr auto kTitleAdditionalScale = 0.15;
+constexpr auto kMinAcceptableContrast = 4.5; // 1.14;
 
-constexpr auto kDeformationMax = 0.1;
+[[nodiscard]] QString Svg() {
+	return u":/gui/icons/settings/star.svg"_q;
+}
+
+[[nodiscard]] QByteArray ColorizedSvg() {
+	auto f = QFile(Svg());
+	if (!f.open(QIODevice::ReadOnly)) {
+		return QByteArray();
+	}
+	auto content = qs(f.readAll());
+	auto stops = [] {
+		auto s = QString();
+		for (const auto &stop : Ui::Premium::ButtonGradientStops()) {
+			s += QString("<stop offset='%1' stop-color='%2'/>")
+				.arg(QString::number(stop.first), stop.second.name());
+		}
+		return s;
+	}();
+	const auto color = QString("<linearGradient id='Gradient2' "
+		"x1='%1' x2='%2' y1='%3' y2='%4'>%5</linearGradient>")
+		.arg(0)
+		.arg(1)
+		.arg(1)
+		.arg(0)
+		.arg(std::move(stops));
+	content.replace(u"gradientPlaceholder"_q, color);
+	content.replace(u"#fff"_q, u"url(#Gradient2)"_q);
+	f.close();
+	return content.toUtf8();
+}
+
+[[nodiscard]] Data::SubscriptionOptions SubscriptionOptionsForRows(
+		Data::SubscriptionOptions result) {
+	for (auto &option : result) {
+		const auto total = option.costTotal;
+		const auto perMonth = option.costPerMonth;
+
+		option.costTotal = tr::lng_premium_gift_per(
+			tr::now,
+			lt_cost,
+			perMonth);
+		option.costPerMonth = tr::lng_premium_subscribe_total(
+			tr::now,
+			lt_cost,
+			total);
+
+		if (option.duration == tr::lng_months(tr::now, lt_count, 1)) {
+			option.costPerMonth = QString();
+			option.duration = tr::lng_premium_subscribe_months_1(tr::now);
+		} else if (option.duration == tr::lng_months(tr::now, lt_count, 6)) {
+			option.duration = tr::lng_premium_subscribe_months_6(tr::now);
+		} else if (option.duration == tr::lng_years(tr::now, lt_count, 1)) {
+			option.duration = tr::lng_premium_subscribe_months_12(tr::now);
+		}
+	}
+	return result;
+}
+
+[[nodiscard]] int TopTransitionSkip() {
+	return (st::settingsButton.padding.top()
+		+ st::settingsPremiumRowTitlePadding.top()) / 2;
+}
+
+namespace Ref {
+namespace Gift {
+
+struct Data {
+	PeerId peerId;
+	int months;
+	bool me;
+
+	explicit operator bool() const {
+		return peerId != 0;
+	}
+};
+
+[[nodiscard]] QString Serialize(const Data &gift) {
+	return QString::number(gift.peerId.value)
+		+ ':'
+		+ QString::number(gift.months)
+		+ ':'
+		+ QString::number(gift.me ? 1 : 0);
+}
+
+[[nodiscard]] Data Parse(QStringView data) {
+	const auto components = data.split(':');
+	if (components.size() != 3) {
+		return {};
+	}
+	return {
+		.peerId = PeerId(components[0].toULongLong()),
+		.months = components[1].toInt(),
+		.me = (components[2].toInt() == 1),
+	};
+}
+
+} // namespace Gift
+
+namespace EmojiStatus {
+
+struct Data {
+	PeerId peerId;
+
+	explicit operator bool() const {
+		return peerId != 0;
+	}
+};
+
+[[nodiscard]] QString Serialize(const Data &gift) {
+	return QString("profile_:%1").arg(QString::number(gift.peerId.value));
+}
+
+[[nodiscard]] Data Parse(QStringView data) {
+	if (data.startsWith(u"profile_:"_q)) {
+		const auto components = data.split(':');
+		if (components.size() != 2) {
+			return {};
+		}
+		return {
+			.peerId = PeerId(components[1].toULongLong()),
+		};
+	}
+	return {};
+}
+
+} // namespace EmojiStatus
+} // namespace Ref
 
 struct Entry {
 	const style::icon *icon;
@@ -76,8 +214,10 @@ using Order = std::vector<QString>;
 		u"faster_download"_q,
 		u"voice_to_text"_q,
 		u"no_ads"_q,
-		u"unique_reactions"_q,
+		u"emoji_status"_q,
+		u"infinite_reactions"_q,
 		u"premium_stickers"_q,
+		u"animated_emoji"_q,
 		u"advanced_chat_management"_q,
 		u"profile_badge"_q,
 		u"animated_userpics"_q,
@@ -131,12 +271,21 @@ using Order = std::vector<QString>;
 			},
 		},
 		{
-			u"unique_reactions"_q,
+			u"emoji_status"_q,
+			Entry{
+				&st::settingsPremiumIconStatus,
+				tr::lng_premium_summary_subtitle_emoji_status(),
+				tr::lng_premium_summary_about_emoji_status(),
+				PremiumPreview::EmojiStatus,
+			},
+		},
+		{
+			u"infinite_reactions"_q,
 			Entry{
 				&st::settingsPremiumIconLike,
-				tr::lng_premium_summary_subtitle_unique_reactions(),
-				tr::lng_premium_summary_about_unique_reactions(),
-				PremiumPreview::Reactions,
+				tr::lng_premium_summary_subtitle_infinite_reactions(),
+				tr::lng_premium_summary_about_infinite_reactions(),
+				PremiumPreview::InfiniteReactions,
 			},
 		},
 		{
@@ -146,6 +295,15 @@ using Order = std::vector<QString>;
 				tr::lng_premium_summary_subtitle_premium_stickers(),
 				tr::lng_premium_summary_about_premium_stickers(),
 				PremiumPreview::Stickers,
+			},
+		},
+		{
+			u"animated_emoji"_q,
+			Entry{
+				&st::settingsIconEmoji,
+				tr::lng_premium_summary_subtitle_animated_emoji(),
+				tr::lng_premium_summary_about_animated_emoji(),
+				PremiumPreview::AnimatedEmoji,
 			},
 		},
 		{
@@ -230,188 +388,547 @@ void SendScreenAccept(not_null<Window::SessionController*> controller) {
 		MTP_jsonNull());
 }
 
-class MiniStars final {
+class TopBarAbstract : public Ui::RpWidget {
 public:
-	MiniStars(Fn<void(const QRect &r)> updateCallback);
+	using Ui::RpWidget::RpWidget;
 
-	void paint(Painter &p, const QRectF &rect);
-	void setPaused(bool paused);
+	void setRoundEdges(bool value);
+
+	virtual void setPaused(bool paused) = 0;
+	virtual void setTextPosition(int x, int y) = 0;
+
+protected:
+	void paintEdges(QPainter &p, const QBrush &brush) const;
+	void paintEdges(QPainter &p) const;
+
+	[[nodiscard]] QRectF starRect(
+		float64 topProgress,
+		float64 sizeProgress) const;
+
+	[[nodiscard]] bool isDark() const;
+	void computeIsDark();
 
 private:
-	struct MiniStar {
-		crl::time birthTime = 0;
-		crl::time deathTime = 0;
-		int angle = 0;
-		float64 size = 0.;
-		float64 alpha = 0.;
-		float64 sinFactor = 0.;
-	};
-
-	struct Interval {
-		int from = 0;
-		int length = 0;
-	};
-
-	void createStar(crl::time now);
-	[[nodiscard]] int angle() const;
-	[[nodiscard]] crl::time timeNow() const;
-	[[nodiscard]] int randomInterval(const Interval &interval) const;
-
-	const std::vector<Interval> _availableAngles;
-	const Interval _lifeLength;
-	const Interval _deathTime;
-	const Interval _size;
-	const Interval _alpha;
-	const Interval _sinFactor;
-
-	const float64 _appearProgressTill;
-	const float64 _disappearProgressAfter;
-	const float64 _distanceProgressStart;
-
-	QSvgRenderer _sprite;
-
-	Ui::Animations::Basic _animation;
-
-	std::vector<MiniStar> _ministars;
-
-	crl::time _nextBirthTime = 0;
-	bool _paused = false;
-
-	QRect _rectToUpdate;
+	bool _roundEdges = true;
+	bool _isDark = false;
 
 };
 
-MiniStars::MiniStars(Fn<void(const QRect &r)> updateCallback)
-: _availableAngles({
-	Interval{ -10, 40 },
-	Interval{ 180 + 10 - 40, 40 },
-	Interval{ 180 + 15, 50 },
-	Interval{ -15 - 50, 50 },
-})
-, _lifeLength({ 150, 200 })
-, _deathTime({ 1500, 2000 })
-, _size({ 10, 20 })
-, _alpha({ 40, 60 })
-, _sinFactor({ 10, 190 })
-, _appearProgressTill(0.2)
-, _disappearProgressAfter(0.8)
-, _distanceProgressStart(0.5)
-, _sprite(u":/gui/icons/settings/starmini.svg"_q)
-, _animation([=](crl::time now) {
-	if (now > _nextBirthTime && !_paused) {
-		createStar(now);
-		_nextBirthTime = now + randomInterval(_lifeLength);
-	}
-	if (_rectToUpdate.isValid()) {
-		updateCallback(base::take(_rectToUpdate));
-	}
-}) {
-	if (anim::Disabled()) {
-		const auto from = _deathTime.from + _deathTime.length;
-		for (auto i = -from; i < 0; i += randomInterval(_lifeLength)) {
-			createStar(i);
-		}
-		updateCallback(_rectToUpdate);
+void TopBarAbstract::setRoundEdges(bool value) {
+	_roundEdges = value;
+	update();
+}
+
+void TopBarAbstract::paintEdges(QPainter &p, const QBrush &brush) const {
+	const auto r = rect();
+	if (_roundEdges) {
+		PainterHighQualityEnabler hq(p);
+		const auto radius = st::boxRadius;
+		p.setPen(Qt::NoPen);
+		p.setBrush(brush);
+		p.drawRoundedRect(
+			r + QMargins{ 0, 0, 0, radius + 1 },
+			radius,
+			radius);
 	} else {
-		_animation.start();
+		p.fillRect(r, brush);
 	}
 }
 
-int MiniStars::randomInterval(const Interval &interval) const {
-	return interval.from + base::RandomIndex(interval.length);
+void TopBarAbstract::paintEdges(QPainter &p) const {
+	paintEdges(p, st::boxBg);
+	if (isDark()) {
+		paintEdges(p, st::shadowFg);
+		paintEdges(p, st::shadowFg);
+	}
 }
 
-crl::time MiniStars::timeNow() const {
-	return anim::Disabled() ? 0 : crl::now();
+QRectF TopBarAbstract::starRect(
+		float64 topProgress,
+		float64 sizeProgress) const {
+	const auto starSize = st::settingsPremiumStarSize * sizeProgress;
+	return QRectF(
+		QPointF(
+			(width() - starSize.width()) / 2,
+			st::settingsPremiumStarTopSkip * topProgress),
+		starSize);
+};
+
+bool TopBarAbstract::isDark() const {
+	return _isDark;
 }
 
-void MiniStars::paint(Painter &p, const QRectF &rect) {
-	const auto center = rect.center();
-	const auto opacity = p.opacity();
-	for (const auto &ministar : _ministars) {
-		const auto progress = (timeNow() - ministar.birthTime)
-			/ float64(ministar.deathTime - ministar.birthTime);
-		if (progress > 1.) {
-			continue;
+void TopBarAbstract::computeIsDark() {
+	const auto contrast = Ui::CountContrast(
+		st::boxBg->c,
+		st::premiumButtonFg->c);
+	_isDark = (contrast > kMinAcceptableContrast);
+}
+
+class EmojiStatusTopBar final {
+public:
+	EmojiStatusTopBar(
+		not_null<DocumentData*> document,
+		Fn<void(QRect)> callback,
+		QSizeF size);
+
+	void setCenter(QPointF position);
+	void setPaused(bool paused);
+	void paint(QPainter &p);
+
+private:
+	[[nodiscard]] QPixmap paintedPixmap(const QSize &size) const;
+
+	void resolveIsColored();
+
+	QRectF _rect;
+	std::shared_ptr<Data::DocumentMedia> _media;
+	std::unique_ptr<HistoryView::StickerPlayer> _player;
+	bool _paused = false;
+	bool _isColored = false;
+	bool _isColoredResolved = false;
+	rpl::lifetime _lifetime;
+
+};
+
+EmojiStatusTopBar::EmojiStatusTopBar(
+	not_null<DocumentData*> document,
+	Fn<void(QRect)> callback,
+	QSizeF size)
+: _rect(QPointF(), size) {
+	const auto sticker = document->sticker();
+	Assert(sticker != nullptr);
+	_media = document->createMediaView();
+	_media->checkStickerLarge();
+	_media->goodThumbnailWanted();
+
+	rpl::single() | rpl::then(
+		document->owner().session().downloaderTaskFinished()
+	) | rpl::start_with_next([=] {
+		if (!_media->loaded()) {
+			return;
 		}
-		const auto appearProgress = std::clamp(
-			progress / _appearProgressTill,
-			0.,
-			1.);
-		const auto rsin = float(std::sin(ministar.angle * M_PI / 180.));
-		const auto rcos = float(std::cos(ministar.angle * M_PI / 180.));
-		const auto end = QPointF(
-			rect.width() / 1.5 * rcos,
-			rect.height() / 1.5 * rsin);
-
-		const auto alphaProgress = 1.
-			- (std::clamp(progress - _disappearProgressAfter, 0., 1.)
-				/ (1. - _disappearProgressAfter));
-		p.setOpacity(ministar.alpha
-			* alphaProgress
-			* appearProgress
-			* opacity);
-
-		const auto deformResult = progress * 360;
-		const auto rsinDeform = float(
-			std::sin(ministar.sinFactor * deformResult * M_PI / 180.));
-		const auto deformH = 1. + kDeformationMax * rsinDeform;
-		const auto deformW = 1. / deformH;
-
-		const auto distanceProgress = _distanceProgressStart + progress;
-		const auto starSide = ministar.size * appearProgress;
-		const auto widthFade = (std::abs(rcos) >= std::abs(rsin));
-		const auto starWidth = starSide
-			* (widthFade ? alphaProgress : 1.)
-			* deformW;
-		const auto starHeight = starSide
-			* (!widthFade ? alphaProgress : 1.)
-			* deformH;
-		const auto renderRect = QRectF(
-			center.x()
-				+ anim::interpolateF(0, end.x(), distanceProgress)
-				- starWidth / 2.,
-			center.y()
-				+ anim::interpolateF(0, end.y(), distanceProgress)
-				- starHeight / 2.,
-			starWidth,
-			starHeight);
-		_sprite.render(&p, renderRect);
-		_rectToUpdate |= renderRect.toRect();
-	}
-	p.setOpacity(opacity);
+		_lifetime.destroy();
+		if (sticker->isLottie()) {
+			_player = std::make_unique<HistoryView::LottiePlayer>(
+				ChatHelpers::LottiePlayerFromDocument(
+				_media.get(),
+				ChatHelpers::StickerLottieSize::EmojiInteractionReserved7, //
+				size.toSize(),
+				Lottie::Quality::High));
+		} else if (sticker->isWebm()) {
+			_player = std::make_unique<HistoryView::WebmPlayer>(
+				_media->owner()->location(),
+				_media->bytes(),
+				size.toSize());
+		}
+		if (_player) {
+			_player->setRepaintCallback([=] { callback(_rect.toRect()); });
+		} else {
+			callback(_rect.toRect());
+		}
+	}, _lifetime);
 }
 
-void MiniStars::setPaused(bool paused) {
+void EmojiStatusTopBar::setCenter(QPointF position) {
+	const auto size = _rect.size();
+	const auto shift = QPointF(size.width() / 2., size.height() / 2.);
+	_rect = QRectF(QPointF(position - shift), QPointF(position + shift));
+}
+
+void EmojiStatusTopBar::setPaused(bool paused) {
 	_paused = paused;
 }
 
-int MiniStars::angle() const {
-	const auto &interval = _availableAngles[
-		base::RandomIndex(_availableAngles.size())];
-	return base::RandomIndex(interval.length) + interval.from;
-}
-
-void MiniStars::createStar(crl::time now) {
-	auto ministar = MiniStar{
-		.birthTime = now,
-		.deathTime = now + randomInterval(_deathTime),
-		.angle = angle(),
-		.size = float64(randomInterval(_size)),
-		.alpha = float64(randomInterval(_alpha)) / 100.,
-		.sinFactor = randomInterval(_sinFactor) / 100.
-			* (base::RandomIndex(2) == 1 ? 1. : -1.),
-	};
-	for (auto i = 0; i < _ministars.size(); i++) {
-		if (ministar.birthTime > _ministars[i].deathTime) {
-			_ministars[i] = ministar;
-			return;
-		}
+QPixmap EmojiStatusTopBar::paintedPixmap(const QSize &size) const {
+	const auto good = _media->goodThumbnail();
+	if (const auto image = _media->getStickerLarge()) {
+		return image->pix(size);
+	} else if (good) {
+		return good->pix(size);
+	} else if (const auto thumbnail = _media->thumbnail()) {
+		return thumbnail->pix(size, { .options = Images::Option::Blur });
 	}
-	_ministars.push_back(ministar);
+	return QPixmap();
 }
 
-class TopBar final : public Ui::RpWidget {
+void EmojiStatusTopBar::resolveIsColored() {
+	if (_isColoredResolved) {
+		return;
+	}
+	const auto document = _media->owner();
+	const auto manager = &document->owner().customEmojiManager();
+	const auto coloredSetId = manager->coloredSetId();
+	if (!coloredSetId) {
+		return;
+	}
+	_isColoredResolved = true;
+	const auto sticker = document->sticker();
+	_isColored = sticker && (sticker->set.id == coloredSetId);
+}
+
+void EmojiStatusTopBar::paint(QPainter &p) {
+	if (_player) {
+		if (_player->ready()) {
+			resolveIsColored();
+			const auto frame = _player->frame(
+				_rect.size().toSize(),
+				(_isColored
+					? st::profileVerifiedCheckBg->c
+					: QColor(0, 0, 0, 0)),
+				false,
+				crl::now(),
+				_paused);
+
+			p.drawImage(_rect.toRect(), frame.image);
+			if (!_paused) {
+				_player->markFrameShown();
+			}
+		}
+	} else if (_media) {
+		p.drawPixmap(_rect.topLeft(), paintedPixmap(_rect.size().toSize()));
+	}
+}
+
+class TopBarUser final : public TopBarAbstract {
+public:
+	TopBarUser(
+		not_null<QWidget*> parent,
+		not_null<Window::SessionController*> controller,
+		not_null<PeerData*> peer,
+		rpl::producer<> showFinished);
+
+	void setPaused(bool paused) override;
+	void setTextPosition(int x, int y) override;
+
+protected:
+	void paintEvent(QPaintEvent *e) override;
+	void resizeEvent(QResizeEvent *e) override;
+
+private:
+	void updateTitle(
+		DocumentData *document,
+		TextWithEntities name,
+		not_null<Window::SessionController*> controller);
+	void updateAbout(DocumentData *document) const;
+
+	object_ptr<Ui::RpWidget> _content;
+	object_ptr<Ui::FlatLabel> _title;
+	object_ptr<Ui::FlatLabel> _about;
+	Ui::Premium::ColoredMiniStars _ministars;
+
+	struct {
+		object_ptr<Ui::RpWidget> widget;
+		Ui::Text::String text;
+		Ui::Animations::Simple animation;
+		bool shown = false;
+		QPoint position;
+	} _smallTop;
+
+	std::unique_ptr<EmojiStatusTopBar> _emojiStatus;
+	QImage _imageStar;
+
+	QRectF _starRect;
+
+};
+
+TopBarUser::TopBarUser(
+	not_null<QWidget*> parent,
+	not_null<Window::SessionController*> controller,
+	not_null<PeerData*> peer,
+	rpl::producer<> showFinished)
+: TopBarAbstract(parent)
+, _content(this)
+, _title(_content, st::settingsPremiumUserTitle)
+, _about(_content, st::settingsPremiumUserAbout)
+, _ministars(_content)
+, _smallTop({
+	.widget = object_ptr<Ui::RpWidget>(this),
+	.text = Ui::Text::String(
+		st::boxTitle.style,
+		tr::lng_premium_summary_title(tr::now)),
+}) {
+	_starRect = TopBarAbstract::starRect(1., 1.);
+
+	rpl::single() | rpl::then(
+		style::PaletteChanged()
+	) | rpl::start_with_next([=] {
+		TopBarAbstract::computeIsDark();
+		update();
+	}, lifetime());
+
+	auto documentValue = Info::Profile::EmojiStatusIdValue(
+		peer
+	) | rpl::map([=](DocumentId id) -> DocumentData* {
+		const auto document = id
+			? controller->session().data().document(id).get()
+			: nullptr;
+		return (document && document->sticker()) ? document : nullptr;
+	});
+
+	rpl::combine(
+		std::move(documentValue),
+		Info::Profile::NameValue(peer)
+	) | rpl::start_with_next([=](
+			DocumentData *document,
+			const QString &name) {
+		if (document) {
+			_emojiStatus = std::make_unique<EmojiStatusTopBar>(
+				document,
+				[=](QRect r) { _content->update(std::move(r)); },
+				HistoryView::Sticker::EmojiSize());
+			_imageStar = QImage();
+		} else {
+			auto svg = QSvgRenderer(Svg());
+
+			const auto size = _starRect.size().toSize();
+			auto frame = QImage(
+				size * style::DevicePixelRatio(),
+				QImage::Format_ARGB32_Premultiplied);
+			frame.setDevicePixelRatio(style::DevicePixelRatio());
+
+			auto mask = frame;
+			mask.fill(Qt::transparent);
+			{
+				auto p = QPainter(&mask);
+				auto gradient = QLinearGradient(
+					0,
+					size.height(),
+					size.width(),
+					0);
+				gradient.setStops(Ui::Premium::ButtonGradientStops());
+				p.setPen(Qt::NoPen);
+				p.setBrush(gradient);
+				p.drawRect(0, 0, size.width(), size.height());
+			}
+			frame.fill(Qt::transparent);
+			{
+				auto q = QPainter(&frame);
+				svg.render(&q, QRect(QPoint(), size));
+				q.setCompositionMode(QPainter::CompositionMode_SourceIn);
+				q.drawImage(0, 0, mask);
+			}
+			_imageStar = std::move(frame);
+
+			_emojiStatus = nullptr;
+		}
+
+		updateTitle(document, { name }, controller);
+		updateAbout(document);
+
+		auto event = QResizeEvent(size(), size());
+		resizeEvent(&event);
+		update();
+	}, lifetime());
+
+	rpl::combine(
+		_title->sizeValue(),
+		_about->sizeValue(),
+		_content->sizeValue()
+	) | rpl::start_with_next([=](
+			const QSize &titleSize,
+			const QSize &aboutSize,
+			const QSize &size) {
+		const auto rect = TopBarAbstract::starRect(1., 1.);
+		const auto &padding = st::settingsPremiumUserTitlePadding;
+		_title->moveToLeft(
+			(size.width() - titleSize.width()) / 2,
+			rect.top() + rect.height() + padding.top());
+		_about->moveToLeft(
+			(size.width() - aboutSize.width()) / 2,
+			_title->y() + titleSize.height() + padding.bottom());
+
+		const auto aboutBottom = _about->y() + _about->height();
+		const auto height = (aboutBottom > st::settingsPremiumUserHeight)
+			? aboutBottom + padding.bottom()
+			: st::settingsPremiumUserHeight;
+		{
+			const auto was = maximumHeight();
+			const auto now = height;
+			if (was != now) {
+				setMaximumHeight(now);
+				if (was == size.height()) {
+					resize(size.width(), now);
+				}
+			}
+		}
+
+		_content->resize(size.width(), maximumHeight());
+	}, lifetime());
+
+	const auto smallTopShadow = Ui::CreateChild<Ui::FadeShadow>(
+		_smallTop.widget.data());
+	smallTopShadow->setDuration(st::infoTopBarDuration);
+	rpl::combine(
+		rpl::single(
+			false
+		) | rpl::then(std::move(showFinished) | rpl::map_to(true)),
+		sizeValue()
+	) | rpl::start_with_next([=](bool showFinished, const QSize &size) {
+		_content->resize(size.width(), maximumHeight());
+		const auto skip = TopTransitionSkip();
+		_content->moveToLeft(0, size.height() - _content->height() - skip);
+
+		_smallTop.widget->resize(size.width(), minimumHeight());
+		smallTopShadow->resizeToWidth(size.width());
+		smallTopShadow->moveToLeft(
+			0,
+			_smallTop.widget->height() - smallTopShadow->height());
+		const auto shown = (minimumHeight() * 2 > size.height());
+		if (_smallTop.shown != shown) {
+			_smallTop.shown = shown;
+			if (!showFinished) {
+				_smallTop.widget->update();
+				smallTopShadow->toggle(_smallTop.shown, anim::type::instant);
+			} else {
+				_smallTop.animation.start(
+					[=] { _smallTop.widget->update(); },
+					_smallTop.shown ? 0. : 1.,
+					_smallTop.shown ? 1. : 0.,
+					st::infoTopBarDuration);
+				smallTopShadow->toggle(_smallTop.shown, anim::type::normal);
+			}
+		}
+	}, lifetime());
+
+	_smallTop.widget->paintRequest(
+	) | rpl::start_with_next([=] {
+		Painter p(_smallTop.widget);
+
+		p.setOpacity(_smallTop.animation.value(_smallTop.shown ? 1. : 0.));
+		TopBarAbstract::paintEdges(p);
+
+		p.setPen(st::boxTitleFg);
+		_smallTop.text.drawLeft(
+			p,
+			_smallTop.position.x(),
+			_smallTop.position.y(),
+			width(),
+			width());
+	}, lifetime());
+
+	_content->paintRequest(
+	) | rpl::start_with_next([=] {
+		auto p = QPainter(_content);
+
+		_ministars.paint(p);
+
+		if (_emojiStatus) {
+			_emojiStatus->paint(p);
+		} else if (!_imageStar.isNull()) {
+			p.drawImage(_starRect.topLeft(), _imageStar);
+		}
+	}, lifetime());
+
+}
+
+void TopBarUser::updateTitle(
+		DocumentData *document,
+		TextWithEntities name,
+		not_null<Window::SessionController*> controller) {
+	if (!document) {
+		return _title->setMarkedText(
+			tr::lng_premium_summary_user_title(
+				tr::now,
+				lt_user,
+				std::move(name),
+				Ui::Text::WithEntities));
+	}
+	const auto stickerInfo = document->sticker();
+	if (!stickerInfo) {
+		return;
+	}
+	const auto owner = &document->owner();
+	const auto &sets = owner->stickers().sets();
+	const auto setId = stickerInfo->set.id;
+	const auto it = sets.find(setId);
+	if (it == sets.cend()) {
+		return;
+	}
+	const auto set = it->second.get();
+	const auto coloredId = owner->customEmojiManager().coloredSetId();
+
+	const auto text = (set->thumbnailDocumentId ? QChar('0') : QChar())
+		+ set->title;
+	const auto linkIndex = 1;
+	const auto entityEmojiData = Data::SerializeCustomEmojiId(
+		set->thumbnailDocumentId);
+	const auto entities = EntitiesInText{
+		{ EntityType::CustomEmoji, 0, 1, entityEmojiData },
+		Ui::Text::Link(text, linkIndex).entities.front(),
+	};
+	auto title = (setId == coloredId)
+		? tr::lng_premium_emoji_status_title_colored(
+			tr::now,
+			lt_user,
+			std::move(name),
+			Ui::Text::WithEntities)
+		: tr::lng_premium_emoji_status_title(
+			tr::now,
+			lt_user,
+			std::move(name),
+			lt_link,
+			{ .text = text, .entities = entities, },
+			Ui::Text::WithEntities);
+	const auto context = Core::MarkedTextContext{
+		.session = &controller->session(),
+		.customEmojiRepaint = [=] { _title->update(); },
+	};
+	_title->setMarkedText(std::move(title), context);
+	auto link = std::make_shared<LambdaClickHandler>([=,
+			stickerSetIdentifier = stickerInfo->set] {
+		setPaused(true);
+		const auto box = controller->show(
+			Box<StickerSetBox>(
+				controller,
+				stickerSetIdentifier,
+				Data::StickersType::Emoji),
+			Ui::LayerOption::KeepOther);
+
+		box->boxClosing(
+		) | rpl::start_with_next(crl::guard(this, [=] {
+			setPaused(false);
+		}), box->lifetime());
+	});
+	_title->setLink(linkIndex, std::move(link));
+}
+
+void TopBarUser::updateAbout(DocumentData *document) const {
+	_about->setMarkedText((document
+		? tr::lng_premium_emoji_status_about
+		: tr::lng_premium_summary_user_about)(
+			tr::now,
+			Ui::Text::RichLangValue));
+}
+
+void TopBarUser::setPaused(bool paused) {
+	_ministars.setPaused(paused);
+	if (_emojiStatus) {
+		_emojiStatus->setPaused(paused);
+	}
+}
+
+void TopBarUser::setTextPosition(int x, int y) {
+	_smallTop.position = { x, y };
+}
+
+void TopBarUser::paintEvent(QPaintEvent *e) {
+	auto p = QPainter(this);
+
+	TopBarAbstract::paintEdges(p);
+}
+
+void TopBarUser::resizeEvent(QResizeEvent *e) {
+	_starRect = TopBarAbstract::starRect(1., 1.);
+
+	_ministars.setCenter(_starRect.toRect());
+
+	if (_emojiStatus) {
+		_emojiStatus->setCenter(_starRect.center());
+	}
+}
+
+class TopBar final : public TopBarAbstract {
 public:
 	TopBar(
 		not_null<QWidget*> parent,
@@ -419,23 +936,18 @@ public:
 		rpl::producer<QString> title,
 		rpl::producer<TextWithEntities> about);
 
-	void setPaused(bool paused);
-	void setRoundEdges(bool value);
-	void setTextPosition(int x, int y);
+	void setPaused(bool paused) override;
+	void setTextPosition(int x, int y) override;
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
 	void resizeEvent(QResizeEvent *e) override;
 
 private:
-	[[nodiscard]] QRectF starRect(
-		float64 topProgress,
-		float64 sizeProgress) const;
-
 	const style::font &_titleFont;
 	const style::margins &_titlePadding;
 	object_ptr<Ui::FlatLabel> _about;
-	MiniStars _ministars;
+	Ui::Premium::ColoredMiniStars _ministars;
 	QSvgRenderer _star;
 
 	struct {
@@ -445,12 +957,10 @@ private:
 		float64 scaleTitle = 0.;
 	} _progress;
 
-	QRectF _ministarsRect;
 	QRectF _starRect;
 
 	QPoint _titlePosition;
 	QPainterPath _titlePath;
-	bool _roundEdges = true;
 
 };
 
@@ -459,12 +969,11 @@ TopBar::TopBar(
 	not_null<Window::SessionController*> controller,
 	rpl::producer<QString> title,
 	rpl::producer<TextWithEntities> about)
-: Ui::RpWidget(parent)
+: TopBarAbstract(parent)
 , _titleFont(st::boxTitle.style.font)
 , _titlePadding(st::settingsPremiumTitlePadding)
 , _about(this, std::move(about), st::settingsPremiumAbout)
-, _ministars([=](const QRect &r) { update(r); })
-, _star(u":/gui/icons/settings/star.svg"_q) {
+, _ministars(this) {
 	std::move(
 		title
 	) | rpl::start_with_next([=](QString text) {
@@ -479,35 +988,37 @@ TopBar::TopBar(
 		ActivateClickHandler(_about, handler, {
 			button,
 			QVariant::fromValue(ClickHandlerContext{
-				.sessionWindow = base::make_weak(controller.get()),
+				.sessionWindow = base::make_weak(controller),
 				.botStartAutoSubmit = true,
 			})
 		});
 		return false;
 	});
+
+	rpl::single() | rpl::then(
+		style::PaletteChanged()
+	) | rpl::start_with_next([=] {
+		TopBarAbstract::computeIsDark();
+
+		if (!TopBarAbstract::isDark()) {
+			_star.load(Svg());
+			_ministars.setColorOverride(st::premiumButtonFg->c);
+		} else {
+			_star.load(ColorizedSvg());
+			_ministars.setColorOverride(std::nullopt);
+		}
+		auto event = QResizeEvent(size(), size());
+		resizeEvent(&event);
+	}, lifetime());
 }
 
 void TopBar::setPaused(bool paused) {
 	_ministars.setPaused(paused);
 }
 
-void TopBar::setRoundEdges(bool value) {
-	_roundEdges = value;
-	update();
-}
-
 void TopBar::setTextPosition(int x, int y) {
 	_titlePosition = { x, y };
 }
-
-QRectF TopBar::starRect(float64 topProgress, float64 sizeProgress) const {
-	const auto starSize = st::settingsPremiumStarSize * sizeProgress;
-	return QRectF(
-		QPointF(
-			(width() - starSize.width()) / 2,
-			st::settingsPremiumStarTopSkip * topProgress),
-		starSize);
-};
 
 void TopBar::resizeEvent(QResizeEvent *e) {
 	const auto progress = (e->size().height() - minimumHeight())
@@ -521,7 +1032,8 @@ void TopBar::resizeEvent(QResizeEvent *e) {
 	_progress.title = 1. - progress;
 	_progress.scaleTitle = 1. + kTitleAdditionalScale * progress;
 
-	_ministarsRect = starRect(_progress.top, 1.);
+	_ministars.setCenter(starRect(_progress.top, 1.).toRect());
+
 	_starRect = starRect(_progress.top, _progress.body);
 
 	const auto &padding = st::boxRowPadding;
@@ -541,31 +1053,22 @@ void TopBar::resizeEvent(QResizeEvent *e) {
 }
 
 void TopBar::paintEvent(QPaintEvent *e) {
-	Painter p(this);
+	auto p = QPainter(this);
 
 	p.fillRect(e->rect(), Qt::transparent);
 
 	const auto r = rect();
 
-	const auto gradientPointTop = r.height() / 3. * 2.;
-	auto gradient = QLinearGradient(
-		QPointF(0, gradientPointTop),
-		QPointF(r.width(), r.height() - gradientPointTop));
-	gradient.setColorAt(0., st::premiumButtonBg1->c);
-	gradient.setColorAt(.6, st::premiumButtonBg2->c);
-	gradient.setColorAt(1., st::premiumButtonBg3->c);
+	if (!TopBarAbstract::isDark()) {
+		const auto gradientPointTop = r.height() / 3. * 2.;
+		auto gradient = QLinearGradient(
+			QPointF(0, gradientPointTop),
+			QPointF(r.width(), r.height() - gradientPointTop));
+		gradient.setStops(Ui::Premium::ButtonGradientStops());
 
-	PainterHighQualityEnabler hq(p);
-	if (_roundEdges) {
-		const auto radius = st::boxRadius;
-		p.setPen(Qt::NoPen);
-		p.setBrush(gradient);
-		p.drawRoundedRect(
-			r + QMargins{ 0, 0, 0, radius + 1 },
-			radius,
-			radius);
+		TopBarAbstract::paintEdges(p, gradient);
 	} else {
-		p.fillRect(r, gradient);
+		TopBarAbstract::paintEdges(p);
 	}
 
 	p.setOpacity(_progress.body);
@@ -573,7 +1076,7 @@ void TopBar::paintEvent(QPaintEvent *e) {
 	p.scale(_progress.body, _progress.body);
 	p.translate(-_starRect.center());
 	if (_progress.top) {
-		_ministars.paint(p, _ministarsRect);
+		_ministars.paint(p);
 	}
 	p.resetTransform();
 
@@ -584,6 +1087,7 @@ void TopBar::paintEvent(QPaintEvent *e) {
 	const auto titlePathRect = _titlePath.boundingRect();
 
 	// Title.
+	PainterHighQualityEnabler hq(p);
 	p.setOpacity(1.);
 	p.setFont(_titleFont);
 	const auto fullStarRect = starRect(1., 1.);
@@ -626,6 +1130,7 @@ public:
 
 private:
 	void setupContent();
+	void setupSubscriptionOptions(not_null<Ui::VerticalLayout*> container);
 
 	const not_null<Window::SessionController*> _controller;
 	const QString _ref;
@@ -637,8 +1142,11 @@ private:
 	rpl::variable<Info::Wrap> _wrap;
 	Fn<void(bool)> _setPaused;
 
+	std::shared_ptr<Ui::RadiobuttonGroup> _radioGroup;
+
 	rpl::event_stream<> _showBack;
 	rpl::event_stream<> _showFinished;
+	rpl::variable<QString> _buttonText;
 
 };
 
@@ -647,7 +1155,8 @@ Premium::Premium(
 	not_null<Window::SessionController*> controller)
 : Section(parent)
 , _controller(controller)
-, _ref(ResolveRef(controller->premiumRef())) {
+, _ref(ResolveRef(controller->premiumRef()))
+, _radioGroup(std::make_shared<Ui::RadiobuttonGroup>()) {
 	setupContent();
 	_controller->session().api().premium().reload();
 }
@@ -674,6 +1183,54 @@ void Premium::setStepDataReference(std::any &data) {
 	}
 }
 
+void Premium::setupSubscriptionOptions(
+		not_null<Ui::VerticalLayout*> container) {
+	const auto isEmojiStatus = (!!Ref::EmojiStatus::Parse(_ref));
+
+	const auto options = container->add(
+		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
+			container,
+			object_ptr<Ui::VerticalLayout>(container)));
+	const auto skip = container->add(
+		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
+			container,
+			object_ptr<Ui::VerticalLayout>(container)));
+	const auto content = options->entity();
+
+	AddSkip(content, st::settingsPremiumOptionsPadding.top());
+
+	const auto apiPremium = &_controller->session().api().premium();
+	Ui::Premium::AddGiftOptions(
+		content,
+		_radioGroup,
+		SubscriptionOptionsForRows(apiPremium->subscriptionOptions()),
+		st::premiumSubscriptionOption,
+		true);
+
+	AddSkip(content, st::settingsPremiumOptionsPadding.bottom());
+	AddDivider(content);
+
+	const auto lastSkip = TopTransitionSkip() * (isEmojiStatus ? 1 : 2);
+
+	AddSkip(content, lastSkip - st::settingsSectionSkip);
+	AddSkip(skip->entity(), lastSkip);
+
+	auto toggleOn = rpl::combine(
+		Data::AmPremiumValue(&_controller->session()),
+		rpl::single(isEmojiStatus),
+		apiPremium->statusTextValue(
+		) | rpl::map([=] {
+			return apiPremium->subscriptionOptions().size() < 2;
+		})
+	) | rpl::map([=](bool premium, bool isEmojiStatus, bool noOptions) {
+		return !premium && !isEmojiStatus && !noOptions;
+	});
+	options->toggleOn(rpl::duplicate(toggleOn), anim::type::instant);
+	skip->toggleOn(std::move(
+		toggleOn
+	) | rpl::map([](bool value) { return !value; }), anim::type::instant);
+}
+
 void Premium::setupContent() {
 	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
 
@@ -683,7 +1240,7 @@ void Premium::setupContent() {
 	const auto &titlePadding = st::settingsPremiumRowTitlePadding;
 	const auto &descriptionPadding = st::settingsPremiumRowAboutPadding;
 
-	AddSkip(content, stDefault.padding.top() + titlePadding.top());
+	setupSubscriptionOptions(content);
 
 	auto entryMap = EntryMap();
 	auto iconContainers = std::vector<Ui::AbstractButton*>();
@@ -750,12 +1307,15 @@ void Premium::setupContent() {
 			button,
 			st::backButton);
 		arrow->setIconOverride(
-			&st::menuIconSubmenuArrow,
-			&st::menuIconSubmenuArrow);
+			&st::settingsPremiumArrow,
+			&st::settingsPremiumArrowOver);
 		arrow->setAttribute(Qt::WA_TransparentForMouseEvents);
 		button->sizeValue(
 		) | rpl::start_with_next([=](const QSize &s) {
-			arrow->moveToRight(0, (s.height() - arrow->height()) / 2);
+			const auto &point = st::settingsPremiumArrowShift;
+			arrow->moveToRight(
+				-point.x(),
+				point.y() + (s.height() - arrow->height()) / 2);
 		}, arrow->lifetime());
 
 		const auto section = entry.section;
@@ -787,10 +1347,11 @@ void Premium::setupContent() {
 						box->closeBox();
 					});
 				} else {
-					const auto button = CreateSubscribeButton(
+					const auto button = CreateSubscribeButton({
 						controller,
 						box,
-						[] { return u"double_limits"_q; });
+						[] { return u"double_limits"_q; }
+					});
 
 					box->boxClosing(
 					) | rpl::start_with_next(hidden, box->lifetime());
@@ -909,19 +1470,59 @@ QPointer<Ui::RpWidget> Premium::createPinnedToTop(
 			Data::AmPremiumValue(&_controller->session()),
 			tr::lng_premium_summary_title_subscribed(),
 			tr::lng_premium_summary_title());
-	auto about = rpl::conditional(
-		Data::AmPremiumValue(&_controller->session()),
-		_controller->session().api().premium().statusTextValue(),
-		tr::lng_premium_summary_top_about(Ui::Text::RichLangValue));
+	auto about = [&]() -> rpl::producer<TextWithEntities> {
+		const auto gift = Ref::Gift::Parse(_ref);
+		if (gift) {
+			auto &data = _controller->session().data();
+			if (const auto peer = data.peer(gift.peerId)) {
+				return (gift.me
+					? tr::lng_premium_summary_subtitle_gift_me
+					: tr::lng_premium_summary_subtitle_gift)(
+						lt_count,
+						rpl::single(float64(gift.months)),
+						lt_user,
+						rpl::single(Ui::Text::Bold(peer->name())),
+						Ui::Text::RichLangValue);
+			}
+		}
+		return rpl::conditional(
+			Data::AmPremiumValue(&_controller->session()),
+			_controller->session().api().premium().statusTextValue(),
+			tr::lng_premium_summary_top_about(Ui::Text::RichLangValue));
+	}();
 
-	const auto content = Ui::CreateChild<TopBar>(
-		parent.get(),
-		_controller,
-		std::move(title),
-		std::move(about));
+	const auto emojiStatusData = Ref::EmojiStatus::Parse(_ref);
+	const auto isEmojiStatus = (!!emojiStatusData);
+
+	auto peerWithPremium = [&]() -> PeerData* {
+		if (isEmojiStatus) {
+			auto &data = _controller->session().data();
+			if (const auto peer = data.peer(emojiStatusData.peerId)) {
+				return peer;
+			}
+		}
+		return nullptr;
+	}();
+
+	const auto content = [&]() -> TopBarAbstract* {
+		if (peerWithPremium) {
+			return Ui::CreateChild<TopBarUser>(
+				parent.get(),
+				_controller,
+				peerWithPremium,
+				_showFinished.events());
+		}
+		return Ui::CreateChild<TopBar>(
+			parent.get(),
+			_controller,
+			std::move(title),
+			std::move(about));
+	}();
 	_setPaused = [=](bool paused) {
 		content->setPaused(paused);
-		_subscribe->setGlarePaused(paused);
+		if (_subscribe) {
+			_subscribe->setGlarePaused(paused);
+		}
 	};
 
 	_wrap.value(
@@ -929,7 +1530,9 @@ QPointer<Ui::RpWidget> Premium::createPinnedToTop(
 		content->setRoundEdges(wrap == Info::Wrap::Layer);
 	}, content->lifetime());
 
-	content->setMaximumHeight(st::introQrStepsTop);
+	content->setMaximumHeight(isEmojiStatus
+		? st::settingsPremiumUserHeight + TopTransitionSkip()
+		: st::settingsPremiumTopHeight);
 	content->setMinimumHeight(st::infoLayerTopBarHeight);
 
 	content->resize(content->width(), content->maximumHeight());
@@ -941,12 +1544,16 @@ QPointer<Ui::RpWidget> Premium::createPinnedToTop(
 			content,
 			object_ptr<Ui::IconButton>(
 				content,
-				isLayer
-					? st::settingsPremiumLayerTopBarBack
-					: st::settingsPremiumTopBarBack),
+				isEmojiStatus
+					? (isLayer ? st::infoTopBarBack : st::infoLayerTopBarBack)
+					: (isLayer
+						? st::settingsPremiumLayerTopBarBack
+						: st::settingsPremiumTopBarBack)),
 			st::infoTopBarScale);
 		_back->setDuration(0);
-		_back->toggleOn(_backToggles.value());
+		_back->toggleOn(isLayer
+			? _backToggles.value() | rpl::type_erased()
+			: rpl::single(true));
 		_back->entity()->addClickHandler([=] {
 			_showBack.fire({});
 		});
@@ -963,7 +1570,9 @@ QPointer<Ui::RpWidget> Premium::createPinnedToTop(
 		} else {
 			_close = base::make_unique_q<Ui::IconButton>(
 				content,
-				st::settingsPremiumTopBarClose);
+				isEmojiStatus
+					? st::infoTopBarClose
+					: st::settingsPremiumTopBarClose);
 			_close->addClickHandler([=] {
 				_controller->parentController()->hideLayer();
 				_controller->parentController()->hideSpecialLayer();
@@ -986,9 +1595,73 @@ QPointer<Ui::RpWidget> Premium::createPinnedToBottom(
 		not_null<Ui::RpWidget*> parent) {
 	const auto content = Ui::CreateChild<Ui::RpWidget>(parent.get());
 
-	_subscribe = CreateSubscribeButton(_controller, content, [=] {
-		return _ref;
+	if (Ref::Gift::Parse(_ref)) {
+		return nullptr;
+	}
+
+	const auto emojiStatusData = Ref::EmojiStatus::Parse(_ref);
+	const auto session = &_controller->session();
+
+	auto buttonText = [&]() -> std::optional<rpl::producer<QString>> {
+		if (emojiStatusData) {
+			auto &data = session->data();
+			if (const auto peer = data.peer(emojiStatusData.peerId)) {
+				return Info::Profile::EmojiStatusIdValue(
+					peer
+				) | rpl::map([=](DocumentId id) {
+					return id
+						? tr::lng_premium_emoji_status_button()
+						: _buttonText.value();
+						// : tr::lng_premium_summary_user_button();
+				}) | rpl::flatten_latest();
+			}
+		}
+		return _buttonText.value();
+	}();
+
+	_subscribe = CreateSubscribeButton({
+		_controller,
+		content,
+		[ref = _ref] { return ref; },
+		std::move(buttonText),
+		std::nullopt,
+		[=, options = session->api().premium().subscriptionOptions()] {
+			const auto value = _radioGroup->value();
+			return (value < options.size() && value >= 0)
+				? options[value].botUrl
+				: QString();
+		},
 	});
+#if 0
+	if (emojiStatusData) {
+		// "Learn More" should open the general Premium Settings
+		// so we override the button callback.
+		// To have ability to jump back to the User Premium Settings
+		// we should replace the ref explicitly.
+		_subscribe->setClickedCallback([=] {
+			const auto ref = _ref;
+			const auto controller = _controller;
+			ShowPremium(controller, QString());
+			controller->setPremiumRef(ref);
+		});
+	} else {
+#endif
+	{
+		_radioGroup->setChangedCallback([=](int value) {
+			const auto options =
+				_controller->session().api().premium().subscriptionOptions();
+			if (options.empty()) {
+				return;
+			}
+			Assert(value < options.size() && value >= 0);
+			auto text = tr::lng_premium_subscribe_button(
+				tr::now,
+				lt_cost,
+				options[value].costPerMonth);
+			_buttonText = std::move(text);
+		});
+		_radioGroup->setValue(0);
+	}
 
 	_showFinished.events(
 	) | rpl::take(1) | rpl::start_with_next([=] {
@@ -1001,7 +1674,6 @@ QPointer<Ui::RpWidget> Premium::createPinnedToBottom(
 		_subscribe->resizeToWidth(width - padding.left() - padding.right());
 	}, _subscribe->lifetime());
 
-	const auto session = &_controller->session();
 	rpl::combine(
 		_subscribe->heightValue(),
 		Data::AmPremiumValue(session),
@@ -1057,6 +1729,20 @@ void ShowPremium(
 	controller->showSettings(Settings::PremiumId());
 }
 
+void ShowGiftPremium(
+		not_null<Window::SessionController*> controller,
+		not_null<PeerData*> peer,
+		int months,
+		bool me) {
+	ShowPremium(controller, Ref::Gift::Serialize({ peer->id, months, me }));
+}
+
+void ShowEmojiStatusPremium(
+		not_null<Window::SessionController*> controller,
+		not_null<PeerData*> peer) {
+	ShowPremium(controller, Ref::EmojiStatus::Serialize({ peer->id }));
+}
+
 void StartPremiumPayment(
 		not_null<Window::SessionController*> controller,
 		const QString &ref) {
@@ -1089,22 +1775,39 @@ QString LookupPremiumRef(PremiumPreview section) {
 }
 
 not_null<Ui::GradientButton*> CreateSubscribeButton(
-		not_null<Window::SessionController*> controller,
-		not_null<Ui::RpWidget*> parent,
-		Fn<QString()> computeRef) {
+		SubscribeButtonArgs &&args) {
 	const auto result = Ui::CreateChild<Ui::GradientButton>(
-		parent.get(),
-		Ui::Premium::ButtonGradientStops());
+		args.parent.get(),
+		args.gradientStops
+			? base::take(*args.gradientStops)
+			: Ui::Premium::ButtonGradientStops());
 
-	result->setClickedCallback([=] {
-		SendScreenAccept(controller);
-		StartPremiumPayment(controller, computeRef());
+	result->setClickedCallback([
+			controller = args.controller,
+			computeRef = args.computeRef,
+			computeBotUrl = args.computeBotUrl] {
+		const auto url = computeBotUrl ? computeBotUrl() : QString();
+		if (!url.isEmpty()) {
+			const auto local = Core::TryConvertUrlToLocal(url);
+			if (local.isEmpty()) {
+				return;
+			}
+			UrlClickHandler::Open(
+				local,
+				QVariant::fromValue(ClickHandlerContext{
+					.sessionWindow = base::make_weak(controller),
+					.botStartAutoSubmit = true,
+				}));
+		} else {
+			SendScreenAccept(controller);
+			StartPremiumPayment(controller, computeRef());
+		}
 	});
 
 	const auto &st = st::premiumPreviewBox.button;
-	result->resize(parent->width(), st.height);
+	result->resize(args.parent->width(), st.height);
 
-	const auto premium = &controller->session().api().premium();
+	const auto premium = &args.controller->session().api().premium();
 	premium->reload();
 	const auto computeCost = [=] {
 		const auto amount = premium->monthlyAmount();
@@ -1117,9 +1820,11 @@ not_null<Ui::GradientButton*> CreateSubscribeButton(
 
 	const auto label = Ui::CreateChild<Ui::FlatLabel>(
 		result,
-		tr::lng_premium_summary_button(
-			lt_cost,
-			premium->statusTextValue() | rpl::map(computeCost)),
+		args.text
+			? base::take(*args.text)
+			: tr::lng_premium_summary_button(
+				lt_cost,
+				premium->statusTextValue() | rpl::map(computeCost)),
 		st::premiumPreviewButtonLabel);
 	label->setAttribute(Qt::WA_TransparentForMouseEvents);
 	rpl::combine(

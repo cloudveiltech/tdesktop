@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/input_fields.h"
 #include "ui/widgets/buttons.h"
 #include "ui/wrap/padding_wrap.h"
+#include "ui/painter.h"
 #include "support/support_templates.h"
 #include "support/support_common.h"
 #include "history/view/history_view_message.h"
@@ -128,7 +129,7 @@ void Inner::prepareRow(Row &row) {
 	row.question.setText(st::autocompleteRowTitle, row.data.question);
 	row.keys.setText(
 		st::autocompleteRowKeys,
-		row.data.originalKeys.join(qstr(", ")));
+		row.data.originalKeys.join(u", "_q));
 	row.answer.setText(st::autocompleteRowAnswer, row.data.value);
 }
 
@@ -397,7 +398,7 @@ void Autocomplete::setupContent() {
 		object_ptr<Ui::InputField>(
 			this,
 			st::gifsSearchField,
-			rpl::single(qsl("Search for templates"))), // #TODO hard_lang
+			rpl::single(u"Search for templates"_q)), // #TODO hard_lang
 		st::autocompleteSearchPadding);
 	const auto input = inputWrap->entity();
 	const auto scroll = Ui::CreateChild<Ui::ScrollArea>(this);
@@ -469,7 +470,7 @@ void Autocomplete::setupContent() {
 }
 
 void Autocomplete::submitValue(const QString &value) {
-	const auto prefix = qstr("contact:");
+	const auto prefix = u"contact:"_q;
 	if (value.startsWith(prefix)) {
 		const auto line = value.indexOf('\n');
 		const auto text = (line > 0) ? value.mid(line + 1) : QString();
@@ -509,12 +510,12 @@ ConfirmContactBox::ConfirmContactBox(
 }
 
 void ConfirmContactBox::prepare() {
-	setTitle(rpl::single(qsl("Confirmation"))); // #TODO hard_lang
+	setTitle(rpl::single(u"Confirmation"_q)); // #TODO hard_lang
 
 	auto maxWidth = 0;
 	if (_comment) {
-		_comment->setAttachToNext(true);
-		_contact->setAttachToPrevious(true);
+		_comment->setAttachToNext(true, _contact.get());
+		_contact->setAttachToPrevious(true, _comment.get());
 		_comment->initDimensions();
 		accumulate_max(maxWidth, _comment->maxWidth());
 	}
@@ -570,7 +571,8 @@ void ConfirmContactBox::paintEvent(QPaintEvent *e) {
 	auto context = theme->preparePaintContext(
 		_chatStyle.get(),
 		rect(),
-		rect());
+		rect(),
+		controller()->isGifPausedAtLeastFor(Window::GifPauseReason::Layer));
 	p.translate(st::boxPadding.left(), 0);
 	if (_comment) {
 		context.outbg = _comment->hasOutLayout();

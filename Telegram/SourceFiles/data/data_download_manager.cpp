@@ -540,7 +540,7 @@ void DownloadManager::loadingStopWithConfirmation(
 			if (const auto strong = weak.get()) {
 				if (const auto item = strong->data().message(id)) {
 					if (const auto window = strong->tryResolveWindow()) {
-						window->showPeerHistoryAtItem(item);
+						window->showMessage(item);
 					}
 				}
 			}
@@ -930,7 +930,7 @@ void DownloadManager::writePostponed(not_null<Main::Session*> session) {
 
 Fn<std::optional<QByteArray>()> DownloadManager::serializator(
 		not_null<Main::Session*> session) const {
-	return [this, weak = base::make_weak(session.get())]()
+	return [this, weak = base::make_weak(session)]()
 		-> std::optional<QByteArray> {
 		const auto strong = weak.get();
 		if (!strong) {
@@ -1085,9 +1085,7 @@ rpl::producer<Ui::DownloadBarContent> MakeDownloadBarContent() {
 		auto &manager = Core::App().downloadManager();
 
 		const auto resolveThumbnailRecursive = [=](auto &&self) -> bool {
-			if (state->document
-				&& (!state->document->hasThumbnail()
-					|| state->document->thumbnailFailed())) {
+			if (state->document && !state->document->hasThumbnail()) {
 				state->media = nullptr;
 			}
 			if (!state->media) {

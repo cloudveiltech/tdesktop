@@ -17,6 +17,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/wrap/slide_wrap.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/popup_menu.h"
+#include "ui/painter.h"
 #include "lang/lang_keys.h"
 #include "ui/boxes/confirm_box.h"
 #include "boxes/peer_list_controllers.h"
@@ -90,7 +91,8 @@ public:
 
 	QString generateName() override;
 	QString generateShortName() override;
-	PaintRoundImageCallback generatePaintUserpicCallback() override;
+	PaintRoundImageCallback generatePaintUserpicCallback(
+		bool forceRound) override;
 
 	QSize rightActionSize() const override;
 	QMargins rightActionMargins() const override;
@@ -199,7 +201,7 @@ private:
 				left / 86400));
 		} else {
 			const auto time = base::unixtime::parse(link.expireDate).time();
-			add(QLocale::system().toString(time, QLocale::LongFormat));
+			add(QLocale().toString(time, QLocale::LongFormat));
 		}
 	}
 	return result;
@@ -311,13 +313,13 @@ QString Row::generateName() {
 	}
 	auto result = _data.link;
 	return result.replace(
-		qstr("https://"),
+		u"https://"_q,
 		QString()
 	).replace(
-		qstr("t.me/+"),
+		u"t.me/+"_q,
 		QString()
 	).replace(
-		qstr("t.me/joinchat/"),
+		u"t.me/joinchat/"_q,
 		QString()
 	);
 }
@@ -326,9 +328,9 @@ QString Row::generateShortName() {
 	return generateName();
 }
 
-PaintRoundImageCallback Row::generatePaintUserpicCallback() {
+PaintRoundImageCallback Row::generatePaintUserpicCallback(bool forceRound) {
 	return [=](
-			Painter &p,
+			QPainter &p,
 			int x,
 			int y,
 			int outerWidth,

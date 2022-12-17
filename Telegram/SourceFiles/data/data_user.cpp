@@ -12,9 +12,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "data/data_changes.h"
 #include "data/data_peer_bot_command.h"
+#include "data/data_emoji_statuses.h"
+#include "data/data_user_names.h"
+#include "data/notify/data_notify_settings.h"
 #include "ui/text/text_options.h"
-#include "apiwrap.h"
 #include "lang/lang_keys.h"
+#include "styles/style_chat.h"
 
 namespace {
 
@@ -24,6 +27,9 @@ constexpr auto kSetOnlineAfterActivity = TimeId(30);
 using UpdateFlag = Data::PeerUpdate::Flag;
 
 } // namespace
+
+BotInfo::BotInfo() : text(st::msgMinWidth) {
+}
 
 UserData::UserData(not_null<Data::Session*> owner, PeerId id)
 : PeerData(owner, id)
@@ -55,6 +61,23 @@ void UserData::setPhoto(const MTPUserProfilePhoto &photo) {
 	}, [&](const MTPDuserProfilePhotoEmpty &) {
 		clearUserpic();
 	});
+}
+
+void UserData::setEmojiStatus(const MTPEmojiStatus &status) {
+	const auto parsed = Data::ParseEmojiStatus(status);
+	setEmojiStatus(parsed.id, parsed.until);
+}
+
+void UserData::setEmojiStatus(DocumentId emojiStatusId, TimeId until) {
+	if (_emojiStatusId != emojiStatusId) {
+		_emojiStatusId = emojiStatusId;
+		session().changes().peerUpdated(this, UpdateFlag::EmojiStatus);
+	}
+	owner().emojiStatuses().registerAutomaticClear(this, until);
+}
+
+DocumentId UserData::emojiStatusId() const {
+	return _emojiStatusId;
 }
 
 auto UserData::unavailableReasons() const
@@ -95,6 +118,27 @@ void UserData::setName(const QString &newFirstName, const QString &newLastName, 
 		newFullName = lastName.isEmpty() ? firstName : tr::lng_full_name(tr::now, lt_first_name, firstName, lt_last_name, lastName);
 	}
 	updateNameDelayed(newFullName, newPhoneName, newUsername);
+}
+
+void UserData::setUsernames(const Data::Usernames &newUsernames) {
+	const auto wasUsername = username();
+	const auto wasUsernames = usernames();
+	_username.setUsernames(newUsernames);
+	const auto nowUsername = username();
+	const auto nowUsernames = usernames();
+	session().changes().peerUpdated(
+		this,
+		UpdateFlag()
+		| ((wasUsername != nowUsername)
+			? UpdateFlag::Username
+			: UpdateFlag())
+		| (!ranges::equal(wasUsernames, nowUsernames)
+			? UpdateFlag::Usernames
+			: UpdateFlag()));
+}
+
+void UserData::setUsername(const QString &username) {
+	_username.setUsername(username);
 }
 
 void UserData::setPhone(const QString &newPhone) {
@@ -165,13 +209,7 @@ void UserData::setBotInfo(const MTPBotInfo &info) {
 }
 
 void UserData::setNameOrPhone(const QString &newNameOrPhone) {
-	if (nameOrPhone != newNameOrPhone) {
-		nameOrPhone = newNameOrPhone;
-		phoneText.setText(
-			st::msgNameStyle,
-			nameOrPhone,
-			Ui::NameTextOptions());
-	}
+	nameOrPhone = newNameOrPhone;
 }
 
 void UserData::madeAction(TimeId when) {
@@ -190,22 +228,27 @@ void UserData::setAccessHash(uint64 accessHash) {
 	if (accessHash == kInaccessibleAccessHashOld) {
 		_accessHash = 0;
 		_flags.add(Flag::Deleted);
+		invalidateEmptyUserpic();
 	} else {
 		_accessHash = accessHash;
 	}
 }
 
 void UserData::setFlags(UserDataFlags which) {
+	if ((which & UserDataFlag::Deleted)
+		!= (flags() & UserDataFlag::Deleted)) {
+		invalidateEmptyUserpic();
+	}
 	_flags.set((flags() & UserDataFlag::Self)
 		| (which & ~UserDataFlag::Self));
 }
 
 void UserData::addFlags(UserDataFlags which) {
-	_flags.add(which & ~UserDataFlag::Self);
+	setFlags(flags() | which);
 }
 
 void UserData::removeFlags(UserDataFlags which) {
-	_flags.remove(which & ~UserDataFlag::Self);
+	setFlags(flags() & ~which);
 }
 
 bool UserData::isVerified() const {
@@ -253,8 +296,28 @@ bool UserData::canAddContact() const {
 	return canShareThisContact() && !isContact();
 }
 
+bool UserData::canReceiveGifts() const {
+	return flags() & UserDataFlag::CanReceiveGifts;
+}
+
+bool UserData::canReceiveVoices() const {
+	return !(flags() & UserDataFlag::VoiceMessagesForbidden);
+}
+
 bool UserData::canShareThisContactFast() const {
 	return !_phone.isEmpty();
+}
+
+QString UserData::username() const {
+	return _username.username();
+}
+
+QString UserData::editableUsername() const {
+	return _username.editableUsername();;
+}
+
+const std::vector<QString> &UserData::usernames() const {
+	return _username.usernames();
 }
 
 const QString &UserData::phone() const {
@@ -296,9 +359,7 @@ void ApplyUserUpdate(not_null<UserData*> user, const MTPDuserFull &update) {
 		user->owner().processPhoto(*photo);
 	}
 	user->setSettings(update.vsettings());
-	user->session().api().applyNotifySettings(
-		MTP_inputNotifyPeer(user->input),
-		update.vnotify_settings());
+	user->owner().notifySettings().apply(user, update.vnotify_settings());
 
 	user->setMessagesTTL(update.vttl_period().value_or_empty());
 	if (const auto info = update.vbot_info()) {
@@ -309,16 +370,25 @@ void ApplyUserUpdate(not_null<UserData*> user, const MTPDuserFull &update) {
 	if (const auto pinned = update.vpinned_msg_id()) {
 		SetTopPinnedMessageId(user, pinned->v);
 	}
+	const auto canReceiveGifts = (update.vflags().v
+			& MTPDuserFull::Flag::f_premium_gifts)
+		&& update.vpremium_gifts();
 	using Flag = UserDataFlag;
 	const auto mask = Flag::Blocked
 		| Flag::HasPhoneCalls
 		| Flag::PhoneCallsPrivate
-		| Flag::CanPinMessages;
+		| Flag::CanReceiveGifts
+		| Flag::CanPinMessages
+		| Flag::VoiceMessagesForbidden;
 	user->setFlags((user->flags() & ~mask)
 		| (update.is_phone_calls_private() ? Flag::PhoneCallsPrivate : Flag())
 		| (update.is_phone_calls_available() ? Flag::HasPhoneCalls : Flag())
+		| (canReceiveGifts ? Flag::CanReceiveGifts : Flag())
 		| (update.is_can_pin_message() ? Flag::CanPinMessages : Flag())
-		| (update.is_blocked() ? Flag::Blocked : Flag()));
+		| (update.is_blocked() ? Flag::Blocked : Flag())
+		| (update.is_voice_messages_forbidden()
+			? Flag::VoiceMessagesForbidden
+			: Flag()));
 	user->setIsBlocked(update.is_blocked());
 	user->setCallsStatus(update.is_phone_calls_private()
 		? UserData::CallsStatus::Private

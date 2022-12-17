@@ -7,8 +7,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "base/observer.h"
-
 namespace Main {
 class Session;
 } // namespace Main
@@ -94,6 +92,7 @@ void GetFolder(
 [[nodiscard]] QString AllOrImagesFilter();
 [[nodiscard]] QString ImagesOrAllFilter();
 [[nodiscard]] QString PhotoVideoFilesFilter();
+[[nodiscard]] const QString &Tmp();
 
 namespace internal {
 

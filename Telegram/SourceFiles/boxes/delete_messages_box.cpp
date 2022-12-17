@@ -79,7 +79,7 @@ DeleteMessagesBox::DeleteMessagesBox(
 void DeleteMessagesBox::prepare() {
 	auto details = TextWithEntities();
 	const auto appendDetails = [&](TextWithEntities &&text) {
-		details.append(qstr("\n\n")).append(std::move(text));
+		details.append(u"\n\n"_q).append(std::move(text));
 	};
 	auto deleteText = lifetime().make_state<rpl::variable<QString>>();
 	*deleteText = tr::lng_box_delete();
@@ -120,20 +120,29 @@ void DeleteMessagesBox::prepare() {
 				: peer->isSelf()
 				? tr::lng_sure_delete_saved_messages(tr::now)
 				: peer->isUser()
-				? tr::lng_sure_delete_history(tr::now, lt_contact, peer->name)
+				? tr::lng_sure_delete_history(
+					tr::now,
+					lt_contact,
+					peer->name())
 				: tr::lng_sure_delete_group_history(
 					tr::now,
 					lt_group,
-					peer->name);
+					peer->name());
 			details = Ui::Text::RichLangValue(details.text);
 			deleteStyle = &st::attentionBoxButton;
 		} else {
 			details.text = peer->isSelf()
 				? tr::lng_sure_delete_saved_messages(tr::now)
 				: peer->isUser()
-				? tr::lng_sure_delete_history(tr::now, lt_contact, peer->name)
+				? tr::lng_sure_delete_history(
+					tr::now,
+					lt_contact,
+					peer->name())
 				: peer->isChat()
-				? tr::lng_sure_delete_and_exit(tr::now, lt_group, peer->name)
+				? tr::lng_sure_delete_and_exit(
+					tr::now,
+					lt_group,
+					peer->name())
 				: peer->isMegagroup()
 				? tr::lng_sure_leave_group(tr::now)
 				: tr::lng_sure_leave_channel(tr::now);
@@ -189,7 +198,7 @@ void DeleteMessagesBox::prepare() {
 				tr::lng_delete_all_from_user(
 					tr::now,
 					lt_user,
-					Ui::Text::Bold(_moderateFrom->name),
+					Ui::Text::Bold(_moderateFrom->name()),
 					Ui::Text::WithEntities),
 				false,
 				st::defaultBoxCheckbox);
@@ -223,7 +232,7 @@ void DeleteMessagesBox::prepare() {
 				_revoke.create(
 					this,
 					revoke->checkbox,
-					false,
+					true,
 					st::defaultBoxCheckbox);
 				appendDetails(std::move(revoke->description));
 			} else if (peer->isChannel()) {
@@ -240,6 +249,9 @@ void DeleteMessagesBox::prepare() {
 					tr::lng_delete_for_me_chat_hint(tr::now, lt_count, count)
 				});
 			} else if (!peer->isSelf()) {
+				if (const auto user = peer->asUser(); user && user->isBot()) {
+					_revokeForBot = true;
+				}
 				appendDetails({
 					tr::lng_delete_for_me_hint(tr::now, lt_count, count)
 				});
@@ -457,7 +469,7 @@ void DeleteMessagesBox::keyPressEvent(QKeyEvent *e) {
 }
 
 void DeleteMessagesBox::deleteAndClear() {
-	const auto revoke = _revoke ? _revoke->checked() : false;
+	const auto revoke = _revoke ? _revoke->checked() : _revokeForBot;
 	const auto session = _session;
 	const auto invokeCallbackAndClose = [&] {
 		// deleteMessages can initiate closing of the current section,

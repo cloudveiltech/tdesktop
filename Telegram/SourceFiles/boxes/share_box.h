@@ -15,6 +15,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/round_checkbox.h"
 #include "mtproto/sender.h"
 
+class History;
+
 namespace style {
 struct MultiSelect;
 struct InputField;
@@ -44,6 +46,7 @@ class IndexedList;
 
 namespace Data {
 enum class ForwardOptions;
+class Thread;
 } // namespace Data
 
 namespace Ui {
@@ -70,19 +73,22 @@ class ShareBox final : public Ui::BoxContent {
 public:
 	using CopyCallback = Fn<void()>;
 	using SubmitCallback = Fn<void(
-		std::vector<not_null<PeerData*>>&&,
+		std::vector<not_null<Data::Thread*>>&&,
 		TextWithTags&&,
 		Api::SendOptions,
-		Data::ForwardOptions option)>;
-	using FilterCallback = Fn<bool(PeerData*)>;
+		Data::ForwardOptions)>;
+	using FilterCallback = Fn<bool(not_null<Data::Thread*>)>;
+
+	[[nodiscard]] static SubmitCallback DefaultForwardCallback(
+		std::shared_ptr<Ui::Show> show,
+		not_null<History*> history,
+		MessageIdsList msgIds);
 
 	struct Descriptor {
 		not_null<Main::Session*> session;
 		CopyCallback copyCallback;
 		SubmitCallback submitCallback;
 		FilterCallback filterCallback;
-		Fn<void(not_null<Ui::InputField*>)> initSpellchecker;
-		Fn<void(not_null<Ui::InputField*>)> initEditLink;
 		object_ptr<Ui::RpWidget> bottomWidget = { nullptr };
 		rpl::producer<QString> copyLinkText;
 		const style::MultiSelect *stMultiSelect = nullptr;
@@ -127,8 +133,8 @@ private:
 	int contentHeight() const;
 	void updateScrollSkips();
 
-	void addPeerToMultiSelect(PeerData *peer, bool skipAnimation = false);
-	void innerSelectedChanged(PeerData *peer, bool checked);
+	void addPeerToMultiSelect(not_null<Data::Thread*> thread);
+	void innerSelectedChanged(not_null<Data::Thread*> thread, bool checked);
 
 	void peopleDone(
 		const MTPcontacts_Found &result,

@@ -25,13 +25,6 @@ UserpicButton {
 	uploadIconPosition: point;
 }
 
-FeedUserpicButton {
-	size: size;
-	innerSize: pixels;
-	innerPosition: point;
-	innerPart: UserpicButton;
-}
-
 countryRowHeight: 36px;
 countryRowNameFont: semiboldFont;
 countryRowNameFg: boxTextFg;
@@ -68,12 +61,6 @@ defaultUserpicButton: UserpicButton {
 	uploadBg: msgDateImgBgOver;
 	uploadIcon: defaultUploadUserpicIcon;
 	uploadIconPosition: point(-1px, 1px);
-}
-defaultFeedUserpicButton: FeedUserpicButton {
-	size: size(76px, 76px);
-	innerSize: 76px;
-	innerPosition: point(-1px, -1px);
-	innerPart: defaultUserpicButton;
 }
 
 confirmInviteTitle: FlatLabel(defaultFlatLabel) {
@@ -286,7 +273,7 @@ notificationsSampleMargin: 2px;
 notificationSampleOpacity: 0.5;
 notificationSampleSize: size(64px, 16px);
 
-membersAboutLimitPadding: margins(0px, 12px, 0px, 12px);
+membersAboutLimitPadding: margins(0px, 16px, 0px, 16px);
 membersAbout: FlatLabel(defaultFlatLabel) {
 	minWidth: 240px;
 	textFg: membersAboutLimitFg;
@@ -660,7 +647,7 @@ rightsHeaderLabel: FlatLabel(boxLabel) {
 	textFg: windowActiveTextFg;
 }
 rightsUntilMargin: margins(0px, 8px, 0px, 20px);
-rightsRankMargin: margins(0px, 16px, 0px, 20px);
+rightsRankMargin: margins(0px, 7px, 0px, 20px);
 
 mutePhotoButton: UserpicButton(defaultUserpicButton) {
 	size: size(40px, 40px);
@@ -1077,40 +1064,6 @@ ringtonesBoxButton: SettingsButton(defaultSettingsButton) {
 	iconLeft: 25px;
 }
 ringtonesBoxSkip: 7px;
-
-premiumBubblePadding: margins(14px, 0px, 14px, 0px);
-premiumBubblePenWidth: 6;
-premiumBubbleHeight: 40px;
-premiumBubbleSkip: 8px;
-premiumBubbleWidthLimit: 80px;
-premiumBubbleTextSkip: 3px;
-premiumBubbleSlideDuration: 1000;
-premiumBubbleTailSize: size(21px, 7px);
-premiumBubbleFont: font(19px);
-premiumLineTextSkip: 11px;
-premiumInfographicPadding: margins(0px, 10px, 0px, 15px);
-
-premiumIconChats: icon {{ "limits/chats", settingsIconFg }};
-premiumIconFiles: icon {{ "limits/files", settingsIconFg }};
-premiumIconFolders: icon {{ "limits/folders", settingsIconFg }};
-premiumIconGroups: icon {{ "limits/groups", settingsIconFg }};
-premiumIconLinks: icon {{ "limits/links", settingsIconFg }};
-premiumIconPins: icon {{ "limits/pins", settingsIconFg }};
-premiumIconAccounts: icon {{ "limits/accounts", settingsIconFg }};
-
-premiumAccountsCheckbox: RoundImageCheckbox(defaultPeerListCheckbox) {
-	imageRadius: 27px;
-	imageSmallRadius: 23px;
-	check: RoundCheckbox(defaultRoundCheckbox) {
-		size: 0px;
-	}
-}
-premiumAccountsLabelSize: size(22px, 15px);
-premiumAccountsLabelPadding: margins(2px, 2px, 2px, 2px);
-premiumAccountsLabelRadius: 6;
-premiumAccountsNameTop: 13px;
-premiumAccountsPadding: margins(0px, 20px, 0px, 14px);
-premiumAccountsHeight: 105px;
 
 gradientButtonGlareDuration: 700;
 gradientButtonGlareTimeout: 2000;

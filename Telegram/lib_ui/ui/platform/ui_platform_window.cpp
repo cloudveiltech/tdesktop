@@ -70,13 +70,6 @@ rpl::producer<HitTestResult> BasicWindowHelper::systemButtonDown() const {
 	return rpl::never<HitTestResult>();
 }
 
-bool BasicWindowHelper::nativeEvent(
-		const QByteArray &eventType,
-		void *message,
-		base::NativeEventResult *result) {
-	return false;
-}
-
 void BasicWindowHelper::setTitle(const QString &title) {
 	_window->setWindowTitle(title);
 }
@@ -199,12 +192,12 @@ DefaultWindowHelper::DefaultWindowHelper(not_null<RpWidget*> window)
 }
 
 void DefaultWindowHelper::init() {
-	_title->show();
-	window()->setWindowFlag(Qt::FramelessWindowHint);
-
 	if (WindowExtentsSupported()) {
 		window()->setAttribute(Qt::WA_TranslucentBackground);
 	}
+
+	window()->createWinId();
+	_title->show();
 
 	rpl::combine(
 		window()->widthValue(),
@@ -268,10 +261,8 @@ void DefaultWindowHelper::init() {
 			bool shown,
 			bool titleShown,
 			Qt::WindowStates windowState) {
-		if (shown) {
-			window()->windowHandle()->setFlag(Qt::FramelessWindowHint, titleShown);
-			updateWindowExtents();
-		}
+		window()->windowHandle()->setFlag(Qt::FramelessWindowHint, titleShown);
+		updateWindowExtents();
 	}, window()->lifetime());
 
 	window()->events() | rpl::start_with_next([=](not_null<QEvent*> e) {
@@ -321,7 +312,7 @@ void DefaultWindowHelper::updateRoundingOverlay() {
 				rect.topRight() - QPoint(radiusWithFix, 0),
 				radiusSize
 			)) || clip.intersects(QRect(
-				rect.bottomRight() - QPoint(0, radiusWithFix),
+				rect.bottomLeft() - QPoint(0, radiusWithFix),
 				radiusSize
 			)) || clip.intersects(QRect(
 				rect.bottomRight() - QPoint(radiusWithFix, radiusWithFix),
@@ -348,8 +339,7 @@ QMargins DefaultWindowHelper::frameMargins() {
 }
 
 bool DefaultWindowHelper::hasShadow() const {
-	const auto center = window()->geometry().center();
-	return WindowExtentsSupported() && TranslucentWindowsSupported(center);
+	return WindowExtentsSupported() && TranslucentWindowsSupported();
 }
 
 QMargins DefaultWindowHelper::resizeArea() const {

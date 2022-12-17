@@ -13,6 +13,7 @@
 
 #include <glibmm.h>
 #include <giomm.h>
+#include <ksandbox.h>
 
 #include <QtCore/QBuffer>
 #include <QtGui/QGuiApplication>
@@ -162,8 +163,8 @@ public:
 
 		bool enabled = false;
 		bool shuffle = false;
-		gint64 position = 0;
-		gint64 duration = 0;
+		int64 position = 0;
+		int64 duration = 0;
 		float64 volume = 0.;
 		PlaybackStatus playbackStatus = PlaybackStatus::Stopped;
 		LoopStatus loopStatus = LoopStatus::None;
@@ -210,12 +211,12 @@ public:
 	void signalPropertyChanged(
 			const Glib::ustring &name,
 			const Glib::VariantBase &value);
-	void signalSeeked(gint64 position);
+	void signalSeeked(int64 position);
 
 	[[nodiscard]] Player &player();
 
 	[[nodiscard]] rpl::producer<Command> commandRequests() const;
-	[[nodiscard]] rpl::producer<gint64> seekRequests() const;
+	[[nodiscard]] rpl::producer<int64> seekRequests() const;
 	[[nodiscard]] rpl::producer<float64> volumeChangeRequests() const;
 	[[nodiscard]] rpl::producer<> updatePositionRequests() const;
 
@@ -242,16 +243,16 @@ private:
 	Player _player;
 
 	rpl::event_stream<Command> _commandRequests;
-	rpl::event_stream<gint64> _seekRequests;
+	rpl::event_stream<int64> _seekRequests;
 	rpl::event_stream<float64> _volumeChangeRequests;
 	rpl::event_stream<> _updatePositionRequests;
 };
 
 SystemMediaControls::Private::Private()
 : _interfaceVTable(Gio::DBus::InterfaceVTable(
-	sigc::mem_fun(this, &Private::handleMethodCall),
-	sigc::mem_fun(this, &Private::handleGetProperty),
-	sigc::mem_fun(this, &Private::handleSetProperty)))
+	sigc::mem_fun(*this, &Private::handleMethodCall),
+	sigc::mem_fun(*this, &Private::handleGetProperty),
+	sigc::mem_fun(*this, &Private::handleSetProperty)))
 , _objectPath("/org/mpris/MediaPlayer2")
 , _playerInterface("org.mpris.MediaPlayer2.Player")
 , _propertiesInterface("org.freedesktop.DBus.Properties")
@@ -259,7 +260,7 @@ SystemMediaControls::Private::Private()
 , _signalSeekedName("Seeked") {
 	Noexcept([&] {
 		_dbusConnection = Gio::DBus::Connection::get_sync(
-			Gio::DBus::BusType::BUS_TYPE_SESSION);
+			Gio::DBus::BusType::SESSION);
 	});
 }
 
@@ -283,8 +284,17 @@ bool SystemMediaControls::Private::init() {
 	}
 	Noexcept([&] {
 		_dbus.ownId = Gio::DBus::own_name(
-			Gio::DBus::BusType::BUS_TYPE_SESSION,
-			_player.serviceName);
+			Gio::DBus::BusType::SESSION,
+			"org.mpris.MediaPlayer2." + (!_player.serviceName.empty()
+				? _player.serviceName
+				: KSandbox::isFlatpak()
+				? Glib::ustring(
+					qEnvironmentVariable("FLATPAK_ID").toStdString())
+				: KSandbox::isSnap()
+				? Glib::ustring(
+					qEnvironmentVariable("SNAP_NAME").toStdString())
+				: Glib::ustring(
+					QCoreApplication::applicationName().toStdString())));
 	});
 	if (!_dbus.ownId) {
 		return false;
@@ -388,7 +398,7 @@ void SystemMediaControls::Private::handleGetProperty(
 				ConvertLoopStatus(_player.loopStatus));
 		} else if (propertyName == "Position") {
 			_updatePositionRequests.fire({});
-			property = MakeGlibVariant<gint64>(_player.position);
+			property = MakeGlibVariant<int64>(_player.position);
 		} else if (propertyName == "Rate") {
 			property = MakeGlibVariant<float64>(1.0);
 		} else if (propertyName == "Shuffle") {
@@ -410,7 +420,7 @@ void SystemMediaControls::Private::handleMethodCall(
 
 	if (methodName == "Seek") {
 		// Seek (x: Offset);
-		Glib::Variant<gint64> offset;
+		Glib::Variant<int64> offset;
 		parameters.get_child(offset, 0);
 
 		base::Integration::Instance().enterFromEventLoop([&] {
@@ -419,7 +429,7 @@ void SystemMediaControls::Private::handleMethodCall(
 		});
 	} else if (methodName == "SetPosition") {
 		// SetPosition (o: TrackId, x: Position);
-		Glib::Variant<gint64> newPosition;
+		Glib::Variant<int64> newPosition;
 		parameters.get_child(newPosition, 1);
 
 		base::Integration::Instance().enterFromEventLoop([&] {
@@ -495,7 +505,7 @@ void SystemMediaControls::Private::signalPropertyChanged(
 	});
 }
 
-void SystemMediaControls::Private::signalSeeked(gint64 position) {
+void SystemMediaControls::Private::signalSeeked(int64 position) {
 	Noexcept([&] {
 		_dbusConnection->emit_signal(
 			_objectPath,
@@ -515,7 +525,7 @@ auto SystemMediaControls::Private::commandRequests() const
 	return _commandRequests.events();
 }
 
-rpl::producer<gint64> SystemMediaControls::Private::seekRequests() const {
+rpl::producer<int64> SystemMediaControls::Private::seekRequests() const {
 	return _seekRequests.events();
 }
 
@@ -629,7 +639,7 @@ void SystemMediaControls::setThumbnail(const QImage &thumbnail) {
 
 void SystemMediaControls::setDuration(int duration) {
 	_private->player().duration = duration * 1000;
-	_private->player().metadata["mpris:length"] = MakeGlibVariant<gint64>(
+	_private->player().metadata["mpris:length"] = MakeGlibVariant<int64>(
 		_private->player().duration);
 }
 
@@ -682,7 +692,7 @@ auto SystemMediaControls::commandRequests() const
 
 rpl::producer<float64> SystemMediaControls::seekRequests() const {
 	return _private->seekRequests(
-	) | rpl::map([=](gint64 position) {
+	) | rpl::map([=](int64 position) {
 		return float64(position) / (_private->player().duration);
 	});
 }

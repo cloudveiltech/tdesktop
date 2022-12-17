@@ -155,7 +155,8 @@ std::vector<TextPart> ParseText(
 			[](const MTPDmessageEntityBlockquote&) {
 				return Type::Blockquote; },
 			[](const MTPDmessageEntityBankCard&) { return Type::BankCard; },
-			[](const MTPDmessageEntitySpoiler&) { return Type::Spoiler; });
+			[](const MTPDmessageEntitySpoiler&) { return Type::Spoiler; },
+			[](const MTPDmessageEntityCustomEmoji&) { return Type::CustomEmoji; });
 		part.text = mid(start, length);
 		part.additional = entity.match(
 		[](const MTPDmessageEntityPre &data) {
@@ -164,6 +165,8 @@ std::vector<TextPart> ParseText(
 			return ParseString(data.vurl());
 		}, [](const MTPDmessageEntityMentionName &data) {
 			return NumberToString(data.vuser_id().v);
+		}, [](const MTPDmessageEntityCustomEmoji &data) {
+			return NumberToString(data.vdocument_id().v);
 		}, [](const auto &) { return Utf8String(); });
 
 		result.push_back(std::move(part));
@@ -281,6 +284,9 @@ void ParseAttributes(
 		}, [&](const MTPDdocumentAttributeSticker &data) {
 			result.isSticker = true;
 			result.stickerEmoji = ParseString(data.valt());
+		}, [&](const MTPDdocumentAttributeCustomEmoji &data) {
+			result.isSticker = true;
+			result.stickerEmoji = ParseString(data.valt());
 		}, [&](const MTPDdocumentAttributeVideo &data) {
 			if (data.is_round_message()) {
 				result.isVideoMessage = true;
@@ -319,30 +325,30 @@ QString ComputeDocumentName(
 	}
 	const auto mimeString = QString::fromUtf8(data.mime);
 	const auto mimeType = Core::MimeTypeForName(mimeString);
-	const auto hasMimeType = [&](QLatin1String mime) {
+	const auto hasMimeType = [&](const auto &mime) {
 		return !mimeString.compare(mime, Qt::CaseInsensitive);
 	};
 	const auto patterns = mimeType.globPatterns();
 	const auto pattern = patterns.isEmpty() ? QString() : patterns.front();
 	if (data.isVoiceMessage) {
-		const auto isMP3 = hasMimeType(qstr("audio/mp3"));
-		return qsl("audio_")
+		const auto isMP3 = hasMimeType(u"audio/mp3"_q);
+		return u"audio_"_q
 			+ QString::number(++context.audios)
 			+ PrepareFileNameDatePart(date)
-			+ (isMP3 ? qsl(".mp3") : qsl(".ogg"));
+			+ (isMP3 ? u".mp3"_q : u".ogg"_q);
 	} else if (data.isVideoFile) {
 		const auto extension = pattern.isEmpty()
-			? qsl(".mov")
+			? u".mov"_q
 			: QString(pattern).replace('*', QString());
-		return qsl("video_")
+		return u"video_"_q
 			+ QString::number(++context.videos)
 			+ PrepareFileNameDatePart(date)
 			+ extension;
 	} else {
 		const auto extension = pattern.isEmpty()
-			? qsl(".unknown")
+			? u".unknown"_q
 			: QString(pattern).replace('*', QString());
-		return qsl("file_")
+		return u"file_"_q
 			+ QString::number(++context.files)
 			+ PrepareFileNameDatePart(date)
 			+ extension;
@@ -1138,6 +1144,26 @@ ServiceAction ParseServiceAction(
 	}, [&](const MTPDmessageActionWebViewDataSent &data) {
 		auto content = ActionWebViewDataSent();
 		content.text = ParseString(data.vtext());
+		result.content = content;
+	}, [&](const MTPDmessageActionGiftPremium &data) {
+		auto content = ActionGiftPremium();
+		content.cost = Ui::FillAmountAndCurrency(
+			data.vamount().v,
+			qs(data.vcurrency())).toUtf8();
+		content.months = data.vmonths().v;
+		result.content = content;
+	}, [&](const MTPDmessageActionTopicCreate &data) {
+		auto content = ActionTopicCreate();
+		content.title = ParseString(data.vtitle());
+		result.content = content;
+	}, [&](const MTPDmessageActionTopicEdit &data) {
+		auto content = ActionTopicEdit();
+		if (const auto title = data.vtitle()) {
+			content.title = ParseString(*title);
+		}
+		if (const auto icon = data.vicon_emoji_id()) {
+			content.iconEmojiId = icon->v;
+		}
 		result.content = content;
 	}, [](const MTPDmessageActionEmpty &data) {});
 	return result;

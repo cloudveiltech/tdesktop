@@ -122,7 +122,9 @@ public:
 	void setTextColorOverride(std::optional<QColor> color);
 
 	void setText(const QString &text);
-	void setMarkedText(const TextWithEntities &textWithEntities);
+	void setMarkedText(
+		const TextWithEntities &textWithEntities,
+		const std::any &context = {});
 	void setSelectable(bool selectable);
 	void setDoubleClickSelectsParagraph(bool doubleClickSelectsParagraph);
 	void setContextCopyText(const QString &copyText);
@@ -137,6 +139,18 @@ public:
 
 	using ClickHandlerFilter = Fn<bool(const ClickHandlerPtr&, Qt::MouseButton)>;
 	void setClickHandlerFilter(ClickHandlerFilter &&filter);
+	void overrideLinkClickHandler(Fn<void()> handler);
+	void overrideLinkClickHandler(Fn<void(QString url)> handler);
+
+	struct ContextMenuRequest {
+		not_null<PopupMenu*> menu;
+		ClickHandlerPtr link;
+		bool hasSelection = false;
+		bool uponSelection = false;
+		bool fullSelection = false;
+	};
+	void setContextMenuHook(Fn<void(ContextMenuRequest)> hook);
+	void fillContextMenu(ContextMenuRequest request);
 
 	// ClickHandlerHost interface
 	void clickHandlerActiveChanged(const ClickHandlerPtr &action, bool active) override;
@@ -233,6 +247,7 @@ private:
 	base::Timer _trippleClickTimer;
 
 	base::unique_qptr<PopupMenu> _contextMenu;
+	Fn<void(ContextMenuRequest)> _contextMenuHook;
 	QString _contextCopyText;
 
 	ClickHandlerFilter _clickHandlerFilter;

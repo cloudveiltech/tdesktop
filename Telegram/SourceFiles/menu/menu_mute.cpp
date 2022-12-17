@@ -8,8 +8,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "menu/menu_mute.h"
 
 #include "boxes/ringtones_box.h"
-#include "data/data_peer.h"
 #include "data/data_session.h"
+#include "data/data_thread.h"
 #include "data/notify/data_notify_settings.h"
 #include "info/profile/info_profile_values.h"
 #include "lang/lang_keys.h"
@@ -24,6 +24,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/menu/menu_action.h"
 #include "ui/widgets/popup_menu.h"
+#include "ui/painter.h"
 #include "styles/style_boxes.h"
 #include "styles/style_info.h" // infoTopBarMenu
 #include "styles/style_layers.h"
@@ -58,7 +59,7 @@ void IconWithText::setData(const QString &text, const QPoint &iconPosition) {
 void IconWithText::paintEvent(QPaintEvent *e) {
 	Ui::Menu::Action::paintEvent(e);
 
-	Painter p(this);
+	auto p = QPainter(this);
 	p.setFont(st::menuIconMuteForAnyTextFont);
 	p.setPen(st::menuIconColor);
 	p.drawText(_iconPosition, _text);
@@ -69,7 +70,7 @@ public:
 	MuteItem(
 		not_null<RpWidget*> parent,
 		const style::Menu &st,
-		not_null<PeerData*> peer);
+		not_null<Data::Thread*> thread);
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -84,7 +85,7 @@ private:
 MuteItem::MuteItem(
 	not_null<RpWidget*> parent,
 	const style::Menu &st,
-	not_null<PeerData*> peer)
+	not_null<Data::Thread*> thread)
 : Ui::Menu::Action(
 	parent,
 	st,
@@ -92,10 +93,9 @@ MuteItem::MuteItem(
 	nullptr,
 	nullptr)
 , _itemIconPosition(st.itemIconPosition)
-, _isMuted(peer->owner().notifySettings().isMuted(peer)) {
-
+, _isMuted(thread->owner().notifySettings().isMuted(thread)) {
 	Info::Profile::NotificationsEnabledValue(
-		peer
+		thread
 	) | rpl::start_with_next([=](bool isUnmuted) {
 		const auto isMuted = !isUnmuted;
 		action()->setText(isMuted
@@ -112,10 +112,13 @@ MuteItem::MuteItem(
 			st::defaultPopupMenu.showDuration);
 	}, lifetime());
 
+	const auto weak = base::make_weak(thread);
 	setClickedCallback([=] {
-		peer->owner().notifySettings().update(
-			peer,
-			_isMuted ? 0 : Data::PeerNotifySettings::kDefaultMutePeriod);
+		if (const auto strong = weak.get()) {
+			strong->owner().notifySettings().update(
+				strong,
+				{ .unmute = _isMuted, .forever = !_isMuted });
+		}
 	});
 }
 
@@ -137,7 +140,7 @@ void MuteItem::paintEvent(QPaintEvent *e) {
 	icon.paint(p, _itemIconPosition, width(), color);
 }
 
-void MuteBox(not_null<Ui::GenericBox*> box, not_null<PeerData*> peer) {
+void MuteBox(not_null<Ui::GenericBox*> box, not_null<Data::Thread*> thread) {
 	struct State {
 		int lastSeconds = 0;
 	};
@@ -157,9 +160,15 @@ void MuteBox(not_null<Ui::GenericBox*> box, not_null<PeerData*> peer) {
 			? tr::lng_mute_menu_unmute()
 			: tr::lng_mute_menu_mute();
 	}) | rpl::flatten_latest();
+
+	const auto weak = base::make_weak(thread);
 	Ui::ConfirmBox(box, {
 		.confirmed = [=] {
-			peer->owner().notifySettings().update(peer, state->lastSeconds);
+			if (const auto strong = weak.get()) {
+				strong->owner().notifySettings().update(
+					strong,
+					{ .period = state->lastSeconds });
+			}
 			box->getDelegate()->hideLayer();
 		},
 		.confirmText = std::move(confirmText),
@@ -167,28 +176,13 @@ void MuteBox(not_null<Ui::GenericBox*> box, not_null<PeerData*> peer) {
 	});
 }
 
-void PickMuteBox(not_null<Ui::GenericBox*> box, not_null<PeerData*> peer) {
+void PickMuteBox(
+		not_null<Ui::GenericBox*> box,
+		not_null<Data::Thread*> thread) {
 	struct State {
 		base::unique_qptr<Ui::PopupMenu> menu;
 	};
-	const auto seconds = std::vector<TimeId>{
-		(60 * 15),
-		(60 * 30),
-		(3600 * 1),
-		(3600 * 2),
-		(3600 * 3),
-		(3600 * 4),
-		(3600 * 8),
-		(3600 * 12),
-		(86400 * 1),
-		(86400 * 2),
-		(86400 * 3),
-		(86400 * 7 * 1),
-		(86400 * 7 * 2),
-		(86400 * 31 * 1),
-		(86400 * 31 * 2),
-		(86400 * 31 * 3),
-	};
+	const auto seconds = Ui::DefaultTimePickerValues();
 	const auto phrases = ranges::views::all(
 		seconds
 	) | ranges::views::transform(Ui::FormatMuteFor) | ranges::to_vector;
@@ -197,12 +191,17 @@ void PickMuteBox(not_null<Ui::GenericBox*> box, not_null<PeerData*> peer) {
 
 	const auto pickerCallback = TimePickerBox(box, seconds, phrases, 0);
 
+	const auto weak = base::make_weak(thread);
 	Ui::ConfirmBox(box, {
 		.confirmed = [=] {
 			const auto muteFor = pickerCallback();
-			peer->owner().notifySettings().update(peer, muteFor);
-			peer->session().settings().addMutePeriod(muteFor);
-			peer->session().saveSettings();
+			if (const auto strong = weak.get()) {
+				strong->owner().notifySettings().update(
+					strong,
+					{ .period = muteFor });
+				strong->session().settings().addMutePeriod(muteFor);
+				strong->session().saveSettings();
+			}
 			box->closeBox();
 		},
 		.confirmText = tr::lng_mute_menu_mute(),
@@ -221,7 +220,11 @@ void PickMuteBox(not_null<Ui::GenericBox*> box, not_null<PeerData*> peer) {
 			st::popupMenuWithIcons);
 		state->menu->addAction(
 			tr::lng_manage_messages_ttl_after_custom(tr::now),
-			[=] { box->getDelegate()->show(Box(MuteBox, peer)); },
+			[=] {
+				if (const auto strong = weak.get()) {
+					box->getDelegate()->show(Box(MuteBox, strong));
+				}
+			},
 			&st::menuIconCustomize);
 		state->menu->setDestroyedCallback(crl::guard(top, [=] {
 			top->setForceRippled(false);
@@ -235,36 +238,44 @@ void PickMuteBox(not_null<Ui::GenericBox*> box, not_null<PeerData*> peer) {
 
 void FillMuteMenu(
 		not_null<Ui::PopupMenu*> menu,
-		Args args) {
-	const auto peer = args.peer;
+		not_null<Data::Thread*> thread,
+		std::shared_ptr<Ui::Show> show) {
+	const auto weak = base::make_weak(thread);
+	const auto with = [=](Fn<void(not_null<Data::Thread*> thread)> handler) {
+		return [=] {
+			if (const auto strong = weak.get()) {
+				handler(strong);
+			}
+		};
+	};
 
 	menu->addAction(
 		tr::lng_mute_menu_sound_select(tr::now),
-		[=, show = args.show] {
-			show->showBox(Box(PeerRingtonesBox, peer));
-		},
+		with([=](not_null<Data::Thread*> thread) {
+			show->showBox(Box(ThreadRingtonesBox, thread));
+		}),
 		&st::menuIconSoundSelect);
 
-	const auto soundIsNone = peer->owner().notifySettings().sound(peer).none;
+	const auto notifySettings = &thread->owner().notifySettings();
+	const auto soundIsNone = notifySettings->sound(thread).none;
 	menu->addAction(
 		soundIsNone
 			? tr::lng_mute_menu_sound_on(tr::now)
 			: tr::lng_mute_menu_sound_off(tr::now),
-		[=] {
-			auto &notifySettings = peer->owner().notifySettings();
-			auto sound = notifySettings.sound(peer);
+		with([=](not_null<Data::Thread*> thread) {
+			auto sound = notifySettings->sound(thread);
 			sound.none = !sound.none;
-			notifySettings.update(peer, {}, {}, sound);
-		},
+			notifySettings->update(thread, {}, {}, sound);
+		}),
 		soundIsNone ? &st::menuIconSoundOn : &st::menuIconSoundOff);
 
 	const auto &st = menu->st().menu;
 	const auto iconTextPosition = st.itemIconPosition
 		+ st::menuIconMuteForAnyTextPosition;
-	for (const auto &muteFor : peer->session().settings().mutePeriods()) {
-		const auto callback = [=] {
-			peer->owner().notifySettings().update(peer, muteFor);
-		};
+	for (const auto muteFor : thread->session().settings().mutePeriods()) {
+		const auto callback = with([=](not_null<Data::Thread*> thread) {
+			notifySettings->update(thread, { .period = muteFor });
+		});
 
 		auto item = base::make_unique_q<IconWithText>(
 			menu,
@@ -282,23 +293,23 @@ void FillMuteMenu(
 		menu->addAction(std::move(item));
 	}
 
-	const auto callback = [=, show = args.show] {
-		DEBUG_LOG(("Mute Info: PickMuteBox called."));
-		show->showBox(Box(PickMuteBox, peer));
-	};
 	menu->addAction(
 		tr::lng_mute_menu_duration(tr::now),
-		callback,
+		with([=](not_null<Data::Thread*> thread) {
+			DEBUG_LOG(("Mute Info: PickMuteBox called."));
+			show->showBox(Box(PickMuteBox, thread));
+		}),
 		&st::menuIconMuteFor);
 
 	menu->addAction(
-		base::make_unique_q<MuteItem>(menu, menu->st().menu, peer));
+		base::make_unique_q<MuteItem>(menu, menu->st().menu, thread));
 }
 
 void SetupMuteMenu(
 		not_null<Ui::RpWidget*> parent,
 		rpl::producer<> triggers,
-		Args args) {
+		Fn<Data::Thread*()> makeThread,
+		std::shared_ptr<Ui::Show> show) {
 	struct State {
 		base::unique_qptr<Ui::PopupMenu> menu;
 	};
@@ -308,12 +319,13 @@ void SetupMuteMenu(
 	) | rpl::start_with_next([=] {
 		if (state->menu) {
 			return;
+		} else if (const auto thread = makeThread()) {
+			state->menu = base::make_unique_q<Ui::PopupMenu>(
+				parent,
+				st::popupMenuWithIcons);
+			FillMuteMenu(state->menu.get(), thread, show);
+			state->menu->popup(QCursor::pos());
 		}
-		state->menu = base::make_unique_q<Ui::PopupMenu>(
-			parent,
-			st::popupMenuWithIcons);
-		FillMuteMenu(state->menu.get(), args);
-		state->menu->popup(QCursor::pos());
 	}, parent->lifetime());
 }
 

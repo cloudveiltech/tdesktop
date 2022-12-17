@@ -23,6 +23,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/sender.h"
 #include "ui/text/text_utilities.h"
 #include "ui/toasts/common_toasts.h"
+#include "ui/painter.h"
 #include "lang/lang_keys.h"
 #include "window/window_session_controller.h"
 #include "apiwrap.h"
@@ -137,7 +138,7 @@ void Row::elementAddRipple(
 	}
 	auto &ripple = *pointer;
 	if (!ripple) {
-		auto mask = Ui::RippleAnimation::roundRectMask(
+		auto mask = Ui::RippleAnimation::RoundRectMask(
 			(element == kAcceptButton
 				? _delegate->rowAcceptButtonSize()
 				: _delegate->rowRejectButtonSize()),
@@ -388,7 +389,7 @@ void RequestsBoxController::processRequest(
 					: tr::lng_group_requests_was_added)(
 						tr::now,
 						lt_user,
-						Ui::Text::Bold(user->name),
+						Ui::Text::Bold(user->name()),
 						Ui::Text::WithEntities)
 			});
 		}

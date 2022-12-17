@@ -92,6 +92,7 @@ public:
 	QString getValue(ushort key) const {
 		Expects(key < _values.size());
 
+
 		//CloudVeil start
 		QString v = _values[key];
 		v.replace(QString("Telegram"), QString("CloudVeil Messenger"));

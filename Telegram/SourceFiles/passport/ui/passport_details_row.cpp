@@ -16,6 +16,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/wrap/slide_wrap.h"
 #include "ui/layers/box_content.h"
 #include "ui/boxes/country_select_box.h"
+#include "ui/painter.h"
 #include "countries/countries_instance.h"
 #include "styles/style_layers.h"
 #include "styles/style_passport.h"
@@ -884,9 +885,9 @@ std::unique_ptr<AbstractCheckView> GenderRow::createRadioView(
 
 auto GenderRow::StringToGender(const QString &value)
 -> std::optional<Gender> {
-	if (value == qstr("male")) {
+	if (value == u"male"_q) {
 		return Gender::Male;
-	} else if (value == qstr("female")) {
+	} else if (value == u"female"_q) {
 		return Gender::Female;
 	}
 	return std::nullopt;

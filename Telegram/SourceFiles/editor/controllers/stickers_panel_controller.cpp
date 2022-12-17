@@ -9,6 +9,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "chat_helpers/tabbed_panel.h"
 #include "chat_helpers/tabbed_selector.h"
+#include "window/window_session_controller.h" // Window::GifPauseReason
+
 #include "styles/style_chat_helpers.h"
 
 namespace Editor {
@@ -23,6 +25,7 @@ StickersPanelController::StickersPanelController(
 		object_ptr<ChatHelpers::TabbedSelector>(
 			nullptr,
 			controller,
+			Window::GifPauseReason::Layer,
 			ChatHelpers::TabbedSelector::Mode::MediaEditor))) {
 	_stickersPanel->setDesiredHeightValues(
 		1.,
@@ -34,7 +37,7 @@ StickersPanelController::StickersPanelController(
 auto StickersPanelController::stickerChosen() const
 -> rpl::producer<not_null<DocumentData*>> {
 	return _stickersPanel->selector()->fileChosen(
-	) | rpl::map([](const ChatHelpers::TabbedSelector::FileChosen &data) {
+	) | rpl::map([](const ChatHelpers::FileChosen &data) {
 		return data.document;
 	});
 }

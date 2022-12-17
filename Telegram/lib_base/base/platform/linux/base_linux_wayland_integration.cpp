@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/platform/base_platform_info.h"
 #include "base/qt_signal_producer.h"
 #include "base/flat_map.h"
+#include "qwayland-xdg-activation-v1.h"
 #include "qwayland-xdg-foreign-unstable-v2.h"
 #include "qwayland-idle-inhibit-unstable-v1.h"
 
@@ -86,12 +87,49 @@ private:
 	QString _handle;
 };
 
+class XdgActivationToken : public QtWayland::xdg_activation_token_v1 {
+public:
+	XdgActivationToken(
+		struct ::xdg_activation_token_v1 *object,
+		struct ::wl_surface *surface,
+		struct ::wl_seat *seat,
+		uint32_t serial,
+		const QString &appId)
+	: xdg_activation_token_v1(object) {
+		set_surface(surface);
+		set_serial(serial, seat);
+		set_app_id(appId);
+		commit();
+		_loop.exec();
+	}
+
+	~XdgActivationToken() {
+		destroy();
+	}
+
+	QString token() {
+		return _token;
+	}
+
+protected:
+	void xdg_activation_token_v1_done(const QString &token) override {
+		_token = token;
+		_loop.quit();
+	}
+
+private:
+	QEventLoop _loop;
+	QString _token;
+};
+
 } // namespace
 
 struct WaylandIntegration::Private {
 	std::unique_ptr<wl_registry, WlRegistryDeleter> registry;
 	QtWaylandAutoDestroyer<QtWayland::zxdg_exporter_v2> xdgExporter;
 	uint32_t xdgExporterName = 0;
+	QtWaylandAutoDestroyer<QtWayland::xdg_activation_v1> xdgActivation;
+	uint32_t xdgActivationName = 0;
 	QtWaylandAutoDestroyer<
 		QtWayland::zwp_idle_inhibit_manager_v1> idleInhibitManager;
 	uint32_t idleInhibitManagerName = 0;
@@ -113,6 +151,9 @@ const struct wl_registry_listener WaylandIntegration::Private::RegistryListener 
 		if (interface == qstr("zxdg_exporter_v2")) {
 			data->xdgExporter.init(registry, name, version);
 			data->xdgExporterName = name;
+		} else if (interface == qstr("xdg_activation_v1")) {
+			data->xdgActivation.init(registry, name, version);
+			data->xdgActivationName = name;
 		} else if (interface == qstr("zwp_idle_inhibit_manager_v1")) {
 			data->idleInhibitManager.init(registry, name, version);
 			data->idleInhibitManagerName = name;
@@ -126,6 +167,10 @@ const struct wl_registry_listener WaylandIntegration::Private::RegistryListener 
 			free(data->xdgExporter.object());
 			data->xdgExporter.init(nullptr);
 			data->xdgExporterName = 0;
+		} else if (name == data->xdgActivationName) {
+			free(data->xdgActivation.object());
+			data->xdgActivation.init(nullptr);
+			data->xdgActivationName = 0;
 		} else if (name == data->idleInhibitManagerName) {
 			free(data->idleInhibitManager.object());
 			data->idleInhibitManager.init(nullptr);
@@ -167,10 +212,14 @@ WaylandIntegration::WaylandIntegration()
 		}
 		free(_private->idleInhibitManager.object());
 		_private->idleInhibitManager.init(nullptr);
+		free(_private->xdgActivation.object());
+		_private->xdgActivation.init(nullptr);
 		free(_private->xdgExporter.object());
 		_private->xdgExporter.init(nullptr);
 		free(_private->registry.release());
 	}, _private->lifetime);
+
+	wl_display_roundtrip(display);
 }
 
 WaylandIntegration::~WaylandIntegration() = default;
@@ -193,20 +242,50 @@ QString WaylandIntegration::nativeHandle(QWindow *window) {
 
 	const auto surface = reinterpret_cast<wl_surface*>(
 		native->nativeResourceForWindow(QByteArray("surface"), window));
-	
+
 	if (!surface) {
 		return {};
 	}
 
-	const auto exported = new XdgExported(
+	return (new XdgExported(
 		_private->xdgExporter.export_toplevel(surface),
-		window);
+		window))->handle();
+}
 
-	if (!exported->isInitialized()) {
+QString WaylandIntegration::activationToken() {
+	if (!_private->xdgActivation.isInitialized()) {
 		return {};
 	}
 
-	return exported->handle();
+	const auto native = QGuiApplication::platformNativeInterface();
+	if (!native) {
+		return {};
+	}
+
+	const auto window = QGuiApplication::focusWindow();
+	if (!window) {
+		return {};
+	}
+
+	const auto surface = reinterpret_cast<wl_surface*>(
+		native->nativeResourceForWindow(QByteArray("surface"), window));
+
+	const auto seat = reinterpret_cast<wl_seat*>(
+		native->nativeResourceForIntegration(QByteArray("wl_seat")));
+
+	const auto serial = uint32_t(reinterpret_cast<quintptr>(
+		native->nativeResourceForIntegration(QByteArray("serial"))));
+
+	if (!surface || !seat) {
+		return {};
+	}
+
+	return XdgActivationToken(
+		_private->xdgActivation.get_activation_token(),
+		surface,
+		seat,
+		serial,
+		QGuiApplication::desktopFileName().chopped(8)).token();
 }
 
 void WaylandIntegration::preventDisplaySleep(bool prevent, QWindow *window) {
@@ -237,14 +316,14 @@ void WaylandIntegration::preventDisplaySleep(bool prevent, QWindow *window) {
 
 	const auto surface = reinterpret_cast<wl_surface*>(
 		native->nativeResourceForWindow(QByteArray("surface"), window));
-	
+
 	if (!surface) {
 		return;
 	}
 
 	const auto inhibitor = _private->idleInhibitManager.create_inhibitor(
 		surface);
-	
+
 	if (!inhibitor) {
 		return;
 	}

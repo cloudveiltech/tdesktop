@@ -17,16 +17,13 @@ struct WaylandIntegration::Private {
 
 WaylandIntegration::WaylandIntegration() {
 }
-	
+
 WaylandIntegration::~WaylandIntegration() = default;
 
 WaylandIntegration *WaylandIntegration::Instance() {
 	if (!::Platform::IsWayland()) return nullptr;
 	static WaylandIntegration instance;
 	return &instance;
-}
-
-void WaylandIntegration::waitForInterfaceAnnounce() {
 }
 
 bool WaylandIntegration::xdgDecorationSupported() {

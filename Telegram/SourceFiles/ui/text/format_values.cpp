@@ -88,19 +88,19 @@ QString FormatDateTime(
 		return tr::lng_mediaview_today(
 			tr::now,
 			lt_time,
-			date.time().toString(timeFormat));
+			QLocale().toString(date.time(), timeFormat));
 	} else if (date.date().addDays(1) == now.date()) {
 		return tr::lng_mediaview_yesterday(
 			tr::now,
 			lt_time,
-			date.time().toString(timeFormat));
+			QLocale().toString(date.time(), timeFormat));
 	} else {
 		return tr::lng_mediaview_date_time(
 			tr::now,
 			lt_date,
-			date.date().toString(dateFormat),
+			QLocale().toString(date.date(), dateFormat),
 			lt_time,
-			date.time().toString(timeFormat));
+			QLocale().toString(date.time(), timeFormat));
 	}
 }
 
@@ -118,6 +118,17 @@ QString FormatDurationWords(qint64 duration) {
 		return tr::lng_duration_minutes_seconds(tr::now, lt_minutes_count, minutesCount, lt_seconds_count, secondsCount);
 	}
 	return tr::lng_seconds(tr::now, lt_count, duration);
+}
+
+QString FormatDurationWordsSlowmode(qint64 duration) {
+	if (duration > 59) {
+		auto minutes = (duration / 60);
+		auto minutesCount = tr::lng_duration_minsec_minutes(tr::now, lt_count, minutes);
+		auto seconds = (duration % 60);
+		auto secondsCount = tr::lng_duration_minsec_seconds(tr::now, lt_count, seconds);
+		return tr::lng_duration_minutes_seconds(tr::now, lt_minutes_count, minutesCount, lt_seconds_count, secondsCount);
+	}
+	return tr::lng_slowmode_seconds(tr::now, lt_count, duration);
 }
 
 QString FormatDurationAndSizeText(qint64 duration, qint64 size) {
@@ -394,6 +405,30 @@ QString FormatTTL(float64 ttl) {
 		: (ttl <= (86400 * 31) * 11)
 		? tr::lng_months({}, lt_count, int(ttl / (86400 * 31)))
 		: tr::lng_years({}, lt_count, std::round(ttl / (86400 * 365)));
+}
+
+QString FormatTTLAfter(float64 ttl) {
+	return (ttl <= 3600 * 23)
+		? tr::lng_settings_ttl_after_hours(tr::now, lt_count, int(ttl / 3600))
+		: (ttl <= (86400) * 6)
+		? tr::lng_settings_ttl_after_days(
+			tr::now,
+			lt_count,
+			int(ttl / (86400)))
+		: (ttl <= (86400 * 7) * 3)
+		? tr::lng_settings_ttl_after_weeks(
+			tr::now,
+			lt_count,
+			int(ttl / (86400 * 7)))
+		: (ttl <= (86400 * 31) * 11)
+		? tr::lng_settings_ttl_after_months(
+			tr::now,
+			lt_count,
+			int(ttl / (86400 * 31)))
+		: tr::lng_settings_ttl_after_years(
+			tr::now,
+			lt_count,
+			std::round(ttl / (86400 * 365)));
 }
 
 QString FormatTTLTiny(float64 ttl) {

@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/chat/chat_style.h"
 #include "ui/chat/message_bubble.h"
 #include "ui/text/text_options.h"
+#include "ui/painter.h"
 #include "layout/layout_selection.h"
 #include "styles/style_chat.h"
 
@@ -116,6 +117,7 @@ QSize GroupedMedia::countOptimalSize() {
 	if (_mode == Mode::Column) {
 		for (const auto &part : _parts) {
 			const auto &media = part.content;
+			media->setBubbleRounding(bubbleRounding());
 			media->initDimensions();
 			accumulate_max(maxWidth, media->maxWidth());
 		}
@@ -243,15 +245,23 @@ void GroupedMedia::refreshParentId(
 	}
 }
 
-RectParts GroupedMedia::cornersFromSides(RectParts sides) const {
+Ui::BubbleRounding GroupedMedia::applyRoundingSides(
+		Ui::BubbleRounding already,
+		RectParts sides) const {
 	auto result = Ui::GetCornersFromSides(sides);
-	if (!isBubbleTop()) {
-		result &= ~(RectPart::TopLeft | RectPart::TopRight);
+	if (!(result & RectPart::TopLeft)) {
+		already.topLeft = Ui::BubbleCornerRounding::None;
 	}
-	if (!isRoundedInBubbleBottom() || !_caption.isEmpty()) {
-		result &= ~(RectPart::BottomLeft | RectPart::BottomRight);
+	if (!(result & RectPart::TopRight)) {
+		already.topRight = Ui::BubbleCornerRounding::None;
 	}
-	return result;
+	if (!(result & RectPart::BottomLeft)) {
+		already.bottomLeft = Ui::BubbleCornerRounding::None;
+	}
+	if (!(result & RectPart::BottomRight)) {
+		already.bottomRight = Ui::BubbleCornerRounding::None;
+	}
+	return already;
 }
 
 QMargins GroupedMedia::groupedPadding() const {
@@ -300,6 +310,11 @@ void GroupedMedia::draw(Painter &p, const PaintContext &context) const {
 	const auto textSelection = (_mode == Mode::Column)
 		&& !fullSelection
 		&& !IsSubGroupSelection(selection);
+	const auto inWebPage = (_parent->media() != this);
+	constexpr auto kSmall = Ui::BubbleCornerRounding::Small;
+	const auto rounding = inWebPage
+		? Ui::BubbleRounding{ kSmall, kSmall, kSmall, kSmall }
+		: adjustedBubbleRoundingWithCaption(_caption);
 	for (auto i = 0, count = int(_parts.size()); i != count; ++i) {
 		const auto &part = _parts[i];
 		const auto partContext = context.withSelection(fullSelection
@@ -323,7 +338,7 @@ void GroupedMedia::draw(Painter &p, const PaintContext &context) const {
 			partContext,
 			part.geometry.translated(0, groupPadding.top()),
 			part.sides,
-			cornersFromSides(part.sides),
+			applyRoundingSides(rounding, part.sides),
 			highlightOpacity,
 			&part.cacheKey,
 			&part.cache);
@@ -344,7 +359,18 @@ void GroupedMedia::draw(Painter &p, const PaintContext &context) const {
 			- _caption.countHeight(captionw);
 		const auto stm = context.messageStyle();
 		p.setPen(stm->historyTextFg);
-		_caption.draw(p, st::msgPadding.left(), captiony, captionw, style::al_left, 0, -1, selection);
+		_parent->prepareCustomEmojiPaint(p, context, _caption);
+		_caption.draw(p, {
+			.position = QPoint(
+				st::msgPadding.left(),
+				captiony),
+			.availableWidth = captionw,
+			.palette = &stm->textPalette,
+			.spoiler = Ui::Text::DefaultSpoilerCache(),
+			.now = context.now,
+			.paused = context.paused,
+			.selection = context.selection,
+		});
 	} else if (_parent->media() == this) {
 		auto fullRight = width();
 		auto fullBottom = height();
@@ -427,14 +453,16 @@ TextState GroupedMedia::textState(QPoint point, StateRequest request) const {
 			point,
 			InfoDisplayType::Image);
 		if (bottomInfoResult.link
-			|| bottomInfoResult.cursor != CursorState::None) {
+			|| bottomInfoResult.cursor != CursorState::None
+			|| bottomInfoResult.customTooltip) {
 			return bottomInfoResult;
 		}
 		if (const auto size = _parent->hasBubble() ? std::nullopt : _parent->rightActionSize()) {
 			auto fastShareLeft = (fullRight + st::historyFastShareLeft);
 			auto fastShareTop = (fullBottom - st::historyFastShareBottom - size->height());
 			if (QRect(fastShareLeft, fastShareTop, size->width(), size->height()).contains(point)) {
-				result.link = _parent->rightActionLink();
+				result.link = _parent->rightActionLink(point
+					- QPoint(fastShareLeft, fastShareTop));
 			}
 		}
 	}
@@ -520,7 +548,7 @@ TextForMimeData GroupedMedia::selectedText(
 			if (result.empty()) {
 				result = std::move(text);
 			} else {
-				result.append(qstr("\n\n")).append(std::move(text));
+				result.append(u"\n\n"_q).append(std::move(text));
 			}
 		}
 		selection = part.content->skipSelection(selection);
@@ -720,6 +748,7 @@ void GroupedMedia::unloadHeavyPart() {
 		part.cacheKey = 0;
 		part.cache = QPixmap();
 	}
+	_caption.unloadPersistentAnimation();
 }
 
 void GroupedMedia::parentTextUpdated() {
@@ -747,6 +776,7 @@ bool GroupedMedia::computeNeedBubble() const {
 			|| _parent->displayedReply()
 			|| _parent->displayForwardedFrom()
 			|| _parent->displayFromName()
+			|| _parent->displayedTopicButton()
 			) {
 			return true;
 		}

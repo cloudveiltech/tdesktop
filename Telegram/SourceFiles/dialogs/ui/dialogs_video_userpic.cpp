@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "dialogs/ui/dialogs_video_userpic.h"
 
+#include "ui/painter.h"
 #include "core/file_location.h"
 #include "data/data_peer.h"
 #include "data/data_photo.h"
@@ -29,7 +30,7 @@ int VideoUserpic::frameIndex() const {
 
 void VideoUserpic::paintLeft(
 		Painter &p,
-		std::shared_ptr<Data::CloudImageView> &view,
+		Ui::PeerUserpicView &view,
 		int x,
 		int y,
 		int w,
@@ -86,7 +87,7 @@ void VideoUserpic::paintLeft(
 		startReady();
 
 		const auto now = paused ? crl::time(0) : crl::now();
-		p.drawPixmap(x, y, _video->current(request(size), now));
+		p.drawImage(x, y, _video->current(request(size), now));
 	} else {
 		_peer->paintUserpicLeft(p, view, x, y, w, size);
 	}
@@ -132,7 +133,7 @@ void PaintUserpic(
 		Painter &p,
 		not_null<PeerData*> peer,
 		Ui::VideoUserpic *videoUserpic,
-		std::shared_ptr<Data::CloudImageView> &view,
+		Ui::PeerUserpicView &view,
 		int x,
 		int y,
 		int outerWidth,

@@ -31,13 +31,15 @@ class SessionController;
 
 namespace Data {
 class DocumentMedia;
-class CloudImageView;
 } // namespace Data
 
 namespace SendMenu {
 enum class Type;
 } // namespace SendMenu
 
+namespace ChatHelpers {
+struct FileChosen;
+} // namespace ChatHelpers
 
 class FieldAutocomplete final : public Ui::RpWidget {
 public:
@@ -73,22 +75,18 @@ public:
 	};
 	struct MentionChosen {
 		not_null<UserData*> user;
-		ChooseMethod method;
+		QString mention;
+		ChooseMethod method = ChooseMethod::ByEnter;
 	};
 	struct HashtagChosen {
 		QString hashtag;
-		ChooseMethod method;
+		ChooseMethod method = ChooseMethod::ByEnter;
 	};
 	struct BotCommandChosen {
 		QString command;
-		ChooseMethod method;
+		ChooseMethod method = ChooseMethod::ByEnter;
 	};
-	struct StickerChosen {
-		not_null<DocumentData*> sticker;
-		Api::SendOptions options;
-		ChooseMethod method;
-		Ui::MessageSendingAnimationFrom messageSendingFrom;
-	};
+	using StickerChosen = ChatHelpers::FileChosen;
 	enum class Type {
 		Mentions,
 		Hashtags,
@@ -132,19 +130,8 @@ private:
 	class Inner;
 	friend class Inner;
 	struct StickerSuggestion;
-
-	struct MentionRow {
-		not_null<UserData*> user;
-		std::shared_ptr<Data::CloudImageView> userpic;
-	};
-
-	struct BotCommandRow {
-		not_null<UserData*> user;
-		QString command;
-		QString description;
-		std::shared_ptr<Data::CloudImageView> userpic;
-		Ui::Text::String descriptionText;
-	};
+	struct MentionRow;
+	struct BotCommandRow;
 
 	using HashtagRows = std::vector<QString>;
 	using BotCommandRows = std::vector<BotCommandRow>;

@@ -11,6 +11,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/mtproto_auth_key.h"
 #include "mtproto/mtproto_response.h"
 #include "main/main_session.h"
+#include "data/data_session.h"
+#include "data/data_document.h"
 #include "apiwrap.h"
 #include "base/openssl_help.h"
 
@@ -557,6 +559,22 @@ mtpRequestId DownloadMtprotoTask::sendRequest(
 		}).fail([=](const MTP::Error &error, mtpRequestId id) {
 			partFailed(error, id);
 		}).toDC(shiftedDcId).send();
+	}, [&](const AudioAlbumThumbLocation &location) {
+		using Flag = MTPDinputWebFileAudioAlbumThumbLocation::Flag;
+		const auto owner = &api().session().data();
+		return api().request(MTPupload_GetWebFile(
+			MTP_inputWebFileAudioAlbumThumbLocation(
+				MTP_flags(Flag::f_document | Flag::f_small),
+				owner->document(location.documentId)->mtpInput(),
+				MTPstring(),
+				MTPstring()),
+			MTP_int(offset),
+			MTP_int(limit)
+		)).done([=](const MTPupload_WebFile &result, mtpRequestId id) {
+			webPartLoaded(result, id);
+		}).fail([=](const MTP::Error &error, mtpRequestId id) {
+			partFailed(error, id);
+		}).toDC(shiftedDcId).send();
 	}, [&](const StorageFileLocation &location) {
 		const auto reference = location.fileReference();
 		return api().request(MTPupload_GetFile(
@@ -886,7 +904,7 @@ bool DownloadMtprotoTask::normalPartFailed(
 		return false;
 	}
 	if (error.code() == 400
-		&& error.type().startsWith(qstr("FILE_REFERENCE_"))) {
+		&& error.type().startsWith(u"FILE_REFERENCE_"_q)) {
 		api().refreshFileReference(
 			_origin,
 			this,
@@ -914,8 +932,8 @@ bool DownloadMtprotoTask::cdnPartFailed(
 		return false;
 	}
 
-	if (error.type() == qstr("FILE_TOKEN_INVALID")
-		|| error.type() == qstr("REQUEST_TOKEN_INVALID")) {
+	if (error.type() == u"FILE_TOKEN_INVALID"_q
+		|| error.type() == u"REQUEST_TOKEN_INVALID"_q) {
 		const auto requestData = finishSentRequest(
 			requestId,
 			FinishRequestReason::Redirect);

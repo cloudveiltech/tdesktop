@@ -4,6 +4,8 @@
 # For license and copyright information please follow this link:
 # https://github.com/desktop-app/legal/blob/master/LEGAL
 
+include(CMakeDependentOption)
+
 set(no_special_target 0)
 if (DESKTOP_APP_SPECIAL_TARGET STREQUAL "")
     set(no_special_target 1)
@@ -18,25 +20,27 @@ if (DESKTOP_APP_SPECIAL_TARGET STREQUAL ""
 endif()
 
 option(DESKTOP_APP_LOTTIE_USE_CACHE "Use caching in lottie animations." ON)
-option(DESKTOP_APP_DISABLE_DBUS_INTEGRATION "Disable all code for D-Bus integration (Linux only)." OFF)
-option(DESKTOP_APP_DISABLE_X11_INTEGRATION "Disable all code for X11 integration (Linux only)." OFF)
-option(DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION "Disable all code for Wayland integration (Linux only)." OFF)
-option(DESKTOP_APP_USE_ALLOCATION_TRACER "Use simple allocation tracer (Linux only)." OFF)
-option(DESKTOP_APP_USE_PACKAGED_LAZY "Bundle recommended Qt plugins for self-contained packages. (Linux only)" OFF)
+cmake_dependent_option(DESKTOP_APP_DISABLE_DBUS_INTEGRATION "Disable all code for D-Bus integration." OFF LINUX ON)
+cmake_dependent_option(DESKTOP_APP_DISABLE_X11_INTEGRATION "Disable all code for X11 integration." OFF LINUX ON)
+cmake_dependent_option(DESKTOP_APP_USE_ALLOCATION_TRACER "Use simple allocation tracer." OFF LINUX OFF)
+cmake_dependent_option(DESKTOP_APP_USE_PACKAGED_LAZY "Bundle recommended Qt plugins for self-contained packages." OFF LINUX OFF)
 option(DESKTOP_APP_USE_PACKAGED_FONTS "Use preinstalled fonts instead of bundled patched ones." OFF)
 option(DESKTOP_APP_USE_PACKAGED_RLOTTIE "Find rlottie using CMake instead of bundled patched one." OFF)
 option(DESKTOP_APP_DISABLE_SPELLCHECK "Disable spellcheck library." OFF)
 option(DESKTOP_APP_DISABLE_CRASH_REPORTS "Disable crash report generation." ${no_special_target})
 option(DESKTOP_APP_DISABLE_AUTOUPDATE "Disable autoupdate." ${disable_autoupdate})
 option(DESKTOP_APP_USE_HUNSPELL_ONLY "Disable system spellchecker and use bundled Hunspell only. (For debugging purposes)" OFF)
-option(DESKTOP_APP_USE_ENCHANT "Use Enchant instead of bundled Hunspell. (Linux only)" OFF)
-option(DESKTOP_APP_NO_PDB "Disable PDB file generation. (Windows only)" OFF)
-option(DESKTOP_APP_DISABLE_JEMALLOC "Disable jemalloc, use system malloc (Linux only)." OFF)
+cmake_dependent_option(DESKTOP_APP_USE_ENCHANT "Use Enchant instead of bundled Hunspell." OFF LINUX OFF)
+cmake_dependent_option(DESKTOP_APP_USE_CLD3 "Disable system text language recognition and use bundled cld3 only." OFF APPLE ON)
+cmake_dependent_option(DESKTOP_APP_NO_PDB "Disable PDB file generation." OFF WIN32 OFF)
+cmake_dependent_option(DESKTOP_APP_DISABLE_JEMALLOC "Disable jemalloc, use system malloc." OFF LINUX OFF)
 
-if (DESKTOP_APP_USE_PACKAGED AND DEFINED CMAKE_OSX_ARCHITECTURES)
-    set(DESKTOP_APP_MAC_ARCH "${CMAKE_OSX_ARCHITECTURES}" CACHE STRING "Target macOS arch. (macOS only)")
-else()
-    set(DESKTOP_APP_MAC_ARCH "x86_64;arm64" CACHE STRING "Target macOS arch. (macOS only)")
+if (APPLE AND NOT DEFINED DESKTOP_APP_MAC_ARCH)
+    if (DEFINED CMAKE_OSX_ARCHITECTURES)
+        set(DESKTOP_APP_MAC_ARCH "${CMAKE_OSX_ARCHITECTURES}" CACHE STRING "Target macOS arch.")
+    else()
+        set(DESKTOP_APP_MAC_ARCH "x86_64;arm64" CACHE STRING "Target macOS arch.")
+    endif()
 endif()
 
 set(add_hunspell_library 0)
@@ -45,6 +49,11 @@ if ((WIN32
   OR DESKTOP_APP_USE_HUNSPELL_ONLY)
   AND NOT DESKTOP_APP_DISABLE_SPELLCHECK)
     set(add_hunspell_library 1)
+endif()
+
+set(add_cld3_library 0)
+if (LINUX OR DESKTOP_APP_USE_CLD3)
+    set(add_cld3_library 1)
 endif()
 
 set(build_macstore 0)

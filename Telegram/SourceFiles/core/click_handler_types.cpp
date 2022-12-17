@@ -26,6 +26,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "window/window_controller.h"
 #include "window/window_session_controller.h"
+#include "styles/style_layers.h"
 
 namespace {
 
@@ -68,6 +69,7 @@ bool UrlRequiresConfirmation(const QUrl &url) {
 		"|t\\.me"
 		"|te\\.?legra\\.ph"
 		"|graph\\.org"
+		"|fragment\\.com"
 		"|telesco\\.pe"
 		")$",
 		url.host(),
@@ -75,17 +77,17 @@ bool UrlRequiresConfirmation(const QUrl &url) {
 }
 
 QString HiddenUrlClickHandler::copyToClipboardText() const {
-	return url().startsWith(qstr("internal:url:"))
-		? url().mid(qstr("internal:url:").size())
+	return url().startsWith(u"internal:url:"_q)
+		? url().mid(u"internal:url:"_q.size())
 		: url();
 }
 
 QString HiddenUrlClickHandler::copyToClipboardContextItemText() const {
 	return url().isEmpty()
 		? QString()
-		: !url().startsWith(qstr("internal:"))
+		: !url().startsWith(u"internal:"_q)
 		? UrlClickHandler::copyToClipboardContextItemText()
-		: url().startsWith(qstr("internal:url:"))
+		: url().startsWith(u"internal:url:"_q)
 		? UrlClickHandler::copyToClipboardContextItemText()
 		: QString();
 }
@@ -103,8 +105,8 @@ void HiddenUrlClickHandler::Open(QString url, QVariant context) {
 	const auto open = [=] {
 		UrlClickHandler::Open(url, context);
 	};
-	if (url.startsWith(qstr("tg://"), Qt::CaseInsensitive)
-		|| url.startsWith(qstr("internal:"), Qt::CaseInsensitive)) {
+	if (url.startsWith(u"tg://"_q, Qt::CaseInsensitive)
+		|| url.startsWith(u"internal:"_q, Qt::CaseInsensitive)) {
 		open();
 	} else {
 		const auto parsedUrl = QUrl::fromUserInput(url);
@@ -123,12 +125,18 @@ void HiddenUrlClickHandler::Open(QString url, QVariant context) {
 			const auto use = controller
 				? &controller->window()
 				: Core::App().activeWindow();
-			auto box = Ui::MakeConfirmBox({
-				.text = (tr::lng_open_this_link(tr::now)
-					+ qsl("\n\n")
-					+ displayUrl),
-				.confirmed = [=](Fn<void()> hide) { hide(); open(); },
-				.confirmText = tr::lng_open_link(),
+			auto box = Box([=](not_null<Ui::GenericBox*> box) {
+				Ui::ConfirmBox(box, {
+					.text = (tr::lng_open_this_link(tr::now)),
+					.confirmed = [=](Fn<void()> hide) { hide(); open(); },
+					.confirmText = tr::lng_open_link(),
+				});
+				const auto &st = st::boxLabel;
+				box->addSkip(st.style.lineHeight - st::boxPadding.bottom());
+				const auto url = box->addRow(
+					object_ptr<Ui::FlatLabel>(box, displayUrl, st));
+				url->setSelectable(true);
+				url->setContextCopyText(tr::lng_context_copy_link(tr::now));
 			});
 			if (my.show) {
 				my.show->showBox(std::move(box));
@@ -150,7 +158,7 @@ void BotGameUrlClickHandler::onClick(ClickContext context) const {
 	const auto open = [=] {
 		UrlClickHandler::Open(url, context.other);
 	};
-	if (url.startsWith(qstr("tg://"), Qt::CaseInsensitive)) {
+	if (url.startsWith(u"tg://"_q, Qt::CaseInsensitive)) {
 		open();
 	} else if (!_bot
 		|| _bot->isVerified()
@@ -168,7 +176,7 @@ void BotGameUrlClickHandler::onClick(ClickContext context) const {
 				.text = tr::lng_allow_bot_pass(
 					tr::now,
 					lt_bot_name,
-					_bot->name),
+					_bot->name()),
 				.confirmed = callback,
 				.confirmText = tr::lng_allow_bot(),
 			}));
@@ -188,9 +196,15 @@ void MentionClickHandler::onClick(ClickContext context) const {
 	const auto button = context.button;
 	if (button == Qt::LeftButton || button == Qt::MiddleButton) {
 		const auto my = context.other.value<ClickHandlerContext>();
-		if (const auto controller = my.sessionWindow.get()) {
+		const auto controller = my.sessionWindow.get();
+		const auto use = controller
+			? controller
+			: Core::App().activeWindow()
+			? Core::App().activeWindow()->sessionController()
+			: nullptr;
+		if (use) {
 			using Info = Window::SessionNavigation::PeerByLinkInfo;
-			controller->showPeerByLink(Info{
+			use->showPeerByLink(Info{
 				.usernameOrId = _tag.mid(1),
 				.resolveType = Window::ResolveType::Mention,
 			});
@@ -215,15 +229,17 @@ void MentionNameClickHandler::onClick(ClickContext context) const {
 }
 
 auto MentionNameClickHandler::getTextEntity() const -> TextEntity {
-	const auto data = QString::number(_userId.bare)
-		+ '.'
-		+ QString::number(_accessHash);
+	const auto data = TextUtilities::MentionNameDataFromFields({
+		.selfId = _session->userId().bare,
+		.userId = _userId.bare,
+		.accessHash = _accessHash,
+	});
 	return { EntityType::MentionName, data };
 }
 
 QString MentionNameClickHandler::tooltip() const {
 	if (const auto user = _session->data().userLoaded(_userId)) {
-		const auto name = user->name;
+		const auto name = user->name();
 		if (name != _text) {
 			return name;
 		}

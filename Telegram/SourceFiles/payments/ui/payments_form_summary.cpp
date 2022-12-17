@@ -16,7 +16,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/wrap/fade_wrap.h"
 #include "ui/text/format_values.h"
 #include "ui/text/text_utilities.h"
-#include "ui/text/text_entity.h"
 #include "countries/countries_instance.h"
 #include "lang/lang_keys.h"
 #include "base/unixtime.h"
@@ -218,9 +217,7 @@ void FormSummary::setupCover(not_null<VerticalLayout*> layout) {
 		st::paymentsTitle);
 	state->description = CreateChild<FlatLabel>(
 		cover,
-		rpl::single(TextUtilities::ParseEntities(
-			_invoice.cover.description,
-			TextParseLinks)),
+		rpl::single(_invoice.cover.description),
 		st::paymentsDescription);
 	state->seller = CreateChild<FlatLabel>(
 		cover,
@@ -362,10 +359,9 @@ void FormSummary::setupPrices(not_null<VerticalLayout*> layout) {
 		const auto text = formatAmount(_invoice.tipsSelected);
 		const auto label = addRow(
 			tr::lng_payments_tips_label(tr::now),
-			Ui::Text::Link(text, "internal:edit_tips"));
-		label->setClickHandlerFilter([=](auto&&...) {
+			Ui::Text::Link(text));
+		label->overrideLinkClickHandler([=] {
 			_delegate->panelChooseTips();
-			return false;
 		});
 		setupSuggestedTips(layout);
 	}
@@ -503,7 +499,9 @@ void FormSummary::setupSections(not_null<VerticalLayout*> layout) {
 	};
 	add(
 		tr::lng_payments_payment_method(),
-		_method.title,
+		(_method.savedMethods.empty()
+			? QString()
+			: _method.savedMethods[_method.savedMethodIndex].title),
 		&st::paymentsIconPaymentMethod,
 		[=] { _delegate->panelEditPaymentMethod(); });
 	if (_invoice.isShippingAddressRequested) {

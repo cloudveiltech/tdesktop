@@ -37,7 +37,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/media/history_view_gif.h"
 #include "window/window_session_controller.h"
 #include "storage/cache/storage_cache_database.h"
-#include "storage/storage_cloud_song_cover.h"
 #include "ui/boxes/confirm_box.h"
 #include "ui/image/image.h"
 #include "ui/text/text_utilities.h"
@@ -52,6 +51,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QMimeDatabase>
 
 namespace {
+
+constexpr auto kDefaultCoverThumbnailSize = 100;
 
 const auto kLottieStickerDimensions = QSize(
 	kStickerSideSize,
@@ -76,6 +77,19 @@ QString JoinStringList(const QStringList &list, const QString &separator) {
 	return result;
 }
 
+void UpdateStickerSetIdentifier(
+		StickerSetIdentifier &now,
+		const MTPInputStickerSet &from) {
+	now = from.match([&](const MTPDinputStickerSetID &data) {
+		return StickerSetIdentifier{
+			.id = data.vid().v,
+			.accessHash = data.vaccess_hash().v,
+		};
+	}, [](const auto &) {
+		return StickerSetIdentifier();
+	});
+}
+
 } // namespace
 
 QString FileNameUnsafe(
@@ -90,7 +104,7 @@ QString FileNameUnsafe(
 	if (Core::App().settings().askDownloadPath() || savingAs) {
 		if (!name.isEmpty() && name.at(0) == QChar::fromLatin1('.')) {
 			name = filedialogDefaultName(prefix, name);
-		} else if (dir.path() != qsl(".")) {
+		} else if (dir.path() != u"."_q) {
 			QString path = dir.absolutePath();
 			if (path != cDialogLastPath()) {
 				cSetDialogLastPath(path);
@@ -101,21 +115,21 @@ QString FileNameUnsafe(
 		// check if extension of filename is present in filter
 		// it should be in first filter section on the first place
 		// place it there, if it is not
-		QString ext = QFileInfo(name).suffix(), fil = filter, sep = qsl(";;");
+		QString ext = QFileInfo(name).suffix(), fil = filter, sep = u";;"_q;
 		if (!ext.isEmpty()) {
-			if (QRegularExpression(qsl("^[a-zA-Z_0-9]+$")).match(ext).hasMatch()) {
+			if (QRegularExpression(u"^[a-zA-Z_0-9]+$"_q).match(ext).hasMatch()) {
 				QStringList filters = filter.split(sep);
 				if (filters.size() > 1) {
 					const auto &first = filters.at(0);
-					int32 start = first.indexOf(qsl("(*."));
+					int32 start = first.indexOf(u"(*."_q);
 					if (start >= 0) {
-						if (!QRegularExpression(qsl("\\(\\*\\.") + ext + qsl("[\\)\\s]"), QRegularExpression::CaseInsensitiveOption).match(first).hasMatch()) {
-							QRegularExpressionMatch m = QRegularExpression(qsl(" \\*\\.") + ext + qsl("[\\)\\s]"), QRegularExpression::CaseInsensitiveOption).match(first);
+						if (!QRegularExpression(u"\\(\\*\\."_q + ext + u"[\\)\\s]"_q, QRegularExpression::CaseInsensitiveOption).match(first).hasMatch()) {
+							QRegularExpressionMatch m = QRegularExpression(u" \\*\\."_q + ext + u"[\\)\\s]"_q, QRegularExpression::CaseInsensitiveOption).match(first);
 							if (m.hasMatch() && m.capturedStart() > start + 3) {
 								int32 oldpos = m.capturedStart(), oldend = m.capturedEnd();
-								fil = first.mid(0, start + 3) + ext + qsl(" *.") + first.mid(start + 3, oldpos - start - 3) + first.mid(oldend - 1) + sep + JoinStringList(filters.mid(1), sep);
+								fil = first.mid(0, start + 3) + ext + u" *."_q + first.mid(start + 3, oldpos - start - 3) + first.mid(oldend - 1) + sep + JoinStringList(filters.mid(1), sep);
 							} else {
-								fil = first.mid(0, start + 3) + ext + qsl(" *.") + first.mid(start + 3) + sep + JoinStringList(filters.mid(1), sep);
+								fil = first.mid(0, start + 3) + ext + u" *."_q + first.mid(start + 3) + sep + JoinStringList(filters.mid(1), sep);
 							}
 						}
 					} else {
@@ -135,18 +149,19 @@ QString FileNameUnsafe(
 		const auto path = Core::App().settings().downloadPath();
 		if (path.isEmpty()) {
 			return File::DefaultDownloadPath(session);
-		} else if (path == qsl("tmp")) {
+		} else if (path == FileDialog::Tmp()) {
 			return session->local().tempDirectory();
 		} else {
 			return path;
 		}
 	}();
-	if (name.isEmpty()) name = qsl(".unknown");
+	if (path.isEmpty()) return QString();
+	if (name.isEmpty()) name = u".unknown"_q;
 	if (name.at(0) == QChar::fromLatin1('.')) {
 		if (!QDir().exists(path)) QDir().mkpath(path);
 		return filedialogDefaultName(prefix, name, path);
 	}
-	if (dir.path() != qsl(".")) {
+	if (dir.path() != u"."_q) {
 		path = dir.absolutePath() + '/';
 	}
 
@@ -161,7 +176,7 @@ QString FileNameUnsafe(
 	QString nameBase = path + nameStart;
 	name = nameBase + extension;
 	for (int i = 0; QFileInfo::exists(name); ++i) {
-		name = nameBase + QString(" (%1)").arg(i + 2) + extension;
+		name = nameBase + u" (%1)"_q.arg(i + 2) + extension;
 	}
 
 	if (!QDir().exists(path)) QDir().mkpath(path);
@@ -186,8 +201,8 @@ QString FileNameForSave(
 		dir);
 #ifdef Q_OS_WIN
 	const auto lower = result.trimmed().toLower();
-	const auto kBadExtensions = { qstr(".lnk"), qstr(".scf") };
-	const auto kMaskExtension = qsl(".download");
+	const auto kBadExtensions = { u".lnk"_q, u".scf"_q };
+	const auto kMaskExtension = u".download"_q;
 	for (const auto extension : kBadExtensions) {
 		if (lower.endsWith(extension)) {
 			return result + kMaskExtension;
@@ -212,38 +227,38 @@ QString DocumentFileNameForSave(
 	QStringList p = mimeType.globPatterns();
 	QString pattern = p.isEmpty() ? QString() : p.front();
 	if (data->isVoiceMessage()) {
-		auto mp3 = data->hasMimeType(qstr("audio/mp3"));
-		name = already.isEmpty() ? (mp3 ? qsl(".mp3") : qsl(".ogg")) : already;
-		filter = mp3 ? qsl("MP3 Audio (*.mp3);;") : qsl("OGG Opus Audio (*.ogg);;");
+		auto mp3 = data->hasMimeType(u"audio/mp3"_q);
+		name = already.isEmpty() ? (mp3 ? u".mp3"_q : u".ogg"_q) : already;
+		filter = mp3 ? u"MP3 Audio (*.mp3);;"_q : u"OGG Opus Audio (*.ogg);;"_q;
 		filter += FileDialog::AllFilesFilter();
 		caption = tr::lng_save_audio(tr::now);
-		prefix = qsl("audio");
+		prefix = u"audio"_q;
 	} else if (data->isVideoFile()) {
 		name = already.isEmpty() ? data->filename() : already;
 		if (name.isEmpty()) {
-			name = pattern.isEmpty() ? qsl(".mov") : pattern.replace('*', QString());
+			name = pattern.isEmpty() ? u".mov"_q : pattern.replace('*', QString());
 		}
 		if (pattern.isEmpty()) {
-			filter = qsl("MOV Video (*.mov);;") + FileDialog::AllFilesFilter();
+			filter = u"MOV Video (*.mov);;"_q + FileDialog::AllFilesFilter();
 		} else {
-			filter = mimeType.filterString() + qsl(";;") + FileDialog::AllFilesFilter();
+			filter = mimeType.filterString() + u";;"_q + FileDialog::AllFilesFilter();
 		}
 		caption = tr::lng_save_video(tr::now);
-		prefix = qsl("video");
+		prefix = u"video"_q;
 	} else {
 		name = already.isEmpty() ? data->filename() : already;
 		if (name.isEmpty()) {
-			name = pattern.isEmpty() ? qsl(".unknown") : pattern.replace('*', QString());
+			name = pattern.isEmpty() ? u".unknown"_q : pattern.replace('*', QString());
 		}
 		if (pattern.isEmpty()) {
 			filter = QString();
 		} else {
-			filter = mimeType.filterString() + qsl(";;") + FileDialog::AllFilesFilter();
+			filter = mimeType.filterString() + u";;"_q + FileDialog::AllFilesFilter();
 		}
 		caption = data->isAudioFile()
 			? tr::lng_save_audio_file(tr::now)
 			: tr::lng_save_file(tr::now);
-		prefix = qsl("doc");
+		prefix = u"doc"_q;
 	}
 
 	return FileNameForSave(
@@ -334,32 +349,43 @@ void DocumentData::setattributes(
 				_additional = std::make_unique<StickerData>();
 			}
 			if (const auto info = sticker()) {
+				info->setType = data.is_mask()
+					? Data::StickersType::Masks
+					: Data::StickersType::Stickers;
 				if (was == VideoDocument) {
 					info->type = StickerType::Webm;
 				}
 				info->alt = qs(data.valt());
-				if (!info->set.id
-					|| data.vstickerset().type() == mtpc_inputStickerSetID) {
-					info->set = data.vstickerset().match([&](
-							const MTPDinputStickerSetID &data) {
-						return StickerSetIdentifier{
-							.id = data.vid().v,
-							.accessHash = data.vaccess_hash().v,
-						};
-					}, [&](const MTPDinputStickerSetShortName &data) {
-						return StickerSetIdentifier{
-							.shortName = qs(data.vshort_name()),
-						};
-					}, [](const auto &) {
-						return StickerSetIdentifier();
-					});
+				UpdateStickerSetIdentifier(info->set, data.vstickerset());
+			}
+		}, [&](const MTPDdocumentAttributeCustomEmoji &data) {
+			const auto was = type;
+			if (type == FileDocument || type == VideoDocument) {
+				type = StickerDocument;
+				_additional = std::make_unique<StickerData>();
+			}
+			if (const auto info = sticker()) {
+				info->setType = Data::StickersType::Emoji;
+				if (was == VideoDocument) {
+					info->type = StickerType::Webm;
 				}
+				info->alt = qs(data.valt());
+				if (data.is_free()) {
+					_flags &= ~Flag::PremiumSticker;
+				} else {
+					_flags |= Flag::PremiumSticker;
+				}
+				UpdateStickerSetIdentifier(info->set, data.vstickerset());
 			}
 		}, [&](const MTPDdocumentAttributeVideo &data) {
 			if (type == FileDocument) {
 				type = data.is_round_message()
 					? RoundVideoDocument
 					: VideoDocument;
+				if (data.is_round_message()) {
+					_additional = std::make_unique<RoundData>();
+					round()->duration = data.vduration().v;
+				}
 			} else if (const auto info = sticker()) {
 				info->type = StickerType::Webm;
 			}
@@ -376,7 +402,7 @@ void DocumentData::setattributes(
 					_additional = std::make_unique<SongData>();
 				}
 			}
-			if (const auto voiceData = voice()) {
+			if (const auto voiceData = voice() ? voice() : round()) {
 				voiceData->duration = data.vduration().v;
 				voiceData->waveform = documentWaveformDecode(
 					data.vwaveform().value_or_empty());
@@ -387,13 +413,7 @@ void DocumentData::setattributes(
 				songData->duration = data.vduration().v;
 				songData->title = qs(data.vtitle().value_or_empty());
 				songData->performer = qs(data.vperformer().value_or_empty());
-
-				if (!hasThumbnail()
-					&& !songData->title.isEmpty()
-					&& !songData->performer.isEmpty()) {
-
-					Storage::CloudSongCover::LoadThumbnailFromExternal(this);
-				}
+				refreshPossibleCoverThumbnail();
 			}
 		}, [&](const MTPDdocumentAttributeFilename &data) {
 			setFileName(qs(data.vfile_name()));
@@ -410,7 +430,7 @@ void DocumentData::setattributes(
 		type = FileDocument;
 		_additional = nullptr;
 	} else if (type == FileDocument
-		&& hasMimeType(qstr("video/webm"))
+		&& hasMimeType(u"video/webm"_q)
 		&& (size < Storage::kMaxStickerBytesSize)
 		&& GoodStickerDimensions(dimensions.width(), dimensions.height())) {
 		type = StickerDocument;
@@ -424,7 +444,7 @@ void DocumentData::setattributes(
 
 void DocumentData::validateLottieSticker() {
 	if (type == FileDocument
-		&& hasMimeType(qstr("application/x-tgsticker"))) {
+		&& hasMimeType(u"application/x-tgsticker"_q)) {
 		type = StickerDocument;
 		_additional = std::make_unique<StickerData>();
 		sticker()->type = StickerType::Tgs;
@@ -476,10 +496,12 @@ void DocumentData::updateThumbnails(
 			_flags &= ~Flag::InlineThumbnailIsPath;
 		}
 	}
-	if (isPremiumSticker) {
-		_flags |= Flag::PremiumSticker;
-	} else {
-		_flags &= ~Flag::PremiumSticker;
+	if (!sticker() || sticker()->setType != Data::StickersType::Emoji) {
+		if (isPremiumSticker) {
+			_flags |= Flag::PremiumSticker;
+		} else {
+			_flags &= ~Flag::PremiumSticker;
+		}
 	}
 	Data::UpdateCloudFile(
 		_thumbnail,
@@ -510,19 +532,33 @@ bool DocumentData::isPatternWallPaper() const {
 }
 
 bool DocumentData::isPatternWallPaperPNG() const {
-	return isWallPaper() && hasMimeType(qstr("image/png"));
+	return isWallPaper() && hasMimeType(u"image/png"_q);
 }
 
 bool DocumentData::isPatternWallPaperSVG() const {
-	return isWallPaper() && hasMimeType(qstr("application/x-tgwallpattern"));
+	return isWallPaper() && hasMimeType(u"application/x-tgwallpattern"_q);
 }
 
 bool DocumentData::isPremiumSticker() const {
-	return (_flags & Flag::PremiumSticker);
+	if (!(_flags & Flag::PremiumSticker)) {
+		return false;
+	}
+	const auto info = sticker();
+	return info && info->setType == Data::StickersType::Stickers;
+}
+
+bool DocumentData::isPremiumEmoji() const {
+	if (!(_flags & Flag::PremiumSticker)) {
+		return false;
+	}
+	const auto info = sticker();
+	return info && info->setType == Data::StickersType::Emoji;
 }
 
 bool DocumentData::hasThumbnail() const {
-	return _thumbnail.location.valid();
+	return _thumbnail.location.valid()
+		&& !thumbnailFailed()
+		&& !(_flags & Flag::PossibleCoverThumbnail);
 }
 
 bool DocumentData::thumbnailLoading() const {
@@ -542,6 +578,7 @@ void DocumentData::loadThumbnail(Data::FileOrigin origin) {
 		return true;
 	};
 	const auto done = [=](QImage result, QByteArray) {
+		_flags &= ~Flag::PossibleCoverThumbnail;
 		if (const auto active = activeMediaView()) {
 			active->setThumbnail(std::move(result));
 		}
@@ -699,7 +736,7 @@ bool DocumentData::saveToCache() const {
 			|| isVoiceMessage()
 			|| isWallPaper()
 			|| isTheme()
-			|| (hasMimeType(qstr("image/png"))
+			|| (hasMimeType(u"image/png"_q)
 				&& _filename.startsWith("image_")));
 }
 
@@ -708,7 +745,7 @@ void DocumentData::automaticLoadSettingsChanged() {
 		return;
 	}
 	_loader = nullptr;
-	_flags &= ~Flag::DownloadCancelled;
+	resetCancelled();
 }
 
 void DocumentData::finishLoad() {
@@ -867,7 +904,7 @@ void DocumentData::save(
 			cancel();
 		}
 	}
-	_flags &= ~Flag::DownloadCancelled;
+	resetCancelled();
 
 	if (_loader) {
 		if (fromCloud == LoadFromCloudOrLocal) {
@@ -935,7 +972,8 @@ void DocumentData::save(
 	if (loading()) {
 		_loader->start();
 	}
-	_owner->notifyDocumentLayoutChanged(this);
+	// This affects a display of tooltips.
+	// _owner->notifyDocumentLayoutChanged(this);
 }
 
 void DocumentData::handleLoaderUpdates() {
@@ -990,6 +1028,10 @@ void DocumentData::cancel() {
 
 bool DocumentData::cancelled() const {
 	return (_flags & Flag::DownloadCancelled);
+}
+
+void DocumentData::resetCancelled() {
+	_flags &= ~Flag::DownloadCancelled;
 }
 
 VoiceWaveform documentWaveformDecode(const QByteArray &encoded5bit) {
@@ -1077,7 +1119,7 @@ bool DocumentData::saveFromData() {
 
 bool DocumentData::saveFromDataSilent() {
 	return !filepath(true).isEmpty()
-		|| (!Core::App().settings().askDownloadPath()
+		|| (Core::App().canSaveFileWithoutAskingForPath()
 			&& saveFromDataChecked());
 }
 
@@ -1105,6 +1147,31 @@ bool DocumentData::saveFromDataChecked() {
 	return true;
 }
 
+void DocumentData::refreshPossibleCoverThumbnail() {
+	Expects(isSong());
+
+	if (_thumbnail.location.valid()) {
+		return;
+	}
+	const auto songData = song();
+	if (songData->performer.isEmpty()
+		|| songData->title.isEmpty()
+		// Ignore cover for voice chat records.
+		|| hasMimeType(u"audio/ogg"_q)) {
+		return;
+	}
+	const auto size = kDefaultCoverThumbnailSize;
+	const auto location = ImageWithLocation{
+		.location = ImageLocation(
+			{ AudioAlbumThumbLocation{ id } },
+			size,
+			size)
+	};
+	_flags |= Flag::PossibleCoverThumbnail;
+	updateThumbnails({}, location, {}, false);
+	loadThumbnail({});
+}
+
 bool DocumentData::isStickerSetInstalled() const {
 	Expects(sticker() != nullptr);
 
@@ -1116,15 +1183,6 @@ bool DocumentData::isStickerSetInstalled() const {
 		return (i != sets.cend())
 			&& !(i->second->flags & SetFlag::Archived)
 			&& (i->second->flags & SetFlag::Installed);
-	} else if (!sticker()->set.shortName.isEmpty()) {
-		const auto name = sticker()->set.shortName.toLower();
-		for (const auto &[id, set] : sets) {
-			if (set->shortName.toLower() == name) {
-				return !(set->flags & SetFlag::Archived)
-					&& (set->flags & SetFlag::Installed);
-			}
-		}
-		return false;
 	} else {
 		return false;
 	}
@@ -1197,6 +1255,16 @@ VoiceData *DocumentData::voice() {
 
 const VoiceData *DocumentData::voice() const {
 	return const_cast<DocumentData*>(this)->voice();
+}
+
+RoundData *DocumentData::round() {
+	return isVideoMessage()
+		? static_cast<RoundData*>(_additional.get())
+		: nullptr;
+}
+
+const RoundData *DocumentData::round() const {
+	return const_cast<DocumentData*>(this)->round();
 }
 
 bool DocumentData::hasRemoteLocation() const {
@@ -1307,7 +1375,7 @@ QString DocumentData::mimeString() const {
 	return _mimeString;
 }
 
-bool DocumentData::hasMimeType(QLatin1String mime) const {
+bool DocumentData::hasMimeType(const QString &mime) const {
 	return (_mimeString == mime);
 }
 
@@ -1370,19 +1438,19 @@ bool DocumentData::isVideoMessage() const {
 bool DocumentData::isAnimation() const {
 	return (type == AnimatedDocument)
 		|| isVideoMessage()
-		|| (hasMimeType(qstr("image/gif"))
+		|| (hasMimeType(u"image/gif"_q)
 			&& !(_flags & Flag::StreamingPlaybackFailed));
 }
 
 bool DocumentData::isGifv() const {
 	return (type == AnimatedDocument)
-		&& hasMimeType(qstr("video/mp4"));
+		&& hasMimeType(u"video/mp4"_q);
 }
 
 bool DocumentData::isTheme() const {
-	return hasMimeType(qstr("application/x-tgtheme-tdesktop"))
-		|| _filename.endsWith(qstr(".tdesktop-theme"), Qt::CaseInsensitive)
-		|| _filename.endsWith(qstr(".tdesktop-palette"), Qt::CaseInsensitive);
+	return hasMimeType(u"application/x-tgtheme-tdesktop"_q)
+		|| _filename.endsWith(u".tdesktop-theme"_q, Qt::CaseInsensitive)
+		|| _filename.endsWith(u".tdesktop-palette"_q, Qt::CaseInsensitive);
 }
 
 bool DocumentData::isSong() const {
@@ -1399,15 +1467,15 @@ bool DocumentData::isAudioFile() const {
 	} else if (isSong()) {
 		return true;
 	}
-	const auto prefix = qstr("audio/");
+	const auto prefix = u"audio/"_q;
 	if (!_mimeString.startsWith(prefix, Qt::CaseInsensitive)) {
-		if (_filename.endsWith(qstr(".opus"), Qt::CaseInsensitive)) {
+		if (_filename.endsWith(u".opus"_q, Qt::CaseInsensitive)) {
 			return true;
 		}
 		return false;
 	}
 	const auto left = _mimeString.mid(prefix.size());
-	const auto types = { qstr("x-wav"), qstr("wav"), qstr("mp4") };
+	const auto types = { u"x-wav"_q, u"wav"_q, u"mp4"_q };
 	return ranges::contains(types, left);
 }
 

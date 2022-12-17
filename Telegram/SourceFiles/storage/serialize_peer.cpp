@@ -121,14 +121,14 @@ uint32 peerSize(not_null<PeerData*> peer) {
 		result += stringSize(user->firstName)
 			+ stringSize(user->lastName)
 			+ stringSize(user->phone())
-			+ stringSize(user->username)
+			+ stringSize(user->username())
 			+ sizeof(quint64) // access
 			+ sizeof(qint32) // flags
 			+ sizeof(qint32) // onlineTill
 			+ sizeof(qint32) // contact
 			+ sizeof(qint32); // botInfoVersion
 	} else if (const auto chat = peer->asChat()) {
-		result += stringSize(chat->name)
+		result += stringSize(chat->name())
 			+ sizeof(qint32) // count
 			+ sizeof(qint32) // date
 			+ sizeof(qint32) // version
@@ -137,7 +137,7 @@ uint32 peerSize(not_null<PeerData*> peer) {
 			+ sizeof(quint32) // flags
 			+ stringSize(chat->inviteLink());
 	} else if (const auto channel = peer->asChannel()) {
-		result += stringSize(channel->name)
+		result += stringSize(channel->name())
 			+ sizeof(quint64) // access
 			+ sizeof(qint32) // date
 			+ sizeof(qint32) // version
@@ -164,7 +164,7 @@ void writePeer(QDataStream &stream, not_null<PeerData*> peer) {
 			<< user->firstName
 			<< user->lastName
 			<< user->phone()
-			<< user->username
+			<< user->username()
 			<< quint64(user->accessHash())
 			<< qint32(user->flags())
 			<< botInlinePlaceholder
@@ -175,7 +175,7 @@ void writePeer(QDataStream &stream, not_null<PeerData*> peer) {
 		auto field1 = qint32(uint32(chat->creator.bare & 0xFFFFFFFFULL));
 		auto field2 = qint32(uint32(chat->creator.bare >> 32) << 8);
 		stream
-			<< chat->name
+			<< chat->name()
 			<< qint32(chat->count)
 			<< qint32(chat->date)
 			<< qint32(chat->version())
@@ -185,7 +185,7 @@ void writePeer(QDataStream &stream, not_null<PeerData*> peer) {
 			<< chat->inviteLink();
 	} else if (const auto channel = peer->asChannel()) {
 		stream
-			<< channel->name
+			<< channel->name()
 			<< quint64(channel->access)
 			<< qint32(channel->date)
 			<< qint32(0) // legacy - version

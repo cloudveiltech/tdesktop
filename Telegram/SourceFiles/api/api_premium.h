@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "data/data_subscription_option.h"
 #include "mtproto/sender.h"
 
 class ApiWrap;
@@ -32,12 +33,20 @@ public:
 		-> const std::vector<not_null<DocumentData*>> &;
 	[[nodiscard]] rpl::producer<> stickersUpdated() const;
 
+	[[nodiscard]] auto cloudSet() const
+		-> const std::vector<not_null<DocumentData*>> &;
+	[[nodiscard]] rpl::producer<> cloudSetUpdated() const;
+
 	[[nodiscard]] int64 monthlyAmount() const;
 	[[nodiscard]] QString monthlyCurrency() const;
+
+	[[nodiscard]] auto subscriptionOptions() const
+		-> const Data::SubscriptionOptions &;
 
 private:
 	void reloadPromo();
 	void reloadStickers();
+	void reloadCloudSet();
 
 	const not_null<Main::Session*> _session;
 	MTP::Sender _api;
@@ -54,8 +63,15 @@ private:
 	std::vector<not_null<DocumentData*>> _stickers;
 	rpl::event_stream<> _stickersUpdated;
 
+	mtpRequestId _cloudSetRequestId = 0;
+	uint64 _cloudSetHash = 0;
+	std::vector<not_null<DocumentData*>> _cloudSet;
+	rpl::event_stream<> _cloudSetUpdated;
+
 	int64 _monthlyAmount = 0;
 	QString _monthlyCurrency;
+
+	Data::SubscriptionOptions _subscriptionOptions;
 
 };
 

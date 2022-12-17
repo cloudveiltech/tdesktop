@@ -62,7 +62,7 @@ QRect MediaPreviewWidget::updateArea() const {
 }
 
 void MediaPreviewWidget::paintEvent(QPaintEvent *e) {
-	Painter p(this);
+	auto p = QPainter(this);
 
 	const auto r = e->rect();
 	const auto factor = cIntRetinaFactor();
@@ -381,9 +381,9 @@ QPixmap MediaPreviewWidget::currentImage() const {
 			if (gif && gif->started()) {
 				const auto paused = _controller->isGifPausedAtLeastFor(
 					Window::GifPauseReason::MediaPreview);
-				return gif->current(
+				return QPixmap::fromImage(gif->current(
 					{ .frame = currentDimensions(), .keepAlpha = webm },
-					paused ? 0 : crl::now());
+					paused ? 0 : crl::now()), Qt::ColorOnly);
 			}
 			if (_cacheStatus != CacheThumbLoaded
 				&& _document->hasThumbnail()) {

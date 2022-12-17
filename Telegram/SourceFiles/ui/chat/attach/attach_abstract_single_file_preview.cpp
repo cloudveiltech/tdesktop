@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/text_options.h"
 #include "ui/widgets/buttons.h"
 #include "ui/image/image_prepare.h"
+#include "ui/painter.h"
 #include "base/timer_rpl.h"
 #include "styles/style_chat.h"
 #include "styles/style_boxes.h"
@@ -85,7 +86,7 @@ void AbstractSingleFilePreview::paintEvent(QPaintEvent *e) {
 	const auto &st = !isThumbedLayout(_data)
 		? st::attachPreviewLayout
 		: st::attachPreviewThumbLayout;
-	const auto nameleft = st.thumbSize + st.padding.right();
+	const auto nameleft = st.thumbSize + st.thumbSkip;
 	const auto nametop = st.nameTop;
 	const auto statustop = st.statusTop;
 	const auto x = (width() - w) / 2, y = 0;
@@ -163,7 +164,7 @@ void AbstractSingleFilePreview::updateTextWidthFor(Data &data) {
 		: 0;
 	const auto availableFileWidth = st::sendMediaPreviewSize
 		- st.thumbSize
-		- st.padding.right()
+		- st.thumbSkip
 		// Right buttons.
 		- st::sendBoxAlbumGroupButtonFile.width * buttonsCount
 		- st::sendBoxAlbumGroupEditInternalSkip * buttonsCount

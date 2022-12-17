@@ -17,11 +17,14 @@ struct HistoryMessageForwarded;
 
 namespace HistoryView {
 
+struct TopicButton;
+
 class UnwrappedMedia final : public Media {
 public:
 	class Content {
 	public:
-		[[nodiscard]] virtual QSize size() = 0;
+		[[nodiscard]] virtual QSize countOptimalSize() = 0;
+		[[nodiscard]] virtual QSize countCurrentSize(int newWidth);
 
 		virtual void draw(
 			Painter &p,
@@ -37,18 +40,9 @@ public:
 		}
 		virtual void stickerClearLoopPlayed() {
 		}
-		virtual std::unique_ptr<Lottie::SinglePlayer> stickerTakeLottie(
+		virtual std::unique_ptr<StickerPlayer> stickerTakePlayer(
 			not_null<DocumentData*> data,
 			const Lottie::ColorReplacements *replacements);
-
-		//virtual void externalLottieProgressing(bool external) {
-		//}
-		//virtual bool externalLottieTill(ExternalLottieInfo info) {
-		//	return true;
-		//}
-		//virtual ExternalLottieInfo externalLottieInfo() const {
-		//	return {};
-		//}
 
 		virtual bool hasHeavyPart() const {
 			return false;
@@ -58,6 +52,9 @@ public:
 		virtual void refreshLink() {
 		}
 		[[nodiscard]] virtual bool alwaysShowOutTimestamp() {
+			return false;
+		}
+		virtual bool hasTextForCopy() const {
 			return false;
 		}
 		virtual ~Content() = default;
@@ -70,6 +67,8 @@ public:
 	void draw(Painter &p, const PaintContext &context) const override;
 	PointState pointState(QPoint point) const override;
 	TextState textState(QPoint point, StateRequest request) const override;
+
+	bool hasTextForCopy() const override;
 
 	bool toggleSelectionByHandlerClick(const ClickHandlerPtr &p) const override {
 		return true;
@@ -88,6 +87,9 @@ public:
 	bool needsBubble() const override {
 		return false;
 	}
+	bool unwrapped() const override {
+		return true;
+	}
 	bool customInfoLayout() const override {
 		return true;
 	}
@@ -98,13 +100,9 @@ public:
 	void stickerClearLoopPlayed() override {
 		_content->stickerClearLoopPlayed();
 	}
-	std::unique_ptr<Lottie::SinglePlayer> stickerTakeLottie(
+	std::unique_ptr<StickerPlayer> stickerTakePlayer(
 		not_null<DocumentData*> data,
 		const Lottie::ColorReplacements *replacements) override;
-
-	//void externalLottieProgressing(bool external) override;
-	//bool externalLottieTill(ExternalLottieInfo info) override;
-	//ExternalLottieInfo externalLottieInfo() const override;
 
 	bool hasHeavyPart() const override {
 		return _content->hasHeavyPart();
@@ -115,7 +113,9 @@ public:
 
 private:
 	struct SurroundingInfo {
+		QSize topicSize;
 		int height = 0;
+		int panelHeight = 0;
 		int forwardedHeight = 0;
 		bool forwardedBreakEverywhere = false;
 
@@ -124,6 +124,7 @@ private:
 		}
 	};
 	[[nodiscard]] SurroundingInfo surroundingInfo(
+		const TopicButton *topic,
 		const HistoryMessageVia *via,
 		const HistoryMessageReply *reply,
 		const HistoryMessageForwarded *forwarded,
@@ -132,6 +133,7 @@ private:
 		Painter &p,
 		const QRect &inner,
 		const PaintContext &context,
+		const TopicButton *topic,
 		const HistoryMessageVia *via,
 		const HistoryMessageReply *reply,
 		const HistoryMessageForwarded *forwarded) const;
@@ -141,6 +143,7 @@ private:
 
 	bool needInfoDisplay() const;
 	int additionalWidth(
+		const TopicButton *topic,
 		const HistoryMessageVia *via,
 		const HistoryMessageReply *reply,
 		const HistoryMessageForwarded *forwarded) const;
@@ -156,6 +159,8 @@ private:
 
 	std::unique_ptr<Content> _content;
 	QSize _contentSize;
+	int _topAdded = 0;
+	bool _additionalOnTop = false;
 
 };
 

@@ -137,7 +137,8 @@ defaultBox: Box {
 layerBox: Box(defaultBox) {
 }
 boxLabel: FlatLabel(defaultFlatLabel) {
-	minWidth: 274px;
+	// Keep minWidth <= boxWidth - boxPadding.left - boxPadding.right.
+	minWidth: 256px;
 	align: align(topleft);
 	style: boxLabelStyle;
 }
@@ -160,6 +161,7 @@ boxDividerHeight: 10px;
 
 separatePanelBorderCacheSize: 60px;
 separatePanelTitleHeight: 62px;
+separatePanelNoTitleHeight: 32px;
 separatePanelClose: IconButton(boxTitleClose) {
 	width: 60px;
 	height: 60px;
@@ -199,6 +201,7 @@ separatePanelBack: IconButton(separatePanelClose) {
 separatePanelDuration: 150;
 
 webviewDialogButton: defaultBoxButton;
+webviewDialogDestructiveButton: attentionBoxButton;
 webviewDialogSubmit: RoundButton(defaultActiveButton) {
 	width: -48px;
 	height: 34px;

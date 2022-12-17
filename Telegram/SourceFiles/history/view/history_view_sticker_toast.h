@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Ui {
 class Show;
+class RpWidget;
 } // namespace Ui
 
 namespace Ui::Toast {
@@ -31,15 +32,34 @@ public:
 		Fn<void()> destroy);
 	~StickerToast();
 
-	void showFor(not_null<DocumentData*> document);
+	enum class Section {
+		Message,
+		TopicIcon,
+	};
+	void showFor(
+		not_null<DocumentData*> document,
+		Section section = Section::Message);
 
 private:
+	void requestSet();
+	void cancelRequest();
+	void showWithTitle(const QString &title);
+	[[nodiscard]] QString lookupTitle() const;
+
+	void setupEmojiPreview(not_null<Ui::RpWidget*> widget, int size);
+	void setupLottiePreview(not_null<Ui::RpWidget*> widget, int size);
+	void clearHiddenHiding();
+
 	const not_null<Window::SessionController*> _controller;
 	const not_null<QWidget*> _parent;
+	Section _section = {};
 	style::Toast _st;
 	base::weak_ptr<Ui::Toast::Instance> _weak;
+	std::vector<base::weak_ptr<Ui::Toast::Instance>> _hiding;
 	DocumentData *_for = nullptr;
 	Fn<void()> _destroy;
+
+	mtpRequestId _setRequestId = 0;
 
 };
 

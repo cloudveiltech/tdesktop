@@ -20,10 +20,6 @@ enum {
 	RecentInlineBotsLimit = 10,
 
 	AutoSearchTimeout = 900, // 0.9 secs
-	SearchPerPage = 50,
-	SearchManyPerPage = 100,
-	LinksOverviewPerPage = 12,
-	MediaOverviewStartPerPage = 5,
 
 	PreloadHeightsCount = 3, // when 3 screens to scroll left make a preload request
 
@@ -112,7 +108,7 @@ static const char *AlphaPrivateKey = "";
 extern QString gKeyFile;
 inline const QString &cDataFile() {
 	if (!gKeyFile.isEmpty()) return gKeyFile;
-	static const QString res(qsl("data"));
+	static const QString res(u"data"_q);
 	return res;
 }
 

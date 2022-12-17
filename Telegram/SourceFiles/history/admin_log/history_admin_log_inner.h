@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_element.h"
 #include "history/admin_log/history_admin_log_item.h"
 #include "history/admin_log/history_admin_log_section.h"
+#include "menu/menu_antispam_validator.h"
 #include "ui/rp_widget.h"
 #include "ui/effects/animations.h"
 #include "ui/widgets/tooltip.h"
@@ -17,10 +18,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/timer.h"
 
 struct ChatRestrictionsInfo;
-
-namespace Data {
-class CloudImageView;
-} // namespace Data
 
 namespace Main {
 class Session;
@@ -37,6 +34,7 @@ enum class PointState : char;
 namespace Ui {
 class PopupMenu;
 class ChatStyle;
+struct PeerUserpicView;
 } // namespace Ui
 
 namespace Window {
@@ -124,7 +122,7 @@ public:
 	void elementShowTooltip(
 		const TextWithEntities &text,
 		Fn<void()> hiddenCallback) override;
-	bool elementIsGifPaused() override;
+	bool elementAnimationsPaused() override;
 	bool elementHideReply(
 		not_null<const HistoryView::Element*> view) override;
 	bool elementShownUnread(
@@ -143,7 +141,8 @@ public:
 		HistoryView::Element *replacing) override;
 	void elementCancelPremium(
 		not_null<const HistoryView::Element*> view) override;
-	void elementShowSpoilerAnimation() override;
+	QString elementAuthorRank(
+		not_null<const HistoryView::Element*> view) override;
 
 	~InnerWidget();
 
@@ -276,9 +275,8 @@ private:
 	std::map<not_null<const HistoryItem*>, not_null<Element*>> _itemsByData;
 	base::flat_map<not_null<const HistoryItem*>, TimeId> _itemDates;
 	base::flat_set<FullMsgId> _animatedStickersPlayed;
-	base::flat_map<
-		not_null<PeerData*>,
-		std::shared_ptr<Data::CloudImageView>> _userpics, _userpicsCache;
+	base::flat_map<not_null<PeerData*>, Ui::PeerUserpicView> _userpics;
+	base::flat_map<not_null<PeerData*>, Ui::PeerUserpicView> _userpicsCache;
 	int _itemsTop = 0;
 	int _itemsWidth = 0;
 	int _itemsHeight = 0;
@@ -289,6 +287,7 @@ private:
 	Element *_visibleTopItem = nullptr;
 	int _visibleTopFromItem = 0;
 
+	bool _isChatWide = false;
 	bool _scrollDateShown = false;
 	Ui::Animations::Simple _scrollDateOpacity;
 	SingleQueuedInvokation _scrollDateCheck;
@@ -323,11 +322,10 @@ private:
 	Qt::CursorShape _cursor = style::cur_default;
 
 	base::unique_qptr<Ui::PopupMenu> _menu;
+	AntiSpamMenu::AntiSpamValidator _antiSpamValidator;
 
 	QPoint _trippleClickPoint;
 	base::Timer _trippleClickTimer;
-
-	Ui::Animations::Simple _spoilerOpacity;
 
 	FilterValue _filter;
 	QString _searchQuery;

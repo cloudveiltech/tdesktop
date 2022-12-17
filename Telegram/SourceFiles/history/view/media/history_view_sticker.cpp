@@ -14,23 +14,21 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_element.h"
 #include "history/view/history_view_cursor_state.h"
 #include "history/view/media/history_view_media_common.h"
+#include "history/view/media/history_view_sticker_player.h"
 #include "ui/image/image.h"
 #include "ui/chat/chat_style.h"
 #include "ui/effects/path_shift_gradient.h"
 #include "ui/emoji_config.h"
+#include "ui/painter.h"
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "core/click_handler_types.h"
-#include "main/main_session.h"
-#include "main/main_account.h"
-#include "main/main_app_config.h"
-#include "window/window_session_controller.h" // isGifPausedAtLeastFor.
+#include "window/window_session_controller.h"
 #include "data/data_session.h"
 #include "data/data_document.h"
 #include "data/data_document_media.h"
 #include "data/data_file_click_handler.h"
 #include "data/data_file_origin.h"
-#include "lottie/lottie_single_player.h"
 #include "chat_helpers/stickers_lottie.h"
 #include "styles/style_chat.h"
 
@@ -67,7 +65,12 @@ Sticker::Sticker(
 : _parent(parent)
 , _data(data)
 , _replacements(replacements)
-, _skipPremiumEffect(skipPremiumEffect) {
+, _cachingTag(ChatHelpers::StickerLottieSize::MessageHistory)
+, _oncePlayed(false)
+, _premiumEffectPlayed(false)
+, _nextLastDiceFrame(false)
+, _skipPremiumEffect(skipPremiumEffect)
+, _giftBoxSticker(false) {
 	if ((_dataMedia = _data->activeMediaView())) {
 		dataMediaCreated();
 	} else {
@@ -77,22 +80,21 @@ Sticker::Sticker(
 		}
 	}
 	if (const auto media = replacing ? replacing->media() : nullptr) {
-		_lottie = media->stickerTakeLottie(_data, _replacements);
-		if (_lottie) {
-			//_externalInfo = media->externalLottieInfo();
+		_player = media->stickerTakePlayer(_data, _replacements);
+		if (_player) {
 			if (hasPremiumEffect() && !_premiumEffectPlayed) {
 				_premiumEffectPlayed = true;
 				_parent->delegate()->elementStartPremium(_parent, replacing);
 			}
-			lottieCreated();
+			playerCreated();
 		}
 	}
 }
 
 Sticker::~Sticker() {
-	if (_lottie || _dataMedia) {
-		if (_lottie) {
-			unloadLottie();
+	if (_player || _dataMedia) {
+		if (_player) {
+			unloadPlayer();
 		}
 		if (_dataMedia) {
 			_data->owner().keepAlive(base::take(_dataMedia));
@@ -105,29 +107,38 @@ bool Sticker::hasPremiumEffect() const {
 	return !_skipPremiumEffect && _data->isPremiumSticker();
 }
 
+bool Sticker::customEmojiPart() const {
+	return (_cachingTag != ChatHelpers::StickerLottieSize::MessageHistory);
+}
+
 bool Sticker::isEmojiSticker() const {
 	return (_parent->data()->media() == nullptr);
 }
 
 void Sticker::initSize() {
 	if (isEmojiSticker() || _diceIndex >= 0) {
-		_size = EmojiSize();
+		if (_giftBoxSticker) {
+			_size = st::msgServiceGiftBoxStickerSize;
+		} else {
+			_size = EmojiSize();
+		}
 		if (_diceIndex > 0) {
-			[[maybe_unused]] bool result = readyToDrawLottie();
+			[[maybe_unused]] bool result = readyToDrawAnimationFrame();
 		}
 	} else {
 		_size = Size(_data);
 	}
+	_size = DownscaledSize(_size, Size());
 }
 
-QSize Sticker::size() {
+QSize Sticker::countOptimalSize() {
 	if (_size.isEmpty()) {
 		initSize();
 	}
 	return _size;
 }
 
-bool Sticker::readyToDrawLottie() {
+bool Sticker::readyToDrawAnimationFrame() {
 	if (!_lastDiceFrame.isNull()) {
 		return true;
 	}
@@ -141,10 +152,10 @@ bool Sticker::readyToDrawLottie() {
 	const auto loaded = _dataMedia->loaded();
 	const auto waitingForPremium = hasPremiumEffect()
 		&& _dataMedia->videoThumbnailContent().isEmpty();
-	if (sticker->isLottie() && !_lottie && loaded && !waitingForPremium) {
-		setupLottie();
+	if (!_player && loaded && !waitingForPremium && sticker->isAnimated()) {
+		setupPlayer();
 	}
-	return (_lottie && _lottie->ready());
+	return ready();
 }
 
 QSize Sticker::Size() {
@@ -178,9 +189,13 @@ void Sticker::draw(
 		Painter &p,
 		const PaintContext &context,
 		const QRect &r) {
+	if (!customEmojiPart()) {
+		_parent->clearCustomEmojiRepaint();
+	}
+
 	ensureDataMediaCreated();
-	if (readyToDrawLottie()) {
-		paintLottie(p, context, r);
+	if (readyToDrawAnimationFrame()) {
+		paintAnimationFrame(p, context, r);
 	} else if (!_data->sticker()
 		|| (_data->sticker()->isLottie() && _replacements)
 		|| !paintPixmap(p, context, r)) {
@@ -192,28 +207,34 @@ ClickHandlerPtr Sticker::link() {
 	return _link;
 }
 
+bool Sticker::ready() const {
+	return _player && _player->ready();
+}
+
 DocumentData *Sticker::document() {
 	return _data;
 }
 
 void Sticker::stickerClearLoopPlayed() {
-	_lottieOncePlayed = false;
+	_oncePlayed = false;
 	_premiumEffectPlayed = false;
 }
 
-void Sticker::paintLottie(
+void Sticker::paintAnimationFrame(
 		Painter &p,
 		const PaintContext &context,
 		const QRect &r) {
-	auto request = Lottie::FrameRequest();
-	request.box = _size * cIntRetinaFactor();
-	if (context.selected() && !_nextLastDiceFrame) {
-		request.colored = context.st->msgStickerOverlay()->c;
-	}
-	request.mirrorHorizontal = mirrorHorizontal();
-	const auto frame = _lottie
-		? _lottie->frameInfo(request)
-		: Lottie::Animation::FrameInfo();
+	const auto colored = (context.selected() && !_nextLastDiceFrame)
+		? context.st->msgStickerOverlay()->c
+		: QColor(0, 0, 0, 0);
+	const auto frame = _player
+		? _player->frame(
+			_size,
+			colored,
+			mirrorHorizontal(),
+			context.now,
+			context.paused)
+		: StickerPlayer::FrameInfo();
 	if (_nextLastDiceFrame) {
 		_nextLastDiceFrame = false;
 		_lastDiceFrame = CacheDiceImage(_diceEmoji, _diceIndex, frame.image);
@@ -238,31 +259,27 @@ void Sticker::paintLottie(
 		return;
 	}
 
-	const auto count = _lottie->information().framesCount;
+	const auto count = _player->framesCount();
 	_frameIndex = frame.index;
 	_framesCount = count;
-	const auto paused = /*(_externalInfo.frame >= 0)
-		? (_frameIndex % _externalInfo.count >= _externalInfo.frame)
-		: */_parent->delegate()->elementIsGifPaused();
-	_nextLastDiceFrame = !paused
+	_nextLastDiceFrame = !context.paused
 		&& (_diceIndex > 0)
 		&& (_frameIndex + 2 == count);
 	const auto playOnce = (_diceIndex > 0)
 		? true
 		: (_diceIndex == 0)
 		? false
-		: (isEmojiSticker()
+		: ((!customEmojiPart() && isEmojiSticker())
 			|| !Core::App().settings().loopAnimatedStickers());
 	const auto lastDiceFrame = (_diceIndex > 0) && atTheEnd();
-	const auto switchToNext = /*(_externalInfo.frame >= 0)
-		|| */!playOnce
-		|| (!lastDiceFrame && (_frameIndex != 0 || !_lottieOncePlayed));
-	if (!paused
+	const auto switchToNext = !playOnce
+		|| (!lastDiceFrame && (_frameIndex != 0 || !_oncePlayed));
+	if (!context.paused
 		&& switchToNext
-		&& _lottie->markFrameShown()
+		&& _player->markFrameShown()
 		&& playOnce
-		&& !_lottieOncePlayed) {
-		_lottieOncePlayed = true;
+		&& !_oncePlayed) {
+		_oncePlayed = true;
 		_parent->delegate()->elementStartStickerLoop(_parent);
 	}
 	checkPremiumEffectStart();
@@ -405,10 +422,10 @@ void Sticker::refreshLink() {
 }
 
 void Sticker::emojiStickerClicked() {
-	if (_lottie) {
+	if (_player) {
 		_parent->delegate()->elementStartInteraction(_parent);
 	}
-	_lottieOncePlayed = false;
+	_oncePlayed = false;
 	_parent->history()->owner().requestViewRepaint(_parent);
 }
 
@@ -443,17 +460,37 @@ void Sticker::setDiceIndex(const QString &emoji, int index) {
 	_diceIndex = index;
 }
 
-void Sticker::setupLottie() {
+void Sticker::setCustomEmojiPart(
+		int size,
+		ChatHelpers::StickerLottieSize tag) {
+	_size = { size, size };
+	_cachingTag = tag;
+}
+
+void Sticker::setGiftBoxSticker(bool giftBoxSticker) {
+	_giftBoxSticker = giftBoxSticker;
+}
+
+void Sticker::setupPlayer() {
 	Expects(_dataMedia != nullptr);
 
-	_lottie = ChatHelpers::LottiePlayerFromDocument(
-		_dataMedia.get(),
-		_replacements,
-		ChatHelpers::StickerLottieSize::MessageHistory,
-		size() * style::DevicePixelRatio(),
-		Lottie::Quality::High);
+	if (_data->sticker()->isLottie()) {
+		_player = std::make_unique<LottiePlayer>(
+			ChatHelpers::LottiePlayerFromDocument(
+				_dataMedia.get(),
+				_replacements,
+				_cachingTag,
+				countOptimalSize() * style::DevicePixelRatio(),
+				Lottie::Quality::High));
+	} else if (_data->sticker()->isWebm()) {
+		_player = std::make_unique<WebmPlayer>(
+			_dataMedia->owner()->location(),
+			_dataMedia->bytes(),
+			countOptimalSize());
+	}
+
 	checkPremiumEffectStart();
-	lottieCreated();
+	playerCreated();
 }
 
 void Sticker::checkPremiumEffectStart() {
@@ -463,86 +500,43 @@ void Sticker::checkPremiumEffectStart() {
 	}
 }
 
-void Sticker::lottieCreated() {
-	Expects(_lottie != nullptr);
+void Sticker::playerCreated() {
+	Expects(_player != nullptr);
 
 	_parent->history()->owner().registerHeavyViewPart(_parent);
-
-	_lottie->updates(
-	) | rpl::start_with_next([=](Lottie::Update update) {
-		v::match(update.data, [&](const Lottie::Information &information) {
-			_parent->history()->owner().requestViewResize(_parent);
-			//markFramesTillExternal();
-		}, [&](const Lottie::DisplayFrameRequest &request) {
-			_parent->history()->owner().requestViewRepaint(_parent);
-		});
-	}, _lifetime);
+	_player->setRepaintCallback([=] { _parent->customEmojiRepaint(); });
 }
 
 bool Sticker::hasHeavyPart() const {
-	return _lottie || _dataMedia;
+	return _player || _dataMedia;
 }
 
 void Sticker::unloadHeavyPart() {
-	unloadLottie();
+	unloadPlayer();
 	_dataMedia = nullptr;
 }
 
-void Sticker::unloadLottie() {
-	if (!_lottie) {
+void Sticker::unloadPlayer() {
+	if (!_player) {
 		return;
 	}
 	if (_diceIndex > 0 && _lastDiceFrame.isNull()) {
 		_nextLastDiceFrame = false;
-		_lottieOncePlayed = false;
+		_oncePlayed = false;
 	}
-	_lottie = nullptr;
+	_player = nullptr;
 	if (hasPremiumEffect()) {
 		_parent->delegate()->elementCancelPremium(_parent);
 	}
 	_parent->checkHeavyPart();
 }
 
-std::unique_ptr<Lottie::SinglePlayer> Sticker::stickerTakeLottie(
+std::unique_ptr<StickerPlayer> Sticker::stickerTakePlayer(
 		not_null<DocumentData*> data,
 		const Lottie::ColorReplacements *replacements) {
 	return (data == _data && replacements == _replacements)
-		? std::move(_lottie)
+		? std::move(_player)
 		: nullptr;
 }
-
-//void Sticker::externalLottieProgressing(bool external) {
-//	_externalInfo = !external
-//		? ExternalLottieInfo{}
-//		: (_externalInfo.frame > 0)
-//		? _externalInfo
-//		: ExternalLottieInfo{ 0, 2 };
-//}
-//
-//bool Sticker::externalLottieTill(ExternalLottieInfo info) {
-//	if (_externalInfo.frame >= 0) {
-//		_externalInfo = info;
-//	}
-//	return markFramesTillExternal();
-//}
-//
-//ExternalLottieInfo Sticker::externalLottieInfo() const {
-//	return _externalInfo;
-//}
-//
-//bool Sticker::markFramesTillExternal() {
-//	if (_externalInfo.frame < 0 || !_lottie) {
-//		return true;
-//	} else if (!_lottie->ready()) {
-//		return false;
-//	}
-//	const auto till = _externalInfo.frame % _lottie->framesCount();
-//	while (_lottie->frameIndex() < till) {
-//		if (!_lottie->markFrameShown()) {
-//			return false;
-//		}
-//	}
-//	return true;
-//}
 
 } // namespace HistoryView

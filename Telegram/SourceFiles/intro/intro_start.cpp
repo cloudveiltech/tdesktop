@@ -24,7 +24,7 @@ StartWidget::StartWidget(
 	not_null<Data*> data)
 : Step(parent, account, data, true) {
 	setMouseTracking(true);
-	setTitleText(rpl::single(qsl("CloudVeil Messenger")));
+	setTitleText(rpl::single(u"CloudVeil Messenger"_q));
 	setDescriptionText(tr::lng_intro_about());
 	show();
 }

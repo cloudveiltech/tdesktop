@@ -21,7 +21,6 @@ class SessionController;
 } // namespace Window
 
 namespace Data {
-class CloudImageView;
 class PhotoMedia;
 } // namespace Data
 
@@ -55,13 +54,28 @@ protected:
 	void paintEvent(QPaintEvent *e) override;
 
 private:
-	struct Participant {
-		not_null<UserData*> user;
-		std::shared_ptr<Data::CloudImageView> userpic;
+	struct Participant;
+	struct ChatInvite {
+		QString title;
+		QString about;
+		PhotoData *photo = nullptr;
+		int participantsCount = 0;
+		std::vector<Participant> participants;
+		bool isPublic = false;
+		bool isChannel = false;
+		bool isMegagroup = false;
+		bool isBroadcast = false;
+		bool isRequestNeeded = false;
 	};
-	static std::vector<Participant> GetParticipants(
+	[[nodiscard]] static ChatInvite Parse(
 		not_null<Main::Session*> session,
 		const MTPDchatInvite &data);
+
+	ConfirmInviteBox(
+		not_null<Main::Session*> session,
+		ChatInvite &&invite,
+		ChannelData *invitePeekChannel,
+		Fn<void()> submit);
 
 	const not_null<Main::Session*> _session;
 

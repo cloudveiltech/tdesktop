@@ -29,11 +29,17 @@ class FlatLabel;
 template <typename Widget>
 class FadeWrapScaled;
 
+struct SeparatePanelArgs {
+	QWidget *parent = nullptr;
+	bool onAllSpaces = false;
+};
+
 class SeparatePanel final : public RpWidget {
 public:
-	explicit SeparatePanel(QWidget *parent = nullptr);
+	explicit SeparatePanel(SeparatePanelArgs &&args = {});
 
 	void setTitle(rpl::producer<QString> title);
+	void setTitleHeight(int height);
 	void setInnerSize(QSize size);
 	[[nodiscard]] QRect innerGeometry() const;
 
@@ -72,7 +78,7 @@ protected:
 
 private:
 	void initControls();
-	void initLayout();
+	void initLayout(const SeparatePanelArgs &args);
 	void initGeometry(QSize size);
 	void updateGeometry(QSize size);
 	void showControls();
@@ -83,8 +89,8 @@ private:
 
 	void updateTitleGeometry(int newWidth);
 	void updateTitlePosition();
-	void paintShadowBorder(Painter &p) const;
-	void paintOpaqueBorder(Painter &p) const;
+	void paintShadowBorder(QPainter &p) const;
+	void paintOpaqueBorder(QPainter &p) const;
 
 	void toggleOpacityAnimation(bool visible);
 	void finishAnimating();
@@ -105,6 +111,7 @@ private:
 	rpl::event_stream<> _userCloseRequests;
 	rpl::event_stream<> _closeEvents;
 
+	int _titleHeight = 0;
 	bool _hideOnDeactivate = false;
 	bool _useTransparency = true;
 	style::margins _padding;

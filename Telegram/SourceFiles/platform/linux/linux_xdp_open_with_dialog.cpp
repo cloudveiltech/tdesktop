@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/platform/base_platform_info.h"
 #include "base/platform/linux/base_linux_glibmm_helper.h"
 #include "base/platform/linux/base_linux_xdp_utilities.h"
+#include "base/platform/linux/base_linux_wayland_integration.h"
 #include "core/application.h"
 #include "window/window_controller.h"
 #include "base/random.h"
@@ -31,7 +32,7 @@ constexpr auto kPropertiesInterface = "org.freedesktop.DBus.Properties"_cs;
 bool ShowXDPOpenWithDialog(const QString &filepath) {
 	try {
 		const auto connection = Gio::DBus::Connection::get_sync(
-			Gio::DBus::BusType::BUS_TYPE_SESSION);
+			Gio::DBus::BusType::SESSION);
 
 		auto reply = connection->call_sync(
 			std::string(base::Platform::XDP::kObjectPath),
@@ -77,6 +78,17 @@ bool ShowXDPOpenWithDialog(const QString &filepath) {
 		const auto handleToken = Glib::ustring("tdesktop")
 			+ std::to_string(base::RandomValue<uint>());
 
+		const auto activationToken = []() -> Glib::ustring {
+			using base::Platform::WaylandIntegration;
+			if (const auto integration = WaylandIntegration::Instance()) {
+				if (const auto token = integration->activationToken()
+					; !token.isNull()) {
+					return token.toStdString();
+				}
+			}
+			return {};
+		}();
+
 		auto uniqueName = connection->get_unique_name();
 		uniqueName.erase(0, 1);
 		uniqueName.replace(uniqueName.find('.'), 1, 1, '_');
@@ -110,8 +122,6 @@ bool ShowXDPOpenWithDialog(const QString &filepath) {
 			}
 		});
 
-		const auto fdList = Gio::UnixFDList::create();
-		fdList->append(fd);
 		auto outFdList = Glib::RefPtr<Gio::UnixFDList>();
 
 		connection->call_sync(
@@ -120,7 +130,7 @@ bool ShowXDPOpenWithDialog(const QString &filepath) {
 			"OpenFile",
 			Glib::VariantContainerBase::create_tuple({
 				Glib::Variant<Glib::ustring>::create(parentWindowId),
-				Glib::wrap(g_variant_new_handle(0)),
+				Glib::Variant<int>::create_handle(0),
 				Glib::Variant<std::map<
 					Glib::ustring,
 					Glib::VariantBase
@@ -130,12 +140,16 @@ bool ShowXDPOpenWithDialog(const QString &filepath) {
 						Glib::Variant<Glib::ustring>::create(handleToken)
 					},
 					{
+						"activation_token",
+						Glib::Variant<Glib::ustring>::create(activationToken)
+					},
+					{
 						"ask",
 						Glib::Variant<bool>::create(true)
 					},
 				}),
 			}),
-			fdList,
+			Gio::UnixFDList::create(std::vector<int>{ fd }),
 			outFdList,
 			std::string(base::Platform::XDP::kService));
 

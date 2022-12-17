@@ -18,6 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/media/history_view_media_common.h"
 #include "media/clip/media_clip_reader.h"
 #include "ui/effects/path_shift_gradient.h"
+#include "ui/painter.h"
 #include "main/main_session.h"
 
 namespace ChatHelpers {
@@ -26,6 +27,10 @@ namespace {
 constexpr auto kDontCacheLottieAfterArea = 512 * 512;
 
 } // namespace
+
+uint8 LottieCacheKeyShift(uint8 replacementsTag, StickerLottieSize sizeTag) {
+	return ((replacementsTag << 4) & 0xF0) | (uint8(sizeTag) & 0x0F);
+}
 
 template <typename Method>
 auto LottieCachedFromContent(
@@ -44,7 +49,7 @@ auto LottieCachedFromContent(
 			key,
 			std::move(handler));
 	};
-	const auto weak = base::make_weak(session.get());
+	const auto weak = base::make_weak(session);
 	const auto put = [=](QByteArray &&cached) {
 		crl::on_main(weak, [=, data = std::move(cached)]() mutable {
 			weak->data().cacheBigFile().put(key, std::move(data));
@@ -115,8 +120,9 @@ std::unique_ptr<Lottie::SinglePlayer> LottiePlayerFromDocument(
 			replacements,
 			std::move(renderer));
 	};
-	const auto tag = replacements ? replacements->tag : uint8(0);
-	const auto keyShift = ((tag << 4) & 0xF0) | (uint8(sizeTag) & 0x0F);
+	const auto keyShift = LottieCacheKeyShift(
+		replacements ? replacements->tag : uint8(0),
+		sizeTag);
 	return LottieFromDocument(method, media, uint8(keyShift), box);
 }
 

@@ -7,10 +7,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_service.h"
 
+#include "chat_helpers/stickers_gift_box_pack.h"
 #include "lang/lang_keys.h"
 #include "mainwidget.h"
 #include "main/main_session.h"
 #include "main/main_domain.h" // Core::App().domain().activate().
+#include "menu/menu_ttl_validator.h"
 #include "apiwrap.h"
 #include "history/history.h"
 #include "history/view/media/history_view_invoice.h"
@@ -18,8 +20,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item_components.h"
 #include "history/view/history_view_service_message.h"
 #include "history/view/history_view_item_preview.h"
-#include "history/view/history_view_spoiler_click_handler.h"
 #include "data/data_folder.h"
+#include "data/data_forum.h"
+#include "data/data_forum_topic.h"
 #include "data/data_session.h"
 #include "data/data_media_types.h"
 #include "data/data_game.h"
@@ -28,6 +31,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_chat.h"
 #include "data/data_changes.h"
 #include "data/data_group_call.h" // Data::GroupCall::id().
+#include "data/stickers/data_custom_emoji.h"
 #include "core/application.h"
 #include "core/click_handler_types.h"
 #include "base/unixtime.h"
@@ -39,7 +43,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_shared_media.h"
 #include "payments/payments_checkout_process.h" // CheckoutProcess::Start.
 #include "ui/text/format_values.h"
-#include "ui/text/text_options.h"
 #include "ui/text/text_utilities.h"
 #include "cloudveil/GlobalSecuritySettings.h"
 
@@ -126,7 +129,7 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 					lt_from,
 					fromLinkText(), // Link 1.
 					lt_user,
-					Ui::Text::Link(u->name, 2), // Link 2.
+					Ui::Text::Link(u->name(), 2), // Link 2.
 					Ui::Text::WithEntities);
 			}
 		} else if (users.isEmpty()) {
@@ -136,7 +139,7 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 				lt_from,
 				fromLinkText(), // Link 1.
 				lt_user,
-				{ .text = qsl("somebody") },
+				{ .text = u"somebody"_q },
 				Ui::Text::WithEntities);
 		} else {
 			result.links.push_back(fromLink());
@@ -144,7 +147,7 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 				auto user = history()->owner().user(users[i].v);
 				result.links.push_back(user->createOpenLink());
 
-				auto linkText = Ui::Text::Link(user->name, 2 + i);
+				auto linkText = Ui::Text::Link(user->name(), 2 + i);
 				if (i == 0) {
 					result.text = linkText;
 				} else if (i + 1 == l) {
@@ -254,7 +257,7 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 				lt_from,
 				fromLinkText(), // Link 1.
 				lt_user,
-				Ui::Text::Link(user->name, 2),  // Link 2.
+				Ui::Text::Link(user->name(), 2),  // Link 2.
 				Ui::Text::WithEntities);
 		}
 		return result;
@@ -327,7 +330,7 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 		result.text = tr::lng_action_bot_allowed_from_domain(
 			tr::now,
 			lt_domain,
-			Ui::Text::Link(domain, qstr("http://") + domain),
+			Ui::Text::Link(domain, u"http://"_q + domain),
 			Ui::Text::WithEntities);
 		return result;
 	};
@@ -365,7 +368,7 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 		result.text = tr::lng_action_secure_values_sent(
 			tr::now,
 			lt_user,
-			Ui::Text::Link(history()->peer->name, QString()), // Link 1.
+			Ui::Text::Link(history()->peer->name(), QString()), // Link 1.
 			lt_documents,
 			{ .text = documents.join(", ") },
 			Ui::Text::WithEntities);
@@ -413,14 +416,14 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 					lt_distance,
 					{ .text = distance },
 					lt_user,
-					Ui::Text::Link(toPeer->name, QString()), // Link 1.
+					Ui::Text::Link(toPeer->name(), QString()), // Link 1.
 					Ui::Text::WithEntities);
 			} else if (toId == selfId) {
 				result.links.push_back(fromPeer->createOpenLink());
 				return tr::lng_action_proximity_reached_you(
 					tr::now,
 					lt_from,
-					Ui::Text::Link(fromPeer->name, QString()), // Link 1.
+					Ui::Text::Link(fromPeer->name(), QString()), // Link 1.
 					lt_distance,
 					{ .text = distance },
 					Ui::Text::WithEntities);
@@ -430,11 +433,11 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 				return tr::lng_action_proximity_reached(
 					tr::now,
 					lt_from,
-					Ui::Text::Link(fromPeer->name, 1), // Link 1.
+					Ui::Text::Link(fromPeer->name(), 1), // Link 1.
 					lt_distance,
 					{ .text = distance },
 					lt_user,
-					Ui::Text::Link(toPeer->name, 2), // Link 2.
+					Ui::Text::Link(toPeer->name(), 2), // Link 2.
 					Ui::Text::WithEntities);
 			}
 		}();
@@ -510,6 +513,20 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 		const auto duration = (period == 5)
 			? u"5 seconds"_q
 			: Ui::FormatTTL(period);
+		if (const auto from = action.vauto_setting_from()) {
+			if (const auto peer = _from->owner().peer(peerFromUser(*from))) {
+				if (!peer->isSelf() && period) {
+					result.text = tr::lng_action_ttl_global(
+						tr::now,
+						lt_from,
+						fromLinkText(), // Link 1.
+						lt_duration,
+						{ .text = duration },
+						Ui::Text::WithEntities);
+					return result;
+				}
+			}
+		}
 		if (isPost()) {
 			if (!period) {
 				result.text = tr::lng_action_ttl_removed_channel(
@@ -613,8 +630,102 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 		return result;
 	};
 
-	const auto messageText = action.match([&](
-		const MTPDmessageActionChatAddUser &data) {
+	auto prepareGiftPremium = [&](
+			const MTPDmessageActionGiftPremium &action) {
+		auto result = PreparedText{};
+		const auto isSelf = (_from->id == _from->session().userPeerId());
+		const auto peer = isSelf ? history()->peer : _from;
+		history()->session().giftBoxStickersPacks().load();
+		const auto amount = action.vamount().v;
+		const auto currency = qs(action.vcurrency());
+		result.links.push_back(peer->createOpenLink());
+		result.text = (isSelf
+			? tr::lng_action_gift_received_me
+			: tr::lng_action_gift_received)(
+				tr::now,
+				lt_user,
+				Ui::Text::Link(peer->name(), 1), // Link 1.
+				lt_cost,
+				{ Ui::FillAmountAndCurrency(amount, currency) },
+				Ui::Text::WithEntities);
+		return result;
+	};
+
+	auto prepareTopicCreate = [&](const MTPDmessageActionTopicCreate &action) {
+		auto result = PreparedText{};
+		const auto topicUrl = u"internal:url:https://t.me/c/%1/%2"_q
+			.arg(peerToChannel(history()->peer->id).bare)
+			.arg(id.bare);
+		result.text = tr::lng_action_topic_created(
+			tr::now,
+			lt_topic,
+			Ui::Text::Link(
+				Data::ForumTopicIconWithTitle(
+					id,
+					action.vicon_emoji_id().value_or_empty(),
+					qs(action.vtitle())),
+				topicUrl),
+			Ui::Text::WithEntities);
+		return result;
+	};
+
+	auto prepareTopicEdit = [&](const MTPDmessageActionTopicEdit &action) {
+		auto result = PreparedText{};
+		if (const auto closed = action.vclosed()) {
+			result.text = { mtpIsTrue(*closed)
+				? tr::lng_action_topic_closed_inside(tr::now)
+				: tr::lng_action_topic_reopened_inside(tr::now) };
+		} else if (const auto hidden = action.vhidden()) {
+			result.text = { mtpIsTrue(*hidden)
+				? tr::lng_action_topic_hidden_inside(tr::now)
+				: tr::lng_action_topic_unhidden_inside(tr::now) };
+		} else if (!action.vtitle()) {
+			if (const auto icon = action.vicon_emoji_id()) {
+				if (const auto iconId = icon->v) {
+					result.links.push_back(fromLink());
+					result.text = tr::lng_action_topic_icon_changed(
+						tr::now,
+						lt_from,
+						fromLinkText(), // Link 1.
+						lt_link,
+						{ tr::lng_action_topic_placeholder(tr::now) },
+						lt_emoji,
+						Data::SingleCustomEmoji(iconId),
+						Ui::Text::WithEntities);
+				} else {
+					result.links.push_back(fromLink());
+					result.text = tr::lng_action_topic_icon_removed(
+						tr::now,
+						lt_from,
+						fromLinkText(), // Link 1.
+						lt_link,
+						{ tr::lng_action_topic_placeholder(tr::now) },
+						Ui::Text::WithEntities);
+				}
+			}
+		} else {
+			result.links.push_back(fromLink());
+			result.text = tr::lng_action_topic_renamed(
+				tr::now,
+				lt_from,
+				fromLinkText(), // Link 1.
+				lt_link,
+				{ tr::lng_action_topic_placeholder(tr::now) },
+				lt_title,
+				Data::ForumTopicIconWithTitle(
+					topicRootId(),
+					action.vicon_emoji_id().value_or_empty(),
+					qs(*action.vtitle())),
+				Ui::Text::WithEntities);
+		}
+		if (result.text.empty()) {
+			result.text = { tr::lng_message_empty(tr::now) };
+		}
+		return result;
+	};
+
+	setServiceText(action.match([&](
+			const MTPDmessageActionChatAddUser &data) {
 		return prepareChatAddUserText(data);
 	}, [&](const MTPDmessageActionChatJoinedByLink &data) {
 		return prepareChatJoinedByLink(data);
@@ -658,14 +769,10 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 		return prepareProximityReached(data);
 	}, [](const MTPDmessageActionPaymentSentMe &) {
 		LOG(("API Error: messageActionPaymentSentMe received."));
-		return PreparedText{
-			tr::lng_message_empty(tr::now, Ui::Text::WithEntities)
-		};
+		return PreparedText{ { tr::lng_message_empty(tr::now) } };
 	}, [](const MTPDmessageActionSecureValuesSentMe &) {
 		LOG(("API Error: messageActionSecureValuesSentMe received."));
-		return PreparedText{
-			tr::lng_message_empty(tr::now, Ui::Text::WithEntities)
-		};
+		return PreparedText{ { tr::lng_message_empty(tr::now) } };
 	}, [&](const MTPDmessageActionGroupCall &data) {
 		return prepareGroupCall(data);
 	}, [&](const MTPDmessageActionInviteToGroupCall &data) {
@@ -680,18 +787,18 @@ void HistoryService::setMessageByAction(const MTPmessageAction &action) {
 		return prepareChatJoinedByRequest(data);
 	}, [&](const MTPDmessageActionWebViewDataSent &data) {
 		return prepareWebViewDataSent(data);
+	}, [&](const MTPDmessageActionGiftPremium &data) {
+		return prepareGiftPremium(data);
+	}, [&](const MTPDmessageActionTopicCreate &data) {
+		return prepareTopicCreate(data);
+	}, [&](const MTPDmessageActionTopicEdit &data) {
+		return prepareTopicEdit(data);
 	}, [&](const MTPDmessageActionWebViewDataSentMe &data) {
 		LOG(("API Error: messageActionWebViewDataSentMe received."));
-		return PreparedText{
-			tr::lng_message_empty(tr::now, Ui::Text::WithEntities)
-		};
+		return PreparedText{ { tr::lng_message_empty(tr::now) } };
 	}, [](const MTPDmessageActionEmpty &) {
-		return PreparedText{
-			tr::lng_message_empty(tr::now, Ui::Text::WithEntities)
-		};
-	});
-
-	setServiceText(messageText);
+		return PreparedText{ { tr::lng_message_empty(tr::now) } };
+	}));
 
 	// Additional information.
 	applyAction(action);
@@ -723,15 +830,16 @@ void HistoryService::applyAction(const MTPMessageAction &action) {
 					return;
 				}
 				//CloudVeil end
+
 				_media = std::make_unique<Data::MediaPhoto>(
 					this,
 					history()->peer,
 					history()->owner().processPhoto(photo));
-				}, [](const MTPDphotoEmpty&) {
-			});
+
+				}, [](const MTPDphotoEmpty&) {				
+				});
 		}
 		//CloudVeil end
-
 	}, [&](const MTPDmessageActionChatCreate &) {
 		_flags |= MessageFlag::IsGroupEssential;
 	}, [&](const MTPDmessageActionChannelCreate &) {
@@ -748,6 +856,11 @@ void HistoryService::applyAction(const MTPMessageAction &action) {
 				channel->mgInfo->joinedMessageFound = true;
 			}
 		}
+	}, [&](const MTPDmessageActionGiftPremium &data) {
+		_media = std::make_unique<Data::MediaGiftBox>(
+			this,
+			_from,
+			data.vmonths().v);
 	}, [](const auto &) {
 	});
 }
@@ -774,7 +887,8 @@ bool HistoryService::updateDependent(bool force) {
 			(dependent->peerId
 				? history()->owner().peer(dependent->peerId)
 				: history()->peer),
-			dependent->msgId);
+			dependent->msgId,
+			fullId());
 	}
 	auto gotDependencyItem = false;
 	if (!dependent->msg) {
@@ -834,7 +948,7 @@ HistoryService::PreparedText HistoryService::prepareInvitedToCallText(
 			lt_from,
 			fromLinkText(), // Link 1.
 			lt_user,
-			Ui::Text::Link(user->name, ++linkIndex), // Link N.
+			Ui::Text::Link(user->name(), ++linkIndex), // Link N.
 			lt_chat,
 			chatText,
 			Ui::Text::WithEntities);
@@ -844,7 +958,7 @@ HistoryService::PreparedText HistoryService::prepareInvitedToCallText(
 			lt_from,
 			fromLinkText(), // Link 1.
 			lt_user,
-			{ .text = qsl("somebody") },
+			{ .text = u"somebody"_q },
 			lt_chat,
 			chatText,
 			Ui::Text::WithEntities);
@@ -853,7 +967,7 @@ HistoryService::PreparedText HistoryService::prepareInvitedToCallText(
 			auto user = owner->user(users[i].v);
 			result.links.push_back(user->createOpenLink());
 
-			auto linkText = Ui::Text::Link(user->name, ++linkIndex);
+			auto linkText = Ui::Text::Link(user->name(), ++linkIndex);
 			if (i == 0) {
 				result.text = linkText;
 			} else if (i + 1 == l) {
@@ -926,12 +1040,16 @@ HistoryService::PreparedText HistoryService::preparePinnedText() {
 				original = Ui::Text::Mid(original, 0, cutAt).append(
 					Ui::kQEllipsis);
 			}
-			original = Ui::Text::Wrapped(
+			original = Ui::Text::Link(
 				Ui::Text::Filtered(
 					std::move(original),
-					{ EntityType::Spoiler, EntityType::StrikeOut }),
-				EntityType::CustomUrl,
-				Ui::Text::Link({}, 2).entities.front().data());
+					{
+						EntityType::Spoiler,
+						EntityType::StrikeOut,
+						EntityType::Italic,
+						EntityType::CustomEmoji,
+					}),
+				2);
 			result.text = tr::lng_action_pinned_message(
 				tr::now,
 				lt_from,
@@ -1073,7 +1191,7 @@ HistoryService::PreparedText HistoryService::preparePaymentSentText() {
 					lt_amount,
 					{ .text = payment->amount },
 					lt_user,
-					{ .text = history()->peer->name },
+					{ .text = history()->peer->name() },
 					Ui::Text::WithEntities);
 		}
 	} else {
@@ -1084,7 +1202,7 @@ HistoryService::PreparedText HistoryService::preparePaymentSentText() {
 				lt_amount,
 				{ .text = payment->amount },
 				lt_user,
-				{ .text = history()->peer->name },
+				{ .text = history()->peer->name() },
 				lt_invoice,
 				invoiceTitle,
 				Ui::Text::WithEntities);
@@ -1125,7 +1243,7 @@ HistoryService::PreparedText HistoryService::prepareCallScheduledText(
 				Ui::Text::WithEntities);
 		}
 	};
-	const auto time = scheduled.time().toString(cTimeFormat());
+	const auto time = QLocale().toString(scheduled.time(), cTimeFormat());
 	const auto prepareGeneric = [&] {
 		prepareWithDate(tr::lng_group_call_starts_date(
 			tr::now,
@@ -1194,11 +1312,11 @@ HistoryService::HistoryService(
 	MsgId id,
 	MessageFlags flags,
 	TimeId date,
-	const PreparedText &message,
+	PreparedText &&message,
 	PeerId from,
 	PhotoData *photo)
 : HistoryItem(history, id, flags, date, from) {
-	setServiceText(message);
+	setServiceText(std::move(message));
 	if (photo) {
 		_media = std::make_unique<Data::MediaPhoto>(
 			this,
@@ -1231,13 +1349,56 @@ ItemPreview HistoryService::toPreview(ToPreviewOptions options) const {
 
 TextWithEntities HistoryService::inReplyText() const {
 	auto result = HistoryService::notificationText();
-	const auto &name = author()->name;
+	const auto &name = author()->name();
 	TextUtilities::Trim(result);
 	if (result.text.startsWith(name)) {
 		result = Ui::Text::Mid(result, name.size());
 		TextUtilities::Trim(result);
 	}
 	return Ui::Text::Wrapped(result, EntityType::PlainLink);
+}
+
+MsgId HistoryService::replyToId() const {
+	return 0; // Don't render replies info in service, only handle threads.
+}
+
+MsgId HistoryService::replyToTop() const {
+	if (const auto data = GetDependentData()) {
+		return data->topId;
+	}
+	return 0;
+}
+
+MsgId HistoryService::topicRootId() const {
+	if (const auto data = GetDependentData()
+		; data && data->topicPost && data->topId) {
+		return data->topId;
+	} else if (const auto info = Get<HistoryServiceTopicInfo>()) {
+		if (info->created()) {
+			return id;
+		}
+	}
+	return Data::ForumTopic::kGeneralId;
+}
+
+void HistoryService::setReplyFields(
+		MsgId replyTo,
+		MsgId replyToTop,
+		bool isForumPost) {
+	const auto data = GetDependentData();
+	if (!data
+		|| (data->topId == replyToTop)
+		|| IsServerMsgId(data->topId)
+		|| isScheduled()) {
+		return;
+	}
+	data->topId = replyToTop;
+	if (isForumPost) {
+		data->topicPost = true;
+	}
+	if (const auto topic = this->topic()) {
+		topic->maybeSetLastMessage(this);
+	}
 }
 
 std::unique_ptr<HistoryView::Element> HistoryService::createView(
@@ -1247,30 +1408,20 @@ std::unique_ptr<HistoryView::Element> HistoryService::createView(
 }
 
 TextWithEntities HistoryService::fromLinkText() const {
-	return Ui::Text::Link(_from->name, 1);
+	return Ui::Text::Link(_from->name(), 1);
 }
 
 ClickHandlerPtr HistoryService::fromLink() const {
 	return _from->createOpenLink();
 }
 
-void HistoryService::setServiceText(const PreparedText &prepared) {
-	_text.setMarkedText(
-		st::serviceTextStyle,
-		prepared.text,
-		Ui::ItemTextServiceOptions());
-	HistoryView::FillTextWithAnimatedSpoilers(_text);
-	auto linkIndex = 0;
-	for (const auto &link : prepared.links) {
-		// Link indices start with 1.
-		_text.setLink(++linkIndex, link);
+void HistoryService::setServiceText(PreparedText &&prepared) {
+	const auto had = !_text.empty();
+	_text = std::move(prepared.text);
+	_textLinks = std::move(prepared.links);
+	if (had) {
+		history()->owner().requestItemTextRefresh(this);
 	}
-	_textWidth = -1;
-	_textHeight = 0;
-}
-
-void HistoryService::hideSpoilers() {
-	HistoryView::HideSpoilers(_text);
 }
 
 void HistoryService::markMediaAsReadHook() {
@@ -1372,13 +1523,48 @@ void HistoryService::createFromMtp(const MTPDmessage &message) {
 }
 
 void HistoryService::createFromMtp(const MTPDmessageService &message) {
-	const auto type = message.vaction().type();
-	if (type == mtpc_messageActionGameScore) {
-		const auto &data = message.vaction().c_messageActionGameScore();
+	const auto &action = message.vaction();
+	const auto type = action.type();
+	if (type == mtpc_messageActionPinMessage) {
+		UpdateComponents(HistoryServicePinned::Bit());
+	} else if (type == mtpc_messageActionTopicCreate
+		|| type == mtpc_messageActionTopicEdit) {
+		UpdateComponents(HistoryServiceTopicInfo::Bit());
+		const auto info = Get<HistoryServiceTopicInfo>();
+		info->topicPost = true;
+		if (type == mtpc_messageActionTopicEdit) {
+			const auto &data = action.c_messageActionTopicEdit();
+			if (const auto title = data.vtitle()) {
+				info->title = qs(*title);
+				info->renamed = true;
+			}
+			if (const auto icon = data.vicon_emoji_id()) {
+				info->iconId = icon->v;
+				info->reiconed = true;
+			}
+			if (const auto closed = data.vclosed()) {
+				info->closed = mtpIsTrue(*closed);
+				info->reopened = !info->closed;
+			}
+			if (const auto hidden = data.vhidden()) {
+				info->hidden = mtpIsTrue(*hidden);
+				info->unhidden = !info->hidden;
+			}
+		} else {
+			const auto &data = action.c_messageActionTopicCreate();
+			info->title = qs(data.vtitle());
+			info->iconId = data.vicon_emoji_id().value_or_empty();
+		}
+	} else if (type == mtpc_messageActionSetChatTheme) {
+		setupChatThemeChange();
+	} else if (type == mtpc_messageActionSetMessagesTTL) {
+		setupTTLChange();
+	} else if (type == mtpc_messageActionGameScore) {
+		const auto &data = action.c_messageActionGameScore();
 		UpdateComponents(HistoryServiceGameScore::Bit());
 		Get<HistoryServiceGameScore>()->score = data.vscore().v;
 	} else if (type == mtpc_messageActionPaymentSent) {
-		const auto &data = message.vaction().c_messageActionPaymentSent();
+		const auto &data = action.c_messageActionPaymentSent();
 		UpdateComponents(HistoryServicePayment::Bit());
 		const auto amount = data.vtotal_amount().v;
 		const auto currency = qs(data.vcurrency());
@@ -1405,10 +1591,10 @@ void HistoryService::createFromMtp(const MTPDmessageService &message) {
 		|| type == mtpc_messageActionGroupCallScheduled) {
 		const auto started = (type == mtpc_messageActionGroupCall);
 		const auto &callData = started
-			? message.vaction().c_messageActionGroupCall().vcall()
-			: message.vaction().c_messageActionGroupCallScheduled().vcall();
+			? action.c_messageActionGroupCall().vcall()
+			: action.c_messageActionGroupCallScheduled().vcall();
 		const auto duration = started
-			? message.vaction().c_messageActionGroupCall().vduration()
+			? action.c_messageActionGroupCall().vduration()
 			: tl::conditional<MTPint>();
 		if (duration) {
 			RemoveComponents(HistoryServiceOngoingCall::Bit());
@@ -1419,7 +1605,7 @@ void HistoryService::createFromMtp(const MTPDmessageService &message) {
 			call->link = GroupCallClickHandler(history()->peer, call->id);
 		}
 	} else if (type == mtpc_messageActionInviteToGroupCall) {
-		const auto &data = message.vaction().c_messageActionInviteToGroupCall();
+		const auto &data = action.c_messageActionInviteToGroupCall();
 		const auto id = CallIdFromInput(data.vcall());
 		const auto peer = history()->peer;
 		const auto has = PeerHasThisCall(peer, id);
@@ -1452,14 +1638,15 @@ void HistoryService::createFromMtp(const MTPDmessageService &message) {
 			const auto peerId = data.vreply_to_peer_id()
 				? peerFromMTP(*data.vreply_to_peer_id())
 				: history()->peer->id;
-			if (message.vaction().type() == mtpc_messageActionPinMessage) {
-				UpdateComponents(HistoryServicePinned::Bit());
-			}
 			if (const auto dependent = GetDependentData()) {
 				dependent->peerId = (peerId != history()->peer->id)
 					? peerId
 					: 0;
-				dependent->msgId = data.vreply_to_msg_id().v;
+				const auto id = data.vreply_to_msg_id().v;
+				dependent->msgId = id;
+				dependent->topId = data.vreply_to_top_id().value_or(id);
+				dependent->topicPost = data.is_forum_topic()
+					|| Has<HistoryServiceTopicInfo>();
 				if (!updateDependent()) {
 					RequestDependentMessageData(
 						this,
@@ -1469,7 +1656,11 @@ void HistoryService::createFromMtp(const MTPDmessageService &message) {
 			}
 		});
 	}
-	setMessageByAction(message.vaction());
+	setMessageByAction(action);
+}
+
+const std::vector<ClickHandlerPtr> &HistoryService::customTextLinks() const {
+	return _textLinks;
 }
 
 void HistoryService::applyEdition(const MTPDmessageService &message) {
@@ -1491,8 +1682,6 @@ void HistoryService::removeMedia() {
 	if (!_media) return;
 
 	_media.reset();
-	_textWidth = -1;
-	_textHeight = 0;
 	history()->owner().requestItemResize(this);
 }
 
@@ -1518,7 +1707,7 @@ void HistoryService::updateDependentText() {
 }
 
 void HistoryService::updateText(PreparedText &&text) {
-	setServiceText(text);
+	setServiceText(std::move(text));
 	history()->owner().requestItemResize(this);
 	invalidateChatListEntry();
 	history()->owner().updateDependentMessages(this);
@@ -1534,6 +1723,42 @@ void HistoryService::clearDependency() {
 			dependent->msgId = 0;
 		}
 	}
+}
+
+void HistoryService::setupChatThemeChange() {
+	if (const auto user = history()->peer->asUser()) {
+		auto link = std::make_shared<LambdaClickHandler>([=](
+				ClickContext context) {
+			const auto my = context.other.value<ClickHandlerContext>();
+			if (const auto controller = my.sessionWindow.get()) {
+				controller->toggleChooseChatTheme(user);
+			}
+		});
+
+		UpdateComponents(HistoryServiceChatThemeChange::Bit());
+		Get<HistoryServiceChatThemeChange>()->link = std::move(link);
+	} else {
+		RemoveComponents(HistoryServiceChatThemeChange::Bit());
+	}
+}
+
+void HistoryService::setupTTLChange() {
+	const auto peer = history()->peer;
+	auto link = std::make_shared<LambdaClickHandler>([=](
+			ClickContext context) {
+		const auto my = context.other.value<ClickHandlerContext>();
+		if (const auto controller = my.sessionWindow.get()) {
+			const auto validator = TTLMenu::TTLValidator(
+				std::make_shared<Window::Show>(controller),
+				peer);
+			if (validator.can()) {
+				validator.showBox();
+			}
+		}
+	});
+
+	UpdateComponents(HistoryServiceTTLChange::Bit());
+	Get<HistoryServiceTTLChange>()->link = std::move(link);
 }
 
 void HistoryService::dependencyItemRemoved(HistoryItem *dependency) {
@@ -1558,7 +1783,7 @@ HistoryService::PreparedText GenerateJoinedText(
 			: tr::lng_action_add_you)(
 				tr::now,
 				lt_from,
-				Ui::Text::Link(inviter->name, QString()),
+				Ui::Text::Link(inviter->name(), QString()),
 				Ui::Text::WithEntities);
 		return result;
 	} else if (history->peer->isMegagroup()) {
@@ -1573,7 +1798,7 @@ HistoryService::PreparedText GenerateJoinedText(
 		result.text = tr::lng_action_user_joined(
 			tr::now,
 			lt_from,
-			Ui::Text::Link(self->name, QString()),
+			Ui::Text::Link(self->name(), QString()),
 			Ui::Text::WithEntities);
 		return result;
 	}

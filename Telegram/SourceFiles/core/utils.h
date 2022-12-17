@@ -17,9 +17,19 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <crl/crl_time.h>
 #include <QtCore/QReadWriteLock>
 #include <QtCore/QRegularExpression>
+#include <QtCore/QMimeData>
 #include <QtNetwork/QNetworkProxy>
 #include <cmath>
 #include <set>
+#include <filesystem>
+
+#if __has_include(<kurlmimedata.h>)
+#include <kurlmimedata.h>
+#endif
+
+#if __has_include(<ksandbox.h>)
+#include <ksandbox.h>
+#endif
 
 #define qsl(s) QStringLiteral(s)
 
@@ -28,6 +38,40 @@ namespace base {
 template <typename Value, typename From, typename Till>
 inline bool in_range(Value &&value, From &&from, Till &&till) {
 	return (value >= from) && (value < till);
+}
+
+#if __has_include(<kurlmimedata.h>)
+inline QList<QUrl> GetMimeUrls(const QMimeData *data) {
+	if (!data->hasUrls()) {
+		return {};
+	}
+
+	return KUrlMimeData::urlsFromMimeData(
+		data,
+		KUrlMimeData::PreferLocalUrls);
+}
+#endif
+
+#if __has_include(<ksandbox.h>)
+inline QString IconName() {
+	static const auto Result = KSandbox::isFlatpak()
+		? qEnvironmentVariable("FLATPAK_ID")
+		: u"telegram"_q;
+	return Result;
+}
+#endif
+
+inline bool CanReadDirectory(const QString &path) {
+#ifndef Q_OS_MAC // directory_iterator since 10.15
+	try {
+		std::filesystem::directory_iterator(path.toStdString());
+		return true;
+	} catch (...) {
+		return false;
+	}
+#else
+	Unexpected("Not implemented.");
+#endif
 }
 
 } // namespace base

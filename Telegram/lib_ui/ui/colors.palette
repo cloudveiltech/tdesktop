@@ -245,6 +245,7 @@ emojiPanHeaderFg: windowSubTextFg; // emoji panel section header text
 emojiPanHeaderBg: #fffffff2 | emojiPanBg; // emoji panel section header background
 emojiIconFg: #999999; // emoji category icon
 emojiIconFgActive: windowBgActive; // active emoji category icon
+emojiSubIconFgActive: #666666 | windowBoldFg; // active emoji subcategory icon
 stickerPanDeleteBg: #000000ff; // delete X button background for custom sent stickers in stickers panel (legacy)
 stickerPanDeleteFg: windowFgActive; // delete X button icon for custom sent stickers in stickers panel (legacy)
 stickerPreviewBg: #ffffffb0; // sticker and GIF preview background (when you press and hold on a sticker)
@@ -285,31 +286,41 @@ historyForwardChooseFg: windowFgActive; // forwarding messages in a large window
 
 historyPeer1NameFg: #c03d33; // red group member name
 historyPeer1NameFgSelected: historyPeer1NameFg; // red group member name in a selected message
-historyPeer1UserpicBg: #e17076; // red userpic background
+historyPeer1UserpicBg: #ff845e; // red userpic background
 historyPeer2NameFg: #4fad2d; // green group member name
 historyPeer2NameFgSelected: historyPeer2NameFg; // green group member name in a selected message
-historyPeer2UserpicBg: #7bc862; // green userpic background
-historyPeer3NameFg: #d09306; // yellow group member name
-historyPeer3NameFgSelected: historyPeer3NameFg; // yellow group member name in a selected message
-historyPeer3UserpicBg: #e5ca77; // yellow userpic background
+historyPeer2UserpicBg: #9ad164; // green userpic background
+historyPeer3NameFg: #d09306; // yellow group member name (actually unused)
+historyPeer3NameFgSelected: historyPeer3NameFg; // yellow group member name in a selected message (actually unused)
+historyPeer3UserpicBg: #e5ca77; // yellow userpic background (actually unused)
 historyPeer4NameFg: windowActiveTextFg; // blue group member name
 historyPeer4NameFgSelected: historyPeer4NameFg; // blue group member name in a selected message
-historyPeer4UserpicBg: #65aadd; // blue userpic background
+historyPeer4UserpicBg: #5caffa; // blue userpic background
 historyPeer5NameFg: #8544d6; // purple group member name
 historyPeer5NameFgSelected: historyPeer5NameFg; // purple group member name in a selected message
-historyPeer5UserpicBg: #a695e7; // purple userpic background
+historyPeer5UserpicBg: #b694f9; // purple userpic background
 historyPeer6NameFg: #cd4073; // pink group member name
 historyPeer6NameFgSelected: historyPeer6NameFg; // pink group member name in a selected message
-historyPeer6UserpicBg: #ee7aae; // pink userpic background
+historyPeer6UserpicBg: #ff8aac; // pink userpic background
 historyPeer7NameFg: #2996ad; // sea group member name
 historyPeer7NameFgSelected: historyPeer7NameFg; // sea group member name in a selected message
-historyPeer7UserpicBg: #6ec9cb; // sea userpic background
+historyPeer7UserpicBg: #5bcbe3; // sea userpic background
 historyPeer8NameFg: #ce671b; // orange group member name
 historyPeer8NameFgSelected: historyPeer8NameFg; // orange group member name in a selected message
-historyPeer8UserpicBg: #faa774; // orange userpic background
+historyPeer8UserpicBg: #febb5b; // orange userpic background
 historyPeerUserpicFg: windowFgActive; // default userpic initials
 historyPeerSavedMessagesBg: historyPeer4UserpicBg; // saved messages userpic background
 historyPeerArchiveUserpicBg: dialogsUnreadBgMuted; // archive folder userpic background
+
+historyPeer1UserpicBg2: #d45246 | historyPeer1UserpicBg; // the second red userpic background
+historyPeer2UserpicBg2: #46ba43 | historyPeer2UserpicBg; // the second green userpic background
+historyPeer3UserpicBg2: #e5ca77 | historyPeer3UserpicBg; // the second yellow userpic background (actually unused)
+historyPeer4UserpicBg2: #408acf | historyPeer4UserpicBg; // the second blue userpic background
+historyPeer5UserpicBg2: #6c61df | historyPeer5UserpicBg; // the second purple userpic background
+historyPeer6UserpicBg2: #d95574 | historyPeer6UserpicBg; // the second pink userpic background
+historyPeer7UserpicBg2: #359ad4 | historyPeer7UserpicBg; // the second sea userpic background
+historyPeer8UserpicBg2: #f68136 | historyPeer8UserpicBg; // the second orange userpic background
+historyPeerSavedMessagesBg2: historyPeer4UserpicBg2; // the second saved messages userpic background
 
 settingsIconBg1: #f06964; // red settings icon background
 settingsIconBg2: #6dc534; // green settings icon background

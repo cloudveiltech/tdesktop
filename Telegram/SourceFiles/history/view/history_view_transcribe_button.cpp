@@ -14,6 +14,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/chat/chat_style.h"
 #include "ui/click_handler.h"
 #include "ui/effects/radial_animation.h"
+#include "ui/effects/ripple_animation.h"
+#include "ui/painter.h"
 #include "api/api_transcribes.h"
 #include "apiwrap.h"
 #include "styles/style_chat.h"
@@ -26,14 +28,20 @@ constexpr auto kOutNonChosenOpacity = 0.18;
 
 } // namespace
 
-TranscribeButton::TranscribeButton(not_null<HistoryItem*> item)
-: _item(item) {
+TranscribeButton::TranscribeButton(
+	not_null<HistoryItem*> item,
+	bool roundview)
+: _item(item)
+, _roundview(roundview)
+, _size(!roundview
+	? st::historyTranscribeSize
+	: QSize(st::historyFastShareSize, st::historyFastShareSize)) {
 }
 
 TranscribeButton::~TranscribeButton() = default;
 
 QSize TranscribeButton::size() const {
-	return st::historyTranscribeSize;
+	return _size;
 }
 
 void TranscribeButton::setLoading(bool loading, Fn<void()> update) {
@@ -59,6 +67,54 @@ void TranscribeButton::paint(
 	auto hq = PainterHighQualityEnabler(p);
 	const auto opened = _openedAnimation.value(_opened ? 1. : 0.);
 	const auto stm = context.messageStyle();
+	if (_roundview) {
+		_lastPaintedPoint = { x, y };
+		const auto r = QRect(QPoint(x, y), size());
+
+		if (_ripple) {
+			const auto colorOverride = &stm->msgWaveformInactive->c;
+			_ripple->paint(
+				p,
+				x,
+				y,
+				r.width(),
+				colorOverride);
+			if (_ripple->empty()) {
+				_ripple.reset();
+			}
+		}
+
+		PainterHighQualityEnabler hq(p);
+		p.setPen(Qt::NoPen);
+		p.setBrush(context.st->msgServiceBg());
+
+		p.drawEllipse(r);
+		context.st->historyFastTranscribeIcon().paintInCenter(p, r);
+
+		const auto state = _animation
+			? _animation->computeState()
+			: Ui::RadialState();
+
+		auto pen = QPen(st::msgServiceFg);
+		pen.setCapStyle(Qt::RoundCap);
+		p.setPen(pen);
+		if (_animation && state.shown > 0 && anim::Disabled()) {
+			const auto _st = &st::defaultRadio;
+			anim::DrawStaticLoading(
+				p,
+				r,
+				_st->thickness,
+				pen.color(),
+				_st->bg);
+		} else if (state.arcLength < FullArcLength) {
+			const auto opacity = p.opacity();
+			p.setOpacity(state.shown * (1. - opened));
+			p.drawArc(r, state.arcFrom, state.arcLength);
+			p.setOpacity(opacity);
+		}
+
+		return;
+	}
 	auto bg = stm->msgFileBg->c;
 	bg.setAlphaF(bg.alphaF() * (context.outbg
 		? kOutNonChosenOpacity
@@ -151,6 +207,27 @@ ClickHandlerPtr TranscribeButton::link() {
 		}
 	});
 	return _link;
+}
+
+bool TranscribeButton::contains(const QPoint &p) {
+	_lastStatePoint = p - _lastPaintedPoint;
+	return QRect(_lastPaintedPoint, size()).contains(p);
+}
+
+void TranscribeButton::addRipple(Fn<void()> callback) {
+	if (!_ripple) {
+		_ripple = std::make_unique<Ui::RippleAnimation>(
+			st::defaultRippleAnimation,
+			Ui::RippleAnimation::EllipseMask(size()),
+			std::move(callback));
+	}
+	_ripple->add(_lastStatePoint);
+}
+
+void TranscribeButton::stopRipple() const {
+	if (_ripple) {
+		_ripple->lastStop();
+	}
 }
 
 } // namespace HistoryView

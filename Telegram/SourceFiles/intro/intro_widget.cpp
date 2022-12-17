@@ -196,7 +196,7 @@ void Widget::floatPlayerDoubleClickEvent(not_null<const HistoryItem*> item) {
 		&item->history()->peer->session().account(),
 		item->history()->peer,
 		[&](not_null<Window::SessionController*> controller) {
-			controller->showPeerHistoryAtItem(item);
+			controller->showMessage(item);
 		});
 }
 
@@ -297,7 +297,7 @@ void Widget::checkUpdateStatus() {
 				this,
 				tr::lng_menu_update(),
 				st::defaultBoxButton));
-		if (!_a_show.animating()) {
+		if (!_showAnimation) {
 			_update->setVisible(true);
 		}
 		const auto stepHasCover = getStep()->hasCover();
@@ -460,13 +460,8 @@ void Widget::showTerms() {
 				Ui::Text::WithEntities),
 			st::introTermsLabel);
 		_terms.create(this, std::move(entity));
-		_terms->entity()->setClickHandlerFilter([=](
-				const ClickHandlerPtr &handler,
-				Qt::MouseButton button) {
-			if (button == Qt::LeftButton) {
-				showTerms(nullptr);
-			}
-			return false;
+		_terms->entity()->overrideLinkClickHandler([=] {
+			showTerms(nullptr);
 		});
 		updateControlsGeometry();
 		_terms->hide(anim::type::instant);
@@ -492,11 +487,13 @@ void Widget::resetAccount() {
 			return;
 		}
 		_resetRequest = _api->request(MTPaccount_DeleteAccount(
-			MTP_string("Forgot password")
+			MTP_flags(0),
+			MTP_string("Forgot password"),
+			MTPInputCheckPasswordSRP()
 		)).done([=] {
 			_resetRequest = 0;
 
-			Ui::hideLayer();
+			getData()->controller->hideLayer();
 			if (getData()->phone.isEmpty()) {
 				moveToStep(
 					new QrWidget(this, _account, getData()),
@@ -512,10 +509,10 @@ void Widget::resetAccount() {
 			_resetRequest = 0;
 
 			const auto &type = error.type();
-			if (type.startsWith(qstr("2FA_CONFIRM_WAIT_"))) {
+			if (type.startsWith(u"2FA_CONFIRM_WAIT_"_q)) {
 				const auto seconds = base::StringViewMid(
 					type,
-					qstr("2FA_CONFIRM_WAIT_").size()).toInt();
+					u"2FA_CONFIRM_WAIT_"_q.size()).toInt();
 				const auto days = (seconds + 59) / 86400;
 				const auto hours = ((seconds + 59) % 86400) / 3600;
 				const auto minutes = ((seconds + 59) % 3600) / 60;
@@ -555,11 +552,11 @@ void Widget::resetAccount() {
 					Ui::FormatPhone(getData()->phone),
 					lt_when,
 					when)));
-			} else if (type == qstr("2FA_RECENT_CONFIRM")) {
+			} else if (type == u"2FA_RECENT_CONFIRM"_q) {
 				Ui::show(Ui::MakeInformBox(
 					tr::lng_signin_reset_cancelled()));
 			} else {
-				Ui::hideLayer();
+				getData()->controller->hideLayer();
 				getStep()->showError(rpl::single(Lang::Hard::ServerError()));
 			}
 		}).send();
@@ -702,62 +699,47 @@ void Widget::hideControls() {
 	_back->hide(anim::type::instant);
 }
 
-void Widget::showAnimated(const QPixmap &bgAnimCache, bool back) {
-	_showBack = back;
+void Widget::showAnimated(QPixmap oldContentCache, bool back) {
+	_showAnimation = nullptr;
 
-	(_showBack ? _cacheOver : _cacheUnder) = bgAnimCache;
-
-	_a_show.stop();
 	showControls();
 	floatPlayerHideAll();
-	(_showBack ? _cacheUnder : _cacheOver) = Ui::GrabWidget(this);
+	auto newContentCache = Ui::GrabWidget(this);
 	hideControls();
 	floatPlayerShowVisible();
 
-	_a_show.start(
-		[=] { animationCallback(); },
-		0.,
-		1.,
-		st::slideDuration,
-		Window::SlideAnimation::transition());
+	_showAnimation = std::make_unique<Window::SlideAnimation>();
+	_showAnimation->setDirection(back
+		? Window::SlideDirection::FromLeft
+		: Window::SlideDirection::FromRight);
+	_showAnimation->setRepaintCallback([=] { update(); });
+	_showAnimation->setFinishedCallback([=] { showFinished(); });
+	_showAnimation->setPixmaps(oldContentCache, newContentCache);
+	_showAnimation->start();
 
 	show();
 }
 
-void Widget::animationCallback() {
-	update();
-	if (!_a_show.animating()) {
-		_cacheUnder = _cacheOver = QPixmap();
+void Widget::showFinished() {
+	_showAnimation = nullptr;
 
-		showControls();
-		getStep()->activate();
-	}
+	showControls();
+	getStep()->activate();
 }
 
 void Widget::paintEvent(QPaintEvent *e) {
-	bool trivial = (rect() == e->rect());
+	const auto trivial = (rect() == e->rect());
 	setMouseTracking(true);
 
 	QPainter p(this);
 	if (!trivial) {
 		p.setClipRect(e->rect());
 	}
-	p.fillRect(e->rect(), st::windowBg);
-	auto progress = _a_show.value(1.);
-	if (_a_show.animating()) {
-		auto coordUnder = _showBack ? anim::interpolate(-st::slideShift, 0, progress) : anim::interpolate(0, -st::slideShift, progress);
-		auto coordOver = _showBack ? anim::interpolate(0, width(), progress) : anim::interpolate(width(), 0, progress);
-		auto shadow = _showBack ? (1. - progress) : progress;
-		if (coordOver > 0) {
-			p.drawPixmap(QRect(0, 0, coordOver, height()), _cacheUnder, QRect(-coordUnder * cRetinaFactor(), 0, coordOver * cRetinaFactor(), height() * cRetinaFactor()));
-			p.setOpacity(shadow);
-			p.fillRect(0, 0, coordOver, height(), st::slideFadeOutBg);
-			p.setOpacity(1);
-		}
-		p.drawPixmap(coordOver, 0, _cacheOver);
-		p.setOpacity(shadow);
-		st::slideShadow.fill(p, QRect(coordOver - st::slideShadow.width(), 0, st::slideShadow.width(), height()));
+	if (_showAnimation) {
+		_showAnimation->paintContents(p);
+		return;
 	}
+	p.fillRect(e->rect(), st::windowBg);
 }
 
 void Widget::resizeEvent(QResizeEvent *e) {
@@ -806,7 +788,7 @@ void Widget::updateControlsGeometry() {
 }
 
 void Widget::keyPressEvent(QKeyEvent *e) {
-	if (_a_show.animating() || getStep()->animating()) return;
+	if (_showAnimation || getStep()->animating()) return;
 
 	if (e->key() == Qt::Key_Escape || e->key() == Qt::Key_Back) {
 		if (getStep()->hasBack()) {

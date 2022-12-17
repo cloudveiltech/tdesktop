@@ -165,7 +165,7 @@ void RippleButton::ensureRipple() {
 }
 
 QImage RippleButton::prepareRippleMask() const {
-	return RippleAnimation::rectMask(size());
+	return RippleAnimation::RectMask(size());
 }
 
 QPoint RippleButton::prepareRippleStartPosition() const {
@@ -449,7 +449,7 @@ QImage RoundButton::prepareRippleMask() const {
 	if (_fullWidthOverride < 0) {
 		rounded = QRect(0, rounded.top(), innerWidth - _fullWidthOverride, rounded.height());
 	}
-	return RippleAnimation::roundRectMask(
+	return RippleAnimation::RoundRectMask(
 		rounded.size(),
 		(_fullRadius
 			? (rounded.height() / 2)
@@ -551,7 +551,7 @@ QPoint IconButton::prepareRippleStartPosition() const {
 }
 
 QImage IconButton::prepareRippleMask() const {
-	return RippleAnimation::ellipseMask(QSize(_st.rippleAreaSize, _st.rippleAreaSize));
+	return RippleAnimation::EllipseMask(QSize(_st.rippleAreaSize, _st.rippleAreaSize));
 }
 
 CrossButton::CrossButton(QWidget *parent, const style::CrossButton &st) : RippleButton(parent, st.ripple)
@@ -597,7 +597,7 @@ void CrossButton::animationCallback() {
 }
 
 void CrossButton::paintEvent(QPaintEvent *e) {
-	Painter p(this);
+	auto p = QPainter(this);
 
 	auto over = isOver();
 	auto shown = _showAnimation.value(_shown ? 1. : 0.);
@@ -684,7 +684,7 @@ QPoint CrossButton::prepareRippleStartPosition() const {
 }
 
 QImage CrossButton::prepareRippleMask() const {
-	return RippleAnimation::ellipseMask(QSize(_st.cross.size, _st.cross.size));
+	return RippleAnimation::EllipseMask(QSize(_st.cross.size, _st.cross.size));
 }
 
 SettingsButton::SettingsButton(
@@ -736,6 +736,12 @@ bool SettingsButton::toggled() const {
 	return _toggle ? _toggle->checked() : false;
 }
 
+void SettingsButton::setToggleLocked(bool locked) {
+	if (_toggle) {
+		_toggle->setLocked(locked);
+	}
+}
+
 rpl::producer<bool> SettingsButton::toggledChanges() const {
 	if (_toggle) {
 		return _toggle->checkedChanges();
@@ -763,6 +769,10 @@ void SettingsButton::setPaddingOverride(style::margins padding) {
 
 const style::SettingsButton &SettingsButton::st() const {
 	return _st;
+}
+
+int SettingsButton::fullTextWidth() const {
+	return _text.maxWidth();
 }
 
 void SettingsButton::paintEvent(QPaintEvent *e) {

@@ -8,14 +8,22 @@
 
 #include "ui/text/text_entity.h"
 #include "ui/text/text_block.h"
-#include "ui/painter.h"
+#include "ui/effects/spoiler_mess.h"
 #include "ui/click_handler.h"
 #include "base/flags.h"
 
 #include <private/qfixed_p.h>
 #include <any>
 
-class SpoilerClickHandler;
+class Painter;
+
+namespace anim {
+enum class type : uchar;
+} // namespace anim
+
+namespace style {
+struct TextPalette;
+} // namespace style
 
 namespace Ui {
 static const auto kQEllipsis = QStringLiteral("...");
@@ -60,10 +68,11 @@ inline bool operator!=(TextSelection a, TextSelection b) {
 
 static constexpr TextSelection AllTextSelection = { 0, 0xFFFF };
 
-namespace Ui {
-namespace Text {
+namespace Ui::Text {
 
 struct IsolatedEmoji;
+struct OnlyCustomEmoji;
+struct SpoilerData;
 
 struct StateRequest {
 	enum class Flag {
@@ -89,13 +98,53 @@ struct StateResult {
 	uint16 symbol = 0;
 };
 
-struct StateRequestElided : public StateRequest {
+struct StateRequestElided : StateRequest {
 	StateRequestElided() {
 	}
 	StateRequestElided(const StateRequest &other) : StateRequest(other) {
 	}
 	int lines = 1;
 	int removeFromEnd = 0;
+};
+
+class SpoilerMessCache {
+public:
+	explicit SpoilerMessCache(int capacity);
+
+	[[nodiscard]] not_null<SpoilerMessCached*> lookup(QColor color);
+	void reset();
+
+private:
+	struct Entry {
+		SpoilerMessCached mess;
+		QColor color;
+	};
+
+	std::vector<Entry> _cache;
+	const int _capacity = 0;
+
+};
+
+[[nodiscard]] not_null<SpoilerMessCache*> DefaultSpoilerCache();
+
+struct PaintContext {
+	QPoint position;
+	int outerWidth = 0; // For automatic RTL Ui inversion.
+	int availableWidth = 0;
+	style::align align = style::al_left;
+	QRect clip;
+
+	const style::TextPalette *palette = nullptr;
+	SpoilerMessCache *spoiler = nullptr;
+	crl::time now = 0;
+	bool paused = false;
+
+	TextSelection selection;
+	bool fullWidthSelection = true;
+
+	int elisionLines = 0;
+	int elisionRemoveFromEnd = 0;
+	bool elisionBreakEverywhere = false;
 };
 
 class String {
@@ -106,37 +155,36 @@ public:
 		const QString &text,
 		const TextParseOptions &options = kDefaultTextOptions,
 		int32 minResizeWidth = QFIXED_MAX);
-	String(const String &other) = default;
-	String(String &&other) = default;
-	String &operator=(const String &other) = default;
-	String &operator=(String &&other) = default;
-	~String() = default;
+	String(String &&other);
+	String &operator=(String &&other);
+	~String();
 
-	int countWidth(int width, bool breakEverywhere = false) const;
-	int countHeight(int width, bool breakEverywhere = false) const;
+	[[nodiscard]] int countWidth(int width, bool breakEverywhere = false) const;
+	[[nodiscard]] int countHeight(int width, bool breakEverywhere = false) const;
 	void countLineWidths(int width, QVector<int> *lineWidths, bool breakEverywhere = false) const;
 	void setText(const style::TextStyle &st, const QString &text, const TextParseOptions &options = kDefaultTextOptions);
 	void setMarkedText(const style::TextStyle &st, const TextWithEntities &textWithEntities, const TextParseOptions &options = kMarkupTextOptions, const std::any &context = {});
 
+	[[nodiscard]] bool hasLinks() const;
 	void setLink(uint16 lnkIndex, const ClickHandlerPtr &lnk);
-	bool hasLinks() const;
-	void setSpoiler(
-		uint16 lnkIndex,
-		const std::shared_ptr<SpoilerClickHandler> &lnk);
-	void setSpoilerShown(uint16 lnkIndex, bool shown);
-	int spoilersCount() const;
 
-	bool hasSkipBlock() const;
+	[[nodiscard]] bool hasSpoilers() const;
+	void setSpoilerRevealed(bool revealed, anim::type animated);
+	void setSpoilerLinkFilter(Fn<bool(const ClickContext&)> filter);
+
+	[[nodiscard]] bool hasSkipBlock() const;
 	bool updateSkipBlock(int width, int height);
 	bool removeSkipBlock();
 
-	int maxWidth() const {
+	[[nodiscard]] int maxWidth() const {
 		return _maxWidth.ceil().toInt();
 	}
-	int minHeight() const {
+	[[nodiscard]] int minHeight() const {
 		return _minHeight;
 	}
-	int countMaxMonospaceWidth() const;
+	[[nodiscard]] int countMaxMonospaceWidth() const;
+
+	void draw(QPainter &p, const PaintContext &context) const;
 
 	void draw(Painter &p, int32 left, int32 top, int32 width, style::align align = style::al_left, int32 yFrom = 0, int32 yTo = -1, TextSelection selection = { 0, 0 }, bool fullWidthSelection = true) const;
 	void drawElided(Painter &p, int32 left, int32 top, int32 width, int32 lines = 1, style::align align = style::al_left, int32 yFrom = 0, int32 yTo = -1, int32 removeFromEnd = 0, bool breakEverywhere = false, TextSelection selection = { 0, 0 }) const;
@@ -145,40 +193,62 @@ public:
 	void drawRight(Painter &p, int32 right, int32 top, int32 width, int32 outerw, style::align align = style::al_left, int32 yFrom = 0, int32 yTo = -1, TextSelection selection = { 0, 0 }) const;
 	void drawRightElided(Painter &p, int32 right, int32 top, int32 width, int32 outerw, int32 lines = 1, style::align align = style::al_left, int32 yFrom = 0, int32 yTo = -1, int32 removeFromEnd = 0, bool breakEverywhere = false, TextSelection selection = { 0, 0 }) const;
 
-	StateResult getState(QPoint point, int width, StateRequest request = StateRequest()) const;
-	StateResult getStateLeft(QPoint point, int width, int outerw, StateRequest request = StateRequest()) const;
-	StateResult getStateElided(QPoint point, int width, StateRequestElided request = StateRequestElided()) const;
-	StateResult getStateElidedLeft(QPoint point, int width, int outerw, StateRequestElided request = StateRequestElided()) const;
+	[[nodiscard]] StateResult getState(QPoint point, int width, StateRequest request = StateRequest()) const;
+	[[nodiscard]] StateResult getStateLeft(QPoint point, int width, int outerw, StateRequest request = StateRequest()) const;
+	[[nodiscard]] StateResult getStateElided(QPoint point, int width, StateRequestElided request = StateRequestElided()) const;
+	[[nodiscard]] StateResult getStateElidedLeft(QPoint point, int width, int outerw, StateRequestElided request = StateRequestElided()) const;
 
 	[[nodiscard]] TextSelection adjustSelection(TextSelection selection, TextSelectType selectType) const;
-	bool isFullSelection(TextSelection selection) const {
+	[[nodiscard]] bool isFullSelection(TextSelection selection) const {
 		return (selection.from == 0) && (selection.to >= _text.size());
 	}
 
-	bool isEmpty() const;
-	bool isNull() const {
+	[[nodiscard]] bool isEmpty() const;
+	[[nodiscard]] bool isNull() const {
 		return !_st;
 	}
-	int length() const {
+	[[nodiscard]] int length() const {
 		return _text.size();
 	}
 
-	QString toString(TextSelection selection = AllTextSelection) const;
-	TextWithEntities toTextWithEntities(
+	[[nodiscard]] QString toString(
 		TextSelection selection = AllTextSelection) const;
-	TextForMimeData toTextForMimeData(
+	[[nodiscard]] TextWithEntities toTextWithEntities(
 		TextSelection selection = AllTextSelection) const;
-	IsolatedEmoji toIsolatedEmoji() const;
+	[[nodiscard]] TextForMimeData toTextForMimeData(
+		TextSelection selection = AllTextSelection) const;
 
-	const style::TextStyle *style() const {
+	[[nodiscard]] bool hasPersistentAnimation() const;
+	void unloadPersistentAnimation();
+
+	[[nodiscard]] bool isIsolatedEmoji() const;
+	[[nodiscard]] IsolatedEmoji toIsolatedEmoji() const;
+
+	[[nodiscard]] bool isOnlyCustomEmoji() const;
+	[[nodiscard]] OnlyCustomEmoji toOnlyCustomEmoji() const;
+
+	[[nodiscard]] const style::TextStyle *style() const {
 		return _st;
 	}
 
 	void clear();
 
 private:
-	using TextBlocks = QVector<Block>;
+	using TextBlocks = std::vector<Block>;
 	using TextLinks = QVector<ClickHandlerPtr>;
+
+	class SpoilerDataWrap {
+	public:
+		SpoilerDataWrap() noexcept;
+		SpoilerDataWrap(SpoilerDataWrap &&other) noexcept;
+		SpoilerDataWrap &operator=(SpoilerDataWrap &&other) noexcept;
+
+		std::unique_ptr<SpoilerData> data;
+
+	private:
+		void adjustFrom(const SpoilerDataWrap *other);
+
+	};
 
 	uint16 countBlockEnd(const TextBlocks::const_iterator &i, const TextBlocks::const_iterator &e) const;
 	uint16 countBlockLength(const TextBlocks::const_iterator &i, const TextBlocks::const_iterator &e) const;
@@ -199,8 +269,6 @@ private:
 	// it is also called from move constructor / assignment operator
 	void clearFields();
 
-	ClickHandlerPtr spoilerLink(uint16 spoilerIndex) const;
-
 	TextForMimeData toText(
 		TextSelection selection,
 		bool composeExpanded,
@@ -209,6 +277,9 @@ private:
 	QFixed _minResizeWidth;
 	QFixed _maxWidth = 0;
 	int32 _minHeight = 0;
+	bool _hasCustomEmoji : 1 = false;
+	bool _isIsolatedEmoji : 1 = false;
+	bool _isOnlyCustomEmoji : 1 = false;
 
 	QString _text;
 	const style::TextStyle *_st = nullptr;
@@ -216,20 +287,16 @@ private:
 	TextBlocks _blocks;
 	TextLinks _links;
 
-	QVector<std::shared_ptr<SpoilerClickHandler>> _spoilers;
-
 	Qt::LayoutDirection _startDir = Qt::LayoutDirectionAuto;
 
-	struct {
-		std::array<QImage, 4> corners;
-		QColor color;
-	} _spoilerCache, _spoilerShownCache;
+	SpoilerDataWrap _spoiler;
 
 	friend class Parser;
 	friend class Renderer;
 
 };
 
+[[nodiscard]] bool IsBad(QChar ch);
 [[nodiscard]] bool IsWordSeparator(QChar ch);
 [[nodiscard]] bool IsAlmostLinkEnd(QChar ch);
 [[nodiscard]] bool IsLinkEnd(QChar ch);
@@ -239,8 +306,7 @@ private:
 [[nodiscard]] bool IsReplacedBySpace(QChar ch);
 [[nodiscard]] bool IsTrimmed(QChar ch);
 
-} // namespace Text
-} // namespace Ui
+} // namespace Ui::Text
 
 inline TextSelection snapSelection(int from, int to) {
 	return { static_cast<uint16>(std::clamp(from, 0, 0xFFFF)), static_cast<uint16>(std::clamp(to, 0, 0xFFFF)) };

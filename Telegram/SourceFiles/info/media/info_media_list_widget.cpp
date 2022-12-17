@@ -24,6 +24,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_file_click_handler.h"
 #include "data/data_file_origin.h"
 #include "data/data_download_manager.h"
+#include "data/data_forum_topic.h"
 #include "history/history_item.h"
 #include "history/history.h"
 #include "history/view/history_view_cursor_state.h"
@@ -35,6 +36,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/controls/delete_message_context_action.h"
 #include "ui/chat/chat_style.h"
 #include "ui/cached_round_corners.h"
+#include "ui/painter.h"
 #include "ui/ui_utility.h"
 #include "ui/inactive_press.h"
 #include "lang/lang_keys.h"
@@ -44,16 +46,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwindow.h"
 #include "base/platform/base_platform_info.h"
 #include "base/weak_ptr.h"
+#include "base/call_delayed.h"
 #include "media/player/media_player_instance.h"
 #include "boxes/delete_messages_box.h"
 #include "boxes/peer_list_controllers.h"
 #include "core/file_utilities.h"
 #include "core/application.h"
-#include "facades.h"
 #include "styles/style_overview.h"
 #include "styles/style_info.h"
 #include "styles/style_layers.h"
 #include "styles/style_menu_icons.h"
+#include "styles/style_chat.h"
 
 #include <QtWidgets/QApplication>
 #include <QtGui/QClipboard>
@@ -449,8 +452,23 @@ bool ListWidget::itemVisible(not_null<const BaseLayout*> item) {
 	return true;
 }
 
+QString ListWidget::tooltipText() const {
+	if (const auto link = ClickHandler::getActive()) {
+		return link->tooltip();
+	}
+	return QString();
+}
+
+QPoint ListWidget::tooltipPos() const {
+	return _mousePosition;
+}
+
+bool ListWidget::tooltipWindowActive() const {
+	return Ui::AppInFocus() && Ui::InFocusChain(window());
+}
+
 void ListWidget::openPhoto(not_null<PhotoData*> photo, FullMsgId id) {
-	_controller->parentController()->openPhoto(photo, id);
+	_controller->parentController()->openPhoto(photo, id, topicRootId());
 }
 
 void ListWidget::openDocument(
@@ -460,6 +478,7 @@ void ListWidget::openDocument(
 	_controller->parentController()->openDocument(
 		document,
 		id,
+		topicRootId(),
 		showInMediaView);
 }
 
@@ -722,6 +741,11 @@ void ListWidget::restoreScrollState() {
 	_scrollTopState = ListScrollTopState();
 }
 
+MsgId ListWidget::topicRootId() const {
+	const auto topic = _controller->key().topic();
+	return topic ? topic->rootId() : MsgId(0);
+}
+
 QMargins ListWidget::padding() const {
 	return st::infoMediaMargin;
 }
@@ -760,8 +784,7 @@ void ListWidget::paintEvent(QPaintEvent *e) {
 			if (_dateBadge->corners.p[0].isNull()) {
 				_dateBadge->corners = Ui::PrepareCornerPixmaps(
 					Ui::HistoryServiceMsgRadius(),
-					st::roundedBg,
-					nullptr);
+					st::roundedBg);
 			}
 			HistoryView::ServiceMessagePainter::PaintDate(
 				p,
@@ -909,7 +932,7 @@ void ListWidget::showContextMenu(
 					item,
 					lnkDocument);
 				if (!filepath.isEmpty()) {
-					auto handler = App::LambdaDelayed(
+					auto handler = base::fn_delayed(
 						st::defaultDropdownMenu.menu.ripple.hideDuration,
 						this,
 						[filepath] {
@@ -922,7 +945,7 @@ void ListWidget::showContextMenu(
 						std::move(handler),
 						&st::menuIconShowInFolder);
 				}
-				auto handler = App::LambdaDelayed(
+				auto handler = base::fn_delayed(
 					st::defaultDropdownMenu.menu.ripple.hideDuration,
 					this,
 					[=] {
@@ -1293,6 +1316,7 @@ void ListWidget::leaveEventHook(QEvent *e) {
 		}
 	}
 	ClickHandler::clearActive();
+	Ui::Tooltip::Hide();
 	if (!ClickHandler::getPressed() && _cursor != style::cur_default) {
 		_cursor = style::cur_default;
 		setCursor(_cursor);
@@ -1361,7 +1385,13 @@ void ListWidget::mouseActionUpdate(const QPoint &globalPosition) {
 		dragState = _overLayout->getState(_overState.cursor, request);
 		lnkhost = _overLayout;
 	}
-	ClickHandler::setActive(dragState.link, lnkhost);
+	const auto lnkChanged = ClickHandler::setActive(dragState.link, lnkhost);
+	if (lnkChanged || dragState.cursor != _mouseCursorState) {
+		Ui::Tooltip::Hide();
+	}
+	if (dragState.link) {
+		Ui::Tooltip::Show(1000, this);
+	}
 
 	if (_mouseAction == MouseAction::None) {
 		_mouseCursorState = dragState.cursor;
@@ -1615,7 +1645,7 @@ void ListWidget::performDrag() {
 	//		auto selectedState = getSelectionState();
 	//		if (selectedState.count > 0 && selectedState.count == selectedState.canForwardCount) {
 	//			session().data().setMimeForwardIds(collectSelectedIds());
-	//			mimeData->setData(qsl("application/x-td-forward"), "1");
+	//			mimeData->setData(u"application/x-td-forward"_q, "1");
 	//		}
 	//	}
 	//	_controller->parentController()->window()->launchDrag(std::move(mimeData));
@@ -1627,14 +1657,14 @@ void ListWidget::performDrag() {
 	//		pressedMedia = pressedItem->getMedia();
 	//		if (_mouseCursorState == CursorState::Date || (pressedMedia && pressedMedia->dragItem())) {
 	//			session().data().setMimeForwardIds(session().data().itemOrItsGroup(pressedItem));
-	//			forwardMimeType = qsl("application/x-td-forward");
+	//			forwardMimeType = u"application/x-td-forward"_q;
 	//		}
 	//	}
 	//	if (auto pressedLnkItem = App::pressedLinkItem()) {
 	//		if ((pressedMedia = pressedLnkItem->getMedia())) {
 	//			if (forwardMimeType.isEmpty() && pressedMedia->dragItemByHandler(pressedHandler)) {
 	//				session().data().setMimeForwardIds({ 1, pressedLnkItem->fullId() });
-	//				forwardMimeType = qsl("application/x-td-forward");
+	//				forwardMimeType = u"application/x-td-forward"_q;
 	//			}
 	//		}
 	//	}
@@ -1696,7 +1726,7 @@ void ListWidget::mouseActionFinish(
 			QVariant::fromValue(ClickHandlerContext{
 				.itemId = fullId,
 				.sessionWindow = base::make_weak(
-					_controller->parentController().get()),
+					_controller->parentController()),
 			})
 		});
 		return;

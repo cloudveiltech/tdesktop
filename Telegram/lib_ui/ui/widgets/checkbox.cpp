@@ -9,6 +9,7 @@
 #include "ui/effects/ripple_animation.h"
 #include "ui/basic_click_handlers.h"
 #include "ui/ui_utility.h"
+#include "ui/painter.h"
 
 #include <QtGui/QtEvents>
 
@@ -96,7 +97,7 @@ void ToggleView::setStyle(const style::Toggle &st) {
 	_st = &st;
 }
 
-void ToggleView::paint(Painter &p, int left, int top, int outerWidth) {
+void ToggleView::paint(QPainter &p, int left, int top, int outerWidth) {
 	left += _st->border;
 	top += _st->border;
 
@@ -120,7 +121,7 @@ void ToggleView::paint(Painter &p, int left, int top, int outerWidth) {
 	p.setBrush(anim::brush(_st->untoggledBg, _st->toggledBg, toggled));
 	p.drawEllipse(fgRect);
 
-	if (_st->xsize > 0) {
+	if (_locked || _st->xsize > 0) {
 		p.setPen(Qt::NoPen);
 		p.setBrush(fgBrush);
 		if (_locked) {
@@ -132,7 +133,7 @@ void ToggleView::paint(Painter &p, int left, int top, int outerWidth) {
 	}
 }
 
-void ToggleView::paintXV(Painter &p, int left, int top, int outerWidth, float64 toggled, const QBrush &brush) {
+void ToggleView::paintXV(QPainter &p, int left, int top, int outerWidth, float64 toggled, const QBrush &brush) {
 	Expects(_st->vsize > 0);
 	Expects(_st->stroke > 0);
 
@@ -221,7 +222,7 @@ QSize ToggleView::rippleSize() const {
 
 QImage ToggleView::prepareRippleMask() const {
 	auto size = rippleSize();
-	return RippleAnimation::roundRectMask(size, size.height() / 2);
+	return RippleAnimation::RoundRectMask(size, size.height() / 2);
 }
 
 bool ToggleView::checkRippleStartPosition(QPoint position) const {
@@ -247,7 +248,7 @@ void CheckView::setStyle(const style::Check &st) {
 	_st = &st;
 }
 
-void CheckView::paint(Painter &p, int left, int top, int outerWidth) {
+void CheckView::paint(QPainter &p, int left, int top, int outerWidth) {
 	auto toggled = currentAnimationValue();
 	auto pen = _untoggledOverride
 		? anim::pen(*_untoggledOverride, _st->toggledFg, toggled)
@@ -276,7 +277,7 @@ QSize CheckView::rippleSize() const {
 }
 
 QImage CheckView::prepareRippleMask() const {
-	return RippleAnimation::ellipseMask(rippleSize());
+	return RippleAnimation::EllipseMask(rippleSize());
 }
 
 bool CheckView::checkRippleStartPosition(QPoint position) const {
@@ -305,7 +306,7 @@ void RadioView::setStyle(const style::Radio &st) {
 	_st = &st;
 }
 
-void RadioView::paint(Painter &p, int left, int top, int outerWidth) {
+void RadioView::paint(QPainter &p, int left, int top, int outerWidth) {
 	PainterHighQualityEnabler hq(p);
 
 	auto toggled = currentAnimationValue();
@@ -355,7 +356,7 @@ QSize RadioView::rippleSize() const {
 }
 
 QImage RadioView::prepareRippleMask() const {
-	return RippleAnimation::ellipseMask(rippleSize());
+	return RippleAnimation::EllipseMask(rippleSize());
 }
 
 bool RadioView::checkRippleStartPosition(QPoint position) const {

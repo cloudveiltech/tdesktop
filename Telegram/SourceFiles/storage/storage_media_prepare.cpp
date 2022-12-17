@@ -88,14 +88,15 @@ void PrepareDetailsInParallel(PreparedList &result, int previewWidth) {
 } // namespace
 
 bool ValidatePhotoEditorMediaDragData(not_null<const QMimeData*> data) {
-	if (data->urls().size() > 1) {
+	const auto urls = base::GetMimeUrls(data);
+	if (urls.size() > 1) {
 		return false;
 	} else if (data->hasImage()) {
 		return true;
 	}
 
-	if (data->hasUrls()) {
-		const auto url = data->urls().front();
+	if (!urls.isEmpty()) {
+		const auto url = urls.front();
 		if (url.isLocalFile()) {
 			using namespace Core;
 			const auto info = QFileInfo(Platform::File::UrlToLocal(url));
@@ -111,14 +112,15 @@ bool ValidatePhotoEditorMediaDragData(not_null<const QMimeData*> data) {
 bool ValidateEditMediaDragData(
 		not_null<const QMimeData*> data,
 		Ui::AlbumType albumType) {
-	if (data->urls().size() > 1) {
+	const auto urls = base::GetMimeUrls(data);
+	if (urls.size() > 1) {
 		return false;
 	} else if (data->hasImage()) {
 		return (albumType != Ui::AlbumType::Music);
 	}
 
-	if (albumType == Ui::AlbumType::PhotoVideo && data->hasUrls()) {
-		const auto url = data->urls().front();
+	if (albumType == Ui::AlbumType::PhotoVideo && !urls.isEmpty()) {
+		const auto url = urls.front();
 		if (url.isLocalFile()) {
 			using namespace Core;
 			const auto info = QFileInfo(Platform::File::UrlToLocal(url));
@@ -130,7 +132,7 @@ bool ValidateEditMediaDragData(
 }
 
 MimeDataState ComputeMimeDataState(const QMimeData *data) {
-	if (!data || data->hasFormat(qsl("application/x-td-forward"))) {
+	if (!data || data->hasFormat(u"application/x-td-forward"_q)) {
 		return MimeDataState::None;
 	}
 
@@ -138,17 +140,13 @@ MimeDataState ComputeMimeDataState(const QMimeData *data) {
 		return MimeDataState::Image;
 	}
 
-	const auto uriListFormat = qsl("text/uri-list");
-	if (!data->hasFormat(uriListFormat)) {
-		return MimeDataState::None;
-	}
-
-	const auto &urls = data->urls();
+	const auto urls = base::GetMimeUrls(data);
 	if (urls.isEmpty()) {
 		return MimeDataState::None;
 	}
 
-	const auto imageExtensions = Ui::ImageExtensions();
+	auto imageExtensions = Ui::ImageExtensions();
+	imageExtensions.push_back(u".webp"_q);
 	auto files = QStringList();
 	auto allAreSmallImages = true;
 	for (const auto &url : urls) {
@@ -165,8 +163,8 @@ MimeDataState ComputeMimeDataState(const QMimeData *data) {
 		const auto filesize = info.size();
 		if (filesize > kFileSizePremiumLimit) {
 			return MimeDataState::None;
-		} else if (filesize > kFileSizeLimit) {
-			return MimeDataState::PremiumFile;
+		//} else if (filesize > kFileSizeLimit) {
+		//	return MimeDataState::PremiumFile;
 		} else if (allAreSmallImages) {
 			if (filesize > Images::kReadBytesLimit) {
 				allAreSmallImages = false;
@@ -306,11 +304,11 @@ void PrepareDetails(PreparedFile &file, int previewWidth) {
 	if (const auto image = std::get_if<Image>(
 			&file.information->media)) {
 		Assert(!image->data.isNull());
-		if (ValidPhotoForAlbum(*image, file.information->filemime)) {
+		if (ValidPhotoForAlbum(*image, file.information->filemime)
+			|| Core::IsMimeSticker(file.information->filemime)) {
 			UpdateImageDetails(file, previewWidth);
 			file.type = PreparedFile::Type::Photo;
-		} else if (Core::IsMimeSticker(file.information->filemime)
-			|| image->animated) {
+		} else if (image->animated) {
 			file.type = PreparedFile::Type::None;
 		}
 	} else if (const auto video = std::get_if<Video>(

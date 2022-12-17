@@ -12,7 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 namespace Window {
 
-void SlideAnimation::paintContents(Painter &p) const {
+void SlideAnimation::paintContents(QPainter &p) const {
 	const auto retina = style::DevicePixelRatio();
 
 	const auto slideLeft = (_direction == SlideDirection::FromLeft);
@@ -141,6 +141,12 @@ void SlideAnimation::paintContents(Painter &p) const {
 	}
 }
 
+float64 SlideAnimation::progress() const {
+	const auto slideLeft = (_direction == SlideDirection::FromLeft);
+	const auto progress = _animation.value(slideLeft ? 0. : 1.);
+	return slideLeft ? (1. - progress) : progress;
+}
+
 void SlideAnimation::setDirection(SlideDirection direction) {
 	_direction = direction;
 }
@@ -193,8 +199,8 @@ void SlideAnimation::start() {
 void SlideAnimation::animationCallback() {
 	_repaintCallback();
 	if (!_animation.animating()) {
-		if (_finishedCallback) {
-			_finishedCallback();
+		if (const auto onstack = _finishedCallback) {
+			onstack();
 		}
 	}
 }

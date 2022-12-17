@@ -8,14 +8,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "platform/linux/specific_linux.h"
 
 #include "base/random.h"
+#include "base/options.h"
 #include "base/platform/base_platform_info.h"
 #include "platform/linux/linux_desktop_environment.h"
 #include "platform/linux/linux_wayland_integration.h"
+#include "platform/platform_launcher.h"
 #include "lang/lang_keys.h"
 #include "mainwindow.h"
 #include "storage/localstorage.h"
 #include "core/sandbox.h"
 #include "core/application.h"
+#include "core/local_url_handlers.h"
 #include "core/core_settings.h"
 #include "core/update_checker.h"
 #include "window/window_controller.h"
@@ -36,6 +39,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QStandardPaths>
 #include <QtCore/QProcess>
 
+#include <kshell.h>
+#include <ksandbox.h>
+
 #ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 #include <glibmm.h>
 #include <giomm.h>
@@ -54,11 +60,63 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 using namespace Platform;
 using Platform::internal::WaylandIntegration;
 
+#ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
+typedef GApplication TDesktopApplication;
+typedef GApplicationClass TDesktopApplicationClass;
+
+G_DEFINE_TYPE(
+	TDesktopApplication,
+	t_desktop_application,
+	G_TYPE_APPLICATION)
+
+static void t_desktop_application_class_init(
+		TDesktopApplicationClass *klass) {
+	const auto application_class = G_APPLICATION_CLASS(klass);
+
+	application_class->before_emit = [](
+			GApplication *application,
+			GVariant *platformData) {
+		if (Platform::IsWayland()) {
+			static const auto keys = {
+				"activation-token",
+				"desktop-startup-id",
+			};
+			for (const auto &key : keys) {
+				const char *token = nullptr;
+				g_variant_lookup(platformData, key, "&s", &token);
+				if (token) {
+					qputenv("XDG_ACTIVATION_TOKEN", token);
+					break;
+				}
+			}
+		}
+	};
+
+	application_class->add_platform_data = [](
+			GApplication *application,
+			GVariantBuilder *builder) {
+		if (Platform::IsWayland()) {
+			const auto token = qgetenv("XDG_ACTIVATION_TOKEN");
+			if (!token.isEmpty()) {
+				g_variant_builder_add(
+					builder,
+					"{sv}",
+					"activation-token",
+					g_variant_new_string(token.constData()));
+				qunsetenv("XDG_ACTIVATION_TOKEN");
+			}
+		}
+	};
+}
+
+static void t_desktop_application_init(TDesktopApplication *application) {
+}
+#endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
+
 namespace Platform {
 namespace {
 
-constexpr auto kDesktopFile = ":/misc/telegramdesktop.desktop"_cs;
-constexpr auto kIconName = "telegram"_cs;
+constexpr auto kDesktopFile = ":/misc/org.telegram.desktop.desktop"_cs;
 
 #ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 void PortalAutostart(bool start, bool silent) {
@@ -68,7 +126,7 @@ void PortalAutostart(bool start, bool silent) {
 
 	try {
 		const auto connection = Gio::DBus::Connection::get_sync(
-			Gio::DBus::BusType::BUS_TYPE_SESSION);
+			Gio::DBus::BusType::SESSION);
 
 		const auto parentWindowId = [&]() -> Glib::ustring {
 			const auto activeWindow = Core::App().activeWindow();
@@ -83,20 +141,21 @@ void PortalAutostart(bool start, bool silent) {
 		const auto handleToken = Glib::ustring("tdesktop")
 			+ std::to_string(base::RandomValue<uint>());
 
+		std::vector<Glib::ustring> commandline;
+		commandline.push_back(cExeName().toStdString());
+		if (Core::Sandbox::Instance().customWorkingDir()) {
+			commandline.push_back("-workdir");
+			commandline.push_back(cWorkingDir().toStdString());
+		}
+		commandline.push_back("-autostart");
+
 		std::map<Glib::ustring, Glib::VariantBase> options;
 		options["handle_token"] = Glib::Variant<Glib::ustring>::create(
 			handleToken);
 		options["reason"] = Glib::Variant<Glib::ustring>::create(
 			tr::lng_settings_auto_start(tr::now).toStdString());
 		options["autostart"] = Glib::Variant<bool>::create(start);
-		options["commandline"] = Glib::Variant<std::vector<
-			Glib::ustring
-		>>::create({
-			cExeName().toStdString(),
-			"-workdir",
-			cWorkingDir().toStdString(),
-			"-autostart",
-		});
+		options["commandline"] = base::Platform::MakeGlibVariant(commandline);
 		options["dbus-activatable"] = Glib::Variant<bool>::create(false);
 
 		auto uniqueName = connection->get_unique_name();
@@ -118,12 +177,10 @@ void PortalAutostart(bool start, bool silent) {
 				const Glib::ustring &object_path,
 				const Glib::ustring &interface_name,
 				const Glib::ustring &signal_name,
-				const Glib::VariantContainerBase &parameters) {
+				Glib::VariantContainerBase parameters) {
 				try {
-					auto parametersCopy = parameters;
-
 					const auto response = base::Platform::GlibVariantCast<
-						uint>(parametersCopy.get_child(0));
+						uint>(parameters.get_child(0));
 
 					if (response && !silent) {
 						LOG(("Portal Autostart Error: Request denied"));
@@ -165,60 +222,200 @@ void PortalAutostart(bool start, bool silent) {
 			window.show();
 			loop->run();
 		}
-	} catch (const Glib::Error &e) {
+	} catch (const std::exception &e) {
 		if (!silent) {
 			LOG(("Portal Autostart Error: %1").arg(
 				QString::fromStdString(e.what())));
 		}
 	}
 }
-#endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
-QByteArray EscapeShell(const QByteArray &content) {
-	auto result = QByteArray();
-
-	auto b = content.constData(), e = content.constEnd();
-	for (auto ch = b; ch != e; ++ch) {
-		if (*ch == ' ' || *ch == '"' || *ch == '\'' || *ch == '\\') {
-			if (result.isEmpty()) {
-				result.reserve(content.size() * 2);
-			}
-			if (ch > b) {
-				result.append(b, ch - b);
-			}
-			result.append('\\');
-			b = ch;
-		}
-	}
-	if (result.isEmpty()) {
-		return content;
-	}
-
-	if (e > b) {
-		result.append(b, e - b);
-	}
-	return result;
-}
-
-QString EscapeShellInLauncher(const QString &content) {
-	return EscapeShell(content.toUtf8()).replace('\\', "\\\\");
-}
-
-QString FlatpakID() {
-	static const auto Result = [] {
-		if (!qEnvironmentVariableIsEmpty("FLATPAK_ID")) {
-			return qEnvironmentVariable("FLATPAK_ID");
-		} else {
-			return cExeName();
+void LaunchGApplication() {
+	const auto connection = [] {
+		try {
+			return Gio::DBus::Connection::get_sync(
+				Gio::DBus::BusType::SESSION);
+		} catch (...) {
+			return Glib::RefPtr<Gio::DBus::Connection>();
 		}
 	}();
 
-	return Result;
+	using namespace base::Platform::DBus;
+	const auto activatableNames = [&] {
+		try {
+			if (connection) {
+				return ListActivatableNames(connection);
+			}
+		} catch (...) {
+		}
+
+		return std::vector<Glib::ustring>();
+	}();
+
+	const auto freedesktopNotifications = [&] {
+		try {
+			if (connection && NameHasOwner(
+				connection,
+				"org.freedesktop.Notifications")) {
+				return true;
+			}
+		} catch (...) {
+		}
+
+		if (ranges::contains(
+			activatableNames,
+			"org.freedesktop.Notifications")) {
+			return true;
+		}
+
+		return false;
+	};
+
+	if (OptionGApplication.value()
+		|| (KSandbox::isFlatpak() && !freedesktopNotifications())) {
+		Glib::signal_idle().connect_once([] {
+			const auto appId = QGuiApplication::desktopFileName()
+				.chopped(8)
+				.toStdString();
+
+			const auto app = Glib::wrap(
+				G_APPLICATION(
+					g_object_new(
+						t_desktop_application_get_type(),
+						"application-id",
+						Gio::Application::id_is_valid(appId)
+							? appId.c_str()
+							: nullptr,
+						"flags",
+						G_APPLICATION_HANDLES_OPEN,
+						nullptr)));
+
+			app->signal_startup().connect([=] {
+				// GNotification
+				InvokeQueued(qApp, [] {
+					Core::App().notifications().createManager();
+				});
+
+				QEventLoop().exec();
+				app->quit();
+			}, true);
+
+			app->signal_activate().connect([] {
+				Core::Sandbox::Instance().customEnterFromEventLoop([] {
+					const auto window = Core::IsAppLaunched()
+						? Core::App().primaryWindow()
+						: nullptr;
+					if (window) {
+						window->activate();
+					}
+				});
+			}, true);
+
+			app->signal_open().connect([](
+					const Gio::Application::type_vec_files &files,
+					const Glib::ustring &hint) {
+				Core::Sandbox::Instance().customEnterFromEventLoop([&] {
+					for (const auto &file : files) {
+						if (file->get_uri_scheme() == "file") {
+							gSendPaths.append(
+								QString::fromStdString(file->get_path()));
+							continue;
+						}
+						const auto url = QString::fromStdString(
+							file->get_uri());
+						if (url.isEmpty()) {
+							continue;
+						}
+						if (url.startsWith(qstr("interpret://"))) {
+							gSendPaths.append(url);
+							continue;
+						}
+						if (Core::StartUrlRequiresActivate(url)) {
+							const auto window = Core::IsAppLaunched()
+								? Core::App().primaryWindow()
+								: nullptr;
+							if (window) {
+								window->activate();
+							}
+						}
+						cSetStartUrl(url);
+						Core::App().checkStartUrl();
+					}
+
+					if (!cSendPaths().isEmpty()) {
+						Core::App().checkSendPaths();
+					}
+				});
+			}, true);
+
+			app->add_action("Quit", [] {
+				Core::Sandbox::Instance().customEnterFromEventLoop([] {
+					Core::Quit();
+				});
+			});
+
+			using Window::Notifications::Manager;
+			using NotificationId = Manager::NotificationId;
+			using NotificationIdTuple = std::invoke_result_t<
+				decltype(&NotificationId::toTuple),
+				NotificationId*
+			>;
+
+			const auto notificationIdVariantType = [] {
+				try {
+					return base::Platform::MakeGlibVariant(
+						NotificationId().toTuple()).get_type();
+				} catch (...) {
+					return Glib::VariantType();
+				}
+			}();
+
+			app->add_action_with_parameter(
+				"notification-reply",
+				notificationIdVariantType,
+				[](const Glib::VariantBase &parameter) {
+					Core::Sandbox::Instance().customEnterFromEventLoop([&] {
+						try {
+							const auto &app = Core::App();
+							const auto &notifications = app.notifications();
+							notifications.manager().notificationActivated(
+								NotificationId::FromTuple(
+									base::Platform::GlibVariantCast<
+										NotificationIdTuple
+									>(parameter)));
+						} catch (...) {
+						}
+					});
+				});
+
+			app->add_action_with_parameter(
+				"notification-mark-as-read",
+				notificationIdVariantType,
+				[](const Glib::VariantBase &parameter) {
+					Core::Sandbox::Instance().customEnterFromEventLoop([&] {
+						try {
+							const auto &app = Core::App();
+							const auto &notifications = app.notifications();
+							notifications.manager().notificationReplied(
+								NotificationId::FromTuple(
+									base::Platform::GlibVariantCast<
+										NotificationIdTuple
+									>(parameter)),
+								{});
+						} catch (...) {
+						}
+					});
+				});
+
+			app->hold();
+			app->run(0, nullptr);
+		});
+	}
 }
 
 bool GenerateDesktopFile(
 		const QString &targetPath,
-		const QString &args,
+		const QStringList &args = {},
 		bool silent = false) {
 	if (targetPath.isEmpty() || cExeName().isEmpty()) {
 		return false;
@@ -230,61 +427,123 @@ bool GenerateDesktopFile(
 	const auto sourceFile = kDesktopFile.utf16();
 	const auto targetFile = targetPath + QGuiApplication::desktopFileName();
 
-	QString fileText;
+	const auto sourceText = [&] {
+		QFile source(sourceFile);
+		if (source.open(QIODevice::ReadOnly)) {
+			return source.readAll().toStdString();
+		}
+		return std::string();
+	}();
 
-	QFile source(sourceFile);
-	if (source.open(QIODevice::ReadOnly)) {
-		QTextStream s(&source);
-		fileText = s.readAll();
-		source.close();
-	} else {
+	if (sourceText.empty()) {
 		if (!silent) {
 			LOG(("App Error: Could not open '%1' for read").arg(sourceFile));
 		}
 		return false;
 	}
 
-	QFile target(targetFile);
-	if (target.open(QIODevice::WriteOnly)) {
-		fileText = fileText.replace(
-			QRegularExpression(
-				qsl("^TryExec=.*$"),
-				QRegularExpression::MultilineOption),
-			qsl("TryExec=%1").arg(
-				QString(cExeDir() + cExeName()).replace('\\', "\\\\")));
+	try {
+		const auto target = Glib::KeyFile::create();
+		target->load_from_data(
+			sourceText,
+			Glib::KeyFile::Flags::KEEP_COMMENTS
+				| Glib::KeyFile::Flags::KEEP_TRANSLATIONS);
 
-		fileText = fileText.replace(
-			QRegularExpression(
-				qsl("^Exec=telegram-desktop(.*)$"),
-				QRegularExpression::MultilineOption),
-			qsl("Exec=%1 -workdir %2\\1").arg(
-				EscapeShellInLauncher(cExeDir() + cExeName()),
-				EscapeShellInLauncher(cWorkingDir())));
+		for (const auto &group : target->get_groups()) {
+			if (target->has_key(group, "TryExec")) {
+				target->set_string(
+					group,
+					"TryExec",
+					KShell::joinArgs({ cExeDir() + cExeName() }).replace(
+						'\\',
+						qstr("\\\\")).toStdString());
+			}
 
-		fileText = fileText.replace(
-			QRegularExpression(
-				qsl("^Exec=(.*) -- %u$"),
-				QRegularExpression::MultilineOption),
-			qsl("Exec=\\1%1").arg(
-				args.isEmpty() ? QString() : ' ' + args));
+			if (target->has_key(group, "Exec")) {
+				if (group == "Desktop Entry" && !args.isEmpty()) {
+					QStringList exec;
+					exec.append(cExeDir() + cExeName());
+					if (Core::Sandbox::Instance().customWorkingDir()) {
+						exec.append(u"-workdir"_q);
+						exec.append(cWorkingDir());
+					}
+					exec.append(args);
+					target->set_string(
+						group,
+						"Exec",
+						KShell::joinArgs(exec).replace(
+							'\\',
+							qstr("\\\\")).toStdString());
+				} else {
+					auto exec = KShell::splitArgs(
+						QString::fromStdString(
+							target->get_string(group, "Exec")
+						).replace(
+							qstr("\\\\"),
+							qstr("\\")));
 
-		target.write(fileText.toUtf8());
-		target.close();
+					if (!exec.isEmpty()) {
+						exec[0] = cExeDir() + cExeName();
+						if (Core::Sandbox::Instance().customWorkingDir()) {
+							exec.insert(1, u"-workdir"_q);
+							exec.insert(2, cWorkingDir());
+						}
+						target->set_string(
+							group,
+							"Exec",
+							KShell::joinArgs(exec).replace(
+								'\\',
+								qstr("\\\\")).toStdString());
+					}
+				}
+			}
 
-		if (!Core::UpdaterDisabled()) {
-			DEBUG_LOG(("App Info: removing old .desktop files"));
-			QFile::remove(qsl("%1telegram.desktop").arg(targetPath));
-			QFile::remove(qsl("%1telegramdesktop.desktop").arg(targetPath));
+			target->save_to_file(targetFile.toStdString());
 		}
-
-		return true;
-	} else {
+	} catch (const std::exception &e) {
 		if (!silent) {
-			LOG(("App Error: Could not open '%1' for write").arg(targetFile));
+			LOG(("App Error: %1").arg(QString::fromStdString(e.what())));
 		}
 		return false;
 	}
+
+	if (!Core::UpdaterDisabled()) {
+		DEBUG_LOG(("App Info: removing old .desktop files"));
+		QFile::remove(u"%1telegram.desktop"_q.arg(targetPath));
+		QFile::remove(u"%1telegramdesktop.desktop"_q.arg(targetPath));
+
+		const auto appimagePath = u"file://%1%2"_q.arg(
+			cExeDir(),
+			cExeName()).toUtf8();
+
+		char md5Hash[33] = { 0 };
+		hashMd5Hex(
+			appimagePath.constData(),
+			appimagePath.size(),
+			md5Hash);
+
+		QFile::remove(u"%1appimagekit_%2-%3.desktop"_q.arg(
+			targetPath,
+			md5Hash,
+			AppName.utf16().replace(' ', '_')));
+
+		const auto d = QFile::encodeName(QDir(cWorkingDir()).absolutePath());
+		hashMd5Hex(d.constData(), d.size(), md5Hash);
+
+		if (!Core::Sandbox::Instance().customWorkingDir()) {
+			const auto exePath = QFile::encodeName(
+				cExeDir() + cExeName());
+			hashMd5Hex(exePath.constData(), exePath.size(), md5Hash);
+		}
+
+		QFile::remove(u"%1org.telegram.desktop.%2.desktop"_q.arg(
+			targetPath,
+			md5Hash));
+	}
+
+	return true;
 }
+#endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
 } // namespace
 
@@ -292,57 +551,8 @@ void SetApplicationIcon(const QIcon &icon) {
 	QApplication::setWindowIcon(icon);
 }
 
-bool InFlatpak() {
-	static const auto Result = QFileInfo::exists(qsl("/.flatpak-info"));
-	return Result;
-}
-
-bool InSnap() {
-	static const auto Result = qEnvironmentVariableIsSet("SNAP");
-	return Result;
-}
-
-QString AppRuntimeDirectory() {
-	static const auto Result = [&] {
-		auto runtimeDir = QStandardPaths::writableLocation(
-			QStandardPaths::RuntimeLocation);
-
-		if (InFlatpak()) {
-			runtimeDir += qsl("/app/") + FlatpakID();
-		}
-
-		if (!QFileInfo::exists(runtimeDir)) { // non-systemd distros
-			runtimeDir = QDir::tempPath();
-		}
-
-		if (!runtimeDir.endsWith('/')) {
-			runtimeDir += '/';
-		}
-
-		return runtimeDir;
-	}();
-
-	return Result;
-}
-
 QString SingleInstanceLocalServerName(const QString &hash) {
-	const auto idealSocketPath = AppRuntimeDirectory()
-		+ hash
-		+ '-'
-		+ cGUIDStr();
-
-	if ((idealSocketPath.size() + 1) >= sizeof(sockaddr_un().sun_path)) {
-		return AppRuntimeDirectory() + hash;
-	} else {
-		return idealSocketPath;
-	}
-}
-
-QString GetIconName() {
-	static const auto Result = InFlatpak()
-		? FlatpakID()
-		: kIconName.utf16();
-	return Result;
+	return QDir::tempPath() + '/' + hash + '-' + cGUIDStr();
 }
 
 std::optional<bool> IsDarkMode() {
@@ -387,14 +597,19 @@ std::optional<bool> IsDarkMode() {
 }
 
 bool AutostartSupported() {
+#ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 	// snap sandbox doesn't allow creating files
 	// in folders with names started with a dot
 	// and doesn't provide any api to add an app to autostart
 	// thus, autostart isn't supported in snap
-	return !InSnap();
+	return !KSandbox::isSnap();
+#else // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
+	return false;
+#endif // DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 }
 
 void AutostartToggle(bool enabled, Fn<void(bool)> done) {
+#ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 	const auto guard = gsl::finally([&] {
 		if (done) {
 			done(enabled);
@@ -402,21 +617,20 @@ void AutostartToggle(bool enabled, Fn<void(bool)> done) {
 	});
 
 	const auto silent = !done;
-	if (InFlatpak()) {
-#ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
+	if (KSandbox::isFlatpak()) {
 		PortalAutostart(enabled, silent);
-#endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 	} else {
 		const auto autostart = QStandardPaths::writableLocation(
 			QStandardPaths::GenericConfigLocation)
-			+ qsl("/autostart/");
+			+ u"/autostart/"_q;
 
 		if (enabled) {
-			GenerateDesktopFile(autostart, qsl("-autostart"), silent);
+			GenerateDesktopFile(autostart, { u"-autostart"_q }, silent);
 		} else {
 			QFile::remove(autostart + QGuiApplication::desktopFileName());
 		}
 	}
+#endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 }
 
 bool AutostartSkip() {
@@ -454,8 +668,8 @@ QString psAppDataPath() {
 	// If we find data there, we should still use it.
 	auto home = QDir::homePath();
 	if (!home.isEmpty()) {
-		auto oldPath = home + qsl("/.TelegramDesktop/");
-		auto oldSettingsBase = oldPath + qsl("tdata/settings");
+		auto oldPath = home + u"/.TelegramDesktop/"_q;
+		auto oldSettingsBase = oldPath + u"tdata/settings"_q;
 		if (QFile::exists(oldSettingsBase + '0')
 			|| QFile::exists(oldSettingsBase + '1')
 			|| QFile::exists(oldSettingsBase + 's')) {
@@ -490,21 +704,57 @@ int psFixPrevious() {
 namespace Platform {
 
 void start() {
+	const auto d = QFile::encodeName(QDir(cWorkingDir()).absolutePath());
+	char h[33] = { 0 };
+	hashMd5Hex(d.constData(), d.size(), h);
+
+	QGuiApplication::setDesktopFileName([&] {
+		if (KSandbox::isFlatpak()) {
+			return qEnvironmentVariable("FLATPAK_ID") + u".desktop"_q;
+		}
+
+		if (KSandbox::isSnap()) {
+			return qEnvironmentVariable("SNAP_INSTANCE_NAME")
+				+ '_'
+				+ cExeName()
+				+ u".desktop"_q;
+		}
+
+		if (!Core::UpdaterDisabled()) {
+			QByteArray md5Hash(h);
+			if (!Launcher::Instance().customWorkingDir()) {
+				const auto exePath = QFile::encodeName(
+					cExeDir() + cExeName());
+
+				hashMd5Hex(
+					exePath.constData(),
+					exePath.size(),
+					md5Hash.data());
+			}
+
+			return u"org.telegram.desktop._%1.desktop"_q.arg(
+				md5Hash.constData());
+		}
+
+		return u"org.telegram.desktop.desktop"_q;
+	}());
+
 	LOG(("Launcher filename: %1").arg(QGuiApplication::desktopFileName()));
 
-#ifndef DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION
-	qputenv("QT_WAYLAND_SHELL_INTEGRATION", "desktop-app-xdg-shell;xdg-shell");
-#endif // !DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION
+	if (!qEnvironmentVariableIsSet("XDG_ACTIVATION_TOKEN")
+		&& qEnvironmentVariableIsSet("DESKTOP_STARTUP_ID")) {
+		qputenv("XDG_ACTIVATION_TOKEN", qgetenv("DESKTOP_STARTUP_ID"));
+	}
 
 	qputenv("PULSE_PROP_application.name", AppName.utf8());
-	qputenv("PULSE_PROP_application.icon_name", GetIconName().toLatin1());
+	qputenv("PULSE_PROP_application.icon_name", base::IconName().toLatin1());
 
 #ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 	Glib::init();
 	Gio::init();
 
 	Glib::set_prgname(cExeName().toStdString());
-	Glib::set_application_name(std::string(AppName));
+	Glib::set_application_name(AppName.data());
 
 #ifdef DESKTOP_APP_USE_PACKAGED_RLOTTIE
 	g_warning(
@@ -519,21 +769,18 @@ void start() {
 #endif // DESKTOP_APP_USE_PACKAGED_FONTS
 #endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 
-	const auto d = QFile::encodeName(QDir(cWorkingDir()).absolutePath());
-	char h[33] = { 0 };
-	hashMd5Hex(d.constData(), d.size(), h);
-
-	Webview::WebKit2Gtk::SetSocketPath(qsl("%1/%2-%3-webview-%4").arg(
+	Webview::WebKit2Gtk::SetSocketPath(u"%1/%2-%3-webview-%4"_q.arg(
 		QDir::tempPath(),
 		h,
 		cGUIDStr(),
-		qsl("%1")).toStdString());
+		u"%1"_q).toStdString());
 }
 
 void finish() {
 }
 
 void InstallLauncher(bool force) {
+#ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 	static const auto DisabledByEnv = !qEnvironmentVariableIsEmpty(
 		"DESKTOPINTEGRATION");
 
@@ -546,14 +793,14 @@ void InstallLauncher(bool force) {
 	const auto applicationsPath = QStandardPaths::writableLocation(
 		QStandardPaths::ApplicationsLocation) + '/';
 
-	GenerateDesktopFile(applicationsPath, qsl("-- %u"));
+	GenerateDesktopFile(applicationsPath);
 
 	const auto icons = QStandardPaths::writableLocation(
-		QStandardPaths::GenericDataLocation) + qsl("/icons/");
+		QStandardPaths::GenericDataLocation) + u"/icons/"_q;
 
 	if (!QDir(icons).exists()) QDir().mkpath(icons);
 
-	const auto icon = icons + kIconName.utf16() + qsl(".png");
+	const auto icon = icons + base::IconName() + u".png"_q;
 	auto iconExists = QFile::exists(icon);
 	if (Local::oldSettingsVersion() < 2008012 && iconExists) {
 		// Icon was changed.
@@ -562,7 +809,7 @@ void InstallLauncher(bool force) {
 		}
 	}
 	if (!iconExists) {
-		if (QFile::copy(qsl(":/gui/art/logo_256.png"), icon)) {
+		if (QFile::copy(u":/gui/art/logo_256.png"_q, icon)) {
 			DEBUG_LOG(("App Info: Icon copied to '%1'").arg(icon));
 		}
 	}
@@ -570,6 +817,7 @@ void InstallLauncher(bool force) {
 	QProcess::execute("update-desktop-database", {
 		applicationsPath
 	});
+#endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 }
 
 PermissionStatus GetPermissionStatus(PermissionType type) {
@@ -624,11 +872,33 @@ bool OpenSystemSettings(SystemSettingsType type) {
 	return true;
 }
 
+void NewVersionLaunched(int oldVersion) {
+	if (oldVersion > 0
+		&& oldVersion <= 4000002
+		&& qEnvironmentVariableIsSet("WAYLAND_DISPLAY")
+		&& DesktopEnvironment::IsGnome()
+		&& !QFile::exists(cWorkingDir() + u"tdata/nowayland"_q)) {
+		QFile f(cWorkingDir() + u"tdata/nowayland"_q);
+		if (f.open(QIODevice::WriteOnly)) {
+			f.write("1");
+			f.close();
+			Core::Restart(); // restart with X backend
+		}
+	}
+	if (oldVersion <= 4001001 && cAutoStart()) {
+		AutostartToggle(true);
+	}
+}
+
 namespace ThirdParty {
 
 void start() {
 	LOG(("Icon theme: %1").arg(QIcon::themeName()));
 	LOG(("Fallback icon theme: %1").arg(QIcon::fallbackThemeName()));
+
+#ifndef DESKTOP_APP_DISABLE_DBUS_INTEGRATION
+	LaunchGApplication();
+#endif // !DESKTOP_APP_DISABLE_DBUS_INTEGRATION
 }
 
 void finish() {
@@ -637,10 +907,6 @@ void finish() {
 } // namespace ThirdParty
 
 } // namespace Platform
-
-void psNewVersion() {
-	Platform::InstallLauncher();
-}
 
 void psSendToMenu(bool send, bool silent) {
 }

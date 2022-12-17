@@ -17,25 +17,20 @@ add_library(external_zlib STATIC IMPORTED GLOBAL)
 add_library(desktop-app::external_zlib ALIAS external_zlib)
 
 if (WIN32)
+    set(zlib_lib_loc ${libs_loc}/zlib)
     target_compile_definitions(external_zlib INTERFACE ZLIB_WINAPI)
-    target_include_directories(external_zlib SYSTEM INTERFACE ${libs_loc}/zlib)
-    if (build_win64)
-        set(zlib_config_folder x64)
-    else()
-        set(zlib_config_folder x86)
-    endif()
-    set(zlib_lib_loc ${libs_loc}/zlib/contrib/vstudio/vc14/${zlib_config_folder})
+    target_include_directories(external_zlib SYSTEM INTERFACE ${zlib_lib_loc})
     set_target_properties(external_zlib PROPERTIES
-        IMPORTED_LOCATION "${zlib_lib_loc}/ZlibStatReleaseWithoutAsm/zlibstat.lib"
-        IMPORTED_LOCATION_DEBUG "${zlib_lib_loc}/ZlibStatDebug/zlibstat.lib"
+        IMPORTED_LOCATION "${zlib_lib_loc}/Release/zlibstatic.lib"
+        IMPORTED_LOCATION_DEBUG "${zlib_lib_loc}/Debug/zlibstaticd.lib"
     )
 elseif (APPLE)
     set_target_properties(external_zlib PROPERTIES
         IMPORTED_LOCATION ${libs_loc}/local/lib/libz.a
     )
 else()
-    find_library(ZLIB_LIBRARY libz.a REQUIRED)
+    find_library(DESKTOP_APP_ZLIB_LIBRARIES libz.a REQUIRED)
     set_target_properties(external_zlib PROPERTIES
-        IMPORTED_LOCATION "${ZLIB_LIBRARY}"
+        IMPORTED_LOCATION "${DESKTOP_APP_ZLIB_LIBRARIES}"
     )
 endif()

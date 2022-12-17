@@ -44,8 +44,8 @@ using PeersMap = details::PeersMap;
 using MediaData = details::MediaData;
 
 bool IsGlobalLink(const QString &link) {
-	return link.startsWith(qstr("http://"), Qt::CaseInsensitive)
-		|| link.startsWith(qstr("https://"), Qt::CaseInsensitive);
+	return link.startsWith(u"http://"_q, Qt::CaseInsensitive)
+		|| link.startsWith(u"https://"_q, Qt::CaseInsensitive);
 }
 
 QByteArray NoFileDescription(Data::File::SkipReason reason) {
@@ -220,7 +220,8 @@ QByteArray JoinList(
 
 QByteArray FormatText(
 		const std::vector<Data::TextPart> &data,
-		const QString &internalLinksDomain) {
+		const QString &internalLinksDomain,
+		const QString &relativeLinkBase) {
 	return JoinList(QByteArray(), ranges::views::all(
 		data
 	) | ranges::views::transform([&](const Data::TextPart &part) {
@@ -274,6 +275,15 @@ QByteArray FormatText(
 			"onclick=\"ShowSpoiler(this)\">"
 			"<span aria-hidden=\"true\">"
 			+ text + "</span></span>";
+		case Type::CustomEmoji: return (part.additional.isEmpty()
+			? "<a href=\"\" onclick=\"return ShowNotLoadedEmoji();\">"
+			: (part.additional == Data::TextPart::UnavailableEmoji())
+			? "<a href=\"\" onclick=\"return ShowNotAvailableEmoji();\">"
+			: ("<a href = \""
+				+ (relativeLinkBase + part.additional).toUtf8()
+				+ "\">"))
+			+ text
+			+ "</a>";
 		}
 		Unexpected("Type in text entities serialization.");
 	}) | ranges::to_vector);
@@ -1125,6 +1135,34 @@ auto HtmlWriter::Wrap::pushMessage(
 		return "You have just successfully transferred data from the &laquo;"
 			+ SerializeString(data.text)
 			+ "&raquo; button to the bot";
+	}, [&](const ActionGiftPremium &data) {
+		if (!data.months || data.cost.isEmpty()) {
+			return serviceFrom + " sent you a gift.";
+		}
+		return serviceFrom
+			+ " sent you a gift for "
+			+ data.cost
+			+ ": Telegram Premium for "
+			+ QString::number(data.months).toUtf8()
+			+ " months.";
+	}, [&](const ActionTopicCreate &data) {
+		return serviceFrom
+			+ " created topic &laquo;"
+			+ SerializeString(data.title)
+			+ "&raquo;";
+	}, [&](const ActionTopicEdit &data) {
+		auto parts = QList<QByteArray>();
+		if (!data.title.isEmpty()) {
+			parts.push_back("title to &laquo;"
+				+ SerializeString(data.title)
+				+ "&raquo;");
+		}
+		if (data.iconEmojiId) {
+			parts.push_back("icon to &laquo;"
+				+ QString::number(*data.iconEmojiId).toUtf8()
+				+ "&raquo;");
+		}
+		return serviceFrom + " changed topic " + parts.join(',');
 	}, [](v::null_t) { return QByteArray(); });
 
 	if (!serviceText.isEmpty()) {
@@ -1245,7 +1283,7 @@ auto HtmlWriter::Wrap::pushMessage(
 
 	block.append(pushMedia(message, basePath, peers, internalLinksDomain));
 
-	const auto text = FormatText(message.text, internalLinksDomain);
+	const auto text = FormatText(message.text, internalLinksDomain, _base);
 	if (!text.isEmpty()) {
 		block.append(pushDiv("text"));
 		block.append(text);

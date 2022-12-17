@@ -46,6 +46,49 @@ namespace Images {
 	int bottomAlpha,
 	QColor color = QColor(0, 0, 0));
 
+inline constexpr auto kTopLeft = 0;
+inline constexpr auto kTopRight = 1;
+inline constexpr auto kBottomLeft = 2;
+inline constexpr auto kBottomRight = 3;
+
+struct CornersMaskRef {
+	CornersMaskRef() = default;
+	explicit CornersMaskRef(gsl::span<const QImage, 4> masks)
+	: p{ &masks[0], &masks[1], &masks[2], &masks[3] } {
+	}
+	explicit CornersMaskRef(std::array<const QImage, 4> masks)
+	: p{ &masks[0], &masks[1], &masks[2], &masks[3] } {
+	}
+	explicit CornersMaskRef(gsl::span<const QImage*, 4> masks)
+	: p{ masks[0], masks[1], masks[2], masks[3] } {
+	}
+	explicit CornersMaskRef(std::array<const QImage*, 4> masks)
+	: p{ masks[0], masks[1], masks[2], masks[3] } {
+	}
+
+	[[nodiscard]] bool empty() const {
+		return !p[0] && !p[1] && !p[2] && !p[3];
+	}
+
+	std::array<const QImage*, 4> p{};
+
+	friend inline constexpr std::strong_ordering operator<=>(
+			CornersMaskRef a,
+			CornersMaskRef b) noexcept {
+		for (auto i = 0; i != 4; ++i) {
+			if (a.p[i] < b.p[i]) {
+				return std::strong_ordering::less;
+			} else if (a.p[i] > b.p[i]) {
+				return std::strong_ordering::greater;
+			}
+		}
+		return std::strong_ordering::equal;
+	}
+	friend inline constexpr bool operator==(
+		CornersMaskRef a,
+		CornersMaskRef b) noexcept = default;
+};
+
 [[nodiscard]] const std::array<QImage, 4> &CornersMask(
 	ImageRoundRadius radius);
 [[nodiscard]] std::array<QImage, 4> PrepareCorners(
@@ -53,6 +96,8 @@ namespace Images {
 	const style::color &color);
 
 [[nodiscard]] std::array<QImage, 4> CornersMask(int radius);
+[[nodiscard]] QImage EllipseMask(QSize size);
+
 [[nodiscard]] std::array<QImage, 4> PrepareCorners(
 	int radius,
 	const style::color &color);
@@ -100,7 +145,12 @@ inline constexpr auto is_flag_type(Option) { return true; };
 	ImageRoundRadius radius,
 	RectParts corners = RectPart::AllCorners);
 
-[[nodiscard]] QImage Blur(QImage &&image);
+[[nodiscard]] QImage Round(
+	QImage &&image,
+	CornersMaskRef mask,
+	QRect target = QRect());
+
+[[nodiscard]] QImage Blur(QImage &&image, bool ignoreAlpha = false);
 [[nodiscard]] QImage Round(
 	QImage &&image,
 	ImageRoundRadius radius,

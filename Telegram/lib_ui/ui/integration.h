@@ -27,6 +27,10 @@ namespace Emoji {
 class One;
 } // namespace Emoji
 
+namespace Text {
+class CustomEmoji;
+} // namespace Text
+
 class Integration {
 public:
 	static void Set(not_null<Integration*> instance);
@@ -56,6 +60,11 @@ public:
 	[[nodiscard]] virtual QString convertTagToMimeTag(const QString &tagId);
 	[[nodiscard]] virtual const Emoji::One *defaultEmojiVariant(
 		const Emoji::One *emoji);
+	[[nodiscard]] virtual auto createCustomEmoji(
+		const QString &data,
+		const std::any &context) -> std::unique_ptr<Text::CustomEmoji>;
+	[[nodiscard]] virtual Fn<void()> createSpoilerRepaint(
+		const std::any &context);
 
 	[[nodiscard]] virtual rpl::producer<> forcePopupMenuHideRequests();
 
@@ -74,7 +83,16 @@ public:
 	[[nodiscard]] virtual QString phraseFormattingMonospace();
 	[[nodiscard]] virtual QString phraseFormattingSpoiler();
 	[[nodiscard]] virtual QString phraseButtonOk();
+	[[nodiscard]] virtual QString phraseButtonClose();
 	[[nodiscard]] virtual QString phraseButtonCancel();
+	[[nodiscard]] virtual QString phrasePanelCloseWarning();
+	[[nodiscard]] virtual QString phrasePanelCloseUnsaved();
+	[[nodiscard]] virtual QString phrasePanelCloseAnyway();
+#if 0 // disabled for now
+	[[nodiscard]] virtual QString phraseBotSharePhone();
+	[[nodiscard]] virtual QString phraseBotSharePhoneTitle();
+	[[nodiscard]] virtual QString phraseBotSharePhoneConfirm();
+#endif
 
 };
 

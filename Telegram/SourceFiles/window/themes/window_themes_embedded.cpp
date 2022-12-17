@@ -47,6 +47,14 @@ const auto kColorizeIgnoredKeys = base::flat_set<QLatin1String>{ {
 	qstr("historyPeer8NameFg"),
 	qstr("historyPeer8NameFgSelected"),
 	qstr("historyPeer8UserpicBg"),
+	qstr("historyPeer1UserpicBg2"),
+	qstr("historyPeer2UserpicBg2"),
+	qstr("historyPeer3UserpicBg2"),
+	qstr("historyPeer4UserpicBg2"),
+	qstr("historyPeer5UserpicBg2"),
+	qstr("historyPeer6UserpicBg2"),
+	qstr("historyPeer7UserpicBg2"),
+	qstr("historyPeer8UserpicBg2"),
 	qstr("msgFile1Bg"),
 	qstr("msgFile1BgDark"),
 	qstr("msgFile1BgOver"),
@@ -75,6 +83,11 @@ const auto kColorizeIgnoredKeys = base::flat_set<QLatin1String>{ {
 	qstr("settingsIconBg6"),
 	qstr("settingsIconBg8"),
 	qstr("settingsIconBgArchive"),
+	qstr("premiumButtonBg1"),
+	qstr("premiumButtonBg2"),
+	qstr("premiumButtonBg3"),
+	qstr("premiumIconBg1"),
+	qstr("premiumIconBg2"),
 } };
 
 style::colorizer::Color cColor(std::string_view hex) {

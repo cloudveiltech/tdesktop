@@ -69,7 +69,7 @@ void ChangeFilterById(
 			MTP_flags(MTPmessages_UpdateDialogFilter::Flag::f_filter),
 			MTP_int(filter.id()),
 			filter.tl()
-		)).done([=, chat = history->peer->name, filterName = filter.title()] {
+		)).done([=, chat = history->peer->name(), name = filter.title()]{
 			// Since only the primary window has dialogs list,
 			// We can safely show toast there.
 			if (const auto controller = Core::App().primaryWindow()) {
@@ -80,7 +80,7 @@ void ChangeFilterById(
 						lt_chat,
 						Ui::Text::Bold(chat),
 						lt_folder,
-						Ui::Text::Bold(filterName),
+						Ui::Text::Bold(name),
 						Ui::Text::WithEntities);
 				Ui::Toast::Show(
 					Window::Show(controller).toastParent(),
@@ -127,7 +127,7 @@ ChooseFilterValidator::LimitData ChooseFilterValidator::limitReached(
 
 	const auto list = _history->owner().chatsFilters().list();
 	const auto i = ranges::find(list, filterId, &Data::ChatFilter::id);
-	const auto limit = _history->owner().pinnedChatsLimit(nullptr, filterId);
+	const auto limit = _history->owner().pinnedChatsLimit(filterId);
 	return {
 		.reached = (i != end(list))
 			&& !ranges::contains(i->always(), _history)
@@ -148,7 +148,7 @@ void FillChooseFilterMenu(
 		not_null<Window::SessionController*> controller,
 		not_null<Ui::PopupMenu*> menu,
 		not_null<History*> history) {
-	const auto weak = base::make_weak(controller.get());
+	const auto weak = base::make_weak(controller);
 	const auto validator = ChooseFilterValidator(history);
 	for (const auto &filter : history->owner().chatsFilters().list()) {
 		const auto id = filter.id();

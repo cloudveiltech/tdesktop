@@ -7,11 +7,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/chat/attach/attach_album_thumbnail.h"
 
+#include "core/mime_type.h" // Core::IsMimeSticker.
 #include "ui/chat/attach/attach_prepare.h"
 #include "ui/image/image_prepare.h"
 #include "ui/text/format_values.h"
 #include "ui/widgets/buttons.h"
 #include "ui/ui_utility.h"
+#include "ui/painter.h"
 #include "base/call_delayed.h"
 #include "styles/style_chat.h"
 #include "styles/style_boxes.h"
@@ -28,9 +30,10 @@ AlbumThumbnail::AlbumThumbnail(
 	Fn<void()> deleteCallback)
 : _layout(layout)
 , _fullPreview(file.preview)
-, _shrinkSize(int(std::ceil(st::historyMessageRadius / 1.4)))
+, _shrinkSize(int(std::ceil(st::roundRadiusLarge / 1.4)))
 , _isPhoto(file.type == PreparedFile::Type::Photo)
-, _isVideo(file.type == PreparedFile::Type::Video) {
+, _isVideo(file.type == PreparedFile::Type::Video)
+, _isCompressedSticker(Core::IsMimeSticker(file.information->filemime)) {
 	Expects(!_fullPreview.isNull());
 
 	moveToLayout(layout);
@@ -67,7 +70,7 @@ AlbumThumbnail::AlbumThumbnail(
 
 	const auto availableFileWidth = st::sendMediaPreviewSize
 		- st.thumbSize
-		- st.padding.right()
+		- st.thumbSkip
 		// Right buttons.
 		- st::sendBoxAlbumGroupButtonFile.width * 2
 		- st::sendBoxAlbumGroupEditInternalSkip * 2
@@ -104,21 +107,16 @@ AlbumThumbnail::AlbumThumbnail(
 	_editMedia->setIconOverride(&st::sendBoxAlbumGroupEditButtonIconFile);
 	_deleteMedia->setIconOverride(&st::sendBoxAlbumGroupDeleteButtonIconFile);
 
-	updateFileRow(-1);
+	setButtonVisible(false);
 }
 
-void AlbumThumbnail::updateFileRow(int row) {
-	if (row < 0) {
-		_editMedia->hide();
-		_deleteMedia->hide();
-		return;
-	}
-	_editMedia->show();
-	_deleteMedia->show();
+void AlbumThumbnail::setButtonVisible(bool value) {
+	_editMedia->setVisible(value);
+	_deleteMedia->setVisible(value);
+}
 
-	const auto fileHeight = st::attachPreviewThumbLayout.thumbSize
-		+ st::sendMediaRowSkip;
-	const auto top = row * fileHeight + st::sendBoxFileGroupSkipTop;
+void AlbumThumbnail::moveButtons(int thumbTop) {
+	const auto top = thumbTop + st::sendBoxFileGroupSkipTop;
 
 	auto right = st::sendBoxFileGroupSkipRight + st::boxPhotoPadding.right();
 	_deleteMedia->moveToRight(right, top);
@@ -172,8 +170,18 @@ int AlbumThumbnail::photoHeight() const {
 	return _photo.height() / style::DevicePixelRatio();
 }
 
+int AlbumThumbnail::fileHeight() const {
+	return _isCompressedSticker
+		? photoHeight()
+		: st::attachPreviewThumbLayout.thumbSize;
+}
+
+bool AlbumThumbnail::isCompressedSticker() const {
+	return _isCompressedSticker;
+}
+
 void AlbumThumbnail::paintInAlbum(
-		Painter &p,
+		QPainter &p,
 		int left,
 		int top,
 		float64 shrinkProgress,
@@ -251,7 +259,7 @@ void AlbumThumbnail::prepareCache(QSize size, int shrink) {
 		QRect(QPoint(), size * style::DevicePixelRatio()));
 }
 
-void AlbumThumbnail::drawSimpleFrame(Painter &p, QRect to, QSize size) const {
+void AlbumThumbnail::drawSimpleFrame(QPainter &p, QRect to, QSize size) const {
 	const auto fullWidth = _fullPreview.width();
 	const auto fullHeight = _fullPreview.height();
 	const auto previewSize = GetImageScaleSizeForGeometry(
@@ -391,7 +399,7 @@ void AlbumThumbnail::paintFile(
 		int top,
 		int outerWidth) {
 	const auto &st = st::attachPreviewThumbLayout;
-	const auto textLeft = left + st.thumbSize + st.padding.right();
+	const auto textLeft = left + st.thumbSize + st.thumbSkip;
 
 	p.drawPixmap(left, top, _fileThumb);
 	p.setFont(st::semiboldFont);
@@ -421,7 +429,7 @@ bool AlbumThumbnail::containsPoint(QPoint position) const {
 }
 
 bool AlbumThumbnail::buttonsContainPoint(QPoint position) const {
-	return (_isPhoto
+	return ((_isPhoto && !_isCompressedSticker)
 		? _lastRectOfModify
 		: _lastRectOfButtons).contains(position);
 }
@@ -430,7 +438,7 @@ AttachButtonType AlbumThumbnail::buttonTypeFromPoint(QPoint position) const {
 	if (!buttonsContainPoint(position)) {
 		return AttachButtonType::None;
 	}
-	return !_lastRectOfButtons.contains(position)
+	return (!_lastRectOfButtons.contains(position) && !_isCompressedSticker)
 		? AttachButtonType::Modify
 		: (position.x() < _lastRectOfButtons.center().x())
 		? AttachButtonType::Edit
@@ -495,7 +503,7 @@ void AlbumThumbnail::finishAnimations() {
 }
 
 QRect AlbumThumbnail::paintButtons(
-		Painter &p,
+		QPainter &p,
 		QPoint point,
 		int outerWidth,
 		float64 shrinkProgress) {

@@ -166,6 +166,9 @@ inline WebKitSettings *(*webkit_web_view_get_settings)(
 inline void (*webkit_settings_set_javascript_can_access_clipboard)(
 	WebKitSettings *settings,
 	gboolean enabled);
+inline void (*webkit_settings_set_enable_developer_extras)(
+	WebKitSettings *settings,
+	gboolean enabled);
 inline void (*webkit_web_view_load_uri)(
 	WebKitWebView *web_view,
 	const gchar *uri);
@@ -186,6 +189,6 @@ inline void (*webkit_web_view_run_javascript)(
 	GAsyncReadyCallback callback,
 	gpointer user_data);
 
-[[nodiscard]] bool Resolve();
+[[nodiscard]] bool Resolve(bool wayland);
 
 } // namespace Webview::WebkitGtk

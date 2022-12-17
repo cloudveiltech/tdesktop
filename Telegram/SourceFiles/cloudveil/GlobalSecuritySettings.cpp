@@ -16,6 +16,7 @@
 #include "main/main_session.h"
 #include "storage/storage_account.h"
 #include "mainwidget.h"
+#include "core/application.h"
 
 #define MAX_REQUEST_INTERVAL_MS 10*60*1000
 
@@ -86,11 +87,16 @@ GlobalSecuritySettings* GlobalSecuritySettings::getInstance() {
 }
 
 void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
-	if (App::main() == nullptr) {
+	if (!Core::IsAppLaunched()) {
 		return;
 	}
 
-	Main::Session& session = App::main()->session();
+	Main::Session* s = Core::App().maybePrimarySession();
+	if (s == nullptr) {
+		return;
+	}
+	Main::Session& session = *s;
+
 	Data::Session& data = session.data();
 	Dialogs::IndexedList* chats = data.chatsList()->indexed();
 	QStack<Dialogs::IndexedList*> lists;
@@ -125,7 +131,7 @@ void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 
 	auto user = session.user();
 	request.userId = user->id.value;
-	request.userName = user->username;
+	request.userName = user->userName();
 	request.userPhone = user->phone();
 
 	if (!sessionUids.contains(request.userId)) {
@@ -161,8 +167,12 @@ void GlobalSecuritySettings::checkStickerSetByDocumentAsync(DocumentData* sticke
 	if (sticker->sticker()) {
 		StickerData *data = sticker->sticker();
 
-		Main::Session& session = App::main()->session();
-		MTP::Sender api(&session.mtp());
+		Main::Session* session = Core::App().maybePrimarySession();
+		if (session == nullptr) {
+			return;
+		}
+
+		MTP::Sender api(&session->mtp());
 
 		api.request(MTPmessages_GetStickerSet(
 			Data::InputStickerSet(data->set),
@@ -185,13 +195,13 @@ void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerDa
 	row.isPublic = false;
 
 	if (peer->isChat()) {
-		row.title = peer->asChat()->name;
+		row.title = peer->asChat()->name();
 		row.userName = row.title;
 		row.isPublic = peer->asChat()->flags() & 0x00000040;
 		request.groups.append(row);
 	}
 	else if (peer->isChannel()) {
-		row.title = peer->asChannel()->name;
+		row.title = peer->asChannel()->name();
 		row.userName = peer->asChannel()->userName();
 		row.isPublic = peer->asChannel()->isPublic();
 
@@ -204,7 +214,7 @@ void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerDa
 		}
 	}
 	else if (peer->isUser()) {
-		row.title = peer->asUser()->name;
+		row.title = peer->asUser()->name();
 		if (peer->asUser()->botInfo.get() != nullptr) {
 			request.bots.append(row);
 		}
@@ -246,9 +256,11 @@ void GlobalSecuritySettings::suscribeToSupportChannel(SettingsRequest& request) 
 		}
 	}
 	auto username = MTP_string(CLOUDVEIL_CHANNEL_USERNAME);
-
-	Main::Session& session = App::main()->session();
-	MTP::Sender api(&session.mtp());
+	Main::Session* session = Core::App().maybePrimarySession();
+	if (session == nullptr) {
+		return;
+	}
+	MTP::Sender api(&session->mtp());
 	api.request(MTPcontacts_ResolveUsername(username)).done([=](const MTPcontacts_ResolvedPeer& result) {
 		usernameResolveDone(result);
 	}).send();
@@ -259,23 +271,27 @@ void GlobalSecuritySettings::usernameResolveDone(const MTPcontacts_ResolvedPeer&
 	if (result.type() != mtpc_contacts_resolvedPeer) {
 		return;
 	}
+	Main::Session* session = Core::App().maybePrimarySession();
+	if (session == nullptr) {
+		return;
+	}
 
 	const auto& d(result.c_contacts_resolvedPeer());
-	App::main()->session().data().processUsers(d.vusers());
-	App::main()->session().data().processChats(d.vchats());
+	session->data().processUsers(d.vusers());
+	session->data().processChats(d.vchats());
 	PeerId peerId = peerFromMTP(d.vpeer());
 	if (!peerId) {
 		return;
 	}
 
-	PeerData* peer = App::main()->session().data().peer(peerId);
+	PeerData* peer = session->data().peer(peerId);
 	if (peer == 0) {
 		return;
 	}
 
 
-	App::main()->session().api().joinChannel(peer->asChannel());
-	App::main()->session().data().sendHistoryChangeNotifications();
+	session->api().joinChannel(peer->asChannel());
+	session->data().sendHistoryChangeNotifications();
 }
 
 

@@ -50,8 +50,10 @@ class Session;
 } // namespace Main
 
 namespace Data {
+class Thread;
 class WallPaper;
 struct ForwardDraft;
+class Forum;
 } // namespace Data
 
 namespace Dialogs {
@@ -95,6 +97,7 @@ class TopBarWrapWidget;
 class SectionMemento;
 class SectionWidget;
 class AbstractSectionWidget;
+class SlideAnimation;
 class ConnectionState;
 struct SectionSlideParams;
 struct SectionShow;
@@ -120,8 +123,7 @@ class ItemBase;
 
 class MainWidget
 	: public Ui::RpWidget
-	, private Media::Player::FloatDelegate
-	, private base::Subscriber {
+	, private Media::Player::FloatDelegate {
 	Q_OBJECT
 
 public:
@@ -131,7 +133,7 @@ public:
 		QWidget *parent,
 		not_null<Window::SessionController*> controller);
 	~MainWidget();
-	
+
 	//CloudVeil start
 	void onSettingsUpdate();
 	void showOrganizationChangeRequired();
@@ -151,14 +153,14 @@ public:
 
 	void returnTabbedSelector();
 
-	void showAnimated(const QPixmap &bgAnimCache, bool back = false);
+	void showAnimated(QPixmap oldContentCache, bool back = false);
 
 	void activate();
 
 	void windowShown();
 
 	void dialogsToUp();
-	void checkHistoryActivation();
+	void checkActivation();
 
 	[[nodiscard]] PeerData *peer() const;
 	[[nodiscard]] Ui::ChatTheme *customChatTheme() const;
@@ -181,24 +183,30 @@ public:
 		not_null<DocumentData*> document,
 		Api::SendOptions options);
 
-	bool isActive() const;
-	[[nodiscard]] bool doWeMarkAsRead() const;
+	[[nodiscard]] bool animatingShow() const;
 
-	void saveFieldToHistoryLocalDraft();
+	void showDragForwardInfo();
+	void hideDragForwardInfo();
 
-	void showForwardLayer(Data::ForwardDraft &&draft);
-	void showSendPathsLayer();
-	void shareUrlLayer(const QString &url, const QString &text);
-	void inlineSwitchLayer(const QString &botAndQuery);
-	void hiderLayer(base::unique_qptr<Window::HistoryHider> h);
-	bool setForwardDraft(PeerId peer, Data::ForwardDraft &&draft);
-	bool sendPaths(PeerId peerId);
-	void onFilesOrForwardDrop(const PeerId &peer, const QMimeData *data);
-	bool selectingPeer() const;
+	bool setForwardDraft(
+		not_null<Data::Thread*> thread,
+		Data::ForwardDraft &&draft);
+	bool sendPaths(
+		not_null<Data::Thread*> thread,
+		const QStringList &paths);
+	bool shareUrl(
+		not_null<Data::Thread*> thread,
+		const QString &url,
+		const QString &text) const;
+	bool filesOrForwardDrop(
+		not_null<Data::Thread*> thread,
+		not_null<const QMimeData*> data);
+	bool inlineSwitchChosen(
+		not_null<Data::Thread*> thread,
+		const QString &botAndQuery) const;
 
 	void sendBotCommand(Bot::SendCommandRequest request);
 	void hideSingleUseKeyboard(PeerData *peer, MsgId replyTo);
-	bool insertBotCommand(const QString &cmd);
 
 	void searchMessages(const QString &query, Dialogs::Key inChat);
 
@@ -210,8 +218,6 @@ public:
 	void checkChatBackground();
 	Image *newBackgroundThumb();
 
-	// Does offerPeer or showPeerHistory.
-	void choosePeer(PeerId peerId, MsgId showAtMsgId);
 	void clearBotStartToken(PeerData *peer);
 
 	void ctrlEnterSubmitUpdated();
@@ -229,10 +235,14 @@ public:
 
 	void toggleChooseChatTheme(not_null<PeerData*> peer);
 
-	void ui_showPeerHistory(
+	void showPeerHistory(
 		PeerId peer,
 		const SectionShow &params,
 		MsgId msgId);
+	void showMessage(
+		not_null<const HistoryItem*> item,
+		const SectionShow &params);
+	void showForum(not_null<Data::Forum*> forum, const SectionShow &params);
 
 	bool notify_switchInlineBotButtonReceived(const QString &query, UserData *samePeerBot, MsgId samePeerReplyTo);
 
@@ -262,7 +272,7 @@ protected:
 	bool eventFilter(QObject *o, QEvent *e) override;
 
 private:
-	void animationCallback();
+	void showFinished();
 	void handleAdaptiveLayoutUpdate();
 	void updateWindowAdaptiveLayout();
 	void handleAudioUpdate(const Media::Player::TrackState &state);
@@ -275,12 +285,6 @@ private:
 	[[nodiscard]] bool saveThirdSectionToStackBack() const;
 	[[nodiscard]] auto thirdSectionForCurrentMainSection(Dialogs::Key key)
 		-> std::shared_ptr<Window::SectionMemento>;
-
-	bool shareUrl(
-		PeerId peerId,
-		const QString &url,
-		const QString &text) const;
-	bool inlineSwitchChosen(PeerId peerId, const QString &botAndQuery) const;
 
 	void setupConnectingWidget();
 	void createPlayer();
@@ -318,6 +322,7 @@ private:
 
 	void hideAll();
 	void showAll();
+	void hiderLayer(base::unique_qptr<Window::HistoryHider> h);
 	void clearHider(not_null<Window::HistoryHider*> instance);
 
 	[[nodiscard]] auto floatPlayerDelegate()
@@ -361,9 +366,7 @@ private:
 
 	const not_null<Window::SessionController*> _controller;
 
-	Ui::Animations::Simple _a_show;
-	bool _showBack = false;
-	QPixmap _cacheUnder, _cacheOver;
+	std::unique_ptr<Window::SlideAnimation> _showAnimation;
 
 	int _dialogsWidth = 0;
 	int _thirdColumnWidth = 0;
@@ -414,7 +417,3 @@ private:
 	qint64 lastOrganizationPopupShownTime;
 	//CloudVeil end
 };
-
-namespace App {
-MainWidget *main();
-} // namespace App

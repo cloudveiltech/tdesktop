@@ -15,9 +15,11 @@ architectures:
 
 apps:
   telegram-desktop:
-    command: bin/desktop-launch telegram-desktop
+    command: usr/bin/telegram-desktop
+    command-chain:
+      - bin/desktop-launch
     common-id: org.telegram.desktop
-    desktop: usr/share/applications/telegram-desktop_telegram-desktop.desktop
+    desktop: usr/share/applications/org.telegram.desktop.desktop
     environment:
       # Tell glib to use portals on file associations handling.
       GTK_USE_PORTAL: 1
@@ -33,6 +35,7 @@ apps:
       - hardware-observe
       - home
       - network
+      - network-status
       - opengl
       - removable-media
       - unity7
@@ -85,18 +88,18 @@ parts:
     plugin: cmake
     source: .
     source-type: git
-    parse-info: [usr/share/metainfo/telegram-desktop_telegram-desktop.metainfo.xml]
+    parse-info: [usr/share/metainfo/org.telegram.desktop.metainfo.xml]
     build-environment:
       - LD_LIBRARY_PATH: $CRAFT_STAGE/usr/lib/$CRAFT_ARCH_TRIPLET${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
     build-packages:
       - clang
       - python3
       - libasound2-dev
+      - libavif-dev
       - libglib2.0-dev
-      - libglibmm-2.4-dev
+      - libheif-dev
       - libopus-dev
       - libpulse-dev
-      - libssl-dev
       - libwayland-dev
       - libxcb1-dev
       - libxcb-keysyms1-dev
@@ -105,11 +108,11 @@ parts:
       - zlib1g-dev
     stage-packages:
       - libasound2
+      - libavif13
       - libglib2.0-0
-      - libglibmm-2.4-1v5
+      - libheif1
       - libopus0
       - libpulse0
-      - libssl3
       - libwayland-client0
       - libwebkit2gtk-4.1-0
       - libxcb1
@@ -123,12 +126,9 @@ parts:
     cmake-parameters:
       - -DCMAKE_BUILD_TYPE=Release
       - -DCMAKE_INSTALL_PREFIX=/usr
-      - -DCMAKE_LIBRARY_PATH=$CRAFT_STAGE/usr/lib/$CRAFT_ARCH_TRIPLET
-      - -DCMAKE_INCLUDE_PATH=$CRAFT_STAGE/usr/include
       - -DTDESKTOP_API_ID=611335
       - -DTDESKTOP_API_HASH=d524b414d21f4d37f08684c1df41ac9c
       - -DDESKTOP_APP_USE_PACKAGED_LAZY=ON
-      - -DTDESKTOP_LAUNCHER_BASENAME=telegram-desktop_telegram-desktop
     override-pull: |
       craftctl default
 
@@ -144,7 +144,7 @@ parts:
 
       craftctl set version="$version"
 
-      sed -i 's|^Icon=telegram$|Icon=${SNAP}/meta/gui/icon.png|g' lib/xdg/telegramdesktop.desktop
+      sed -i 's|^Icon=telegram$|Icon=${SNAP}/meta/gui/icon.png|g' lib/xdg/org.telegram.desktop.desktop
     override-build: |
       craftctl default
       rm -rf "$CRAFT_PART_INSTALL/usr/share/icons"
@@ -155,8 +155,12 @@ parts:
     after:
       - desktop-qt
       - ffmpeg
+      - libjxl
+      - glibmm
       - mozjpeg
       - openal
+      - openssl
+      - protobuf
       - rnnoise
       - webrtc
 
@@ -181,13 +185,8 @@ parts:
       - dpkg-dev
     stage-packages:
       - libxkbcommon0
-      - fonts-ubuntu
-      - dmz-cursor-theme
-      - light-themes
-      - adwaita-icon-theme
-      - gnome-themes-standard
       - shared-mime-info
-      - libgdk-pixbuf2.0-0
+      - libgdk-pixbuf-2.0-0
       - locales-all
       - xdg-user-dirs
     stage:
@@ -215,6 +214,64 @@ parts:
     after:
       - mozjpeg
 
+  glibmm:
+    source: https://github.com/GNOME/glibmm.git
+    source-depth: 1
+    source-tag: 2.72.1
+    plugin: meson
+    build-packages:
+      - meson
+      - mm-common
+      - ninja-build
+      - libglib2.0-dev
+      - libxml-parser-perl
+    stage-packages:
+      - libglib2.0-0
+    meson-parameters:
+      - --buildtype=release
+      - --prefix=/usr
+      - -Dbuild-documentation=false
+      - -Dbuild-examples=false
+      - -Dsigc++-3.0:build-documentation=false
+      - -Dsigc++-3.0:build-examples=false
+      - -Dsigc++-3.0:validation=false
+    prime:
+      - -./usr/include
+      - -./usr/lib/$CRAFT_ARCH_TRIPLET/pkgconfig
+      - -./usr/lib/$CRAFT_ARCH_TRIPLET/*.so
+
+  libjxl:
+    source: https://github.com/libjxl/libjxl.git
+    source-depth: 1
+    source-tag: v0.7.0
+    plugin: cmake
+    cmake-parameters:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DCMAKE_INSTALL_PREFIX=/usr
+      - -DBUILD_TESTING=OFF
+      - -DJPEGXL_ENABLE_DEVTOOLS=OFF
+      - -DJPEGXL_ENABLE_TOOLS=OFF
+      - -DJPEGXL_ENABLE_DOXYGEN=OFF
+      - -DJPEGXL_ENABLE_MANPAGES=OFF
+      - -DJPEGXL_ENABLE_BENCHMARK=OFF
+      - -DJPEGXL_ENABLE_EXAMPLES=OFF
+      - -DJPEGXL_ENABLE_JNI=OFF
+      - -DJPEGXL_ENABLE_SJPEG=OFF
+      - -DJPEGXL_ENABLE_OPENEXR=OFF
+      - -DJPEGXL_ENABLE_SKCMS=OFF
+    override-pull: |
+      craftctl default
+      sed -i 's/NOT JPEGXL_ENABLE_SKCMS/0/' lib/jxl.cmake
+    stage:
+      - -./usr/lib/$SNAPCRAFT_ARCH_TRIPLET/libbrotli*
+    prime:
+      - -./usr/bin
+      - -./usr/include
+      - -./usr/lib/$SNAPCRAFT_ARCH_TRIPLET/pkgconfig
+      - -./usr/lib/$SNAPCRAFT_ARCH_TRIPLET/*.a
+      - -./usr/lib/$SNAPCRAFT_ARCH_TRIPLET/*.so
+      - -./usr/share
+
   mozjpeg:
     source: https://github.com/mozilla/mozjpeg.git
     source-depth: 1
@@ -237,7 +294,7 @@ parts:
   openal:
     source: https://github.com/kcat/openal-soft.git
     source-depth: 1
-    source-tag: 1.22.0
+    source-tag: 1.22.2
     plugin: cmake
     build-packages:
       - libasound2-dev
@@ -254,14 +311,56 @@ parts:
       - -DCMAKE_BUILD_TYPE=Release
       - -DCMAKE_INSTALL_PREFIX=/usr
       - -DALSOFT_EXAMPLES=OFF
-      - -DALSOFT_TESTS=OFF
       - -DALSOFT_UTILS=OFF
       - -DALSOFT_INSTALL_CONFIG=OFF
     prime:
       - -./usr/include
       - -./usr/lib/$CRAFT_ARCH_TRIPLET/cmake
       - -./usr/lib/$CRAFT_ARCH_TRIPLET/pkgconfig
-      - -./usr/lib/$CRAFT_ARCH_TRIPLET/libopenal.so
+      - -./usr/lib/$CRAFT_ARCH_TRIPLET/*.so
+
+  openssl:
+    source: https://github.com/openssl/openssl.git
+    source-depth: 1
+    source-branch: OpenSSL_1_1_1-stable
+    plugin: make
+    override-build: |
+      ./config \
+        shared \
+        --prefix=/usr \
+        --openssldir=/usr/lib/ssl \
+        --libdir=lib/$CRAFT_ARCH_TRIPLET \
+        no-tests
+      craftctl default
+    prime:
+      - -./usr/bin
+      - -./usr/include
+      - -./usr/lib/$CRAFT_ARCH_TRIPLET/pkgconfig
+      - -./usr/lib/$CRAFT_ARCH_TRIPLET/*.a
+      - -./usr/lib/$CRAFT_ARCH_TRIPLET/*.so
+      - -./usr/share
+
+  protobuf:
+    source: https://github.com/protocolbuffers/protobuf.git
+    source-depth: 1
+    source-tag: v21.9
+    plugin: cmake
+    build-packages:
+      - zlib1g-dev
+    stage-packages:
+      - zlib1g
+    cmake-generator: Ninja
+    cmake-parameters:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DCMAKE_INSTALL_PREFIX=/usr
+      - -DBUILD_SHARED_LIBS=ON
+      - -Dprotobuf_BUILD_TESTS=OFF
+    prime:
+      - -./usr/bin
+      - -./usr/include
+      - -./usr/lib/$CRAFT_ARCH_TRIPLET/cmake
+      - -./usr/lib/$CRAFT_ARCH_TRIPLET/pkgconfig
+      - -./usr/lib/$CRAFT_ARCH_TRIPLET/*.so
 
   qt:
     plugin: nil
@@ -280,7 +379,7 @@ parts:
       - libpcre2-dev
       - libpng-dev
       - libsm-dev
-      - libssl-dev
+      - libvulkan-dev
       - libwayland-dev
       - libx11-dev
       - libx11-xcb-dev
@@ -317,10 +416,11 @@ parts:
       - libpcre2-16-0
       - libpng16-16
       - libsm6
-      - libssl3
+      - libvulkan1
       - libwayland-client0
       - libwayland-cursor0
       - libwayland-egl1
+      - libwayland-server0
       - libx11-6
       - libx11-xcb1
       - libxcb1
@@ -342,10 +442,10 @@ parts:
       - libxkbcommon-x11-0
       - zlib1g
     override-pull: |
-      QT=6_3_1
+      QT=6_4_1
 
-      git clone -b v6.3.1 --depth=1 git://code.qt.io/qt/qt5.git .
-      perl init-repository --module-subset=qtbase,qtwayland,qtimageformats,qtsvg,qt5compat
+      git clone -b v6.4.1 --depth=1 git://code.qt.io/qt/qt5.git .
+      git submodule update --init --recursive --depth=1 qtbase qtdeclarative qtwayland qtimageformats qtsvg qt5compat qtshadertools
 
       cd qtbase
       find $CRAFT_STAGE/patches/qtbase_${QT} -type f -print0 | sort -z | xargs -r0 git apply
@@ -361,7 +461,6 @@ parts:
         -no-feature-renameat2 \
         -no-feature-statx \
         -no-feature-egl-extension-platform-wayland \
-        -no-feature-wayland-server \
         -no-feature-highdpiscaling \
         -openssl-linked \
         -nomake examples \
@@ -377,6 +476,7 @@ parts:
       - -./usr/include
       - -./usr/lib/$CRAFT_ARCH_TRIPLET/cmake
       - -./usr/lib/$CRAFT_ARCH_TRIPLET/metatypes
+      - -./usr/lib/$CRAFT_ARCH_TRIPLET/pkgconfig
       - -./usr/lib/$CRAFT_ARCH_TRIPLET/*.a
       - -./usr/lib/$CRAFT_ARCH_TRIPLET/*.la
       - -./usr/lib/$CRAFT_ARCH_TRIPLET/*.prl
@@ -386,6 +486,7 @@ parts:
       - -./usr/modules
     after:
       - mozjpeg
+      - openssl
       - patches
 
   rnnoise:
@@ -402,14 +503,14 @@ parts:
     prime:
       - -./usr/include
       - -./usr/lib/$CRAFT_ARCH_TRIPLET/pkgconfig
-      - -./usr/lib/$CRAFT_ARCH_TRIPLET/librnnoise.la
-      - -./usr/lib/$CRAFT_ARCH_TRIPLET/librnnoise.so
+      - -./usr/lib/$CRAFT_ARCH_TRIPLET/*.la
+      - -./usr/lib/$CRAFT_ARCH_TRIPLET/*.so
       - -./usr/share
 
   webrtc:
     source: https://github.com/desktop-app/tg_owt.git
     source-depth: 1
-    source-commit: 10d5f4bf77333ef6b43516f90d2ce13273255f41
+    source-commit: cc8edd5719556e1711f50da9a3f7a4c59bba574d
     plugin: cmake
     build-packages:
       - yasm
@@ -421,7 +522,6 @@ parts:
       - libopenh264-dev
       - libopus-dev
       - libpipewire-0.3-dev
-      - libssl-dev
       - libvpx-dev
       - libx11-dev
       - libxcomposite-dev
@@ -440,7 +540,6 @@ parts:
       - libopenh264-6
       - libopus0
       - libpipewire-0.3-0
-      - libssl3
       - libvpx7
       - libx11-6
       - libxcomposite1
@@ -454,8 +553,6 @@ parts:
     cmake-parameters:
       - -DCMAKE_BUILD_TYPE=Release
       - -DCMAKE_INSTALL_PREFIX=/usr
-      - -DCMAKE_LIBRARY_PATH=$CRAFT_STAGE/usr/lib/$CRAFT_ARCH_TRIPLET
-      - -DCMAKE_INCLUDE_PATH=$CRAFT_STAGE/usr/include
     prime:
       - -./usr/include
       - -./usr/lib/$CRAFT_ARCH_TRIPLET/cmake
@@ -463,3 +560,4 @@ parts:
     after:
       - ffmpeg
       - mozjpeg
+      - openssl

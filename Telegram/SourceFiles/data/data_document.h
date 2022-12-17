@@ -36,6 +36,7 @@ namespace Data {
 class Session;
 class DocumentMedia;
 class ReplyPreview;
+enum class StickersType : uchar;
 } // namespace Data
 
 namespace Main {
@@ -73,6 +74,7 @@ struct StickerData : public DocumentAdditionalData {
 	QString alt;
 	StickerSetIdentifier set;
 	StickerType type = StickerType::Webp;
+	Data::StickersType setType = Data::StickersType();
 };
 
 struct SongData : public DocumentAdditionalData {
@@ -87,6 +89,8 @@ struct VoiceData : public DocumentAdditionalData {
 	VoiceWaveform waveform;
 	char wavemax = 0;
 };
+
+using RoundData = VoiceData;
 
 namespace Serialize {
 class Document;
@@ -115,6 +119,7 @@ public:
 		bool autoLoading = false);
 	void cancel();
 	[[nodiscard]] bool cancelled() const;
+	void resetCancelled();
 	[[nodiscard]] float64 progress() const;
 	[[nodiscard]] int64 loadOffset() const;
 	[[nodiscard]] bool uploading() const;
@@ -149,6 +154,8 @@ public:
 	[[nodiscard]] const SongData *song() const;
 	[[nodiscard]] VoiceData *voice();
 	[[nodiscard]] const VoiceData *voice() const;
+	[[nodiscard]] RoundData *round();
+	[[nodiscard]] const RoundData *round() const;
 
 	void forceIsStreamedAnimation();
 	[[nodiscard]] bool isVoiceMessage() const;
@@ -173,6 +180,7 @@ public:
 	[[nodiscard]] bool isPatternWallPaperPNG() const;
 	[[nodiscard]] bool isPatternWallPaperSVG() const;
 	[[nodiscard]] bool isPremiumSticker() const;
+	[[nodiscard]] bool isPremiumEmoji() const;
 
 	[[nodiscard]] bool hasThumbnail() const;
 	[[nodiscard]] bool thumbnailLoading() const;
@@ -241,7 +249,7 @@ public:
 
 	[[nodiscard]] QString filename() const;
 	[[nodiscard]] QString mimeString() const;
-	[[nodiscard]] bool hasMimeType(QLatin1String mime) const;
+	[[nodiscard]] bool hasMimeType(const QString &mime) const;
 	void setMimeString(const QString &mime);
 
 	[[nodiscard]] bool hasAttachedStickers() const;
@@ -281,6 +289,7 @@ private:
 		InlineThumbnailIsPath = 0x080,
 		ForceToCache = 0x100,
 		PremiumSticker = 0x200,
+		PossibleCoverThumbnail = 0x400,
 	};
 	using Flags = base::flags<Flag>;
 	friend constexpr bool is_flag_type(Flag) { return true; };
@@ -321,6 +330,8 @@ private:
 	void destroyLoader();
 
 	bool saveFromDataChecked();
+
+	void refreshPossibleCoverThumbnail();
 
 	const not_null<Data::Session*> _owner;
 

@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "ui/click_handler.h"
 #include "ui/effects/ripple_animation.h"
+#include "ui/painter.h"
 #include "ui/round_rect.h"
 #include "ui/text/text_utilities.h" // Ui::Text::ToUpper
 #include "window/window_session_controller.h"
@@ -168,7 +169,7 @@ ViewButton::Inner::Inner(
 void ViewButton::Inner::updateMask(int height) {
 	ripple = std::make_unique<Ui::RippleAnimation>(
 		st::defaultRippleAnimation,
-		Ui::RippleAnimation::roundRectMask(
+		Ui::RippleAnimation::RoundRectMask(
 			QSize(lastWidth, height - margins.top() - margins.bottom()),
 			st::roundRadiusLarge),
 		updateCallback);

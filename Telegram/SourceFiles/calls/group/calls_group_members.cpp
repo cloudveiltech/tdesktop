@@ -27,11 +27,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/popup_menu.h"
 #include "ui/effects/ripple_animation.h"
 #include "ui/effects/cross_line.h"
+#include "ui/painter.h"
 #include "core/application.h" // Core::App().domain, .activeWindow.
 #include "main/main_domain.h" // Core::App().domain().activate.
 #include "main/main_session.h"
-#include "main/main_account.h" // account().appConfig().
-#include "main/main_app_config.h" // appConfig().get<double>().
 #include "info/profile/info_profile_values.h" // Info::Profile::NameValue.
 #include "boxes/peers/edit_participants_box.h" // SubscribeToMigration.
 #include "boxes/peers/prepare_short_info_box.h" // PrepareShortInfo...
@@ -88,11 +87,11 @@ public:
 	void rowUpdateRow(not_null<Row*> row) override;
 	void rowScheduleRaisedHandStatusRemove(not_null<Row*> row) override;
 	void rowPaintIcon(
-		Painter &p,
+		QPainter &p,
 		QRect rect,
 		const IconState &state) override;
 	int rowPaintStatusIcon(
-		Painter &p,
+		QPainter &p,
 		int x,
 		int y,
 		int outerWidth,
@@ -964,7 +963,7 @@ void Members::Controller::scheduleRaisedHandStatusRemove() {
 }
 
 void Members::Controller::rowPaintIcon(
-		Painter &p,
+		QPainter &p,
 		QRect rect,
 		const IconState &state) {
 	if (_mode == PanelMode::Wide
@@ -1076,7 +1075,7 @@ void Members::Controller::rowPaintIcon(
 }
 
 int Members::Controller::rowPaintStatusIcon(
-		Painter &p,
+		QPainter &p,
 		int x,
 		int y,
 		int outerWidth,
@@ -1259,9 +1258,7 @@ base::unique_qptr<Ui::PopupMenu> Members::Controller::createRowContextMenu(
 			result->menu(),
 			st::groupCallPopupCoverMenu,
 			st::groupCallMenuCover,
-			Info::Profile::NameValue(
-				participantPeer
-			) | rpl::map([](const auto &text) { return text.text; }),
+			Info::Profile::NameValue(participantPeer),
 			PrepareShortInfoStatus(participantPeer),
 			PrepareShortInfoUserpic(
 				participantPeer,
@@ -1645,7 +1642,7 @@ void Members::setupAddMember(not_null<GroupCall*> call) {
 			return rpl::single(false) | rpl::type_erased();
 		}
 		return rpl::combine(
-			Data::CanWriteValue(peer.get()),
+			Data::CanWriteValue(peer, false),
 			_call->joinAsValue()
 		) | rpl::map([=](bool can, not_null<PeerData*> joinAs) {
 			return can && joinAs->isSelf();

@@ -23,15 +23,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
+#include "base/options.h"
+#include "base/call_delayed.h"
 #include "base/crc32hash.h"
 #include "ui/toast/toast.h"
 #include "ui/widgets/shadow.h"
 #include "ui/controls/window_outdated_bar.h"
+#include "ui/painter.h"
 #include "ui/ui_utility.h"
 #include "apiwrap.h"
 #include "mainwindow.h"
 #include "mainwidget.h" // session->content()->windowShown().
-#include "facades.h"
 #include "tray.h"
 #include "styles/style_widgets.h"
 #include "styles/style_window.h"
@@ -47,7 +49,15 @@ namespace {
 
 constexpr auto kSaveWindowPositionTimeout = crl::time(1000);
 
+base::options::toggle ShowChatNameInNewWindow({
+	.id = kOptionShowChatNameInNewWindow,
+	.name = "Show chat name in title of separated windows",
+	.description = "",
+});
+
 } // namespace
+
+const char kOptionShowChatNameInNewWindow[] = "show-chat-name-in-new-window";
 
 const QImage &Logo() {
 	static const auto result = QImage(u":/gui/art/logo_256.png"_q);
@@ -124,9 +134,12 @@ QIcon CreateIcon(Main::Session *session, bool returnNullIfDefault) {
 
 	auto result = QIcon(Ui::PixmapFromImage(base::duplicate(Logo())));
 
-#if defined Q_OS_UNIX && !defined Q_OS_MAC
+	if constexpr (!Platform::IsLinux()) {
+		return result;
+	}
+
 	const auto iconFromTheme = QIcon::fromTheme(
-		Platform::GetIconName(),
+		base::IconName(),
 		result);
 
 	result = QIcon();
@@ -162,7 +175,6 @@ QIcon CreateIcon(Main::Session *session, bool returnNullIfDefault) {
 
 		result.addPixmap(iconPixmap);
 	}
-#endif
 
 	return result;
 }
@@ -372,7 +384,7 @@ bool MainWindow::hideNoQuit() {
 		|| workMode == Core::Settings::WorkMode::WindowAndTray) {
 		if (minimizeToTray()) {
 			if (const auto controller = sessionController()) {
-				Ui::showChatsList(&controller->session());
+				controller->clearSectionStack();
 			}
 			return true;
 		}
@@ -386,7 +398,7 @@ bool MainWindow::hideNoQuit() {
 		controller().updateIsActiveBlur();
 		updateGlobalMenu();
 		if (const auto controller = sessionController()) {
-			Ui::showChatsList(&controller->session());
+			controller->clearSectionStack();
 		}
 		return true;
 	}
@@ -794,11 +806,24 @@ void MainWindow::updateUnreadCounter() {
 		return;
 	}
 
-	const auto counter = Core::App().unreadBadge();
-	setTitle((counter > 0) ? qsl("CloudVeil Messenger (%1)").arg(counter) : qsl("CloudVeil Messenger"));
+	if (ShowChatNameInNewWindow.value() && singlePeer()) {
+		const auto peer = singlePeer();
+		const auto history = peer->owner().history(peer);
+		const auto name = peer->isSelf()
+			? tr::lng_saved_messages(tr::now)
+			: peer->name();
+		const auto counter = history->unreadCount();
+		setTitle((counter > 0)
+			? u"(%1) %2 \u2013 CloudVeil Messenger"_q.arg(QString::number(counter), name)
+			: u"%1 \u2013 CloudVeil Messenger"_q.arg(name));
+	} else {
+		const auto counter = Core::App().unreadBadge();
+		setTitle((counter > 0)
+			? u"Telegram (%1)"_q.arg(counter)
+			: u"Telegram"_q);
+	}
 
 	Core::App().tray().updateIconCounters();
-
 	unreadCounterChangedHook();
 }
 
@@ -904,7 +929,7 @@ Core::WindowPosition MainWindow::SecondaryInitPosition() {
 }
 
 bool MainWindow::minimizeToTray() {
-	if (Core::Quitting()/* || !hasTrayIcon()*/) {
+	if (Core::Quitting() || !Core::App().tray().has()) {
 		return false;
 	}
 
@@ -1001,6 +1026,7 @@ void MainWindow::launchDrag(
 	// Qt destroys this QDrag automatically after the drag is finished
 	// We must not delete this at the end of this function, as this breaks DnD on Linux
 	auto drag = new QDrag(this);
+	KUrlMimeData::exportUrlsToPortal(data.get());
 	drag->setMimeData(data.release());
 	drag->exec(Qt::CopyAction);
 

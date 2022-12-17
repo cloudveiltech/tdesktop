@@ -18,7 +18,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/cloud_password/settings_cloud_password_start.h"
 #include "settings/settings_blocked_peers.h"
 #include "settings/settings_common.h"
+#include "settings/settings_global_ttl.h"
 #include "settings/settings_local_passcode.h"
+#include "settings/settings_premium.h" // Settings::ShowPremium.
 #include "settings/settings_privacy_controllers.h"
 #include "base/timer_rpl.h"
 #include "boxes/edit_privacy_box.h"
@@ -30,6 +32,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "ui/chat/chat_style.h"
+#include "ui/text/format_values.h"
+#include "ui/text/text_utilities.h"
+#include "ui/toast/toast.h"
 #include "ui/wrap/vertical_layout.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/wrap/fade_wrap.h"
@@ -52,7 +57,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_domain.h"
 #include "window/window_session_controller.h"
 #include "apiwrap.h"
-#include "facades.h"
 #include "styles/style_settings.h"
 #include "styles/style_layers.h"
 #include "styles/style_boxes.h"
@@ -113,6 +117,128 @@ rpl::producer<QString> PrivacyString(
 	});
 }
 
+void AddPremiumPrivacyButton(
+		not_null<Window::SessionController*> controller,
+		not_null<Ui::VerticalLayout*> container,
+		rpl::producer<QString> label,
+		IconDescriptor &&descriptor,
+		Privacy::Key key,
+		Fn<std::unique_ptr<EditPrivacyController>()> controllerFactory) {
+	const auto shower = Ui::CreateChild<rpl::lifetime>(container.get());
+	const auto session = &controller->session();
+	const auto &st = st::settingsButton;
+	const auto button = AddButton(
+		container,
+		rpl::duplicate(label),
+		st,
+		std::move(descriptor));
+	struct State {
+		State(QWidget *parent) : widget(parent) {
+			widget.setAttribute(Qt::WA_TransparentForMouseEvents);
+		}
+		Ui::RpWidget widget;
+	};
+	const auto state = button->lifetime().make_state<State>(button.get());
+	using WeakToast = base::weak_ptr<Ui::Toast::Instance>;
+	const auto toast = std::make_shared<WeakToast>();
+
+	{
+		const auto rightLabel = Ui::CreateChild<Ui::FlatLabel>(
+			button.get(),
+			st.rightLabel);
+
+		state->widget.resize(st::settingsPremiumLock.size());
+		state->widget.paintRequest(
+		) | rpl::filter([=]() -> bool {
+			return state->widget.x();
+		}) | rpl::start_with_next([=] {
+			auto p = QPainter(&state->widget);
+			st::settingsPremiumLock.paint(p, 0, 0, state->widget.width());
+		}, state->widget.lifetime());
+
+		rpl::combine(
+			button->sizeValue(),
+			std::move(label),
+			PrivacyString(session, key),
+			Data::AmPremiumValue(session)
+		) | rpl::start_with_next([=, &st](
+				const QSize &buttonSize,
+				const QString &button,
+				const QString &text,
+				bool premium) {
+			const auto locked = !premium;
+			const auto rightSkip = st::settingsButtonRightSkip;
+			const auto lockSkip = st::settingsPremiumLockSkip;
+			const auto available = buttonSize.width()
+				- st.padding.left()
+				- st.padding.right()
+				- st.style.font->width(button)
+				- rightSkip
+				- (locked ? state->widget.width() + lockSkip : 0);
+			rightLabel->setText(text);
+			rightLabel->resizeToNaturalWidth(available);
+			rightLabel->moveToRight(
+				rightSkip,
+				st.padding.top());
+			state->widget.moveToRight(
+				rightSkip + rightLabel->width() + lockSkip,
+				(buttonSize.height() - state->widget.height()) / 2);
+			state->widget.setVisible(locked);
+		}, rightLabel->lifetime());
+		rightLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+	}
+
+	const auto showToast = [=] {
+		auto link = Ui::Text::Link(
+			tr::lng_settings_privacy_premium_link(tr::now));
+		link.entities.push_back(
+			EntityInText(EntityType::Semibold, 0, link.text.size()));
+		const auto config = Ui::Toast::Config{
+			.text = tr::lng_settings_privacy_premium(
+				tr::now,
+				lt_link,
+				link,
+				Ui::Text::WithEntities),
+			.st = &st::defaultMultilineToast,
+			.durationMs = Ui::Toast::kDefaultDuration * 2,
+			.multiline = true,
+			.filter = crl::guard(&controller->session(), [=](
+					const ClickHandlerPtr &,
+					Qt::MouseButton button) {
+				if (button == Qt::LeftButton) {
+					if (const auto strong = toast->get()) {
+						strong->hideAnimated();
+						(*toast) = nullptr;
+						Settings::ShowPremium(controller, QString());
+						return true;
+					}
+				}
+				return false;
+			}),
+		};
+		(*toast) = Ui::Toast::Show(
+			Window::Show(controller).toastParent(),
+			config);
+	};
+	button->addClickHandler([=] {
+		if (!session->premium()) {
+			if (toast->empty()) {
+				showToast();
+			}
+			return;
+		}
+		*shower = session->api().userPrivacy().value(
+			key
+		) | rpl::take(
+			1
+		) | rpl::start_with_next([=](const Privacy::Rule &value) {
+			controller->show(
+				Box<EditPrivacyBox>(controller, controllerFactory(), value),
+				Ui::LayerOption::KeepOther);
+		});
+	});
+}
+
 rpl::producer<int> BlockedPeersCount(not_null<::Main::Session*> session) {
 	return session->api().blockedPeers().slice(
 	) | rpl::map([](const Api::BlockedPeers::Slice &data) {
@@ -170,6 +296,13 @@ void SetupPrivacy(
 		{ &st::settingsIconVideoCalls, kIconGreen },
 		Key::Calls,
 		[] { return std::make_unique<CallsPrivacyController>(); });
+	AddPremiumPrivacyButton(
+		controller,
+		container,
+		tr::lng_settings_voices_privacy(),
+		{ &st::settingsPremiumIconVoice, kIconRed },
+		Key::Voices,
+		[=] { return std::make_unique<VoicesPrivacyController>(session); });
 	add(
 		tr::lng_settings_groups_invite(),
 		{ &st::settingsIconGroup, kIconDarkBlue },
@@ -327,9 +460,6 @@ void SetupCloudPassword(
 		reloadOnActivation);
 
 	session->api().cloudPassword().reload();
-
-	AddSkip(container);
-	AddDividerText(container, tr::lng_settings_cloud_password_start_about());
 }
 
 void SetupSensitiveContent(
@@ -390,10 +520,8 @@ void SetupSelfDestruction(
 		session->api().selfDestruct().reload();
 	}, container->lifetime());
 	const auto label = [&] {
-		return session->api().selfDestruct().days(
-		) | rpl::map(
-			SelfDestructionBox::DaysLabel
-		);
+		return session->api().selfDestruct().daysAccountTTL(
+		) | rpl::map(SelfDestructionBox::DaysLabel);
 	};
 
 	AddButtonWithLabel(
@@ -405,7 +533,7 @@ void SetupSelfDestruction(
 		controller->show(Box<SelfDestructionBox>(
 			session,
 			SelfDestructionBox::Type::Account,
-			session->api().selfDestruct().days()));
+			session->api().selfDestruct().daysAccountTTL()));
 	});
 
 	AddSkip(container);
@@ -543,6 +671,37 @@ void SetupSessionsList(
 	});
 }
 
+void SetupGlobalTTLList(
+		not_null<Window::SessionController*> controller,
+		not_null<Ui::VerticalLayout*> container,
+		rpl::producer<> updateTrigger,
+		Fn<void(Type)> showOther) {
+	const auto session = &controller->session();
+	auto ttlLabel = rpl::combine(
+		session->api().selfDestruct().periodDefaultHistoryTTL(),
+		tr::lng_settings_ttl_after_off()
+	) | rpl::map([](int ttl, const QString &none) {
+		return ttl ? Ui::FormatTTL(ttl) : none;
+	});
+	const auto globalTTLButton = AddButtonWithLabel(
+		container,
+		tr::lng_settings_ttl_title(),
+		std::move(ttlLabel),
+		st::settingsButton,
+		{ &st::settingsIconTTL, kIconPurple });
+	globalTTLButton->addClickHandler([=] {
+		showOther(GlobalTTLId());
+	});
+	std::move(
+		updateTrigger
+	) | rpl::start_with_next([=] {
+		session->api().selfDestruct().reload();
+	}, container->lifetime());
+
+	AddSkip(container);
+	AddDividerText(container, tr::lng_settings_ttl_about());
+}
+
 void SetupSecurity(
 		not_null<Window::SessionController*> controller,
 		not_null<Ui::VerticalLayout*> container,
@@ -563,6 +722,11 @@ void SetupSecurity(
 		showOther);
 	SetupLocalPasscode(controller, container, showOther);
 	SetupCloudPassword(controller, container, showOther);
+	SetupGlobalTTLList(
+		controller,
+		container,
+		rpl::duplicate(updateTrigger),
+		showOther);
 }
 
 } // namespace

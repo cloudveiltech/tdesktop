@@ -11,10 +11,10 @@
 namespace Webview::WebKit2Gtk {
 
 [[nodiscard]] Available Availability();
+[[nodiscard]] bool ProvidesQWidget();
 [[nodiscard]] std::unique_ptr<Interface> CreateInstance(Config config);
 
 int Exec();
 void SetSocketPath(const std::string &socketPath);
-void SetDebug(const std::string &debug);
 
 } // namespace Webview::WebKit2Gtk

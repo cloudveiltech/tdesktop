@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/text_utilities.h"
 #include "ui/text/text_options.h"
 #include "ui/special_buttons.h"
+#include "ui/painter.h"
 #include "chat_helpers/emoji_suggestions_widget.h"
 #include "settings/settings_privacy_security.h"
 #include "ui/boxes/choose_date_time.h"
@@ -99,7 +100,7 @@ EditParticipantBox::Inner::Inner(
 	_userPhoto->setPointerCursor(false);
 	_userName.setText(
 		st::rightsNameStyle,
-		_user->name,
+		_user->name(),
 		Ui::NameTextOptions());
 }
 
@@ -221,14 +222,15 @@ ChatAdminRightsInfo EditAdminBox::defaultRights() const {
 		? ChatAdminRightsInfo{ (Flag::ChangeInfo
 			| Flag::DeleteMessages
 			| Flag::BanUsers
-			| Flag::InviteUsers
+			| Flag::InviteByLinkOrAdd
+			| Flag::ManageTopics
 			| Flag::PinMessages
 			| Flag::ManageCall) }
 		: ChatAdminRightsInfo{ (Flag::ChangeInfo
 			| Flag::PostMessages
 			| Flag::EditMessages
 			| Flag::DeleteMessages
-			| Flag::InviteUsers
+			| Flag::InviteByLinkOrAdd
 			| Flag::ManageCall) };
 }
 
@@ -327,13 +329,17 @@ void EditAdminBox::prepare() {
 	const auto anyoneCanAddMembers = chat
 		? chat->anyoneCanAddMembers()
 		: channel->anyoneCanAddMembers();
+	const auto options = Data::AdminRightsSetOptions{
+		.isGroup = isGroup,
+		.isForum = peer()->isForum(),
+		.anyoneCanAddMembers = anyoneCanAddMembers,
+	};
 	auto [checkboxes, getChecked, changes] = CreateEditAdminRights(
 		inner,
 		tr::lng_rights_edit_admin_header(),
 		prepareFlags,
 		disabledMessages,
-		isGroup,
-		anyoneCanAddMembers);
+		options);
 	inner->add(std::move(checkboxes), QMargins());
 
 	auto selectedFlags = rpl::single(
@@ -354,7 +360,7 @@ void EditAdminBox::prepare() {
 	}, lifetime());
 
 	if (canTransferOwnership()) {
-		const auto allFlags = AdminRightsForOwnershipTransfer(isGroup);
+		const auto allFlags = AdminRightsForOwnershipTransfer(options);
 		setupTransferButton(
 			inner,
 			isGroup
@@ -394,7 +400,7 @@ void EditAdminBox::prepare() {
 					phrase(
 						tr::now,
 						lt_group,
-						Ui::Text::Bold(peer()->name),
+						Ui::Text::Bold(peer()->name()),
 						Ui::Text::WithEntities),
 					crl::guard(this, [=] { finishAddAdmin(); })
 				}), Ui::LayerOption::KeepOther);
@@ -542,7 +548,7 @@ void EditAdminBox::transferOwnership() {
 				.text = tr::lng_rights_transfer_about(
 					tr::now,
 					lt_group,
-					Ui::Text::Bold(peer()->name),
+					Ui::Text::Bold(peer()->name()),
 					lt_user,
 					Ui::Text::Bold(user()->shortName()),
 					Ui::Text::RichLangValue),
@@ -616,21 +622,21 @@ void EditAdminBox::sendTransferRequestFrom(
 		channel->inputChannel,
 		user->inputUser,
 		result.result
-	)).done([=, toastParent = _show.toastParent()](const MTPUpdates &result) {
+	)).done([=](const MTPUpdates &result) {
 		api->applyUpdates(result);
+		if (!box && !weak) {
+			return;
+		}
+
 		Ui::Toast::Show(
-			toastParent,
+			(box ? Ui::BoxShow(box) : weak->_show).toastParent(),
 			(channel->isBroadcast()
 				? tr::lng_rights_transfer_done_channel
 				: tr::lng_rights_transfer_done_group)(
 					tr::now,
 					lt_user,
 					user->shortName()));
-		if (box) {
-			Ui::BoxShow(box).hideLayer();
-		} else if (weak) {
-			weak->_show.hideLayer();
-		}
+		(box ? Ui::BoxShow(box) : weak->_show).hideLayer();
 	}).fail(crl::guard(this, [=](const MTP::Error &error) {
 		if (weak) {
 			_transferRequestId = 0;
@@ -641,15 +647,15 @@ void EditAdminBox::sendTransferRequestFrom(
 
 		const auto &type = error.type();
 		const auto problem = [&] {
-			if (type == qstr("CHANNELS_ADMIN_PUBLIC_TOO_MUCH")) {
+			if (type == u"CHANNELS_ADMIN_PUBLIC_TOO_MUCH"_q) {
 				return tr::lng_channels_too_much_public_other(tr::now);
-			} else if (type == qstr("CHANNELS_ADMIN_LOCATED_TOO_MUCH")) {
+			} else if (type == u"CHANNELS_ADMIN_LOCATED_TOO_MUCH"_q) {
 				return tr::lng_channels_too_much_located_other(tr::now);
-			} else if (type == qstr("ADMINS_TOO_MUCH")) {
+			} else if (type == u"ADMINS_TOO_MUCH"_q) {
 				return (channel->isBroadcast()
 					? tr::lng_error_admin_limit_channel
 					: tr::lng_error_admin_limit)(tr::now);
-			} else if (type == qstr("CHANNEL_INVALID")) {
+			} else if (type == u"CHANNEL_INVALID"_q) {
 				return (channel->isBroadcast()
 					? tr::lng_channel_not_accessible
 					: tr::lng_group_not_accessible)(tr::now);
@@ -657,9 +663,9 @@ void EditAdminBox::sendTransferRequestFrom(
 			return Lang::Hard::ServerError();
 		}();
 		const auto recoverable = [&] {
-			return (type == qstr("PASSWORD_MISSING"))
-				|| (type == qstr("PASSWORD_TOO_FRESH_XXX"))
-				|| (type == qstr("SESSION_TOO_FRESH_XXX"));
+			return (type == u"PASSWORD_MISSING"_q)
+				|| (type == u"PASSWORD_TOO_FRESH_XXX"_q)
+				|| (type == u"SESSION_TOO_FRESH_XXX"_q);
 		}();
 		const auto weak = Ui::MakeWeak(this);
 		getDelegate()->show(Ui::MakeInformBox(problem));
@@ -745,7 +751,8 @@ void EditRestrictedBox::prepare() {
 		this,
 		tr::lng_rights_user_restrictions_header(),
 		prepareFlags,
-		disabledMessages);
+		disabledMessages,
+		{ .isForum = peer()->isForum() });
 	addControl(std::move(checkboxes), QMargins());
 
 	_until = prepareRights.until;

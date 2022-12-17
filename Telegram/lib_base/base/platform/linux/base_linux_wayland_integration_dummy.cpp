@@ -17,7 +17,7 @@ struct WaylandIntegration::Private {
 
 WaylandIntegration::WaylandIntegration() {
 }
-	
+
 WaylandIntegration::~WaylandIntegration() = default;
 
 WaylandIntegration *WaylandIntegration::Instance() {
@@ -27,6 +27,10 @@ WaylandIntegration *WaylandIntegration::Instance() {
 }
 
 QString WaylandIntegration::nativeHandle(QWindow *window) {
+	return {};
+}
+
+QString WaylandIntegration::activationToken() {
 	return {};
 }
 

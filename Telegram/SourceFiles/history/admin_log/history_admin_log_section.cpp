@@ -28,7 +28,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_channel.h"
 #include "data/data_session.h"
 #include "lang/lang_keys.h"
-#include "facades.h"
 #include "styles/style_chat.h"
 #include "styles/style_window.h"
 #include "styles/style_info.h"
@@ -75,7 +74,7 @@ private:
 
 	not_null<Window::SessionController*> _controller;
 	not_null<ChannelData*> _channel;
-	object_ptr<Ui::FlatInput> _field;
+	object_ptr<Ui::InputField> _field;
 	object_ptr<Profile::BackButton> _backButton;
 	object_ptr<Ui::IconButton> _search;
 	object_ptr<Ui::CrossButton> _cancel;
@@ -110,7 +109,7 @@ FixedBar::FixedBar(
 	not_null<ChannelData*> channel) : TWidget(parent)
 , _controller(controller)
 , _channel(channel)
-, _field(this, st::historyAdminLogSearchField, tr::lng_dlg_filter())
+, _field(this, st::defaultMultiSelectSearchField, tr::lng_dlg_filter())
 , _backButton(
 	this,
 	&controller->session(),
@@ -124,9 +123,10 @@ FixedBar::FixedBar(
 	_search->setClickedCallback([=] { showSearch(); });
 	_cancel->setClickedCallback([=] { cancelSearch(); });
 	_field->hide();
-	connect(_field, &Ui::FlatInput::cancelled, [=] { cancelSearch(); });
-	connect(_field, &Ui::FlatInput::changed, [=] { searchUpdated(); });
-	connect(_field, &Ui::FlatInput::submitted, [=] { applySearch(); });
+	_filter->setTextTransform(Ui::RoundButton::TextTransform::NoTransform);
+	connect(_field, &Ui::InputField::cancelled, [=] { cancelSearch(); });
+	connect(_field, &Ui::InputField::changed, [=] { searchUpdated(); });
+	connect(_field, &Ui::InputField::submitted, [=] { applySearch(); });
 	_searchTimer.setCallback([=] { applySearch(); });
 
 	_cancel->hide(anim::type::instant);
@@ -183,8 +183,7 @@ void FixedBar::searchAnimationCallback() {
 void FixedBar::cancelSearch() {
 	if (_searchShown) {
 		if (!_field->getLastText().isEmpty()) {
-			_field->setText(QString());
-			_field->updatePlaceholder();
+			_field->clear();
 			_field->setFocus();
 			applySearch();
 		} else {
@@ -258,7 +257,7 @@ void FixedBar::setAnimatingMode(bool enabled) {
 
 void FixedBar::paintEvent(QPaintEvent *e) {
 	if (!_animatingMode) {
-		Painter p(this);
+		auto p = QPainter(this);
 		p.fillRect(e->rect(), st::topBarBg);
 	}
 }
@@ -281,7 +280,7 @@ Widget::Widget(
 , _fixedBarShadow(this)
 , _whatIsThis(
 		this,
-		tr::lng_admin_log_about(tr::now).toUpper(),
+		tr::lng_admin_log_about(tr::now),
 		st::historyComposeButton) {
 	_fixedBar->move(0, 0);
 	_fixedBar->resizeToWidth(width());
@@ -398,7 +397,8 @@ void Widget::setupShortcuts() {
 	) | rpl::filter([=] {
 		return Ui::AppInFocus()
 			&& Ui::InFocusChain(this)
-			&& !Ui::isLayerShown();
+			&& !controller()->isLayerShown()
+			&& isActiveWindow();
 	}) | rpl::start_with_next([=](not_null<Shortcuts::Request*> request) {
 		using Command = Shortcuts::Command;
 		request->check(Command::Search, 2) && request->handle([=] {
@@ -461,7 +461,7 @@ void Widget::paintEvent(QPaintEvent *e) {
 	if (animatingShow()) {
 		SectionWidget::paintEvent(e);
 		return;
-	} else if (Ui::skipPaintEvent(this, e)) {
+	} else if (controller()->contentOverlapped(this, e)) {
 		return;
 	}
 	//if (hasPendingResizedItems()) {

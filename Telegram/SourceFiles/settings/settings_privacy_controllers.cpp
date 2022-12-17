@@ -10,11 +10,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/settings_common.h"
 #include "lang/lang_keys.h"
 #include "apiwrap.h"
-#include "mainwidget.h"
 #include "main/main_session.h"
 #include "data/data_user.h"
 #include "data/data_session.h"
 #include "data/data_changes.h"
+#include "data/data_peer_values.h" // Data::AmPremiumValue.
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "history/admin_log/history_admin_log_item.h"
@@ -36,13 +36,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/cached_round_corners.h"
 #include "ui/text/format_values.h" // Ui::FormatPhone
 #include "ui/text/text_utilities.h"
+#include "ui/painter.h"
 #include "window/section_widget.h"
 #include "window/window_controller.h"
 #include "window/window_session_controller.h"
 #include "boxes/peer_list_controllers.h"
 #include "ui/boxes/confirm_box.h"
 #include "settings/settings_privacy_security.h"
-#include "facades.h"
 #include "styles/style_chat.h"
 #include "styles/style_boxes.h"
 #include "styles/style_settings.h"
@@ -110,9 +110,16 @@ void BlockPeerBoxController::prepareViewHook() {
 	}, lifetime());
 }
 
-void BlockPeerBoxController::updateIsBlocked(not_null<PeerListRow*> row, PeerData *peer) const {
-	auto blocked = peer->isBlocked();
-	row->setDisabledState(blocked ? PeerListRow::State::DisabledChecked : PeerListRow::State::Active);
+void BlockPeerBoxController::updateIsBlocked(
+		not_null<PeerListRow*> row,
+		PeerData *peer) const {
+	if (!peer) {
+		return;
+	}
+	const auto blocked = peer->isBlocked();
+	row->setDisabledState(blocked
+		? PeerListRow::State::DisabledChecked
+		: PeerListRow::State::Active);
 	if (blocked) {
 		row->setCustomStatus(tr::lng_blocked_list_already_blocked(tr::now));
 	} else {
@@ -190,7 +197,7 @@ AdminLog::OwnedItem GenerateForwardedItem(
 
 struct ForwardedTooltip {
 	QRect geometry;
-	Fn<void(Painter&)> paint;
+	Fn<void(QPainter&)> paint;
 };
 [[nodiscard]] ForwardedTooltip PrepareForwardedTooltip(
 		not_null<HistoryView::Element*> view,
@@ -211,7 +218,7 @@ struct ForwardedTooltip {
 	const auto phrase = tr::lng_forwarded(
 		tr::now,
 		lt_user,
-		view->data()->history()->session().user()->name);
+		view->history()->session().user()->name());
 	const auto kReplacementPosition = QChar(0x0001);
 	const auto possiblePosition = tr::lng_forwarded(
 		tr::now,
@@ -269,14 +276,13 @@ struct ForwardedTooltip {
 		{ line, line, line, line + arrowSize });
 	const auto origin = full.topLeft();
 
-	const auto paint = [=](Painter &p) {
+	const auto rounded = std::make_shared<Ui::RoundRect>(
+		ImageRoundRadius::Large,
+		st::toastBg);
+	const auto paint = [=](QPainter &p) {
 		p.translate(-origin);
 
-		Ui::FillRoundRect(
-			p,
-			geometry,
-			st::toastBg,
-			ImageRoundRadius::Large);
+		rounded->paint(p, geometry);
 
 		p.setFont(font);
 		p.setPen(st::toastFg);
@@ -347,8 +353,9 @@ void BlockedBoxController::loadMoreRows() {
 
 void BlockedBoxController::rowClicked(not_null<PeerListRow*> row) {
 	const auto peer = row->peer();
-	crl::on_main(&peer->session(), [=] {
-		Ui::showPeerHistory(peer, ShowAtUnreadMsgId);
+	const auto window = _window;
+	crl::on_main(window, [=] {
+		window->showPeerHistory(peer);
 	});
 }
 
@@ -432,8 +439,8 @@ std::unique_ptr<PeerListRow> BlockedBoxController::createRow(
 			return tr::lng_group_status(tr::now);
 		} else if (!user->phone().isEmpty()) {
 			return Ui::FormatPhone(user->phone());
-		} else if (!user->username.isEmpty()) {
-			return '@' + user->username;
+		} else if (!user->username().isEmpty()) {
+			return '@' + user->username();
 		} else if (user->isBot()) {
 			return tr::lng_status_bot(tr::now);
 		}
@@ -452,19 +459,20 @@ PhoneNumberPrivacyController::PhoneNumberPrivacyController(
 : _controller(controller) {
 }
 
-UserPrivacy::Key PhoneNumberPrivacyController::key() {
+UserPrivacy::Key PhoneNumberPrivacyController::key() const {
 	return Key::PhoneNumber;
 }
 
-rpl::producer<QString> PhoneNumberPrivacyController::title() {
+rpl::producer<QString> PhoneNumberPrivacyController::title() const {
 	return tr::lng_edit_privacy_phone_number_title();
 }
 
-rpl::producer<QString> PhoneNumberPrivacyController::optionsTitleKey() {
+rpl::producer<QString> PhoneNumberPrivacyController::optionsTitleKey() const {
 	return tr::lng_edit_privacy_phone_number_header();
 }
 
-rpl::producer<TextWithEntities> PhoneNumberPrivacyController::warning() {
+auto PhoneNumberPrivacyController::warning() const
+-> rpl::producer<TextWithEntities> {
 	using namespace rpl::mappers;
 	const auto self = _controller->session().user();
 	return rpl::combine(
@@ -489,23 +497,17 @@ rpl::producer<TextWithEntities> PhoneNumberPrivacyController::warning() {
 }
 
 void PhoneNumberPrivacyController::prepareWarningLabel(
-		not_null<Ui::FlatLabel*> warning) {
-	warning->setClickHandlerFilter([=](
-			const ClickHandlerPtr &link,
-			Qt::MouseButton button) {
-		if (button == Qt::LeftButton) {
-			QGuiApplication::clipboard()->setText(PublicLinkByPhone(
-				_controller->session().user()));
-			_controller->window().showToast(
-				tr::lng_username_copied(tr::now));
-			return false;
-		}
-		return true;
+		not_null<Ui::FlatLabel*> warning) const {
+	warning->overrideLinkClickHandler([=] {
+		QGuiApplication::clipboard()->setText(PublicLinkByPhone(
+			_controller->session().user()));
+		_controller->window().showToast(
+			tr::lng_username_copied(tr::now));
 	});
 }
 
 rpl::producer<QString> PhoneNumberPrivacyController::exceptionButtonTextKey(
-		Exception exception) {
+		Exception exception) const {
 	switch (exception) {
 	case Exception::Always:
 		return tr::lng_edit_privacy_phone_number_always_empty();
@@ -516,15 +518,20 @@ rpl::producer<QString> PhoneNumberPrivacyController::exceptionButtonTextKey(
 }
 
 rpl::producer<QString> PhoneNumberPrivacyController::exceptionBoxTitle(
-		Exception exception) {
+		Exception exception) const {
 	switch (exception) {
-	case Exception::Always: return tr::lng_edit_privacy_phone_number_always_title();
-	case Exception::Never: return tr::lng_edit_privacy_phone_number_never_title();
+	case Exception::Always: {
+		return tr::lng_edit_privacy_phone_number_always_title();
+	};
+	case Exception::Never: {
+		return tr::lng_edit_privacy_phone_number_never_title();
+	};
 	}
 	Unexpected("Invalid exception value.");
 }
 
-rpl::producer<QString> PhoneNumberPrivacyController::exceptionsDescription() {
+auto PhoneNumberPrivacyController::exceptionsDescription() const
+-> rpl::producer<QString> {
 	return tr::lng_edit_privacy_phone_number_exceptions();
 }
 
@@ -590,24 +597,25 @@ LastSeenPrivacyController::LastSeenPrivacyController(
 : _session(session) {
 }
 
-UserPrivacy::Key LastSeenPrivacyController::key() {
+UserPrivacy::Key LastSeenPrivacyController::key() const {
 	return Key::LastSeen;
 }
 
-rpl::producer<QString> LastSeenPrivacyController::title() {
+rpl::producer<QString> LastSeenPrivacyController::title() const {
 	return tr::lng_edit_privacy_lastseen_title();
 }
 
-rpl::producer<QString> LastSeenPrivacyController::optionsTitleKey() {
+rpl::producer<QString> LastSeenPrivacyController::optionsTitleKey() const {
 	return tr::lng_edit_privacy_lastseen_header();
 }
 
-rpl::producer<TextWithEntities> LastSeenPrivacyController::warning() {
+auto LastSeenPrivacyController::warning() const
+-> rpl::producer<TextWithEntities> {
 	return tr::lng_edit_privacy_lastseen_warning(Ui::Text::WithEntities);
 }
 
 rpl::producer<QString> LastSeenPrivacyController::exceptionButtonTextKey(
-		Exception exception) {
+		Exception exception) const {
 	switch (exception) {
 	case Exception::Always:
 		return tr::lng_edit_privacy_lastseen_always_empty();
@@ -618,15 +626,20 @@ rpl::producer<QString> LastSeenPrivacyController::exceptionButtonTextKey(
 }
 
 rpl::producer<QString> LastSeenPrivacyController::exceptionBoxTitle(
-		Exception exception) {
+		Exception exception) const {
 	switch (exception) {
-	case Exception::Always: return tr::lng_edit_privacy_lastseen_always_title();
-	case Exception::Never: return tr::lng_edit_privacy_lastseen_never_title();
+	case Exception::Always: {
+		return tr::lng_edit_privacy_lastseen_always_title();
+	};
+	case Exception::Never: {
+		return tr::lng_edit_privacy_lastseen_never_title();
+	};
 	}
 	Unexpected("Invalid exception value.");
 }
 
-rpl::producer<QString> LastSeenPrivacyController::exceptionsDescription() {
+auto LastSeenPrivacyController::exceptionsDescription() const
+-> rpl::producer<QString>{
 	return tr::lng_edit_privacy_lastseen_exceptions();
 }
 
@@ -654,24 +667,25 @@ void LastSeenPrivacyController::confirmSave(
 	}
 }
 
-UserPrivacy::Key GroupsInvitePrivacyController::key() {
+UserPrivacy::Key GroupsInvitePrivacyController::key() const {
 	return Key::Invites;
 }
 
-rpl::producer<QString> GroupsInvitePrivacyController::title() {
+rpl::producer<QString> GroupsInvitePrivacyController::title() const {
 	return tr::lng_edit_privacy_groups_title();
 }
 
-bool GroupsInvitePrivacyController::hasOption(Option option) {
+bool GroupsInvitePrivacyController::hasOption(Option option) const {
 	return (option != Option::Nobody);
 }
 
-rpl::producer<QString> GroupsInvitePrivacyController::optionsTitleKey() {
+rpl::producer<QString> GroupsInvitePrivacyController::optionsTitleKey(
+		) const {
 	return tr::lng_edit_privacy_groups_header();
 }
 
 rpl::producer<QString> GroupsInvitePrivacyController::exceptionButtonTextKey(
-		Exception exception) {
+		Exception exception) const {
 	switch (exception) {
 	case Exception::Always: return tr::lng_edit_privacy_groups_always_empty();
 	case Exception::Never: return tr::lng_edit_privacy_groups_never_empty();
@@ -680,7 +694,7 @@ rpl::producer<QString> GroupsInvitePrivacyController::exceptionButtonTextKey(
 }
 
 rpl::producer<QString> GroupsInvitePrivacyController::exceptionBoxTitle(
-		Exception exception) {
+		Exception exception) const {
 	switch (exception) {
 	case Exception::Always: return tr::lng_edit_privacy_groups_always_title();
 	case Exception::Never: return tr::lng_edit_privacy_groups_never_title();
@@ -688,25 +702,25 @@ rpl::producer<QString> GroupsInvitePrivacyController::exceptionBoxTitle(
 	Unexpected("Invalid exception value.");
 }
 
-auto GroupsInvitePrivacyController::exceptionsDescription()
+auto GroupsInvitePrivacyController::exceptionsDescription() const
 -> rpl::producer<QString> {
 	return tr::lng_edit_privacy_groups_exceptions();
 }
 
-UserPrivacy::Key CallsPrivacyController::key() {
+UserPrivacy::Key CallsPrivacyController::key() const {
 	return Key::Calls;
 }
 
-rpl::producer<QString> CallsPrivacyController::title() {
+rpl::producer<QString> CallsPrivacyController::title() const {
 	return tr::lng_edit_privacy_calls_title();
 }
 
-rpl::producer<QString> CallsPrivacyController::optionsTitleKey() {
+rpl::producer<QString> CallsPrivacyController::optionsTitleKey() const {
 	return tr::lng_edit_privacy_calls_header();
 }
 
 rpl::producer<QString> CallsPrivacyController::exceptionButtonTextKey(
-		Exception exception) {
+		Exception exception) const {
 	switch (exception) {
 	case Exception::Always: return tr::lng_edit_privacy_calls_always_empty();
 	case Exception::Never: return tr::lng_edit_privacy_calls_never_empty();
@@ -715,7 +729,7 @@ rpl::producer<QString> CallsPrivacyController::exceptionButtonTextKey(
 }
 
 rpl::producer<QString> CallsPrivacyController::exceptionBoxTitle(
-		Exception exception) {
+		Exception exception) const {
 	switch (exception) {
 	case Exception::Always: return tr::lng_edit_privacy_calls_always_title();
 	case Exception::Never: return tr::lng_edit_privacy_calls_never_title();
@@ -723,13 +737,14 @@ rpl::producer<QString> CallsPrivacyController::exceptionBoxTitle(
 	Unexpected("Invalid exception value.");
 }
 
-rpl::producer<QString> CallsPrivacyController::exceptionsDescription() {
+auto CallsPrivacyController::exceptionsDescription() const
+-> rpl::producer<QString>{
 	return tr::lng_edit_privacy_calls_exceptions();
 }
 
 object_ptr<Ui::RpWidget> CallsPrivacyController::setupBelowWidget(
 		not_null<Window::SessionController*> controller,
-		not_null<QWidget*> parent) {
+		not_null<QWidget*> parent) const {
 	auto result = object_ptr<Ui::VerticalLayout>(parent);
 	const auto content = result.data();
 
@@ -747,51 +762,67 @@ object_ptr<Ui::RpWidget> CallsPrivacyController::setupBelowWidget(
 	return result;
 }
 
-UserPrivacy::Key CallsPeer2PeerPrivacyController::key() {
+UserPrivacy::Key CallsPeer2PeerPrivacyController::key() const {
 	return Key::CallsPeer2Peer;
 }
 
-rpl::producer<QString> CallsPeer2PeerPrivacyController::title() {
+rpl::producer<QString> CallsPeer2PeerPrivacyController::title() const {
 	return tr::lng_edit_privacy_calls_p2p_title();
 }
 
-rpl::producer<QString> CallsPeer2PeerPrivacyController::optionsTitleKey() {
+rpl::producer<QString> CallsPeer2PeerPrivacyController::optionsTitleKey() const {
 	return tr::lng_edit_privacy_calls_p2p_header();
 }
 
 QString CallsPeer2PeerPrivacyController::optionLabel(
-		EditPrivacyBox::Option option) {
+		EditPrivacyBox::Option option) const {
 	switch (option) {
-	case Option::Everyone: return tr::lng_edit_privacy_calls_p2p_everyone(tr::now);
-	case Option::Contacts: return tr::lng_edit_privacy_calls_p2p_contacts(tr::now);
-	case Option::Nobody: return tr::lng_edit_privacy_calls_p2p_nobody(tr::now);
+	case Option::Everyone: {
+		return tr::lng_edit_privacy_calls_p2p_everyone(tr::now);
+	};
+	case Option::Contacts: {
+		return tr::lng_edit_privacy_calls_p2p_contacts(tr::now);
+	};
+	case Option::Nobody: {
+		return tr::lng_edit_privacy_calls_p2p_nobody(tr::now);
+	};
 	}
 	Unexpected("Option value in optionsLabelKey.");
 }
 
-rpl::producer<TextWithEntities> CallsPeer2PeerPrivacyController::warning() {
+auto CallsPeer2PeerPrivacyController::warning() const
+-> rpl::producer<TextWithEntities> {
 	return tr::lng_settings_peer_to_peer_about(Ui::Text::WithEntities);
 }
 
 rpl::producer<QString> CallsPeer2PeerPrivacyController::exceptionButtonTextKey(
-		Exception exception) {
+		Exception exception) const {
 	switch (exception) {
-	case Exception::Always: return tr::lng_edit_privacy_calls_p2p_always_empty();
-	case Exception::Never: return tr::lng_edit_privacy_calls_p2p_never_empty();
+	case Exception::Always: {
+		return tr::lng_edit_privacy_calls_p2p_always_empty();
+	};
+	case Exception::Never: {
+		return tr::lng_edit_privacy_calls_p2p_never_empty();
+	};
 	}
 	Unexpected("Invalid exception value.");
 }
 
 rpl::producer<QString> CallsPeer2PeerPrivacyController::exceptionBoxTitle(
-		Exception exception) {
+		Exception exception) const {
 	switch (exception) {
-	case Exception::Always: return tr::lng_edit_privacy_calls_p2p_always_title();
-	case Exception::Never: return tr::lng_edit_privacy_calls_p2p_never_title();
+	case Exception::Always: {
+		return tr::lng_edit_privacy_calls_p2p_always_title();
+	};
+	case Exception::Never: {
+		return tr::lng_edit_privacy_calls_p2p_never_title();
+	};
 	}
 	Unexpected("Invalid exception value.");
 }
 
-rpl::producer<QString> CallsPeer2PeerPrivacyController::exceptionsDescription() {
+auto CallsPeer2PeerPrivacyController::exceptionsDescription() const
+-> rpl::producer<QString>{
 	return tr::lng_edit_privacy_calls_p2p_exceptions();
 }
 
@@ -803,41 +834,50 @@ ForwardsPrivacyController::ForwardsPrivacyController(
 	_chatStyle->apply(controller->defaultChatTheme().get());
 }
 
-UserPrivacy::Key ForwardsPrivacyController::key() {
+UserPrivacy::Key ForwardsPrivacyController::key() const {
 	return Key::Forwards;
 }
 
-rpl::producer<QString> ForwardsPrivacyController::title() {
+rpl::producer<QString> ForwardsPrivacyController::title() const {
 	return tr::lng_edit_privacy_forwards_title();
 }
 
-rpl::producer<QString> ForwardsPrivacyController::optionsTitleKey() {
+rpl::producer<QString> ForwardsPrivacyController::optionsTitleKey() const {
 	return tr::lng_edit_privacy_forwards_header();
 }
 
-rpl::producer<TextWithEntities> ForwardsPrivacyController::warning() {
+auto ForwardsPrivacyController::warning() const
+-> rpl::producer<TextWithEntities> {
 	return tr::lng_edit_privacy_forwards_warning(Ui::Text::WithEntities);
 }
 
 rpl::producer<QString> ForwardsPrivacyController::exceptionButtonTextKey(
-		Exception exception) {
+		Exception exception) const {
 	switch (exception) {
-	case Exception::Always: return tr::lng_edit_privacy_forwards_always_empty();
-	case Exception::Never: return tr::lng_edit_privacy_forwards_never_empty();
+	case Exception::Always: {
+		return tr::lng_edit_privacy_forwards_always_empty();
+	};
+	case Exception::Never: {
+		return tr::lng_edit_privacy_forwards_never_empty();
+	};
 	}
 	Unexpected("Invalid exception value.");
 }
 
 rpl::producer<QString> ForwardsPrivacyController::exceptionBoxTitle(
-		Exception exception) {
+		Exception exception) const {
 	switch (exception) {
-	case Exception::Always: return tr::lng_edit_privacy_forwards_always_title();
-	case Exception::Never: return tr::lng_edit_privacy_forwards_never_title();
+	case Exception::Always: {
+		return tr::lng_edit_privacy_forwards_always_title();
+	};
+	case Exception::Never: {
+		return tr::lng_edit_privacy_forwards_never_title();
+	};
 	}
 	Unexpected("Invalid exception value.");
 }
 
-auto ForwardsPrivacyController::exceptionsDescription()
+auto ForwardsPrivacyController::exceptionsDescription() const
 -> rpl::producer<QString> {
 	return tr::lng_edit_privacy_forwards_exceptions();
 }
@@ -878,7 +918,7 @@ object_ptr<Ui::RpWidget> ForwardsPrivacyController::setupAboveWidget(
 	state->tooltip->paintRequest(
 	) | rpl::start_with_next([=] {
 		if (state->info.paint) {
-			auto p = Painter(state->tooltip.get());
+			auto p = QPainter(state->tooltip.get());
 			state->info.paint(p);
 		}
 	}, state->tooltip->lifetime());
@@ -950,7 +990,9 @@ object_ptr<Ui::RpWidget> ForwardsPrivacyController::setupAboveWidget(
 		auto context = theme->preparePaintContext(
 			_chatStyle.get(),
 			widget->rect(),
-			widget->rect());
+			widget->rect(),
+			_controller->isGifPausedAtLeastFor(
+				Window::GifPauseReason::Layer));
 		p.translate(padding / 2, padding + view->marginBottom());
 		context.outbg = view->hasOutLayout();
 		view->draw(p, context);
@@ -968,43 +1010,99 @@ HistoryView::Context ForwardsPrivacyController::elementContext() {
 	return HistoryView::Context::ContactPreview;
 }
 
-UserPrivacy::Key ProfilePhotoPrivacyController::key() {
+UserPrivacy::Key ProfilePhotoPrivacyController::key() const {
 	return Key::ProfilePhoto;
 }
 
-rpl::producer<QString> ProfilePhotoPrivacyController::title() {
+rpl::producer<QString> ProfilePhotoPrivacyController::title() const {
 	return tr::lng_edit_privacy_profile_photo_title();
 }
 
-bool ProfilePhotoPrivacyController::hasOption(Option option) {
+bool ProfilePhotoPrivacyController::hasOption(Option option) const {
 	return (option != Option::Nobody);
 }
 
-rpl::producer<QString> ProfilePhotoPrivacyController::optionsTitleKey() {
+rpl::producer<QString> ProfilePhotoPrivacyController::optionsTitleKey() const {
 	return tr::lng_edit_privacy_profile_photo_header();
 }
 
 rpl::producer<QString> ProfilePhotoPrivacyController::exceptionButtonTextKey(
-		Exception exception) {
+		Exception exception) const {
 	switch (exception) {
-	case Exception::Always: return tr::lng_edit_privacy_profile_photo_always_empty();
-	case Exception::Never: return tr::lng_edit_privacy_profile_photo_never_empty();
+	case Exception::Always: {
+		return tr::lng_edit_privacy_profile_photo_always_empty();
+	};
+	case Exception::Never: {
+		return tr::lng_edit_privacy_profile_photo_never_empty();
+	};
 	}
 	Unexpected("Invalid exception value.");
 }
 
 rpl::producer<QString> ProfilePhotoPrivacyController::exceptionBoxTitle(
-		Exception exception) {
+		Exception exception) const {
 	switch (exception) {
-	case Exception::Always: return tr::lng_edit_privacy_profile_photo_always_title();
-	case Exception::Never: return tr::lng_edit_privacy_profile_photo_never_title();
+	case Exception::Always: {
+		return tr::lng_edit_privacy_profile_photo_always_title();
+	};
+	case Exception::Never: {
+		return tr::lng_edit_privacy_profile_photo_never_title();
+	};
 	}
 	Unexpected("Invalid exception value.");
 }
 
-auto ProfilePhotoPrivacyController::exceptionsDescription()
+auto ProfilePhotoPrivacyController::exceptionsDescription() const
 -> rpl::producer<QString> {
 	return tr::lng_edit_privacy_profile_photo_exceptions();
+}
+
+VoicesPrivacyController::VoicesPrivacyController(
+		not_null<::Main::Session*> session) {
+	Data::AmPremiumValue(
+		session
+	) | rpl::start_with_next([=](bool premium) {
+		if (!premium) {
+			if (const auto box = view()) {
+				box->closeBox();
+			}
+		}
+	}, _lifetime);
+}
+
+UserPrivacy::Key VoicesPrivacyController::key() const {
+	return Key::Voices;
+}
+
+rpl::producer<QString> VoicesPrivacyController::title() const {
+	return tr::lng_edit_privacy_voices_title();
+}
+
+rpl::producer<QString> VoicesPrivacyController::optionsTitleKey() const {
+	return tr::lng_edit_privacy_voices_header();
+}
+
+rpl::producer<QString> VoicesPrivacyController::exceptionButtonTextKey(
+		Exception exception) const {
+	switch (exception) {
+	case Exception::Always: return tr::lng_edit_privacy_voices_always_empty();
+	case Exception::Never: return tr::lng_edit_privacy_voices_never_empty();
+	}
+	Unexpected("Invalid exception value.");
+}
+
+rpl::producer<QString> VoicesPrivacyController::exceptionBoxTitle(
+		Exception exception) const {
+	switch (exception) {
+	case Exception::Always: return tr::lng_edit_privacy_voices_always_title();
+	case Exception::Never: return tr::lng_edit_privacy_voices_never_title();
+	}
+	Unexpected("Invalid exception value.");
+}
+
+auto VoicesPrivacyController::exceptionsDescription() const
+-> rpl::producer<QString> {
+	return tr::lng_edit_privacy_voices_exceptions();
 }
 
 } // namespace Settings

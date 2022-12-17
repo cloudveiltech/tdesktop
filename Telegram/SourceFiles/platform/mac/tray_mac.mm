@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/sandbox.h"
 #include "window/window_controller.h"
 #include "window/window_session_controller.h"
+#include "ui/painter.h"
 #include "styles/style_window.h"
 
 #include <QtWidgets/QMenu>
@@ -264,6 +265,9 @@ NativeIcon::NativeIcon()
 			| NSKeyValueObservingOptionInitial
 		context:nil];
 
+	[_delegate closes] | rpl::start_with_next([=] {
+		_status.menu = nil;
+	}, _lifetime);
 
 	[_delegate appearanceChanges] | rpl::start_with_next([=] {
 		updateIcon();
@@ -279,17 +283,14 @@ NativeIcon::NativeIcon()
 	id buttonCallback = [^{
 		const auto type = NSApp.currentEvent.type;
 
-		if ((type == NSEventTypeLeftMouseDown) || (type == NSEventTypeRightMouseDown)) {
+		if ((type == NSEventTypeLeftMouseDown)
+			|| (type == NSEventTypeRightMouseDown)) {
 			Core::Sandbox::Instance().customEnterFromEventLoop([=] {
 				_clicks.fire({});
 			});
 		}
 	} copy];
 
-    [_delegate closes] | rpl::start_with_next([=] {
-            _status.menu = nil;
-        }, _lifetime);
-            
 	_lifetime.add([=] {
 		[buttonCallback release];
 	});
@@ -314,11 +315,9 @@ void NativeIcon::updateIcon() {
 }
 
 void NativeIcon::showMenu(not_null<QMenu*> menu) {
-    if(_status.button.window) {
-        
-        menu->setProperty("styled", false);
-        menu->exec(QPoint(_status.button.window.frame.origin.x, 0));
-    }
+	_status.menu = menu->toNSMenu();
+	_status.menu.delegate = _delegate;
+	[_status.button performClick:nil];
 }
 
 void NativeIcon::deactivateButton() {
@@ -341,7 +340,6 @@ void Tray::createIcon() {
 		_nativeIcon = std::make_unique<NativeIcon>();
 		// On macOS we are activating the window on click
 		// instead of showing the menu, when the window is not activated.
-        
 		_nativeIcon->clicks(
 		) | rpl::start_with_next([=] {
 			if (IsAnyActiveForTrayMenu()) {

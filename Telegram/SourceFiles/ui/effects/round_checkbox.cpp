@@ -9,6 +9,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "ui/rp_widget.h"
 #include "ui/ui_utility.h"
+#include "ui/painter.h"
+#include "ui/image/image_prepare.h"
 
 #include <QtCore/QCoreApplication>
 
@@ -70,7 +72,7 @@ QPixmap PrepareOuterWide(const style::RoundCheckbox *st) {
 	result.setDevicePixelRatio(style::DevicePixelRatio());
 	result.fill(Qt::transparent);
 	{
-		Painter p(&result);
+		auto p = QPainter(&result);
 		PainterHighQualityEnabler hq(p);
 
 		p.setPen(Qt::NoPen);
@@ -93,7 +95,7 @@ QPixmap PrepareInner(const style::RoundCheckbox *st, bool displayInactive) {
 	result.setDevicePixelRatio(style::DevicePixelRatio());
 	result.fill(Qt::transparent);
 	{
-		Painter p(&result);
+		auto p = QPainter(&result);
 		PainterHighQualityEnabler hq(p);
 
 		p.setPen(Qt::NoPen);
@@ -116,7 +118,7 @@ QPixmap PrepareCheck(const style::RoundCheckbox *st) {
 	result.setDevicePixelRatio(style::DevicePixelRatio());
 	result.fill(Qt::transparent);
 	{
-		Painter p(&result);
+		auto p = QPainter(&result);
 		st->check.paint(p, 0, 0, size);
 	}
 	return Ui::PixmapFromImage(std::move(result));
@@ -205,7 +207,7 @@ QPixmap CheckCaches::paintFrame(
 		? 0.
 		: (1. - (1. - progress) / st->fgDuration);
 	{
-		Painter p(&result);
+		auto p = QPainter(&result);
 		PainterHighQualityEnabler hq(p);
 
 		if (!frames.displayInactive) {
@@ -258,7 +260,7 @@ RoundCheckbox::RoundCheckbox(const style::RoundCheckbox &st, Fn<void()> updateCa
 , _updateCallback(updateCallback) {
 }
 
-void RoundCheckbox::paint(Painter &p, int x, int y, int outerWidth, float64 masterScale) const {
+void RoundCheckbox::paint(QPainter &p, int x, int y, int outerWidth, float64 masterScale) const {
 	if (!_st.size
 		|| (!_checkedProgress.animating()
 			&& !_checked
@@ -332,7 +334,7 @@ void RoundCheckbox::prepareInactiveCache() {
 	cacheBg.fill(Qt::transparent);
 	auto cacheFg = cacheBg;
 	if (_st.bgInactive) {
-		Painter p(&cacheBg);
+		auto p = QPainter(&cacheBg);
 		PainterHighQualityEnabler hq(p);
 
 		p.setPen(Qt::NoPen);
@@ -342,7 +344,7 @@ void RoundCheckbox::prepareInactiveCache() {
 	_inactiveCacheBg = Ui::PixmapFromImage(std::move(cacheBg));
 
 	{
-		Painter p(&cacheFg);
+		auto p = QPainter(&cacheFg);
 		PainterHighQualityEnabler hq(p);
 
 		auto pen = _st.border->p;
@@ -354,10 +356,15 @@ void RoundCheckbox::prepareInactiveCache() {
 	_inactiveCacheFg = Ui::PixmapFromImage(std::move(cacheFg));
 }
 
-RoundImageCheckbox::RoundImageCheckbox(const style::RoundImageCheckbox &st, Fn<void()> updateCallback, PaintRoundImage &&paintRoundImage)
+RoundImageCheckbox::RoundImageCheckbox(
+	const style::RoundImageCheckbox &st,
+	Fn<void()> updateCallback,
+	PaintRoundImage &&paintRoundImage,
+	Fn<std::optional<int>(int size)> roundingRadius)
 : _st(st)
 , _updateCallback(updateCallback)
 , _paintRoundImage(std::move(paintRoundImage))
+, _roundingRadius(std::move(roundingRadius))
 , _check(_st.check, _updateCallback) {
 }
 
@@ -382,6 +389,9 @@ void RoundImageCheckbox::paint(Painter &p, int x, int y, int outerWidth) const {
 	}
 
 	if (selectionLevel > 0) {
+		const auto radius = _roundingRadius
+			? _roundingRadius(_st.imageRadius * 2)
+			: std::optional<int>();
 		PainterHighQualityEnabler hq(p);
 		p.setOpacity(std::clamp(selectionLevel, 0., 1.));
 		p.setBrush(Qt::NoBrush);
@@ -389,7 +399,17 @@ void RoundImageCheckbox::paint(Painter &p, int x, int y, int outerWidth) const {
 			_fgOverride ? (*_fgOverride) : _st.selectFg->b,
 			_st.selectWidth);
 		p.setPen(pen);
-		p.drawEllipse(style::rtlrect(x, y, _st.imageRadius * 2, _st.imageRadius * 2, outerWidth));
+		const auto rect = style::rtlrect(
+			x,
+			y,
+			_st.imageRadius * 2,
+			_st.imageRadius * 2,
+			outerWidth);
+		if (!radius) {
+			p.drawEllipse(rect);
+		} else {
+			p.drawRoundedRect(rect, *radius, *radius);
+		}
 		p.setOpacity(1.);
 	}
 	if (_st.check.size > 0) {
@@ -441,7 +461,7 @@ void RoundImageCheckbox::prepareWideCache() {
 		QImage cache(wideSize * style::DevicePixelRatio(), wideSize * style::DevicePixelRatio(), QImage::Format_ARGB32_Premultiplied);
 		cache.setDevicePixelRatio(style::DevicePixelRatio());
 		{
-			Painter p(&cache);
+			auto p = Painter(&cache);
 			p.setCompositionMode(QPainter::CompositionMode_Source);
 			p.fillRect(0, 0, wideSize, wideSize, Qt::transparent);
 			p.setCompositionMode(QPainter::CompositionMode_SourceOver);

@@ -40,7 +40,7 @@ std::optional<Glib::VariantBase> ReadSetting(
 		const Glib::ustring &key) {
 	try {
 		const auto connection = Gio::DBus::Connection::get_sync(
-			Gio::DBus::BusType::BUS_TYPE_SESSION);
+			Gio::DBus::BusType::SESSION);
 
 		auto reply = connection->call_sync(
 			std::string(kObjectPath),
@@ -74,7 +74,7 @@ SettingWatcher::SettingWatcher(
 : _private(std::make_unique<Private>()) {
 	try {
 		_private->dbusConnection = Gio::DBus::Connection::get_sync(
-			Gio::DBus::BusType::BUS_TYPE_SESSION);
+			Gio::DBus::BusType::SESSION);
 		if (!_private->dbusConnection) {
 			return;
 		}
@@ -86,18 +86,16 @@ SettingWatcher::SettingWatcher(
 				const Glib::ustring &object_path,
 				const Glib::ustring &interface_name,
 				const Glib::ustring &signal_name,
-				const Glib::VariantContainerBase &parameters) {
+				Glib::VariantContainerBase parameters) {
 				try {
-					auto parametersCopy = parameters;
-
 					const auto group = GlibVariantCast<Glib::ustring>(
-						parametersCopy.get_child(0));
+						parameters.get_child(0));
 
 					const auto key = GlibVariantCast<Glib::ustring>(
-						parametersCopy.get_child(1));
+						parameters.get_child(1));
 
 					const auto value = GlibVariantCast<Glib::VariantBase>(
-						parametersCopy.get_child(2));
+						parameters.get_child(2));
 
 					callback(group, key, value);
 				} catch (...) {

@@ -34,8 +34,8 @@ Authorizations::Entry ParseEntry(const MTPDauthorization &data) {
 		|| isTest;
 
 	const auto appName = isDesktop
-		? QString("CloudVeil Messenger Desktop%1").arg(isTest ? " (GitHub)" : QString())
-		: qs(data.vapp_name());// +qsl(" for ") + qs(d.vplatform());
+		? u"CloudVeil Messenger Desktop%1"_q.arg(isTest ? " (GitHub)" : QString())
+		: qs(data.vapp_name());// + u" for "_q + qs(d.vplatform());
 	const auto appVer = [&] {
 		const auto version = qs(data.vapp_version());
 		if (isDesktop) {
@@ -79,12 +79,12 @@ Authorizations::Entry ParseEntry(const MTPDauthorization &data) {
 		const auto nowDate = now.date();
 		const auto lastDate = lastTime.date();
 		if (lastDate == nowDate) {
-			result.active = lastTime.toString(cTimeFormat());
+			result.active = QLocale().toString(lastTime, cTimeFormat());
 		} else if (lastDate.year() == nowDate.year()
 			&& lastDate.weekNumber() == nowDate.weekNumber()) {
 			result.active = langDayOfWeek(lastDate);
 		} else {
-			result.active = lastDate.toString(cDateFormat());
+			result.active = QLocale().toString(lastDate, cDateFormat());
 		}
 	}
 	result.location = country;

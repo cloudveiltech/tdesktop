@@ -51,7 +51,7 @@ TG_FORCE_INLINE uint64 BlurGetColors(const uchar *p) {
 		+ ((uint64)p[3] << 48);
 }
 
-const QImage &CircleMask(QSize size) {
+const QImage &EllipseMaskCached(QSize size) {
 	const auto key = (uint64(uint32(size.width())) << 32)
 		| uint64(uint32(size.height()));
 
@@ -64,17 +64,7 @@ const QImage &CircleMask(QSize size) {
 	}
 	lock.unlock();
 
-	auto mask = QImage(
-		size,
-		QImage::Format_ARGB32_Premultiplied);
-	mask.fill(Qt::transparent);
-	{
-		QPainter p(&mask);
-		PainterHighQualityEnabler hq(p);
-		p.setBrush(Qt::white);
-		p.setPen(Qt::NoPen);
-		p.drawEllipse(QRect(QPoint(), size));
-	}
+	auto mask = EllipseMask(size);
 
 	lock.relock();
 	return Masks.emplace(key, std::move(mask)).first->second;
@@ -345,6 +335,24 @@ std::array<QImage, 4> CornersMask(int radius) {
 	return PrepareCornersMask(radius);
 }
 
+QImage EllipseMask(QSize size) {
+	const auto ratio = style::DevicePixelRatio();
+
+	size *= ratio;
+	auto result = QImage(size, QImage::Format_ARGB32_Premultiplied);
+	result.fill(Qt::transparent);
+
+	QPainter p(&result);
+	PainterHighQualityEnabler hq(p);
+	p.setBrush(Qt::white);
+	p.setPen(Qt::NoPen);
+	p.drawEllipse(QRect(QPoint(), size));
+	p.end();
+
+	result.setDevicePixelRatio(ratio);
+	return result;
+}
+
 std::array<QImage, 4> PrepareCorners(
 		int radius,
 		const style::color &color) {
@@ -506,7 +514,7 @@ ReadResult Read(ReadArgs &&args) {
 		: Option::None);
 }
 
-QImage Blur(QImage &&image) {
+QImage Blur(QImage &&image, bool ignoreAlpha) {
 	if (image.isNull()) {
 		return std::move(image);
 	}
@@ -532,7 +540,7 @@ QImage Blur(QImage &&image) {
 	if (radius >= 16 || div >= w || div >= h || stride > w * 4) {
 		return std::move(image);
 	}
-	const auto withalpha = image.hasAlphaChannel();
+	const auto withalpha = !ignoreAlpha && image.hasAlphaChannel();
 	if (withalpha) {
 		auto smaller = QImage(image.size(), image.format());
 		{
@@ -987,7 +995,7 @@ QImage Circle(QImage &&image, QRect target) {
 	Expects(!image.isNull());
 
 	if (target.isNull()) {
-		target = QRect(QPoint(), image.size());
+		target = QRect(QPoint( ), image.size());
 	} else {
 		Assert(QRect(QPoint(), image.size()).contains(target));
 	}
@@ -1001,7 +1009,7 @@ QImage Circle(QImage &&image, QRect target) {
 	p.setCompositionMode(QPainter::CompositionMode_DestinationIn);
 	p.drawImage(
 		QRectF(target.topLeft() / ratio, target.size() / ratio),
-		CircleMask(target.size()));
+		EllipseMaskCached(target.size()));
 	p.end();
 
 	return std::move(image);
@@ -1009,21 +1017,15 @@ QImage Circle(QImage &&image, QRect target) {
 
 QImage Round(
 		QImage &&image,
-		gsl::span<const QImage, 4> cornerMasks,
-		RectParts corners,
+		CornersMaskRef mask,
 		QRect target) {
 	if (target.isNull()) {
 		target = QRect(QPoint(), image.size());
 	} else {
 		Assert(QRect(QPoint(), image.size()).contains(target));
 	}
-	auto cornerWidth = cornerMasks[0].width();
-	auto cornerHeight = cornerMasks[0].height();
-	auto targetWidth = target.width();
-	auto targetHeight = target.height();
-	if (targetWidth < cornerWidth || targetHeight < cornerHeight) {
-		return std::move(image);
-	}
+	const auto targetWidth = target.width();
+	const auto targetHeight = target.height();
 
 	image = std::move(image).convertToFormat(
 		QImage::Format_ARGB32_Premultiplied);
@@ -1035,42 +1037,71 @@ QImage Round(
 	// Real image bytesPerLine is smaller than the one we use for offsets.
 	auto ints = reinterpret_cast<uint32*>(image.bits());
 
-	constexpr auto imageIntsPerPixel = 1;
-	auto imageIntsPerLine = (image.bytesPerLine() >> 2);
-	Assert(image.depth() == static_cast<int>((imageIntsPerPixel * sizeof(uint32)) << 3));
+	constexpr auto kImageIntsPerPixel = 1;
+	const auto imageIntsPerLine = (image.bytesPerLine() >> 2);
+	Assert(image.depth() == ((kImageIntsPerPixel * sizeof(uint32)) << 3));
 	Assert(image.bytesPerLine() == (imageIntsPerLine << 2));
-	auto intsTopLeft = ints + target.x() + target.y() * imageIntsPerLine;
-	auto intsTopRight = ints + target.x() + targetWidth - cornerWidth + target.y() * imageIntsPerLine;
-	auto intsBottomLeft = ints + target.x() + (target.y() + targetHeight - cornerHeight) * imageIntsPerLine;
-	auto intsBottomRight = ints + target.x() + targetWidth - cornerWidth + (target.y() + targetHeight - cornerHeight) * imageIntsPerLine;
-	auto maskCorner = [&](uint32 *imageInts, const QImage &mask) {
-		auto maskWidth = mask.width();
-		auto maskHeight = mask.height();
-		auto maskBytesPerPixel = (mask.depth() >> 3);
-		auto maskBytesPerLine = mask.bytesPerLine();
-		auto maskBytesAdded = maskBytesPerLine - maskWidth * maskBytesPerPixel;
-		auto maskBytes = mask.constBits();
+	const auto maskCorner = [&](
+			const QImage *mask,
+			bool right = false,
+			bool bottom = false) {
+		const auto maskWidth = mask ? mask->width() : 0;
+		const auto maskHeight = mask ? mask->height() : 0;
+		if (!maskWidth
+			|| !maskHeight
+			|| targetWidth < maskWidth
+			|| targetHeight < maskHeight) {
+			return;
+		}
+
+		const auto maskBytesPerPixel = (mask->depth() >> 3);
+		const auto maskBytesPerLine = mask->bytesPerLine();
+		const auto maskBytesAdded = maskBytesPerLine
+			- maskWidth * maskBytesPerPixel;
 		Assert(maskBytesAdded >= 0);
-		Assert(mask.depth() == (maskBytesPerPixel << 3));
-		auto imageIntsAdded = imageIntsPerLine - maskWidth * imageIntsPerPixel;
+		Assert(mask->depth() == (maskBytesPerPixel << 3));
+		const auto imageIntsAdded = imageIntsPerLine
+			- maskWidth * kImageIntsPerPixel;
 		Assert(imageIntsAdded >= 0);
+		auto imageInts = ints + target.x() + target.y() * imageIntsPerLine;
+		if (right) {
+			imageInts += targetWidth - maskWidth;
+		}
+		if (bottom) {
+			imageInts += (targetHeight - maskHeight) * imageIntsPerLine;
+		}
+		auto maskBytes = mask->constBits();
 		for (auto y = 0; y != maskHeight; ++y) {
 			for (auto x = 0; x != maskWidth; ++x) {
 				auto opacity = static_cast<anim::ShiftedMultiplier>(*maskBytes) + 1;
 				*imageInts = anim::unshifted(anim::shifted(*imageInts) * opacity);
 				maskBytes += maskBytesPerPixel;
-				imageInts += imageIntsPerPixel;
+				imageInts += kImageIntsPerPixel;
 			}
 			maskBytes += maskBytesAdded;
 			imageInts += imageIntsAdded;
 		}
 	};
-	if (corners & RectPart::TopLeft) maskCorner(intsTopLeft, cornerMasks[0]);
-	if (corners & RectPart::TopRight) maskCorner(intsTopRight, cornerMasks[1]);
-	if (corners & RectPart::BottomLeft) maskCorner(intsBottomLeft, cornerMasks[2]);
-	if (corners & RectPart::BottomRight) maskCorner(intsBottomRight, cornerMasks[3]);
+
+	maskCorner(mask.p[0]);
+	maskCorner(mask.p[1], true);
+	maskCorner(mask.p[2], false, true);
+	maskCorner(mask.p[3], true, true);
 
 	return std::move(image);
+}
+
+QImage Round(
+		QImage &&image,
+		gsl::span<const QImage, 4> cornerMasks,
+		RectParts corners,
+		QRect target) {
+	return Round(std::move(image), CornersMaskRef({
+		(corners & RectPart::TopLeft) ? &cornerMasks[0] : nullptr,
+		(corners & RectPart::TopRight) ? &cornerMasks[1] : nullptr,
+		(corners & RectPart::BottomLeft) ? &cornerMasks[2] : nullptr,
+		(corners & RectPart::BottomRight) ? &cornerMasks[3] : nullptr,
+	}), target);
 }
 
 QImage Round(

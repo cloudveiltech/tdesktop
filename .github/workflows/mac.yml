@@ -5,7 +5,6 @@ on:
     paths-ignore:
       - 'docs/**'
       - '**.md'
-      - '!docs/building-mac.md'
       - 'changelog.txt'
       - 'LEGAL'
       - 'LICENSE'
@@ -23,7 +22,6 @@ on:
     paths-ignore:
       - 'docs/**'
       - '**.md'
-      - '!docs/building-mac.md'
       - 'changelog.txt'
       - 'LEGAL'
       - 'LICENSE'
@@ -42,7 +40,7 @@ jobs:
 
   macos:
     name: MacOS
-    runs-on: macos-latest
+    runs-on: macos-12
 
     strategy:
       matrix:
@@ -58,7 +56,7 @@ jobs:
         run: echo "REPO_NAME=${GITHUB_REPOSITORY##*/}" >> $GITHUB_ENV
 
       - name: Clone.
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3.1.0
         with:
           submodules: recursive
           path: ${{ env.REPO_NAME }}
@@ -75,7 +73,7 @@ jobs:
 
       - name: ThirdParty cache.
         id: cache-third-party
-        uses: actions/cache@v2
+        uses: actions/cache@v3.0.11
         with:
           path: ThirdParty
           key: ${{ runner.OS }}-third-party-${{ hashFiles(format('{0}/{1}', env.REPO_NAME, env.PREPARE_PATH)) }}
@@ -83,7 +81,7 @@ jobs:
 
       - name: Libraries cache.
         id: cache-libs
-        uses: actions/cache@v2
+        uses: actions/cache@v3.0.11
         with:
           path: Libraries
           key: ${{ runner.OS }}-libs-${{ hashFiles(format('{0}/{1}', env.REPO_NAME, env.PREPARE_PATH)) }}
@@ -116,13 +114,12 @@ jobs:
           -D CMAKE_C_FLAGS="-Werror" \
           -D CMAKE_CXX_FLAGS="-Werror" \
           -D TDESKTOP_API_TEST=ON \
-          -D DESKTOP_APP_USE_PACKAGED=OFF \
           -D DESKTOP_APP_DISABLE_CRASH_REPORTS=OFF \
           $DEFINE
 
           cd ../out
 
-          xcoderun='xcodebuild build -project Telegram.xcodeproj -scheme Telegram -destination "platform=macOS,arch=x86_64" -configuration Debug'
+          xcoderun='xcodebuild build -project Telegram.xcodeproj -scheme Telegram -destination "platform=macOS,arch=x86_64" -configuration Debug CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO'
           bash -c "$xcoderun" || bash -c "$xcoderun" || bash -c "$xcoderun"
 
       - name: Move artifact.

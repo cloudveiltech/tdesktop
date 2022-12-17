@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "ui/text/text_options.h"
 #include "ui/image/image_prepare.h"
+#include "ui/painter.h"
 #include "styles/style_chat.h"
 #include "styles/palette.h"
 
@@ -41,9 +42,13 @@ namespace {
 
 } // namespace
 
-MessageBar::MessageBar(not_null<QWidget*> parent, const style::MessageBar &st)
+MessageBar::MessageBar(
+	not_null<QWidget*> parent,
+	const style::MessageBar &st,
+	Fn<bool()> customEmojiPaused)
 : _st(st)
-, _widget(parent) {
+, _widget(parent)
+, _customEmojiPaused(std::move(customEmojiPaused)) {
 	setup();
 
 	style::PaletteChanged(
@@ -52,11 +57,21 @@ MessageBar::MessageBar(not_null<QWidget*> parent, const style::MessageBar &st)
 	}, _widget.lifetime());
 }
 
+void MessageBar::customEmojiRepaint() {
+	if (_customEmojiRepaintScheduled) {
+		return;
+	}
+	_customEmojiRepaintScheduled = true;
+	_widget.update();
+}
+
 void MessageBar::setup() {
 	_widget.resize(0, st::historyReplyHeight);
 	_widget.paintRequest(
 	) | rpl::start_with_next([=](QRect rect) {
 		auto p = Painter(&_widget);
+		p.setInactive(_customEmojiPaused());
+		_customEmojiRepaintScheduled = false;
 		paint(p);
 	}, _widget.lifetime());
 }
@@ -187,7 +202,11 @@ void MessageBar::tweenTo(MessageBarContent &&content) {
 void MessageBar::updateFromContent(MessageBarContent &&content) {
 	_content = std::move(content);
 	_title.setText(_st.title, _content.title);
-	_text.setMarkedText(_st.text, _content.text, Ui::DialogTextOptions());
+	_text.setMarkedText(
+		_st.text,
+		_content.text,
+		Ui::DialogTextOptions(),
+		_content.context);
 	_image = prepareImage(_content.preview);
 }
 
@@ -384,8 +403,16 @@ void MessageBar::paint(Painter &p) {
 				width);
 		} else {
 			p.setPen(_st.textFg);
-			p.setTextPalette(_st.textPalette);
-			_text.drawLeftElided(p, body.x(), text.y(), body.width(), width);
+			_text.draw(p, {
+				.position = { body.x(), text.y() },
+				.outerWidth = width,
+				.availableWidth = body.width(),
+				.palette = &_st.textPalette,
+				.spoiler = Ui::Text::DefaultSpoilerCache(),
+				.now = crl::now(),
+				.paused = p.inactive(),
+				.elisionLines = 1,
+			});
 		}
 	} else if (_animation->bodyAnimation == BodyAnimation::Text) {
 		p.setOpacity(1. - progress);

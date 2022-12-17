@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/call_delayed.h"
 #include "base/platform/mac/base_utilities_mac.h"
 #include "ui/boxes/confirm_box.h"
+#include "ui/painter.h"
 #include "chat_helpers/emoji_list_widget.h"
 #include "core/sandbox.h"
 #include "core/application.h"
@@ -20,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_document.h"
 #include "data/data_document_media.h"
 #include "data/data_file_origin.h"
+#include "data/data_forum_topic.h"
 #include "data/data_session.h"
 #include "data/stickers/data_stickers.h"
 #include "history/history.h"
@@ -167,7 +169,9 @@ auto ActiveChat(not_null<Window::Controller*> controller) {
 }
 
 bool CanWriteToActiveChat(not_null<Window::Controller*> controller) {
-	if (const auto history = ActiveChat(controller).history()) {
+	if (const auto topic = ActiveChat(controller).topic()) {
+		return topic->canWrite();
+	} else if (const auto history = ActiveChat(controller).history()) {
 		return history->peer->canWrite();
 	}
 	return false;
@@ -258,13 +262,25 @@ void AppendFavedStickers(
 	}
 }
 
+[[nodiscard]] EmojiPack RecentEmojiSection() {
+	const auto list = Core::App().settings().recentEmoji();
+	auto result = EmojiPack();
+	result.reserve(list.size());
+	for (const auto &emoji : list) {
+		if (const auto one = std::get_if<EmojiPtr>(&emoji.id.data)) {
+			result.push_back(*one);
+		}
+	}
+	return result;
+}
+
 void AppendEmojiPacks(
 		const Data::StickersSets &sets,
 		std::vector<PickerScrubberItem> &to) {
 	for (auto i = 0; i != ChatHelpers::kEmojiSectionCount; ++i) {
 		const auto section = static_cast<Ui::Emoji::Section>(i);
 		const auto list = (section == Ui::Emoji::Section::Recent)
-			? Core::App().settings().recentEmojiSection()
+			? RecentEmojiSection()
 			: Ui::Emoji::GetSection(section);
 		const auto title = (section == Ui::Emoji::Section::Recent)
 			? TitleRecentlyUsed(sets)
@@ -475,7 +491,7 @@ void AppendEmojiPacks(
 			if (const auto inputField = qobject_cast<QTextEdit*>(
 					QApplication::focusWidget())) {
 				Ui::InsertEmojiAtCursor(inputField->textCursor(), emoji);
-				Core::App().settings().incrementRecentEmoji(emoji);
+				Core::App().settings().incrementRecentEmoji({ emoji });
 				return true;
 			}
 		}
@@ -544,10 +560,11 @@ void AppendEmojiPacks(
 
 	controller->sessionController()->activeChatValue(
 	) | rpl::map([](Dialogs::Key k) {
-		return k.peer()
-			&& k.history()
-			&& k.peer()->canWrite()
-			&& !RestrictionToSendStickers(k.peer());
+		const auto topic = k.topic();
+		const auto peer = k.peer();
+		return peer
+			&& !RestrictionToSendStickers(peer)
+			&& (topic ? topic->canWrite() : peer->canWrite());
 	}) | rpl::distinct_until_changed(
 	) | rpl::start_with_next([=](bool value) {
 		[self dismissPopover:nil];
@@ -565,11 +582,10 @@ void AppendEmojiPacks(
 
 	rpl::merge(
 		rpl::merge(
-			_session->data().stickers().updated(),
+			_session->data().stickers().updated(
+				Data::StickersType::Stickers),
 			_session->data().stickers().recentUpdated(
-			) | rpl::filter([](Data::Stickers::Recent recent) {
-				return (recent != Data::Stickers::Recent::Attached);
-			}) | rpl::to_empty
+				Data::StickersType::Stickers)
 		) | rpl::map_to(ScrubberItemType::Sticker),
 		rpl::merge(
 			Core::App().settings().recentEmojiUpdated(),

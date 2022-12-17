@@ -21,6 +21,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/menu/menu_add_action_callback_factory.h"
 #include "ui/boxes/confirm_box.h"
 #include "ui/text/text_utilities.h"
+#include "ui/painter.h"
 #include "ui/special_buttons.h"
 #include "core/application.h"
 #include "core/core_settings.h"
@@ -36,6 +37,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_premium_limits.h"
 #include "dialogs/ui/dialogs_layout.h"
 #include "info/profile/info_profile_values.h"
+#include "info/profile/info_profile_badge.h"
 #include "lang/lang_keys.h"
 #include "main/main_account.h"
 #include "main/main_session.h"
@@ -46,6 +48,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_peer_menu.h"
 #include "apiwrap.h"
 #include "api/api_peer_photo.h"
+#include "api/api_user_names.h"
 #include "core/file_utilities.h"
 #include "base/call_delayed.h"
 #include "base/unixtime.h"
@@ -55,19 +58,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_settings.h"
 #include "styles/style_menu_icons.h"
 
-#include <QtGui/QGuiApplication>
-#include <QtGui/QClipboard>
-#include <QtCore/QBuffer>
 #include "cloudveil/GlobalSecuritySettings.h"
 
 #include <QtGui/QGuiApplication>
 #include <QtGui/QClipboard>
-
+#include <QtCore/QBuffer>
 
 namespace Settings {
 namespace {
 
 constexpr auto kSaveBioTimeout = 1000;
+constexpr auto kPlayStatusLimit = 2;
 
 class ComposedBadge final : public Ui::RpWidget {
 public:
@@ -76,7 +77,8 @@ public:
 		not_null<Ui::SettingsButton*> button,
 		not_null<Main::Session*> session,
 		rpl::producer<QString> &&text,
-		bool hasUnread);
+		bool hasUnread,
+		Fn<bool()> animationPaused);
 
 private:
 	rpl::variable<QString> _text;
@@ -84,7 +86,7 @@ private:
 	rpl::event_stream<int> _premiumWidth;
 
 	QPointer<Ui::RpWidget> _unread;
-	QPointer<Ui::RpWidget> _premium;
+	Info::Profile::Badge _badge;
 
 };
 
@@ -93,9 +95,18 @@ ComposedBadge::ComposedBadge(
 	not_null<Ui::SettingsButton*> button,
 	not_null<Main::Session*> session,
 	rpl::producer<QString> &&text,
-	bool hasUnread)
+	bool hasUnread,
+	Fn<bool()> animationPaused)
 : Ui::RpWidget(parent)
-, _text(std::move(text)) {
+, _text(std::move(text))
+, _badge(
+		this,
+		st::settingsInfoPeerBadge,
+		session->user(),
+		nullptr,
+		std::move(animationPaused),
+		kPlayStatusLimit,
+		Info::Profile::BadgeType::Premium) {
 	if (hasUnread) {
 		_unread = CreateUnread(this, rpl::single(
 			rpl::empty
@@ -116,47 +127,36 @@ ComposedBadge::ComposedBadge(
 		}) | rpl::start_to_stream(_unreadWidth, _unread->lifetime());
 	}
 
-	Data::AmPremiumValue(
-		session
-	) | rpl::start_with_next([=](bool hasPremium) {
-		if (hasPremium && !_premium) {
-			_premium = Ui::CreateChild<Ui::RpWidget>(this);
-			const auto offset = st::dialogsPremiumIconOffset;
-			_premium->resize(
-				st::dialogsPremiumIcon.width() - offset.x(),
-				st::dialogsPremiumIcon.height() - offset.y());
-			_premium->paintRequest(
-			) | rpl::start_with_next([=](const QRect &r) {
-				Painter p(_premium);
-				st::dialogsPremiumIcon.paint(
-					p,
-					-offset.x(),
-					-offset.y(),
-					_premium->width());
-			}, _premium->lifetime());
-			_premium->widthValue(
-			) | rpl::start_to_stream(_premiumWidth, _premium->lifetime());
-		} else if (!hasPremium && _premium) {
-			_premium = nullptr;
+	_badge.updated(
+	) | rpl::start_with_next([=] {
+		if (const auto button = _badge.widget()) {
+			button->widthValue(
+			) | rpl::start_to_stream(_premiumWidth, button->lifetime());
+		} else {
 			_premiumWidth.fire(0);
 		}
 	}, lifetime());
 
+	auto textWidth = _text.value() | rpl::map([=] {
+		return button->fullTextWidth();
+	});
 	rpl::combine(
 		_unreadWidth.events_starting_with(_unread ? _unread->width() : 0),
-		_premiumWidth.events_starting_with(_premium ? _premium->width() : 0),
-		_text.value(),
+		_premiumWidth.events_starting_with(_badge.widget()
+			? _badge.widget()->width()
+			: 0),
+		std::move(textWidth),
 		button->sizeValue()
 	) | rpl::start_with_next([=](
 			int unreadWidth,
 			int premiumWidth,
-			const QString &text,
+			int textWidth,
 			const QSize &buttonSize) {
 		const auto &st = button->st();
 		const auto skip = st.style.font->spacew;
 		const auto textRightPosition = st.padding.left()
-			+ st.style.font->width(text)
-			+ skip * 2;
+			+ textWidth
+			+ skip;
 		const auto minWidth = unreadWidth + premiumWidth + skip;
 		const auto maxTextWidth = buttonSize.width()
 			- minWidth
@@ -168,9 +168,10 @@ ComposedBadge::ComposedBadge(
 			buttonSize.width() - st.padding.right() - finalTextRight,
 			buttonSize.height());
 
-		if (_premium) {
-			_premium->moveToLeft(0, st.padding.top());
-		}
+		_badge.move(
+			0,
+			st.padding.top(),
+			buttonSize.height() - st.padding.top());
 		if (_unread) {
 			_unread->moveToRight(
 				0,
@@ -324,7 +325,7 @@ void SetupPhoto(
 	) | rpl::start_with_next([=](
 			int max,
 			int photoWidth,
-			const TextWithEntities&,
+			const QString&,
 			int statusWidth) {
 		photo->moveToLeft(
 			(max - photoWidth) / 2,
@@ -409,7 +410,7 @@ void SetupRows(
 	AddRow(
 		container,
 		tr::lng_settings_name_label(),
-		Info::Profile::NameValue(self),
+		Info::Profile::NameValue(self) | Ui::Text::ToWithEntities(),
 		tr::lng_profile_copy_fullname(tr::now),
 		[=] { controller->show(Box<EditNameBox>(self)); },
 		{ &st::settingsIconUser, kIconLightBlue });
@@ -453,12 +454,19 @@ void SetupRows(
 			"internal:edit_username" });
 		return result;
 	});
+	session->api().usernames().requestToCache(session->user());
 	AddRow(
 		container,
 		std::move(label),
 		std::move(value),
 		tr::lng_context_copy_mention(tr::now),
-		[=] { controller->show(Box<UsernameBox>(session)); },
+		[=] {
+			const auto box = controller->show(Box(UsernamesBox, session));
+			box->boxClosing(
+			) | rpl::start_with_next([=] {
+				session->api().usernames().requestToCache(session->user());
+			}, box->lifetime());
+		},
 		{ &st::settingsIconMention, kIconLightOrange });
 
 	AddSkip(container);
@@ -488,12 +496,12 @@ void SetupBio(
 			tr::lng_bio_placeholder(),
 			*current),
 		st::settingsBioMargins);
-
 	//CloudVeil start
 	if (GlobalSecuritySettings::getSettings().disableBioChange) {
 		bio->setEnabled(false);
 	}
 	//CloudVeil end
+
 	const auto countdown = Ui::CreateChild<Ui::FlatLabel>(
 		container.get(),
 		QString(),
@@ -615,11 +623,11 @@ void SetupAccountsWrap(
 	const auto user = session->user();
 
 	auto text = rpl::single(
-		user->name
+		user->name()
 	) | rpl::then(session->changes().realtimeNameUpdates(
 		user
 	) | rpl::map([=] {
-		return user->name;
+		return user->name();
 	}));
 	auto result = object_ptr<Ui::SettingsButton>(
 		parent,
@@ -634,7 +642,9 @@ void SetupAccountsWrap(
 			raw,
 			session,
 			std::move(text),
-			!active);
+			!active,
+			[=] { return window->isGifPausedAtLeastFor(
+				Window::GifPauseReason::Layer); });
 		composedBadge->sizeValue(
 		) | rpl::start_with_next([=](const QSize &s) {
 			container->resize(s);
@@ -647,7 +657,7 @@ void SetupAccountsWrap(
 		}
 
 		Ui::RpWidget userpic;
-		std::shared_ptr<Data::CloudImageView> view;
+		Ui::PeerUserpicView view;
 		base::unique_qptr<Ui::PopupMenu> menu;
 	};
 	const auto state = raw->lifetime().make_state<State>(raw);
@@ -693,13 +703,13 @@ void SetupAccountsWrap(
 		} else if (which != Qt::RightButton) {
 			return;
 		}
-		const auto addAction = Ui::Menu::CreateAddActionCallback(
-			state->menu);
 		if (!state->menu && IsAltShift(raw->clickModifiers()) && !locked) {
 			state->menu = base::make_unique_q<Ui::PopupMenu>(
 				raw,
 				st::popupMenuWithIcons);
-			Window::MenuAddMarkAsReadAllChatsAction(window, addAction);
+			Window::MenuAddMarkAsReadAllChatsAction(
+				window,
+				Ui::Menu::CreateAddActionCallback(state->menu));
 			state->menu->popup(QCursor::pos());
 			return;
 		}
@@ -710,6 +720,8 @@ void SetupAccountsWrap(
 		state->menu = base::make_unique_q<Ui::PopupMenu>(
 			raw,
 			st::popupMenuWithIcons);
+		const auto addAction = Ui::Menu::CreateAddActionCallback(
+			state->menu);
 		addAction(tr::lng_profile_copy_phone(tr::now), [=] {
 			const auto phone = rpl::variable<TextWithEntities>(
 				Info::Profile::PhoneValue(session->user()));
@@ -983,7 +995,7 @@ Dialogs::Ui::UnreadBadgeStyle Style() {
 	auto result = Dialogs::Ui::UnreadBadgeStyle();
 	result.font = st::mainMenuBadgeFont;
 	result.size = st::mainMenuBadgeSize;
-	result.sizeId = Dialogs::Ui::UnreadBadgeInMainMenu;
+	result.sizeId = Dialogs::Ui::UnreadBadgeSize::MainMenu;
 	return result;
 }
 
@@ -1002,9 +1014,7 @@ not_null<Ui::RpWidget*> AddRight(
 				padding.right(),
 				(outer.height() - inner.height()) / 2,
 				outer.width());
-			padding.setRight(padding.right()
-				+ inner.width()
-				+ button->st().style.font->spacew);
+			padding.setRight(padding.right() + inner.width());
 		}
 		button->setPaddingOverride(padding);
 		button->update();

@@ -28,6 +28,8 @@ struct MarkedTextContext {
 
 	Main::Session *session = nullptr;
 	HashtagMentionType type = HashtagMentionType::Telegram;
+	Fn<void()> customEmojiRepaint;
+	int customEmojiLoopLimit = 0;
 };
 
 class UiIntegration final : public Ui::Integration {
@@ -53,9 +55,12 @@ public:
 		const QString &url,
 		const QVariant &context) override;
 	rpl::producer<> forcePopupMenuHideRequests() override;
-	QString convertTagToMimeTag(const QString &tagId) override;
 	const Ui::Emoji::One *defaultEmojiVariant(
 		const Ui::Emoji::One *emoji) override;
+	std::unique_ptr<Ui::Text::CustomEmoji> createCustomEmoji(
+		const QString &data,
+		const std::any &context) override;
+	Fn<void()> createSpoilerRepaint(const std::any &context) override;
 
 	QString phraseContextCopyText() override;
 	QString phraseContextCopyEmail() override;
@@ -72,7 +77,16 @@ public:
 	QString phraseFormattingMonospace() override;
 	QString phraseFormattingSpoiler() override;
 	QString phraseButtonOk() override;
+	QString phraseButtonClose() override;
 	QString phraseButtonCancel() override;
+	QString phrasePanelCloseWarning() override;
+	QString phrasePanelCloseUnsaved() override;
+	QString phrasePanelCloseAnyway() override;
+#if 0 // disabled for now
+	QString phraseBotSharePhone() override;
+	QString phraseBotSharePhoneTitle() override;
+	QString phraseBotSharePhoneConfirm() override;
+#endif
 
 };
 

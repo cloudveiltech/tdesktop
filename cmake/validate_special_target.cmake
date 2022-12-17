@@ -4,19 +4,16 @@
 # For license and copyright information please follow this link:
 # https://github.com/desktop-app/legal/blob/master/LEGAL
 
+include(CMakeDependentOption)
+
 set(DESKTOP_APP_SPECIAL_TARGET "" CACHE STRING "Use special platform target, like 'macstore' for Mac App Store.")
 
-set(no_special_target 0)
-if (DESKTOP_APP_SPECIAL_TARGET STREQUAL "")
-    set(no_special_target 1)
+get_filename_component(libs_loc "../Libraries" REALPATH)
+set(libs_loc_exists 0)
+if (EXISTS ${libs_loc})
+    set(libs_loc_exists 1)
 endif()
-option(DESKTOP_APP_USE_PACKAGED "Find libraries using CMake instead of exact paths." ${no_special_target})
-
-set(default_to_qt6 1)
-if (WIN32)
-    set(default_to_qt6 0)
-endif()
-option(DESKTOP_APP_QT6 "Build with Qt 6" ${default_to_qt6})
+cmake_dependent_option(DESKTOP_APP_USE_PACKAGED "Find libraries using CMake instead of exact paths." OFF libs_loc_exists ON)
 
 function(report_bad_special_target)
     if (NOT DESKTOP_APP_SPECIAL_TARGET STREQUAL "")
@@ -26,10 +23,8 @@ endfunction()
 
 if (NOT DESKTOP_APP_USE_PACKAGED)
     set(CMAKE_OSX_DEPLOYMENT_TARGET 10.12 CACHE STRING "Minimum macOS deployment version" FORCE)
-    if (DESKTOP_APP_QT6)
+    if (NOT DEFINED CMAKE_OSX_ARCHITECTURES)
         set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64" CACHE STRING "Target macOS architectures" FORCE)
-    else()
-        set(CMAKE_OSX_ARCHITECTURES "x86_64" CACHE STRING "Target macOS architectures" FORCE)
     endif()
 endif()
 

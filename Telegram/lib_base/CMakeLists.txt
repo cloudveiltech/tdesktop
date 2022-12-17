@@ -6,7 +6,7 @@
 
 add_library(lib_base STATIC)
 add_library(desktop-app::lib_base ALIAS lib_base)
-init_target(lib_base)
+init_target(lib_base ltcg)
 
 add_library(lib_base_crash_report_writer STATIC)
 add_library(desktop-app::lib_base_crash_report_writer ALIAS lib_base_crash_report_writer)
@@ -29,6 +29,8 @@ PRIVATE
     base/platform/linux/base_layout_switch_linux.h
     base/platform/linux/base_linux_allocation_tracer.cpp
     base/platform/linux/base_linux_allocation_tracer.h
+    base/platform/linux/base_linux_app_launch_context.cpp
+    base/platform/linux/base_linux_app_launch_context.h
     base/platform/linux/base_linux_dbus_utilities.cpp
     base/platform/linux/base_linux_dbus_utilities.h
     base/platform/linux/base_linux_glibmm_helper.h
@@ -106,6 +108,7 @@ PRIVATE
     base/platform/win/wrl/wrl_module_h.h
     base/platform/base_platform_custom_app_icon.h
     base/platform/base_platform_global_shortcuts.h
+    base/platform/base_platform_info.cpp
     base/platform/base_platform_info.h
     base/platform/base_platform_last_input.h
     base/platform/base_platform_layout_switch.h
@@ -162,8 +165,6 @@ PRIVATE
     base/network_reachability.cpp
     base/network_reachability.h
     base/object_ptr.h
-    base/observer.cpp
-    base/observer.h
     base/ordered_set.h
     base/openssl_help.h
     base/optional.h
@@ -196,17 +197,22 @@ PRIVATE
     base/unique_qptr.h
     base/unixtime.cpp
     base/unixtime.h
-    base/value_ordering.h
     base/variant.h
     base/virtual_method.h
     base/weak_ptr.h
     base/zlib_help.h
+    base/qt/qt_common_adapters.h
+    base/qt/qt_compare.h
+    base/qt/qt_key_modifiers.h
+    base/qt/qt_string_view.h
 
     base/base_pch.h
 )
 
 if (DESKTOP_APP_DISABLE_DBUS_INTEGRATION)
     remove_target_sources(lib_base ${src_loc}
+        base/platform/linux/base_linux_app_launch_context.cpp
+        base/platform/linux/base_linux_app_launch_context.h
         base/platform/linux/base_linux_dbus_utilities.cpp
         base/platform/linux/base_linux_dbus_utilities.h
         base/platform/linux/base_linux_glibmm_helper.h
@@ -261,6 +267,11 @@ PRIVATE
 if (WIN32)
     nuget_add_winrt(lib_base)
 elseif (LINUX)
+    target_link_libraries(lib_base
+    PUBLIC
+        desktop-app::external_kcoreaddons
+    )
+
     if (NOT DESKTOP_APP_DISABLE_DBUS_INTEGRATION)
         target_link_libraries(lib_base
         PUBLIC
@@ -280,15 +291,12 @@ elseif (LINUX)
     endif()
 
     if (NOT DESKTOP_APP_DISABLE_WAYLAND_INTEGRATION)
-        if (DESKTOP_APP_QT6)
-            qt6_generate_wayland_protocol_client_sources(lib_base
-            FILES
-                ${third_party_loc}/wayland-protocols/unstable/xdg-foreign/xdg-foreign-unstable-v2.xml
-                ${third_party_loc}/wayland-protocols/unstable/idle-inhibit/idle-inhibit-unstable-v1.xml
-            )
-        else()
-            message(FATAL_ERROR "This piece of cmake code is not ported to Qt 5")
-        endif()
+        qt_generate_wayland_protocol_client_sources(lib_base
+        FILES
+            ${third_party_loc}/wayland-protocols/staging/xdg-activation/xdg-activation-v1.xml
+            ${third_party_loc}/wayland-protocols/unstable/xdg-foreign/xdg-foreign-unstable-v2.xml
+            ${third_party_loc}/wayland-protocols/unstable/idle-inhibit/idle-inhibit-unstable-v1.xml
+        )
 
         target_link_libraries(lib_base
         PUBLIC

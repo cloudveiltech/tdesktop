@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "api/api_premium.h"
 
+#include "api/api_premium_option.h"
 #include "api/api_text_entities.h"
 #include "main/main_session.h"
 #include "data/data_peer_values.h"
@@ -27,6 +28,9 @@ Premium::Premium(not_null<ApiWrap*> api)
 			_session
 		) | rpl::start_with_next([=] {
 			reload();
+			if (_session->premium()) {
+				reloadCloudSet();
+			}
 		}, _session->lifetime());
 	});
 }
@@ -54,6 +58,15 @@ rpl::producer<> Premium::stickersUpdated() const {
 	return _stickersUpdated.events();
 }
 
+auto Premium::cloudSet() const
+-> const std::vector<not_null<DocumentData*>> & {
+	return _cloudSet;
+}
+
+rpl::producer<> Premium::cloudSetUpdated() const {
+	return _cloudSetUpdated.events();
+}
+
 int64 Premium::monthlyAmount() const {
 	return _monthlyAmount;
 }
@@ -74,37 +87,43 @@ void Premium::reloadPromo() {
 	_promoRequestId = _api.request(MTPhelp_GetPremiumPromo(
 	)).done([=](const MTPhelp_PremiumPromo &result) {
 		_promoRequestId = 0;
-		result.match([&](const MTPDhelp_premiumPromo &data) {
-			_session->data().processUsers(data.vusers());
-			_monthlyAmount = data.vmonthly_amount().v;
-			_monthlyCurrency = qs(data.vcurrency());
-			auto text = TextWithEntities{
-				qs(data.vstatus_text()),
-				EntitiesFromMTP(_session, data.vstatus_entities().v),
-			};
-			_statusText = text;
-			_statusTextUpdates.fire(std::move(text));
-			auto videos = base::flat_map<QString, not_null<DocumentData*>>();
-			const auto count = int(std::min(
-				data.vvideo_sections().v.size(),
-				data.vvideos().v.size()));
-			videos.reserve(count);
-			for (auto i = 0; i != count; ++i) {
-				const auto document = _session->data().processDocument(
-					data.vvideos().v[i]);
-				if ((!document->isVideoFile() && !document->isGifv())
-					|| !document->supportsStreaming()) {
-					document->forceIsStreamedAnimation();
-				}
-				videos.emplace(
-					qs(data.vvideo_sections().v[i]),
-					document);
+		const auto &data = result.data();
+		_session->data().processUsers(data.vusers());
+
+		_subscriptionOptions = SubscriptionOptionsFromTL(
+			data.vperiod_options().v);
+		for (const auto &option : data.vperiod_options().v) {
+			if (option.data().vmonths().v == 1) {
+				_monthlyAmount = option.data().vamount().v;
+				_monthlyCurrency = qs(option.data().vcurrency());
 			}
-			if (_videos != videos) {
-				_videos = std::move(videos);
-				_videosUpdated.fire({});
+		}
+		auto text = TextWithEntities{
+			qs(data.vstatus_text()),
+			EntitiesFromMTP(_session, data.vstatus_entities().v),
+		};
+		_statusText = text;
+		_statusTextUpdates.fire(std::move(text));
+		auto videos = base::flat_map<QString, not_null<DocumentData*>>();
+		const auto count = int(std::min(
+			data.vvideo_sections().v.size(),
+			data.vvideos().v.size()));
+		videos.reserve(count);
+		for (auto i = 0; i != count; ++i) {
+			const auto document = _session->data().processDocument(
+				data.vvideos().v[i]);
+			if ((!document->isVideoFile() && !document->isGifv())
+				|| !document->supportsStreaming()) {
+				document->forceIsStreamedAnimation();
 			}
-		});
+			videos.emplace(
+				qs(data.vvideo_sections().v[i]),
+				document);
+		}
+		if (_videos != videos) {
+			_videos = std::move(videos);
+			_videosUpdated.fire({});
+		}
 	}).fail([=] {
 		_promoRequestId = 0;
 	}).send();
@@ -135,6 +154,37 @@ void Premium::reloadStickers() {
 	}).fail([=] {
 		_stickersRequestId = 0;
 	}).send();
+}
+
+void Premium::reloadCloudSet() {
+	if (_cloudSetRequestId) {
+		return;
+	}
+	_cloudSetRequestId = _api.request(MTPmessages_GetStickers(
+		MTP_string("\xf0\x9f\x93\x82\xe2\xad\x90\xef\xb8\x8f"),
+		MTP_long(_cloudSetHash)
+	)).done([=](const MTPmessages_Stickers &result) {
+		_cloudSetRequestId = 0;
+		result.match([&](const MTPDmessages_stickersNotModified &) {
+		}, [&](const MTPDmessages_stickers &data) {
+			_cloudSetHash = data.vhash().v;
+			const auto owner = &_session->data();
+			_cloudSet.clear();
+			for (const auto &sticker : data.vstickers().v) {
+				const auto document = owner->processDocument(sticker);
+				if (document->isPremiumSticker()) {
+					_cloudSet.push_back(document);
+				}
+			}
+			_cloudSetUpdated.fire({});
+		});
+	}).fail([=] {
+		_cloudSetRequestId = 0;
+	}).send();
+}
+
+const Data::SubscriptionOptions &Premium::subscriptionOptions() const {
+	return _subscriptionOptions;
 }
 
 } // namespace Api

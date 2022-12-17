@@ -45,6 +45,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/text_options.h"
 #include "ui/text/text_utilities.h"
 #include "ui/cached_round_corners.h"
+#include "ui/painter.h"
 #include "ui/ui_utility.h"
 
 namespace Overview {
@@ -275,7 +276,7 @@ void StatusText::update(
 	if (_size == Ui::FileStatusSizeReady) {
 		_text = (duration >= 0) ? Ui::FormatDurationAndSizeText(duration, fullSize) : (duration < -1 ? Ui::FormatGifAndSizeText(fullSize) : Ui::FormatSizeText(fullSize));
 	} else if (_size == Ui::FileStatusSizeLoaded) {
-		_text = (duration >= 0) ? Ui::FormatDurationText(duration) : (duration < -1 ? qsl("GIF") : Ui::FormatSizeText(fullSize));
+		_text = (duration >= 0) ? Ui::FormatDurationText(duration) : (duration < -1 ? u"GIF"_q : Ui::FormatSizeText(fullSize));
 	} else if (_size == Ui::FileStatusSizeFailed) {
 		_text = tr::lng_attach_failed(tr::now);
 	} else if (_size >= 0) {
@@ -663,8 +664,8 @@ void Voice::paint(Painter &p, const QRect &clip, TextSelection selection, const 
 		}
 	}
 	const auto showPause = updateStatusText();
-	const auto nameVersion = parent()->fromOriginal()->nameVersion;
-	if (nameVersion > _nameVersion) {
+	const auto nameVersion = parent()->fromOriginal()->nameVersion();
+	if (_nameVersion < nameVersion) {
 		updateName();
 	}
 	const auto radial = isRadialAnimation();
@@ -879,18 +880,31 @@ const style::RoundCheckbox &Voice::checkboxStyle() const {
 }
 
 void Voice::updateName() {
-	auto version = 0;
 	if (const auto forwarded = parent()->Get<HistoryMessageForwarded>()) {
 		if (parent()->fromOriginal()->isChannel()) {
-			_name.setText(st::semiboldTextStyle, tr::lng_forwarded_channel(tr::now, lt_channel, parent()->fromOriginal()->name), Ui::NameTextOptions());
+			_name.setText(
+				st::semiboldTextStyle,
+				tr::lng_forwarded_channel(
+					tr::now,
+					lt_channel,
+					parent()->fromOriginal()->name()),
+				Ui::NameTextOptions());
 		} else {
-			_name.setText(st::semiboldTextStyle, tr::lng_forwarded(tr::now, lt_user, parent()->fromOriginal()->name), Ui::NameTextOptions());
+			_name.setText(
+				st::semiboldTextStyle,
+				tr::lng_forwarded(
+					tr::now,
+					lt_user,
+					parent()->fromOriginal()->name()),
+				Ui::NameTextOptions());
 		}
 	} else {
-		_name.setText(st::semiboldTextStyle, parent()->from()->name, Ui::NameTextOptions());
+		_name.setText(
+			st::semiboldTextStyle,
+			parent()->from()->name(),
+			Ui::NameTextOptions());
 	}
-	version = parent()->fromOriginal()->nameVersion;
-	_nameVersion = version;
+	_nameVersion = parent()->fromOriginal()->nameVersion();
 }
 
 int Voice::duration() const {
@@ -1118,9 +1132,10 @@ void Document::paint(Painter &p, const QRect &clip, TextSelection selection, con
 				if (thumbnail || blurred) {
 					if (_thumb.isNull() || (thumbnail && !_thumbLoaded)) {
 						_thumbLoaded = (thumbnail != nullptr);
-						const auto options = _thumbLoaded
-							? Images::Option()
-							: Images::Option::Blur;
+						const auto options = Images::Option::RoundSmall
+							| (_thumbLoaded
+								? Images::Option()
+								: Images::Option::Blur);
 						const auto image = thumbnail ? thumbnail : blurred;
 						_thumb = image->pixNoCache(
 							_thumbw * style::DevicePixelRatio(),
@@ -1133,10 +1148,20 @@ void Document::paint(Painter &p, const QRect &clip, TextSelection selection, con
 					}
 					p.drawPixmap(rthumb.topLeft(), _thumb);
 				} else {
-					p.fillRect(rthumb, st::overviewFileThumbBg);
+					p.setPen(Qt::NoPen);
+					p.setBrush(st::overviewFileThumbBg);
+					p.drawRoundedRect(
+						rthumb,
+						st::roundRadiusSmall,
+						st::roundRadiusSmall);
 				}
 			} else {
-				p.fillRect(rthumb, _generic.color);
+				p.setPen(Qt::NoPen);
+				p.setBrush(_generic.color);
+				p.drawRoundedRect(
+					rthumb,
+					st::roundRadiusSmall,
+					st::roundRadiusSmall);
 				if (!radial && loaded && !_ext.isEmpty()) {
 					p.setFont(st::overviewFileExtFont);
 					p.setPen(st::overviewFileExtFg);
@@ -1144,7 +1169,12 @@ void Document::paint(Painter &p, const QRect &clip, TextSelection selection, con
 				}
 			}
 			if (selected) {
-				p.fillRect(rthumb, st::defaultTextPalette.selectOverlay);
+				p.setPen(Qt::NoPen);
+				p.setBrush(st::defaultTextPalette.selectOverlay);
+				p.drawRoundedRect(
+					rthumb,
+					st::roundRadiusSmall,
+					st::roundRadiusSmall);
 			}
 
 			if (radial || (!loaded && !_data->loading())) {
@@ -1221,7 +1251,7 @@ void Document::paint(Painter &p, const QRect &clip, TextSelection selection, con
 	paintCheckbox(p, { checkLeft, checkTop }, selected, context);
 }
 
-void Document::drawCornerDownload(Painter &p, bool selected, const PaintContext *context) const {
+void Document::drawCornerDownload(QPainter &p, bool selected, const PaintContext *context) const {
 	if (dataLoaded()
 		|| _data->loadedInMediaCache()
 		|| !downloadInCorner()) {
@@ -1468,7 +1498,8 @@ Link::Link(
 	not_null<Delegate*> delegate,
 	not_null<HistoryItem*> parent,
 	Data::Media *media)
-: ItemBase(delegate, parent) {
+: ItemBase(delegate, parent)
+, _text(st::msgMinWidth) {
 	AddComponents(Info::Bit());
 
 	auto textWithEntities = parent->originalText();
@@ -1500,7 +1531,7 @@ Link::Link(
 		}
 		int32 afterLinkStart = entity.offset() + entity.length();
 		if (till > afterLinkStart) {
-			if (!QRegularExpression(qsl("^[,.\\s_=+\\-;:`'\"\\(\\)\\[\\]\\{\\}<>*&^%\\$#@!\\\\/]+$")).match(text.mid(afterLinkStart, till - afterLinkStart)).hasMatch()) {
+			if (!QRegularExpression(u"^[,.\\s_=+\\-;:`'\"\\(\\)\\[\\]\\{\\}<>*&^%\\$#@!\\\\/]+$"_q).match(text.mid(afterLinkStart, till - afterLinkStart)).hasMatch()) {
 				++lnk;
 				break;
 			}
@@ -1508,7 +1539,7 @@ Link::Link(
 		till = entity.offset();
 	}
 	if (!lnk) {
-		if (QRegularExpression(qsl("^[,.\\s\\-;:`'\"\\(\\)\\[\\]\\{\\}<>*&^%\\$#@!\\\\/]+$")).match(text.mid(from, till - from)).hasMatch()) {
+		if (QRegularExpression(u"^[,.\\s\\-;:`'\"\\(\\)\\[\\]\\{\\}<>*&^%\\$#@!\\\\/]+$"_q).match(text.mid(from, till - from)).hasMatch()) {
 			till = from;
 		}
 	}
@@ -1516,7 +1547,7 @@ Link::Link(
 	const auto createHandler = [](const QString &url) {
 		return UrlClickHandler::IsSuspicious(url)
 			? std::make_shared<HiddenUrlClickHandler>(url)
-			: std::make_shared<UrlClickHandler>(url);
+			: std::make_shared<UrlClickHandler>(url, false);
 	};
 	_page = media ? media->webpage() : nullptr;
 	if (_page) {
@@ -1532,8 +1563,8 @@ Link::Link(
 			if (_page->type == WebPageType::Profile || _page->type == WebPageType::Video) {
 				_photol = createHandler(_page->url);
 			} else if (_page->type == WebPageType::Photo
-				|| _page->siteName == qstr("Twitter")
-				|| _page->siteName == qstr("Facebook")) {
+				|| _page->siteName == u"Twitter"_q
+				|| _page->siteName == u"Facebook"_q) {
 				_photol = std::make_shared<PhotoOpenClickHandler>(
 					_page->photo,
 					crl::guard(this, [=](FullMsgId id) {
@@ -1974,7 +2005,7 @@ void Gif::validateThumbnail(
 		{
 			.options = (good ? Images::Option() : Images::Option::Blur),
 			.outer = size,
-		});
+		}).toImage();
 }
 
 void Gif::prepareThumbnail(QSize size, QSize frame) {
@@ -2031,13 +2062,13 @@ void Gif::paint(
 			_thumb = pixmap;
 			_thumbGood = true;
 		}
-		p.drawPixmap(r.topLeft(), pixmap);
+		p.drawImage(r.topLeft(), pixmap);
 	} else {
 		prepareThumbnail(r.size(), frame);
 		if (_thumb.isNull()) {
 			p.fillRect(r, st::overviewPhotoBg);
 		} else {
-			p.drawPixmap(r.topLeft(), _thumb);
+			p.drawImage(r.topLeft(), _thumb);
 		}
 	}
 

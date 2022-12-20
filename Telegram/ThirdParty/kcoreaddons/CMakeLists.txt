@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
 
-set(KF_VERSION "5.99.0") # handled by release scripts
+set(KF_VERSION "5.102.0") # handled by release scripts
 project(KCoreAddons VERSION ${KF_VERSION})
 
 include(FeatureSummary)
-find_package(ECM 5.98.0  NO_MODULE)
+find_package(ECM 5.101.0  NO_MODULE)
 set_package_properties(ECM PROPERTIES TYPE REQUIRED DESCRIPTION "Extra CMake Modules." URL "https://commits.kde.org/extra-cmake-modules")
 feature_summary(WHAT REQUIRED_PACKAGES_NOT_FOUND FATAL_ON_MISSING_REQUIRED_PACKAGES)
 
@@ -91,8 +91,14 @@ if(NOT WIN32) # never relevant there
     add_feature_info(XDGPortalDragAndDrop HAVE_QTDBUS "Drag and Drop support via xdg-desktop-portal requies QtDBus")
 endif()
 
-# Generate io/config-kdirwatch.h
+if (CMAKE_SYSTEM_NAME MATCHES "Linux")
+    find_package(UDev) # Used by KFilesystemType
+    set(HAVE_UDEV ${UDev_FOUND})
+endif()
+
 configure_file(src/lib/io/config-kdirwatch.h.cmake ${CMAKE_CURRENT_BINARY_DIR}/src/lib/io/config-kdirwatch.h)
+
+configure_file(src/lib/io/config-kfilesystemtype.h.cmake ${CMAKE_CURRENT_BINARY_DIR}/src/lib/io/config-kfilesystemtype.h)
 
 include(ECMPoQmTools)
 
@@ -102,7 +108,7 @@ ecm_setup_version(PROJECT VARIABLE_PREFIX KCOREADDONS
                         SOVERSION 5)
 
 
-ecm_install_po_files_as_qm(po)
+ecm_install_po_files_as_qm(poqm)
 
 kde_enable_exceptions()
 

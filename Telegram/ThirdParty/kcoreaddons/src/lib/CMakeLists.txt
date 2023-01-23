@@ -50,6 +50,7 @@ endif ()
 if(NOT WIN32)
     target_sources(KF5CoreAddons PRIVATE
         caching/kshareddatacache.cpp
+        caching/kshareddatacache.h
     )
 
     set_source_files_properties(caching/kshareddatacache.cpp
@@ -104,6 +105,10 @@ if(HAVE_QTDBUS)
     target_link_libraries(KF5CoreAddons PRIVATE Qt${QT_MAJOR_VERSION}::DBus)
 endif()
 
+if (TARGET UDev::UDev)
+    target_link_libraries(KF5CoreAddons PRIVATE UDev::UDev)
+endif()
+
 target_sources(KF5CoreAddons PRIVATE
     kaboutdata.cpp
     kcoreaddons.cpp
@@ -144,6 +149,44 @@ target_sources(KF5CoreAddons PRIVATE
     util/ksandbox.cpp
     util/kmemoryinfo.cpp
     util/kruntimeplatform.cpp
+
+    kaboutdata.h
+    kcoreaddons.h
+    io/kautosavefile.h
+    io/kdirwatch.h
+    io/kfilesystemtype.h
+    io/kmessage.h
+    io/kprocess.h
+    io/kbackup.h
+    io/kurlmimedata.h
+    io/kfileutils.h
+    io/knetworkmounts.h
+    jobs/kcompositejob.h
+    jobs/kjob.h
+    jobs/kjobtrackerinterface.h
+    jobs/kjobuidelegate.h
+    plugin/kpluginfactory.h
+    plugin/kpluginloader.h
+    plugin/kpluginmetadata.h
+    plugin/kstaticpluginhelpers.h
+    randomness/krandom.h
+    randomness/krandomsequence.h
+    text/kjsonutils.h
+    text/kfuzzymatcher.h
+    text/kmacroexpander.h
+    text/kstringhandler.h
+    text/ktexttohtml.h
+    util/kdelibs4migration.h
+    util/kdelibs4configmigrator.h
+    util/kformat.h
+    util/kosrelease.h
+    util/kprocesslist.h
+    util/kshell.h
+    util/klibexec.h
+    util/ksignalhandler.h
+    util/ksandbox.h
+    util/kmemoryinfo.h
+    util/kruntimeplatform.h
 )
 
 

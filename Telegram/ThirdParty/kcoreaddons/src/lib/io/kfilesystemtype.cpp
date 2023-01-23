@@ -7,39 +7,55 @@
 */
 
 #include "kfilesystemtype.h"
-#include "kcoreaddons_debug.h"
 #include "knetworkmounts.h"
+
+#include <config-kfilesystemtype.h>
+#if HAVE_UDEV
+#include <libudev.h>
+#endif
 
 #include <QCoreApplication>
 #include <QFile>
 
+#include <array>
+
+struct FsInfo {
+    KFileSystemType::Type type = KFileSystemType::Unknown;
+    const char *name = nullptr;
+};
+
+static const std::array<FsInfo, 18> s_fsMap = {{
+    {KFileSystemType::Nfs, "nfs"},
+    {KFileSystemType::Smb, "smb"},
+    {KFileSystemType::Fat, "fat"},
+    {KFileSystemType::Ramfs, "ramfs"},
+    {KFileSystemType::Other, "other"},
+    {KFileSystemType::Ntfs, "ntfs"},
+    {KFileSystemType::Exfat, "exfat"},
+    {KFileSystemType::Unknown, "unknown"},
+    {KFileSystemType::Nfs, "autofs"},
+    {KFileSystemType::Nfs, "cachefs"},
+    {KFileSystemType::Nfs, "fuse.sshfs"},
+    {KFileSystemType::Nfs, "xtreemfs@"}, // #178678
+    {KFileSystemType::Smb, "smbfs"},
+    {KFileSystemType::Smb, "cifs"},
+    {KFileSystemType::Fat, "vfat"},
+    {KFileSystemType::Fat, "msdos"},
+    {KFileSystemType::Fuse, "fuseblk"},
+}};
+
 #ifndef Q_OS_WIN
-inline KFileSystemType::Type kde_typeFromName(const char *name)
+inline KFileSystemType::Type kde_typeFromName(const QLatin1String name)
 {
-    /* clang-format off */
-    if (qstrncmp(name, "nfs", 3) == 0
-        || qstrncmp(name, "autofs", 6) == 0
-        || qstrncmp(name, "cachefs", 7) == 0
-        || qstrncmp(name, "fuse.sshfs", 10) == 0
-        || qstrncmp(name, "xtreemfs@", 9) == 0) { // #178678
+    auto it = std::find_if(s_fsMap.cbegin(), s_fsMap.cend(), [name](const auto &fsInfo) {
+        return QLatin1String(fsInfo.name) == name;
+    });
+    return it != s_fsMap.cend() ? it->type : KFileSystemType::Other;
+}
 
-        return KFileSystemType::Nfs;
-    }
-    if (qstrncmp(name, "fat", 3) == 0
-        || qstrncmp(name, "vfat", 4) == 0
-        || qstrncmp(name, "msdos", 5) == 0) {
-        return KFileSystemType::Fat;
-    }
-    if (qstrncmp(name, "cifs", 4) == 0
-        || qstrncmp(name, "smbfs", 5) == 0) {
-        return KFileSystemType::Smb;
-    }
-    if (qstrncmp(name, "ramfs", 5) == 0) {
-        return KFileSystemType::Ramfs;
-    }
-    /* clang-format on */
-
-    return KFileSystemType::Other;
+inline KFileSystemType::Type kde_typeFromName(const char *c)
+{
+    return kde_typeFromName(QLatin1String(c));
 }
 
 #if defined(Q_OS_BSD4) && !defined(Q_OS_NETBSD)
@@ -60,6 +76,7 @@ KFileSystemType::Type determineFileSystemTypeImpl(const QByteArray &path)
 
 #ifdef Q_OS_LINUX
 #include <linux/magic.h> // A lot of the filesystem superblock MAGIC numbers
+#include <sys/stat.h>
 #endif
 
 // From /usr/src/linux-5.13.2-1-vanilla/fs/ntfs/ntfs.h
@@ -109,6 +126,38 @@ KFileSystemType::Type determineFileSystemTypeImpl(const QByteArray &path)
 #endif
 #endif
 
+KFileSystemType::Type probeFuseBlkType(const QByteArray &path)
+{
+    using namespace KFileSystemType;
+
+#if HAVE_UDEV
+    struct stat buf;
+    if (stat(path.constData(), &buf) != 0) {
+        return Fuse;
+    }
+
+    using UdevPtr = std::unique_ptr<struct udev, decltype(&udev_unref)>;
+    using UDevicePtr = std::unique_ptr<struct udev_device, decltype(&udev_device_unref)>;
+
+    // Code originally copied from util-linux/misc-utils/lsblk.c
+    auto udevP = UdevPtr(udev_new(), udev_unref);
+    if (!udevP) {
+        return Fuse;
+    }
+
+    // 'b' for block devices
+    auto devPtr = UDevicePtr(udev_device_new_from_devnum(udevP.get(), 'b', buf.st_dev), udev_device_unref);
+    if (!devPtr) {
+        return Fuse;
+    }
+
+    const QLatin1String fsType(udev_device_get_property_value(devPtr.get(), "ID_FS_TYPE"));
+    return kde_typeFromName(fsType);
+#endif
+
+    return Fuse;
+}
+
 // Reverse-engineering without C++ code:
 // strace stat -f /mnt 2>&1|grep statfs|grep mnt, and look for f_type
 //
@@ -125,8 +174,9 @@ static KFileSystemType::Type determineFileSystemTypeImpl(const QByteArray &path)
     case NFS_SUPER_MAGIC:
     case AUTOFS_SUPER_MAGIC:
     case AUTOFSNG_SUPER_MAGIC:
-    case FUSE_SUPER_MAGIC: // TODO could be anything. Need to use statfs() to find out more.
         return KFileSystemType::Nfs;
+    case FUSE_SUPER_MAGIC:
+        return probeFuseBlkType(path);
     case SMB_SUPER_MAGIC:
     case SMB2_MAGIC_NUMBER:
     case CIFS_MAGIC_NUMBER:
@@ -196,6 +246,8 @@ QString KFileSystemType::fileSystemName(KFileSystemType::Type type)
         return QCoreApplication::translate("KFileSystemType", "NTFS");
     case KFileSystemType::Exfat:
         return QCoreApplication::translate("KFileSystemType", "ExFAT");
+    case KFileSystemType::Fuse:
+        return QCoreApplication::translate("KFileSystemType", "FUSE");
     case KFileSystemType::Unknown:
         return QCoreApplication::translate("KFileSystemType", "Unknown");
     }

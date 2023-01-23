@@ -298,6 +298,11 @@ void Application::run() {
 	_domain->activeChanges(
 	) | rpl::start_with_next([=](not_null<Main::Account*> account) {
 		_primaryWindow->showAccount(account);
+		//CloudVeil start
+		if (_primaryWindow->widget()->sessionContent() != nullptr) {
+			_primaryWindow->widget()->sessionContent()->dialogsUpdated();
+		}
+		//CloudVeil end
 	}, _primaryWindow->widget()->lifetime());
 
 	(

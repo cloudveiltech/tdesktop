@@ -999,7 +999,7 @@ void TabbedSelector::fillTabsSliderSections() {
 		if (tab.type() == SelectorTab::Stickers && !GlobalSecuritySettings::getSettings().disableStickers) {
 			return false;
 		}
-		else if (tab.type() == SelectorTab::Gifs && !GlobalSecuritySettings::getSettings().disableGifs) {
+		else if (tab.type() == SelectorTab::Gifs && GlobalSecuritySettings::getSettings().disableGifs) {
 			return false;
 		}
 		else {

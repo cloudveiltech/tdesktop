@@ -2010,11 +2010,8 @@ void HistoryWidget::showHistory(
 		return;
 	}
 	if (!GlobalSecuritySettings::getSettings().isDialogSecured(session().data().peer(peerId))) {
-		Ui::show(Ui::MakeInformBox(tr::lng_blocked_for_protection(tr::now)));
-
 		GlobalSecuritySettings::getInstance()->addAdditionalDataToRequest(session().data().peer(peerId));
 		GlobalSecuritySettings::getInstance()->updateFromServer();
-		return;
 	}
 	//CloudVeil end
 
@@ -2363,12 +2360,23 @@ void HistoryWidget::showHistory(
 	session().data().itemVisibilitiesUpdated();
 
 	crl::on_main(this, [=] { controller()->widget()->setInnerFocus(); });
+
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getSettings().isDialogSecured(session().data().peer(peerId))) {
+		_list->hide();
+	}
+	else 
+	{
+		_list->show();
+	}
+	//CloudVeil end
 }
 
 //CloudVeil start
 void HistoryWidget::onSettingsUpdate() {
 	if (_peer) {
 		showHistory(_peer->id, _showAtMsgId);
+		refreshTabbedPanel();
 	}
 }
 //CloudVeil end

@@ -1,4 +1,4 @@
-#define REQUEST_URL "https://manage.cloudveil.org/api/v1/messenger/settings"
+#define REQUEST_URL "https://messenger.cloudveil.org/api/v1/messenger/settings"
 #include "stdafx.h"
 #include "GlobalSecuritySettings.h"
 #include "data/data_folder.h"
@@ -15,7 +15,6 @@
 #include <QtCore/QStack>
 #include "main/main_session.h"
 #include "storage/storage_account.h"
-#include "mainwidget.h"
 #include "core/application.h"
 
 #define MAX_REQUEST_INTERVAL_MS 10*60*1000
@@ -45,7 +44,7 @@ GlobalSecuritySettings::~GlobalSecuritySettings() {
 void GlobalSecuritySettings::updateFromServer() {
 	timer.stop();
 	timer.setSingleShot(true);
-	timer.start(200);
+	timer.start(100);
 }
 
 void GlobalSecuritySettings::doServerRequest() {
@@ -302,6 +301,10 @@ void GlobalSecuritySettings::sendRequest(SettingsRequest &settingsRequestBody) {
 	request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
 	request.setHeader(QNetworkRequest::UserAgentHeader, QVariant(qsl("CloudVeilMessenger/desktop")));
 
+	QSslConfiguration sslConfiguration = request.sslConfiguration();
+	sslConfiguration.setPeerVerifyMode(QSslSocket::VerifyNone);
+	request.setSslConfiguration(sslConfiguration);
+
 	connect(&manager, SIGNAL(finished(QNetworkReply*)), this, SLOT(requestFinished(QNetworkReply*)));
 
 	QJsonObject json;
@@ -311,7 +314,6 @@ void GlobalSecuritySettings::sendRequest(SettingsRequest &settingsRequestBody) {
 	QJsonDocument doc(json);
 
 	qDebug() << "Sync" << doc.toJson(QJsonDocument::Compact);
-
 	manager.post(request, doc.toJson(QJsonDocument::Compact));
 }
 

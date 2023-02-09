@@ -52,9 +52,6 @@ public:
 	bool isStickerSetAllowed(DocumentData *data);
 	bool isStickerSetAllowed(uint64 id);
 
-	void saveBannedImage();
-	Data::StickersPack filterStickersPack(Data::StickersPack &pack);
-
 	SettingsResponse();
 	~SettingsResponse();
 

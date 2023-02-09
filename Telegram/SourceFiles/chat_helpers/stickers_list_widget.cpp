@@ -2019,10 +2019,10 @@ bool StickersListWidget::appendSet(
 		uint64 setId,
 		bool externalLayout,
 		AppendSkip skip) {
-	const auto &sets = session().data().stickers().sets();
+	const auto& sets = session().data().stickers().sets();
 	auto it = sets.find(setId);
 	if (it == sets.cend()
-		|| (!externalLayout && it->second->stickers.isEmpty())) {
+		|| (!externalLayout && (it->second->stickers.isEmpty()))) {
 		return false;
 	}
 	const auto set = it->second.get();
@@ -2209,9 +2209,7 @@ void StickersListWidget::refreshFavedStickers() {
 		return;
 	}
 	clearSelection();
-	//CloudVeil start
-	auto& sets = session().data().stickers().stickerSetsFiltered();
-	//CloudVeil end
+	auto& sets = session().data().stickers().sets();
 
 	const auto it = sets.find(Data::Stickers::FavedSetId);
 	if (it == sets.cend()) {

@@ -66,7 +66,7 @@ StickersSet::StickersSet(
 	int count,
 	StickersSetFlags flags,
 	TimeId installDate)
-: id(id)
+: id(id) 
 , accessHash(accessHash)
 , hash(hash)
 , title(title)
@@ -74,7 +74,7 @@ StickersSet::StickersSet(
 , count(count)
 , flags(flags)
 , installDate(installDate)
-, _owner(owner) {
+, _owner(owner){
 }
 
 Data::Session &StickersSet::owner() const {

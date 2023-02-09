@@ -198,10 +198,7 @@ public:
 	SavedGifs &savedGifsRef() {
 		return _savedGifs;
 	}
-	
-	//CloudVeil start
-	const StickersSets& stickerSetsFiltered();
-	//CloudVeil end
+
 	void removeFromRecentSet(not_null<DocumentData*> document);
 
 	void addSavedGif(
@@ -318,10 +315,6 @@ private:
 	StickersSetsOrder _archivedSetsOrder;
 	StickersSetsOrder _archivedMaskSetsOrder;
 	SavedGifs _savedGifs;
-	//CloudVeil start
-	int _lastStickerSetsSize = 0;
-	StickersSets _stickerSetsFiltered;
-	//CloudVeil end
 };
 
 } // namespace Data

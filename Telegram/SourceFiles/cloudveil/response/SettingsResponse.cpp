@@ -303,16 +303,6 @@ bool SettingsResponse::isStickerSetAllowed(uint64 id) {
 	return !disableStickers && stickers.contains(id) && stickers[id];
 }
 
-Data::StickersPack SettingsResponse::filterStickersPack(Data::StickersPack &pack) {
-	Data::StickersPack newPack;
-	for (auto it = pack.begin(); it != pack.end(); ++it) {
-		if (isStickerSetAllowed(*it)) {
-			newPack.append(*it);
-		}
-	}
-	return newPack;
-}
-
 SettingsResponse::SettingsResponse()
 {
 }

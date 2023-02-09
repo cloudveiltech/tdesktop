@@ -2363,11 +2363,15 @@ void HistoryWidget::showHistory(
 
 	//CloudVeil start
 	if (!GlobalSecuritySettings::getSettings().isDialogSecured(session().data().peer(peerId))) {
-		_list->hide();
+		if (_list != nullptr) {
+			_list->hide();
+		}
 	}
 	else 
 	{
-		_list->show();
+		if (_list != nullptr) {
+			_list->show();
+		}
 	}
 	//CloudVeil end
 }

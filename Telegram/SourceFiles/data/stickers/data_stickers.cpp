@@ -199,29 +199,6 @@ rpl::producer<uint64> Stickers::emojiSetInstalled() const {
 	return _emojiSetInstalled.events();
 }
 
-//CloudVeil start
-const StickersSets& Stickers::stickerSetsFiltered()
-{
-	if (_lastStickerSetsSize != _sets.size()) {
-		_lastStickerSetsSize = _sets.size();
-		_stickerSetsFiltered.clear();
-		for (auto it = _sets.begin(); it != _sets.end(); ++it) {
-			auto* set = it->second.get();
-
-			if (GlobalSecuritySettings::getSettings().isStickerSetAllowed(set)) {
-				set->stickers = GlobalSecuritySettings::getSettings().filterStickersPack(set->stickers);
-				if (set->stickers.length() > 0) {
-
-					_stickerSetsFiltered.insert(StickersSets::value_type(it->first, it->second.get()));
-				}
-			}
-
-		}
-	}
-	return _stickerSetsFiltered;
-}
-//CloudVeil end
-
 void Stickers::incrementSticker(not_null<DocumentData*> document) {
 	if (!document->sticker() || !document->sticker()->set) {
 		return;

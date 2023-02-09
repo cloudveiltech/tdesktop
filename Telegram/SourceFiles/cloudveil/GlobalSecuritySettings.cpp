@@ -113,7 +113,7 @@ void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 		addDialogToRequest(request, user);
 	}
 
-	const Data::StickersSets& stickerSets = data.stickers().sets();
+	const Data::StickersSets& stickerSets = data.stickers().setsRef();
 	for (auto it = stickerSets.begin(); it != stickerSets.end(); ++it) {
 		addStickerToRequest(request, it->second.get());
 	}

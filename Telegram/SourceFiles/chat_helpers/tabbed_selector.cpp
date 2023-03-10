@@ -996,7 +996,7 @@ void TabbedSelector::fillTabsSliderSections() {
 		_tabs
 	) | ranges::views::filter([&](const Tab &tab) {
 		//CloudVeil start
-		if (tab.type() == SelectorTab::Stickers && !GlobalSecuritySettings::getSettings().disableStickers) {
+		if (tab.type() == SelectorTab::Stickers && GlobalSecuritySettings::getSettings().disableStickers) {
 			return false;
 		}
 		else if (tab.type() == SelectorTab::Gifs && GlobalSecuritySettings::getSettings().disableGifs) {

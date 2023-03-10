@@ -3712,5 +3712,6 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_contact" = "Contact";
 "lng_change" = "Change";
 "lng_change_organization" = "Please Select Your Organization. It is important that you select your correct church organization so that your app works as expected. Unblock requests will NOT work correctly if you select the wrong group. This one-time step is required to allow organizations more flexibility in supporting their own members and is based off of church membership.";
+"lng_about_us" = "About Us";
 //CloudVeil end
 // Keys finished

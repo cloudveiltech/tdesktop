@@ -29,6 +29,9 @@ void SettingsResponse::Organization::readFromJson(QJsonObject& object) {
 	if (object.contains("need_change") && object["need_change"].isBool()) {
 		needChange = object["need_change"].toBool();
 	}
+	if (object.contains("about_url")) {
+		aboutUrl = object["about_url"].toString();
+	}
 }
 
 void SettingsResponse::readFromJson(QJsonObject &jsonObject)

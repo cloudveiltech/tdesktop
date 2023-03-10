@@ -566,6 +566,21 @@ void SetupHelp(
 			});
 		//CloudVeil end
 	});
+
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().orgranization.aboutUrl.isEmpty()) {
+		return;
+	}
+	const auto buttonAbout = AddButton(
+		container,
+		tr::lng_about_us(),
+		st::settingsButton,
+		{ &st::settingsIconArrows, kIconDarkBlue });
+
+	buttonAbout->addClickHandler([=] {
+		UrlClickHandler::Open(GlobalSecuritySettings::getSettings().orgranization.aboutUrl);
+		});
+	//CloudVeil end
 }
 
 Main::Main(

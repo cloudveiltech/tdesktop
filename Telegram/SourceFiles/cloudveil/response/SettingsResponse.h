@@ -12,6 +12,7 @@ public:
 		QString name;
 		int id;
 		bool needChange;
+		QString aboutUrl;
 
 		QJsonObject toJsonObject();
 		void readFromJson(QJsonObject& object);

@@ -819,8 +819,8 @@ void MainWindow::updateUnreadCounter() {
 	} else {
 		const auto counter = Core::App().unreadBadge();
 		setTitle((counter > 0)
-			? u"Telegram (%1)"_q.arg(counter)
-			: u"Telegram"_q);
+			? u"CloudVeil Messenger (%1)"_q.arg(counter)
+			: u"CloudVeil Messenger"_q);
 	}
 
 	Core::App().tray().updateIconCounters();

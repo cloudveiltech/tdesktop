@@ -821,7 +821,7 @@ void MainWindow::updateUnreadCounter() {
 		setTitle((counter > 0)
 			? u"CloudVeil Messenger (%1)"_q.arg(counter)
 			: u"CloudVeil Messenger"_q);
-	}
+	} 
 
 	Core::App().tray().updateIconCounters();
 	unreadCounterChangedHook();

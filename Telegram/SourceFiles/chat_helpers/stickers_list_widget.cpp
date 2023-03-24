@@ -368,16 +368,12 @@ void StickersListWidget::preloadMoreOfficial() {
 				if (set->stickers.empty() && set->covers.empty()) {
 					continue;
 				}
-				//CloudVeil start
-				if (GlobalSecuritySettings::getSettings().isStickerSetAllowed(set->id)) {
-					const auto externalLayout = true;
-					appendSet(
-						_officialSets,
-						set->id,
-						externalLayout,
-						AppendSkip::Installed);
-				}
-				//CloudVeil end
+				const auto externalLayout = true;
+				appendSet(
+					_officialSets,
+					set->id,
+					externalLayout,
+					AppendSkip::Installed);
 			}
 		});
 		resizeToWidth(width());
@@ -1886,12 +1882,8 @@ void StickersListWidget::refreshMySets() {
 	_premiumsIndex = (i != end(_mySets)) ? int(i - begin(_mySets)) : -1;
 
 	for (const auto setId : defaultSetsOrder()) {
-		//CloudVeil start
-		if (GlobalSecuritySettings::getInstance()->getSettings().isStickerSetAllowed(setId)) {
-			const auto externalLayout = false;
-			appendSet(_mySets, setId, externalLayout, AppendSkip::Archived);
-		}
-		//CloudVeil end
+		const auto externalLayout = false;
+		appendSet(_mySets, setId, externalLayout, AppendSkip::Archived);
 	}
 	if (_premiumsIndex >= 0) {
 		appendPremiumCloudSet();
@@ -1911,6 +1903,13 @@ void StickersListWidget::appendPremiumCloudSet() {
 	Expects(_premiumsIndex >= 0 && _premiumsIndex < _mySets.size());
 
 	auto &set = _mySets[_premiumsIndex];
+	
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getInstance()->getSettings().isStickerSetAllowed(set.id)) {
+		return;
+	}
+	//CloudVeil end
+
 	for (const auto &document : session().api().premium().cloudSet()) {
 		set.stickers.push_back(Sticker{ document });
 		++set.count;
@@ -2019,6 +2018,12 @@ bool StickersListWidget::appendSet(
 		uint64 setId,
 		bool externalLayout,
 		AppendSkip skip) {
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getInstance()->getSettings().isStickerSetAllowed(setId)) {
+		return false;
+	}
+	//CloudVeil end
+
 	const auto& sets = session().data().stickers().sets();
 	auto it = sets.find(setId);
 	if (it == sets.cend()

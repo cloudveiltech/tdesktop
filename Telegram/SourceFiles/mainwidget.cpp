@@ -414,6 +414,8 @@ MainWidget::MainWidget(
 void MainWidget::onSettingsUpdate() {
 	_dialogs->refreshOnUpdate();
 	_history->onSettingsUpdate();
+	_controller->tabbedSelector()->refreshOnSettingsUpdate();
+
 	showOrganizationChangeRequired();
 }
 

@@ -156,6 +156,9 @@ public:
 	class Inner;
 	class InnerFooter;
 
+	//CloudVeil start
+	void refreshOnSettingsUpdate();
+	//CloudVeil end
 protected:
 	void paintEvent(QPaintEvent *e) override;
 	void resizeEvent(QResizeEvent *e) override;
@@ -236,6 +239,7 @@ private:
 	void updateTabsSliderGeometry();
 	void switchTab();
 
+
 	not_null<Tab*> getTab(int index);
 	not_null<const Tab*> getTab(int index) const;
 	not_null<Tab*> currentTab();
@@ -283,7 +287,6 @@ private:
 
 	rpl::event_stream<> _showRequests;
 	rpl::event_stream<> _slideFinished;
-
 };
 
 class TabbedSelector::Inner : public Ui::RpWidget {

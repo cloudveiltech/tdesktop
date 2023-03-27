@@ -313,7 +313,7 @@ TabbedSelector::TabbedSelector(
 	if (full()) {
 		tabs.reserve(3);
 		tabs.push_back(createTab(SelectorTab::Emoji, 0));
-		tabs.push_back(createTab(SelectorTab::Stickers, 1));
+		tabs.push_back(createTab(SelectorTab::Stickers, 1));	
 		tabs.push_back(createTab(SelectorTab::Gifs, 2));
 	} else if (mediaEditor()) {
 		tabs.reserve(2);
@@ -941,6 +941,12 @@ void TabbedSelector::showAll() {
 		_tabsSlider->show();
 	}
 }
+
+//CloudVeil start
+void TabbedSelector::refreshOnSettingsUpdate() {
+	fillTabsSliderSections();
+}
+//CloudVeil end
 
 void TabbedSelector::hideForSliding() {
 	hideChildren();

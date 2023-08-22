@@ -47,6 +47,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/file_download.h"
 #include "storage/storage_facade.h"
 #include "storage/storage_shared_media.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace {
 
@@ -270,6 +271,16 @@ void PeerData::setUserpicPhoto(const MTPPhoto &data) {
 }
 
 QImage *PeerData::userpicCloudImage(Ui::PeerUserpicView &view) const {
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableProfilePhoto) {
+		return nullptr;
+	}
+	const auto photo = owner().photo(userpicPhotoId()).get();
+	if (photo->hasVideoUnfiltered() && GlobalSecuritySettings::getSettings().disableProfileVideo) {
+		return nullptr;
+	}
+	//CloudVeil end
+
 	if (!_userpic.isCurrentView(view.cloud)) {
 		if (!_userpic.empty()) {
 			view.cloud = _userpic.createView();

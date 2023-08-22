@@ -814,4 +814,8 @@ private:
 
 	rpl::event_stream<> _cancelRequests;
 
+	//CloudVeil start
+public Q_SLOTS:
+	void onSettingsUpdate();
+	//CloudVeil end
 };

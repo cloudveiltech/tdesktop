@@ -438,7 +438,11 @@ void Sticker::refreshLink() {
 				}
 			});
 		} else {
-			_link = ShowSetHandler(_data);
+			//CloudVeil start
+			if (GlobalSecuritySettings::getSettings().isStickerSetAllowed(sticker)) {
+				_link = ShowSetHandler(_data);
+			}
+			//CloudVeil end
 		}
 	} else if (sticker
 		&& (_data->dimensions.width() > kStickerSideSize

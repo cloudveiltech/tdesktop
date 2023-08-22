@@ -45,6 +45,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_boxes.h"
 #include "styles/style_chat.h"
 #include "styles/style_menu_icons.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace Ui {
 namespace {
@@ -402,6 +403,11 @@ auto UserpicButton::makeResetToOriginalAction()
 void UserpicButton::openPeerPhoto() {
 	Expects(_peer != nullptr);
 	Expects(_controller != nullptr);
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableProfilePhoto) {
+		return;
+	}
+	//CloudVeil end
 
 	if (_changeOverlayEnabled && _cursorInChangeOverlay) {
 		choosePhotoLocally();
@@ -413,6 +419,13 @@ void UserpicButton::openPeerPhoto() {
 		return;
 	}
 	const auto photo = _peer->owner().photo(id);
+	//CloudVeil start
+	bool isVideoDisallowed = GlobalSecuritySettings::getSettings().disableProfileVideo && photo->hasVideoUnfiltered();
+
+	if (isVideoDisallowed) {
+		return;
+	}
+	//CloudVeil end
 	if (photo->date && _controller) {
 		_controller->openPhoto(photo, _peer);
 	}
@@ -565,7 +578,11 @@ void UserpicButton::paintEvent(QPaintEvent *e) {
 
 void UserpicButton::paintUserpicFrame(Painter &p, QPoint photoPosition) {
 	checkStreamedIsStarted();
-	if (_streamed
+	//CloudVeil start
+	bool isVideoEnabled = !GlobalSecuritySettings::getSettings().disableProfilePhoto && !GlobalSecuritySettings::getSettings().disableProfileVideo;
+	if (isVideoEnabled
+		//CloudVeil end
+		&& _streamed
 		&& _streamed->player().ready()
 		&& !_streamed->player().videoSize().isEmpty()) {
 		const auto paused = _controller
@@ -852,7 +869,11 @@ void UserpicButton::switchChangePhotoOverlay(
 		bool enabled,
 		Fn<void(ChosenImage)> chosen) {
 	Expects(_role == Role::OpenPhoto);
-
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableProfilePhotoChange) {
+		enabled = false;
+	}
+	//CloudVeil end
 	if (_changeOverlayEnabled != enabled) {
 		_changeOverlayEnabled = enabled;
 		if (enabled) {

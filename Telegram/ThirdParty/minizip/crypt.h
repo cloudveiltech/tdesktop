@@ -90,10 +90,10 @@ static void init_keys(const char* passwd,unsigned long* pkeys,const z_crc_t* pcr
 
 static unsigned crypthead(const char* passwd,       /* password string */
                           unsigned char* buf,       /* where to write header */
-                          int bufSize,
-                          unsigned long* pkeys,
-                          const z_crc_t* pcrc_32_tab,
-                          unsigned long crcForCrypting)
+                     int bufSize,
+                     unsigned long* pkeys,
+                     const z_crc_t* pcrc_32_tab,
+                     unsigned long crcForCrypting)
 {
     unsigned n;                  /* index in random header */
     int t;                       /* temporary */

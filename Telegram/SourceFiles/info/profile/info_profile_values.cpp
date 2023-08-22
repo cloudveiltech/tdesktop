@@ -30,6 +30,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_premium_limits.h"
 #include "boxes/peers/edit_peer_permissions_box.h"
 #include "base/unixtime.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace Info {
 namespace Profile {
@@ -42,7 +43,16 @@ auto PlainAboutValue(not_null<PeerData*> peer) {
 		peer,
 		UpdateFlag::About
 	) | rpl::map([=] {
-		return peer->about();
+		//CloudVeil start
+		if (GlobalSecuritySettings::getSettings().disableBio)
+		{
+			return QString();
+		}
+		else
+		{
+			return peer->about();
+		}
+		//CloudVeil end 
 	});
 }
 

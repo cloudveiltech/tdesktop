@@ -89,6 +89,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_window.h"
 #include "styles/style_dialogs.h"
 #include "styles/style_layers.h" // st::boxLabel
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace Window {
 namespace {
@@ -791,7 +792,11 @@ void SessionNavigation::showPeerInfo(
 	//	Core::App().settings().setThirdSectionInfoEnabled(true);
 	//	Core::App().saveSettingsDelayed();
 	//}
-	showSection(std::make_shared<Info::Memento>(peer), params);
+	//CloudVeil start
+	if (GlobalSecuritySettings::getInstance()->getSettings().isDialogAllowed(peer)) {
+		showSection(std::make_shared<Info::Memento>(peer), params);
+	}
+	//CloudVeil end
 }
 
 void SessionNavigation::showPeerInfo(

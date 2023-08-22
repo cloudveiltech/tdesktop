@@ -460,12 +460,33 @@ const Data::CloudFile &PhotoData::videoFile(PhotoSize size) const {
 
 
 bool PhotoData::hasVideo() const {
-	return _videoSizes != nullptr;
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableProfileVideo) {
+		return false;
+	}
+
+	return hasVideoUnfiltered();
+	//CloudVeil end
 }
 
 bool PhotoData::hasVideoSmall() const {
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableProfileVideo) {
+		return false;
+	}
+	return hasVideoSmallUnfiltered();
+	//CloudVeil end
+}
+
+//CloudVeil start
+bool PhotoData::hasVideoUnfiltered() const {
+	return _videoSizes != nullptr;
+}
+
+bool PhotoData::hasVideoSmallUnfiltered() const {
 	return hasVideo() && _videoSizes->small.location.valid();
 }
+//CloudVeil end
 
 bool PhotoData::videoLoading(Data::PhotoSize size) const {
 	return _videoSizes && videoFile(size).loader != nullptr;

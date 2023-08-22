@@ -50,6 +50,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_menu_icons.h"
 
 #include <QtWidgets/QApplication>
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace {
 
@@ -457,6 +458,13 @@ void FieldAutocomplete::updateFiltered(bool resetScroll) {
 						&& filterNotPassedByUsername(user))) {
 					continue;
 				}
+
+				//CloudVeil start
+				if (!GlobalSecuritySettings::getSettings().isDialogAllowed(user)) {
+					continue;
+				}
+				//CloudVeil end
+
 				mrows.push_back({ user });
 				++recentInlineBots;
 			}

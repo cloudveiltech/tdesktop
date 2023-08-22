@@ -72,6 +72,11 @@ public:
 	[[nodiscard]] iterator find(Row *value) { return cfind(value); }
 	[[nodiscard]] iterator findByY(int y) const;
 
+	//CloudVeil start
+	void resetAll();
+	void remove(History* history);
+	//CloudVeil end
+
 private:
 	void adjustByName(not_null<Row*> row);
 	void rotate(

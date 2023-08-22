@@ -41,6 +41,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_layers.h"
 #include "styles/style_boxes.h"
 #include "styles/style_chat_helpers.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace {
 
@@ -2091,6 +2092,12 @@ void StickersBox::Inner::rebuildMegagroupSet() {
 		return;
 	}
 	auto setId = _megagroupSetInput.id;
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getSettings().isStickerSetAllowed(setId)) {
+		return;
+	}
+	//CloudVeil end
+
 	const auto &sets = session().data().stickers().sets();
 	auto it = sets.find(setId);
 	if (it == sets.cend()
@@ -2314,6 +2321,12 @@ int StickersBox::Inner::countMaxNameWidth(bool installedSet) const {
 }
 
 void StickersBox::Inner::rebuildAppendSet(not_null<StickersSet*> set) {
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getSettings().isStickerSetAllowed(set->id)) {
+		return;
+	}
+	//CloudVeil end
+
 	auto flagsOverride = (set->id != Data::Stickers::CloudRecentSetId)
 		? fillSetFlags(set)
 		: SetFlag::Installed;

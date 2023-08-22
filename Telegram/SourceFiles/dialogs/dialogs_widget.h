@@ -337,6 +337,10 @@ private:
 	rpl::variable<PeerId> _childListPeerId;
 	std::unique_ptr<Ui::RpWidget> _hideChildListCanvas;
 
+	//CloudVeil start
+public:
+	void refreshOnUpdate();
+	//CloudVeil end
 };
 
 } // namespace Dialogs

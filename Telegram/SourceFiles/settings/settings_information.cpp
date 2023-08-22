@@ -61,6 +61,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_menu_icons.h"
 #include "styles/style_window.h"
 
+#include "cloudveil/GlobalSecuritySettings.h"
+
 #include <QtGui/QGuiApplication>
 #include <QtGui/QClipboard>
 #include <QtCore/QBuffer>
@@ -265,6 +267,12 @@ void SetupPhoto(
 			});
 	}, upload->lifetime());
 
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableProfilePhotoChange) {
+		upload->hide();
+	}
+	//CloudVeil end
+
 	const auto name = Ui::CreateChild<Ui::FlatLabel>(
 		wrap,
 		Info::Profile::NameValue(self),
@@ -455,6 +463,11 @@ void SetupBio(
 			tr::lng_bio_placeholder(),
 			*current),
 		st::settingsBioMargins);
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableBioChange) {
+		bio->setEnabled(false);
+	}
+	//CloudVeil end
 
 	const auto countdown = Ui::CreateChild<Ui::FlatLabel>(
 		container.get(),

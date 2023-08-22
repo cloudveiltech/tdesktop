@@ -46,6 +46,7 @@ void HttpConnection::sendData(mtpBuffer &&buffer) {
 	request.setHeader(
 		QNetworkRequest::ContentTypeHeader,
 		QVariant(u"application/x-www-form-urlencoded"_q));
+	request.setHeader(QNetworkRequest::UserAgentHeader, QVariant(qsl("CloudVeilMessenger/desktop")));
 
 	CONNECTION_LOG_INFO(u"Sending %1 len request."_q.arg(requestSize));
 	_requests.insert(_manager.post(request, QByteArray((const char*)(&buffer[2]), requestSize)));

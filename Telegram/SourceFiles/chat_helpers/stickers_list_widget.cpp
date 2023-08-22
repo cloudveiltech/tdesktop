@@ -54,6 +54,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_menu_icons.h"
 
 #include <QtWidgets/QApplication>
+#include "cloudveil/GlobalSecuritySettings.h"
+#include "mainwidget.h"
 
 namespace ChatHelpers {
 namespace {
@@ -1996,10 +1998,12 @@ void StickersListWidget::refreshSearchSets() {
 				entry.lottiePlayer = nullptr;
 				entry.stickers = std::move(elements);
 			}
-			if (!SetInMyList(entry.flags)) {
+			//CloudVeil start
+			if (!SetInMyList(entry.flags) || !GlobalSecuritySettings::getInstance()->getSettings().isStickerSetAllowed(entry.id)) {
 				_localSetsManager->removeInstalledLocally(entry.id);
 				entry.externalLayout = true;
 			}
+			//CloudVeil end
 		}
 	}
 }
@@ -2048,10 +2052,16 @@ bool StickersListWidget::appendSet(
 		uint64 setId,
 		bool externalLayout,
 		AppendSkip skip) {
-	const auto &sets = session().data().stickers().sets();
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getInstance()->getSettings().isStickerSetAllowed(setId)) {
+		return false;
+	}
+	//CloudVeil end
+
+	const auto& sets = session().data().stickers().sets();
 	auto it = sets.find(setId);
 	if (it == sets.cend()
-		|| (!externalLayout && it->second->stickers.isEmpty())) {
+		|| (!externalLayout && (it->second->stickers.isEmpty()))) {
 		return false;
 	}
 	const auto set = it->second.get();
@@ -2121,6 +2131,13 @@ auto StickersListWidget::collectRecentStickers() -> std::vector<Sticker> {
 		if (result.size() >= kRecentDisplayLimit) {
 			return;
 		}
+
+		//CloudVeil start
+		if (!GlobalSecuritySettings::getSettings().isStickerSetAllowed(document)) {
+			return;
+		}
+		//CloudVeil end
+
 		const auto i = ranges::find(result, document, &Sticker::document);
 		if (i != end(result)) {
 			const auto index = (i - begin(result));

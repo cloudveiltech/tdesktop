@@ -37,6 +37,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/unixtime.h"
 #include "boxes/abstract_box.h" // Ui::show().
 #include "styles/style_chat_helpers.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace Data {
 namespace {
@@ -1153,7 +1154,11 @@ std::vector<not_null<DocumentData*>> Stickers::getListByEmoji(
 		if (ranges::find(result, document, [](const StickerWithDate &data) {
 			return data.document;
 		}) == result.end()) {
-			result.push_back({ document, date });
+			//CloudVeil start
+			if (GlobalSecuritySettings::getInstance()->getSettings().isStickerSetAllowed(document)) {
+				result.push_back({ document, date });
+			}
+			//CloudVeil end
 		}
 	};
 
@@ -1237,9 +1242,13 @@ std::vector<not_null<DocumentData*>> Stickers::getListByEmoji(
 				const auto date = usageDate
 					? usageDate
 					: RecentInstallDate(document);
+				//CloudVeil start
+				if (GlobalSecuritySettings::getInstance()->getSettings().isStickerSetAllowed(document)) {
 				result.push_back({
 					document,
 					date ? date : CreateRecentSortKey(document) });
+				}
+				//CloudVeil end
 			}
 		}
 	}
@@ -1310,7 +1319,11 @@ std::vector<not_null<DocumentData*>> Stickers::getListByEmoji(
 		if (others) {
 			result.reserve(result.size() + others->size());
 			for (const auto document : *others) {
-				add(document, CreateOtherSortKey(document));
+				//CloudVeil start
+			    if (GlobalSecuritySettings::getInstance()->getSettings().isStickerSetAllowed(document)) {
+				    add(document, CreateOtherSortKey(document));
+			    }
+			    //CloudVeil end
 			}
 		} else if (!forceAllResults) {
 			return {};

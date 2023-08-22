@@ -1433,6 +1433,9 @@ WebPageData *MediaWebPage::webpage() const {
 }
 
 bool MediaWebPage::hasReplyPreview() const {
+	//CloudVeil start
+	return false;//disabled reply preview
+	//CloudVeil end
 	if (const auto document = MediaWebPage::document()) {
 		return document->hasThumbnail()
 			&& !document->isPatternWallPaper();

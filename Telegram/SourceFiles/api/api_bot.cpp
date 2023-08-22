@@ -36,6 +36,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/toast/toast.h"
 #include "ui/layers/generic_box.h"
 #include "ui/text/text_utilities.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace Api {
 namespace {
@@ -331,12 +332,24 @@ void ActivateBotCommand(ClickHandlerContext context, int row, int column) {
 	} break;
 
 	case ButtonType::Buy: {
-		Payments::CheckoutProcess::Start(
-			item,
-			Payments::Mode::Payment,
-			crl::guard(controller, [=](auto) {
-				controller->widget()->activate();
-			}));
+		//CloudVeil start
+		if (const auto bot = item->getMessageBot()) {
+			if (bot->id.value == PREMIUM_BOT_ID) {
+				Payments::CheckoutProcess::Start(
+					item,
+					Payments::Mode::Payment,
+					crl::guard(controller, [=](auto) {
+						controller->widget()->activate();
+						}));
+			}
+			else {
+				Ui::show(Ui::MakeInformBox(tr::lng_blocked_for_protection(tr::now)));
+			}
+		}
+		else {
+			Ui::show(Ui::MakeInformBox(tr::lng_blocked_for_protection(tr::now)));
+		}
+		//CloudVeil end
 	} break;
 
 	case ButtonType::Url: {

@@ -70,6 +70,16 @@ public:
 		std::swap(_skippedBefore, _skippedAfter);
 	}
 
+	//CloudVeil start
+	void limit(int size) {
+		int skip = _ids.size() - size;
+		if (skip > 0) {
+			_ids.erase(_ids.end() - skip, _ids.end());
+			_skippedAfter = skip;
+		}
+	}
+	//CloudVeil end
+
 	friend inline bool operator==(
 		const AbstractSparseIds&,
 		const AbstractSparseIds&) = default;

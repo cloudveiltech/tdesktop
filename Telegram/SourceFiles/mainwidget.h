@@ -16,6 +16,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/sender.h"
 #include "data/data_pts_waiter.h"
 
+//CloudVeil start
+#include "cloudveil/GlobalSecuritySettings.h"
+#include "cloudveil/SimpleUpdater.h"
+#include "cloudveil/response/UpdateResponse.h"
+#include "cloudveil/response/SettingsResponse.h"
+#define ONE_DAY_MSEC 24*60*60*1000
+//CloudVeil end
+
 struct HistoryMessageMarkupButton;
 class MainWindow;
 class HistoryWidget;
@@ -116,6 +124,8 @@ class ItemBase;
 class MainWidget
 	: public Ui::RpWidget
 	, private Media::Player::FloatDelegate {
+	Q_OBJECT
+
 public:
 	using SectionShow = Window::SectionShow;
 
@@ -123,6 +133,11 @@ public:
 		QWidget *parent,
 		not_null<Window::SessionController*> controller);
 	~MainWidget();
+
+	//CloudVeil start
+	void onSettingsUpdate();
+	void showOrganizationChangeRequired();
+	//CloudVeil end
 
 	[[nodiscard]] Main::Session &session() const;
 	[[nodiscard]] not_null<Window::SessionController*> controller() const;
@@ -240,6 +255,14 @@ public:
 		const SectionShow &params) const;
 
 	void dialogsCancelled();
+
+	//CloudVeil start
+public Q_SLOTS:
+	void requestCloudVeil();
+	void simpleUpdateReceived(UpdateResponse* response);
+Q_SIGNALS:
+	void dialogsUpdated();
+	//CloudVeil end
 
 protected:
 	void paintEvent(QPaintEvent *e) override;
@@ -389,4 +412,9 @@ private:
 	// _changelogs depends on _data, subscribes on chats loading event.
 	const std::unique_ptr<Core::Changelogs> _changelogs;
 
+	//CloudVeil start	
+	object_ptr<GlobalSecuritySettings> globalSettings;
+	object_ptr<SimpleUpdater> simpleUpdater;
+	qint64 lastOrganizationPopupShownTime;
+	//CloudVeil end
 };

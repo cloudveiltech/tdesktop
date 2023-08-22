@@ -19,6 +19,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/painter.h"
 #include "apiwrap.h" // requestFullPeer.
 #include "styles/style_calls.h"
+#include "cloudveil/GlobalSecuritySettings.h"
+
 
 namespace Calls {
 namespace {
@@ -154,6 +156,16 @@ void Userpic::refreshPhoto() {
 			&& (_photo->image(Data::PhotoSize::Thumbnail) != nullptr)
 			&& (_photo->owner()->id != _userPhotoId || !_userPhotoFull);
 	}();
+
+	//CloudVeil start	
+	bool isVideoPic = !_photo->videoContent(Data::PhotoSize::Large).isEmpty() || !_photo->videoContent(Data::PhotoSize::Small).isEmpty();
+	bool isVideoDisallowed = GlobalSecuritySettings::getSettings().disableProfileVideo && isVideoPic;
+	if (GlobalSecuritySettings::getSettings().disableProfilePhoto || isVideoDisallowed) {
+		createCache(nullptr);
+		return;
+	}
+	//CloudVeil end
+
 	if (isNewBigPhoto) {
 		_userPhotoId = _photo->owner()->id;
 		_userPhotoFull = true;

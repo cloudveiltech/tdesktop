@@ -135,4 +135,5 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "data/data_types.h"
 
+#include "cloudveil/GlobalSecuritySettings.h" 
 #endif // __cplusplus

@@ -1,9 +1,9 @@
 /*
-This file is part of Telegram Desktop,
-the official desktop application for the Telegram messaging service.
+This file is part of CloudVeil Messenger Desktop,
+the official desktop application for the CloudVeil Messenger messaging service.
 
 For license and copyright information please follow this link:
-https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
+https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 */
 "lng_language_name" = "English";
 "lng_switch_to_this" = "Continue in English";
@@ -22,10 +22,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_disable_notifications_from_tray" = "Disable notifications";
 "lng_enable_notifications_from_tray" = "Enable notifications";
-"lng_open_from_tray" = "Open Telegram";
+"lng_open_from_tray" = "Open CloudVeil Messenger";
 "lng_minimize_to_tray" = "Minimize to tray";
-"lng_quit_from_tray" = "Quit Telegram";
-"lng_tray_icon_text" = "Telegram is still running here,\nyou can change this from settings page.\nIf this icon disappears from tray menu,\nyou can drag it here from hidden icons.";
+"lng_quit_from_tray" = "Quit CloudVeil Messenger";
+"lng_tray_icon_text" = "CloudVeil Messenger is still running here,\nyou can change this from settings page.\nIf this icon disappears from tray menu,\nyou can drag it here from hidden icons.";
 
 // For lng_month_year or plain month name.
 "lng_month1" = "January";
@@ -169,8 +169,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_channels_limit_title" = "Too Many Communities";
 "lng_channels_limit1#one" = "You are a member of **{count}** groups and channels.";
 "lng_channels_limit1#other" = "You are a member of **{count}** groups and channels.";
-"lng_channels_limit2#one" = "Please leave some before joining a new one - or upgrade to **Telegram Premium** to double the limit to **{count}** groups and channels.";
-"lng_channels_limit2#other" = "Please leave some before joining a new one - or upgrade to **Telegram Premium** to double the limit to **{count}** groups and channels.";
+"lng_channels_limit2#one" = "Please leave some before joining a new one - or upgrade to **CloudVeil Messenger Premium** to double the limit to **{count}** groups and channels.";
+"lng_channels_limit2#other" = "Please leave some before joining a new one - or upgrade to **CloudVeil Messenger Premium** to double the limit to **{count}** groups and channels.";
 "lng_channels_limit2_final" = "Please leave some before joining a new one.";
 "lng_channels_leave_title" = "Least active communities";
 "lng_channels_leave_status" = "{type}, inactive {time}";
@@ -181,8 +181,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_links_limit_title" = "Too Many Public Links";
 "lng_links_limit1#one" = "You have reserved **{count}** public link.";
 "lng_links_limit1#other" = "You have reserved **{count}** public links.";
-"lng_links_limit2#one" = "Try revoking the link from an older group or channel, or upgrade to **Telegram Premium** to double the limit to **{count}** public link.";
-"lng_links_limit2#other" = "Try revoking the link from an older group or channel, or upgrade to **Telegram Premium** to double the limit to **{count}** public links.";
+"lng_links_limit2#one" = "Try revoking the link from an older group or channel, or upgrade to **CloudVeil Messenger Premium** to double the limit to **{count}** public link.";
+"lng_links_limit2#other" = "Try revoking the link from an older group or channel, or upgrade to **CloudVeil Messenger Premium** to double the limit to **{count}** public links.";
 "lng_links_limit2_final" = "Try revoking the link from an older group or channel";
 "lng_links_revoke_title" = "Your public communities";
 
@@ -191,20 +191,20 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_filter_chats_limit1#other" = "Sorry, you can't add more than **{count}** chats to a folder.";
 "lng_filter_chats_exlude_limit1#one" = "Sorry, you can't exlude more than **{count}** chat from a folder.";
 "lng_filter_chats_exlude_limit1#other" = "Sorry, you can't exlude more than **{count}** chats from a folder.";
-"lng_filter_chats_limit2#one" = "You can increase this limit to **{count}** by upgrading to **Telegram Premium**.";
-"lng_filter_chats_limit2#other" = "You can increase this limit to **{count}** by upgrading to **Telegram Premium**.";
+"lng_filter_chats_limit2#one" = "You can increase this limit to **{count}** by upgrading to **CloudVeil Messenger Premium**.";
+"lng_filter_chats_limit2#other" = "You can increase this limit to **{count}** by upgrading to **CloudVeil Messenger Premium**.";
 
 "lng_filters_limit_title" = "Limit Reached";
 "lng_filters_limit1#one" = "You have reached the limit of **{count}** folder.";
 "lng_filters_limit1#other" = "You have reached the limit of **{count}** folders.";
-"lng_filters_limit2#one" = "You can double the limit to **{count}** folder by subscribing to **Telegram Premium**.";
-"lng_filters_limit2#other" = "You can double the limit to **{count}** folders by subscribing to **Telegram Premium**.";
+"lng_filters_limit2#one" = "You can double the limit to **{count}** folder by subscribing to **CloudVeil Messenger Premium**.";
+"lng_filters_limit2#other" = "You can double the limit to **{count}** folders by subscribing to **CloudVeil Messenger Premium**.";
 
 "lng_filter_pin_limit_title" = "Limit Reached";
 "lng_filter_pin_limit1#one" = "Sorry, you can't pin more than **{count}** chat to the top.";
 "lng_filter_pin_limit1#other" = "Sorry, you can't pin more than **{count}** chats to the top.";
-"lng_filter_pin_limit2#one" = "Unpin some of the currently pinned ones or subscribe to **Telegram Premium** to double the limit to **{count}** chat.";
-"lng_filter_pin_limit2#other" = "Unpin some of the currently pinned ones or subscribe to **Telegram Premium** to double the limit to **{count}** chats.";
+"lng_filter_pin_limit2#one" = "Unpin some of the currently pinned ones or subscribe to **CloudVeil Messenger Premium** to double the limit to **{count}** chat.";
+"lng_filter_pin_limit2#other" = "Unpin some of the currently pinned ones or subscribe to **CloudVeil Messenger Premium** to double the limit to **{count}** chats.";
 
 "lng_forum_pin_limit#one" = "Sorry, you can't pin more than **{count}** topic to the top.";
 "lng_forum_pin_limit#other" = "Sorry, you can't pin more than **{count}** topics to the top.";
@@ -224,8 +224,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_caption_limit_title" = "Limit Reached";
 "lng_caption_limit1#one" = "Sorry, you can't use more than **{count}** character in media captions.";
 "lng_caption_limit1#other" = "Sorry, you can't use more than **{count}** characters in media captions.";
-"lng_caption_limit2#one" = "Make the caption shorter or subscribe to **Telegram Premium** to double the limit to **{count}** character.";
-"lng_caption_limit2#other" = "Make the caption shorter or subscribe to **Telegram Premium** to double the limit to **{count}** characters.";
+"lng_caption_limit2#one" = "Make the caption shorter or subscribe to **CloudVeil Messenger Premium** to double the limit to **{count}** character.";
+"lng_caption_limit2#other" = "Make the caption shorter or subscribe to **CloudVeil Messenger Premium** to double the limit to **{count}** characters.";
 "lng_caption_limit_reached#one" = "You've reached the media caption limit. Please make the caption shorter by {count} character.";
 "lng_caption_limit_reached#other" = "You've reached the media caption limit. Please make the caption shorter by {count} characters.";
 
@@ -233,7 +233,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_file_size_limit#one" = "{count} Gb";
 "lng_file_size_limit#other" = "{count} Gb";
 "lng_file_size_limit1" = "The document can't be sent, because it is larger than {size}.";
-"lng_file_size_limit2" = "You can double this limit to {size} per document by subscribing to **Telegram Premium**.";
+"lng_file_size_limit2" = "You can double this limit to {size} per document by subscribing to **CloudVeil Messenger Premium**.";
 
 "lng_filter_links_limit_title" = "Limit Reached";
 "lng_filter_links_limit1#one" = "Sorry, you can't create more than **{count}** invite link.";
@@ -251,14 +251,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_sticker_premium_text" = "This pack contains premium stickers like this one.";
 "lng_sticker_premium_view" = "View";
-"lng_animated_emoji_text" = "Subscribe to **Telegram Premium** to unlock this emoji.";
+"lng_animated_emoji_text" = "Subscribe to **CloudVeil Messenger Premium** to unlock this emoji.";
 "lng_animated_emoji_saved" = "Try sending these emoji in **Saved Messages** for free to test.";
 "lng_animated_emoji_saved_open" = "Open";
 
 "lng_flood_error" = "Too many tries. Please try again later.";
 "lng_edit_error" = "You cannot edit this message";
 "lng_error_phone_flood" = "Sorry, you have deleted and re-created your account too many times recently. Please wait for a few days before signing up again.";
-"lng_error_start_minimized_passcoded" = "You have set a local passcode, so Telegram Desktop can't be launched minimised; it will ask you to enter your passcode before it can start working.";
+"lng_error_start_minimized_passcoded" = "You have set a local passcode, so CloudVeil Messenger Desktop can't be launched minimised; it will ask you to enter your passcode before it can start working.";
 "lng_error_public_groups_denied" = "Unfortunately, you were banned from participating in public groups.\n{more_info}";
 "lng_error_cant_add_member" = "Sorry, you can't add the bot to this group. Ask a group admin to do it.";
 "lng_error_cant_add_bot" = "Sorry, this bot can't be added to groups.";
@@ -279,7 +279,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_sure_enable_socks" = "Are you sure you want to enable this proxy?\n\nServer: {server}\nPort: {port}\n\nYou can change your proxy server later in the Settings (Connection Type).";
 "lng_sure_enable" = "Enable";
 "lng_proxy_invalid" = "The proxy link is invalid.";
-"lng_proxy_unsupported" = "Your Telegram Desktop version doesn't support this proxy type or the proxy link is invalid. Please update Telegram Desktop to the latest version.";
+"lng_proxy_unsupported" = "Your CloudVeil Messenger Desktop version doesn't support this proxy type or the proxy link is invalid. Please update CloudVeil Messenger Desktop to the latest version.";
 
 "lng_edit_deleted" = "This message was deleted";
 "lng_edit_limit_reached#one" = "You've reached the message text limit. Please make the text shorter by {count} character.";
@@ -314,7 +314,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_edit_caption_attach" = "Sorry, you can't attach a new media while you're editing your message.";
 "lng_edit_caption_voice" = "Sorry, you can't edit your message while you're having an unsent voice message.";
 
-"lng_intro_about" = "Welcome to the official Telegram Desktop app.\nIt's fast and secure.";
+"lng_intro_about" = "Welcome to the official CloudVeil Messenger Desktop app.\nIt's fast and secure.";
 "lng_start_msgs" = "Start messaging";
 
 "lng_intro_next" = "Next";
@@ -324,8 +324,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_photo_caption" = "Caption";
 "lng_photos_comment" = "Comment";
 
-"lng_intro_qr_title" = "Scan From Mobile Telegram";
-"lng_intro_qr_step1" = "Open Telegram on your phone";
+"lng_intro_qr_title" = "Scan From Mobile CloudVeil Messenger";
+"lng_intro_qr_step1" = "Open CloudVeil Messenger on your phone";
 "lng_intro_qr_step2" = "Go to Settings > Devices > Link Desktop";
 "lng_intro_qr_step3" = "Scan this image to Log In";
 "lng_intro_qr_skip" = "Or log in using your phone number";
@@ -345,16 +345,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_code_ph" = "Your code";
 "lng_code_desc" = "We have sent you a message with activation\ncode to your phone. Please enter it below.";
-"lng_code_from_telegram" = "Please enter the code you've just received\nin your previous **Telegram** app.";
+"lng_code_from_telegram" = "Please enter the code you've just received\nin your previous **CloudVeil Messenger** app.";
 "lng_code_no_telegram" = "Send code via SMS";
-"lng_code_call" = "Telegram will call you in {minutes}:{seconds}";
-"lng_code_calling" = "Requesting a call from Telegram...";
-"lng_code_called" = "Telegram dialed your number";
+"lng_code_register_phone" = "If you already signed up for CloudVeil Messenger, please enter the code which was sent to your mobile app.\n\nIf you haven’t signed up yet, please register from your phone or tablet first.";
+"lng_code_call" = "CloudVeil Messenger will call you in {minutes}:{seconds}";
+"lng_code_calling" = "Requesting a call from CloudVeil Messenger...";
+"lng_code_called" = "CloudVeil Messenger dialed your number";
 
 "lng_bad_phone" = "Invalid phone number. Please try again.";
 "lng_bad_code" = "You have entered an invalid code.";
 "lng_bad_name" = "Please enter your first and last name.";
-"lng_bad_photo" = "Sorry, Telegram can't process that type of image.";
+"lng_bad_photo" = "Sorry, CloudVeil Messenger can't process that type of image.";
 
 "lng_signin_title" = "Cloud password check";
 "lng_signin_desc" = "Please enter your cloud password.";
@@ -396,14 +397,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_contacts_not_found" = "No contacts found";
 "lng_topics_not_found" = "No topics found.";
 "lng_dlg_search_for_messages" = "Search for messages";
-"lng_update_telegram" = "Update Telegram";
+"lng_update_telegram" = "Update CloudVeil Messenger";
 "lng_dlg_search_in" = "Search messages in";
 "lng_dlg_search_from" = "From: {user}";
 
 "lng_settings_save" = "Save";
 
 "lng_username_title" = "Username";
-"lng_username_description1" = "You can choose a username on Telegram. If you do, other people will be able to find you by this username and contact you without knowing your phone number.";
+"lng_username_description1" = "You can choose a username on CloudVeil Messenger. If you do, other people will be able to find you by this username and contact you without knowing your phone number.";
 "lng_username_description2" = "You can use **a-z**, **0-9** and **underscores**.\nMinimum length is **5 characters**.";
 "lng_username_choose" = "Choose your username.";
 "lng_username_invalid" = "This username is invalid.";
@@ -466,7 +467,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_include_muted" = "Include muted chats in unread count";
 "lng_settings_count_unread" = "Count unread messages";
 "lng_settings_events_title" = "Events";
-"lng_settings_events_joined" = "Contact joined Telegram";
+"lng_settings_events_joined" = "Contact joined CloudVeil Messenger";
 "lng_settings_events_pinned" = "Pinned messages";
 "lng_settings_notifications_calls_title" = "Calls";
 
@@ -500,7 +501,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_languages_none" = "No languages found.";
 "lng_languages_count#one" = "{count} language";
 "lng_languages_count#other" = "{count} languages";
-"lng_sure_save_language" = "Telegram will restart in order to change language";
+"lng_sure_save_language" = "CloudVeil Messenger will restart in order to change language";
 "lng_settings_update_automatically" = "Update automatically";
 "lng_settings_install_beta" = "Install beta versions";
 "lng_settings_current_version" = "Version {version}";
@@ -517,11 +518,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_title_account_name" = "Show active account";
 "lng_settings_title_total_count" = "Total unread count";
 "lng_settings_native_frame" = "Use system window frame";
-"lng_settings_auto_start" = "Launch Telegram when system starts";
+"lng_settings_auto_start" = "Launch CloudVeil Messenger when system starts";
 "lng_settings_start_min" = "Launch minimized";
-"lng_settings_auto_start_disabled_uwp" = "Starting with the system was disabled in Windows Settings.\n\nPlease enable Telegram Desktop in the Startup Apps Settings.";
+"lng_settings_auto_start_disabled_uwp" = "Starting with the system was disabled in Windows Settings.\n\nPlease enable CloudVeil Messenger Desktop in the Startup Apps Settings.";
 "lng_settings_open_system_settings" = "Open Settings";
-"lng_settings_add_sendto" = "Place Telegram in \"Send to\" menu";
+"lng_settings_add_sendto" = "Place CloudVeil Messenger in \"Send to\" menu";
 "lng_settings_mac_warn_before_quit" = "Show warning before quitting with {text}";
 "lng_settings_mac_round_icon" = "Round application icon";
 
@@ -589,7 +590,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_voices_privacy" = "Voice messages";
 "lng_settings_bio_privacy" = "Bio";
 "lng_settings_privacy_premium" = "Only subscribers of {link} can restrict receiving voice messages.";
-"lng_settings_privacy_premium_link" = "Telegram Premium";
+"lng_settings_privacy_premium_link" = "CloudVeil Messenger Premium";
+"lng_settings_sessions_about" = "Control your sessions on other devices.";
 "lng_settings_passcode_disable" = "Disable Passcode";
 "lng_settings_passcode_disable_sure" = "Are you sure you want to disable passcode?";
 "lng_settings_password_disable" = "Disable Cloud Password";
@@ -599,7 +601,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_username_label" = "Username";
 "lng_settings_phone_label" = "Phone number";
 "lng_settings_username_add" = "Add username";
-"lng_settings_peer_to_peer_about" = "Disabling peer-to-peer will relay all calls through Telegram servers to avoid revealing your IP address, but may slightly decrease audio quality.";
+"lng_settings_peer_to_peer_about" = "Disabling peer-to-peer will relay all calls through CloudVeil Messenger servers to avoid revealing your IP address, but may slightly decrease audio quality.";
 "lng_settings_advanced" = "Advanced";
 "lng_settings_stickers_emoji" = "Stickers and emoji";
 "lng_settings_messages" = "Messages";
@@ -632,7 +634,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_angle_backend_disabled" = "Disabled";
 "lng_settings_sensitive_title" = "Sensitive content";
 "lng_settings_sensitive_disable_filtering" = "Disable filtering";
-"lng_settings_sensitive_about" = "Display sensitive media in public channels on all your Telegram devices.";
+"lng_settings_sensitive_about" = "Display sensitive media in public channels on all your CloudVeil Messenger devices.";
 "lng_settings_security_bots" = "Bots and websites";
 "lng_settings_clear_payment_info" = "Clear Payment and Shipping Info";
 
@@ -662,7 +664,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_cloud_password_password_title" = "Password";
 "lng_settings_cloud_password_hint_title" = "Password Hint";
 "lng_settings_cloud_password_email_title" = "Recovery Email";
-"lng_settings_cloud_password_start_about" = "Protect your Telegram account with an additional password.";
+"lng_settings_cloud_password_start_about" = "Protect your CloudVeil Messenger account with an additional password.";
 "lng_settings_cloud_password_hint_about" = "You can create a hint for your password.";
 "lng_settings_cloud_password_email_about" = "Please enter your new recovery email. It is the only way to recover a forgotten password.";
 "lng_settings_cloud_password_password_subtitle" = "Create Password";
@@ -715,7 +717,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_clear_payment_info_shipping" = "Shipping info";
 "lng_clear_payment_info_payment" = "Payment info";
 "lng_clear_payment_info_clear" = "Clear";
-"lng_clear_payment_info_confirm" = "Delete your shipping info and instruct all payment providers to remove your saved credit cards? Note that Telegram never stores your credit card data.";
+"lng_clear_payment_info_confirm" = "Delete your shipping info and instruct all payment providers to remove your saved credit cards? Note that CloudVeil Messenger never stores your credit card data.";
 
 "lng_settings_auto_night_mode" = "Auto-Night mode";
 "lng_settings_auto_night_enabled" = "Match the system settings";
@@ -740,7 +742,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_theme_reverting#other" = "Reverting to the old theme in {count} seconds.";
 "lng_theme_keep_changes" = "Keep changes";
 "lng_theme_revert" = "Revert";
-"lng_theme_no_desktop" = "Sorry, this theme doesn't include a version for Telegram Desktop.";
+"lng_theme_no_desktop" = "Sorry, this theme doesn't include a version for CloudVeil Messenger Desktop.";
 "lng_theme_share" = "Share";
 "lng_theme_edit" = "Edit";
 "lng_theme_delete" = "Delete";
@@ -767,7 +769,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_download_path_temp" = "Temp folder";
 "lng_download_path_default" = "Default folder";
 "lng_download_path_header" = "Choose download path";
-"lng_download_path_default_radio" = "Telegram folder in system «Downloads»";
+"lng_download_path_default_radio" = "CloudVeil Messenger folder in system «Downloads»";
 "lng_download_path_temp_radio" = "Temp folder, cleared on logout or uninstall";
 "lng_download_path_dir_radio" = "Custom folder, cleared only manually";
 "lng_download_path_choose" = "Choose download path";
@@ -811,10 +813,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_passcode_enter_first" = "Enter a passcode";
 "lng_passcode_enter_new" = "Enter new passcode";
 "lng_passcode_confirm_new" = "Re-enter new passcode";
-"lng_passcode_about" = "When a local passcode is set, a lock icon appears at the top of your chats list. Click it to lock the app.\n\nNote: if you forget your local passcode, you'll need to relogin in Telegram Desktop.";
+"lng_passcode_about" = "When a local passcode is set, a lock icon appears at the top of your chats list. Click it to lock the app.\n\nNote: if you forget your local passcode, you'll need to relogin in CloudVeil Messenger Desktop.";
 "lng_passcode_about1" = "When a local passcode is set, a lock icon appears at the top of your chats list.";
-"lng_passcode_about2" = "Click it to lock Telegram Desktop.";
-"lng_passcode_about3" = "Note: if you forget your passcode, you'll need to log out of Telegram Desktop and log in again.";
+"lng_passcode_about2" = "Click it to lock CloudVeil Messenger Desktop.";
+"lng_passcode_about3" = "Note: if you forget your passcode, you'll need to log out of CloudVeil Messenger Desktop and log in again.";
 "lng_passcode_differ" = "Passcodes are different";
 "lng_passcode_wrong" = "Wrong passcode";
 "lng_passcode_is_same" = "Passcode was not changed";
@@ -845,7 +847,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_cloud_password_email" = "Enter Email";
 "lng_cloud_password_bad_email" = "Incorrect email, please try other.";
 "lng_cloud_password_about" = "This password will be asked when you log in on a new device in addition to the SMS code.";
-"lng_cloud_password_about_recover" = "Warning! Are you sure you don't want to\nadd a password recovery email?\n\nIf you forget your password, you will\nlose access to your Telegram account.";
+"lng_cloud_password_about_recover" = "Warning! Are you sure you don't want to\nadd a password recovery email?\n\nIf you forget your password, you will\nlose access to your CloudVeil Messenger account.";
 "lng_cloud_password_skip_email" = "Skip email";
 "lng_cloud_password_was_set" = "Two-step verification enabled.";
 "lng_cloud_password_updated" = "Your cloud password was updated.";
@@ -853,7 +855,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_cloud_password_differ" = "Passwords do not match";
 "lng_cloud_password_wrong" = "Wrong cloud password";
 "lng_cloud_password_is_same" = "Password was not changed";
-"lng_cloud_password_passport_losing" = "Warning! All data saved in your Telegram Passport will be lost!";
+"lng_cloud_password_passport_losing" = "Warning! All data saved in your CloudVeil Messenger Passport will be lost!";
 "lng_cloud_password_resend" = "Resend code";
 "lng_cloud_password_resent" = "Code was resent.";
 "lng_cloud_password_reset_no_email" = "Since you didn't provide a recovery email when setting up your password, your remaining options are either to remember your password or wait 7 days until your password is reset.";
@@ -881,7 +883,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_proxy_use_system_settings" = "Use system proxy settings";
 "lng_proxy_use_custom" = "Use custom proxy";
 "lng_proxy_use_for_calls" = "Use proxy for calls";
-"lng_proxy_about" = "Proxy servers may be helpful in accessing Telegram if there is no connection in a specific region.";
+"lng_proxy_about" = "Proxy servers may be helpful in accessing CloudVeil Messenger if there is no connection in a specific region.";
 "lng_proxy_add" = "Add proxy";
 "lng_proxy_share" = "Share";
 "lng_proxy_online" = "connected";
@@ -899,8 +901,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_proxy_credentials" = "Credentials";
 "lng_proxy_description" = "Your saved proxy list will be here.";
 "lng_proxy_sponsor" = "Proxy sponsor";
-"lng_proxy_sponsor_about" = "This channel is shown by your proxy server.\nTo remove this channel from your chats list,\ndisable the proxy in Telegram Settings.";
-"lng_proxy_sponsor_warning" = "This proxy may display a sponsored channel in your chat list. This doesn't reveal any of your Telegram traffic.";
+"lng_proxy_sponsor_about" = "This channel is shown by your proxy server.\nTo remove this channel from your chats list,\ndisable the proxy in CloudVeil Messenger Settings.";
+"lng_proxy_sponsor_warning" = "This proxy may display a sponsored channel in your chat list. This doesn't reveal any of your CloudVeil Messenger traffic.";
 "lng_badge_psa_default" = "PSA";
 "lng_about_psa_default" = "This message provides you with a public service announcement. To remove it from your chats list, right click it and select **Hide**.";
 "lng_tooltip_psa_default" = "This message provides you with a public service announcement.";
@@ -908,7 +910,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_blocked_users" = "Blocked users";
 "lng_settings_no_blocked_users" = "None";
 "lng_settings_show_sessions" = "Show all sessions";
-"lng_settings_export_data" = "Export Telegram data";
+"lng_settings_export_data" = "Export CloudVeil Messenger data";
 "lng_settings_destroy_if" = "If away for...";
 
 "lng_settings_terminate_title" = "Terminate old sessions";
@@ -921,11 +923,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_rename_device_title" = "Rename current device";
 "lng_settings_manage_local_storage" = "Manage local storage";
 "lng_settings_ask_question" = "Ask a Question";
-"lng_settings_ask_sure" = "Please note that Telegram Support is run by volunteers. We try to respond as quickly as possible, but it may take a while.\n\nPlease take a look at the Telegram FAQ: it has important troubleshooting tips and answers to most questions.";
+"lng_settings_ask_sure" = "Please note that CloudVeil Messenger Support is run by volunteers. We try to respond as quickly as possible, but it may take a while.\n\nPlease take a look at the CloudVeil Messenger FAQ: it has important troubleshooting tips and answers to most questions.";
 "lng_settings_faq_button" = "Go to FAQ";
 "lng_settings_ask_ok" = "Ask a Volunteer";
-"lng_settings_faq" = "Telegram FAQ";
-"lng_settings_features" = "Telegram Features";
+"lng_settings_faq" = "CloudVeil Messenger FAQ";
+"lng_settings_features" = "CloudVeil Messenger Features";
 "lng_settings_logout" = "Log Out";
 "lng_sure_logout" = "Are you sure you want to log out?";
 
@@ -935,7 +937,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_sessions_header" = "Current session";
 "lng_sessions_other_header" = "Active sessions";
-"lng_sessions_other_desc" = "You can log in to Telegram from other mobile, tablet and desktop devices, using the same phone number. All your data will be instantly synchronized.";
+"lng_sessions_other_desc" = "You can log in to CloudVeil Messenger from other mobile, tablet and desktop devices, using the same phone number. All your data will be instantly synchronized.";
 "lng_sessions_terminate_all" = "Terminate all other sessions";
 "lng_sessions_terminate_all_about" = "Logs out all devices except for this one.";
 "lng_sessions_incomplete" = "Incomplete login attempts";
@@ -947,7 +949,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_sessions_ip" = "IP address";
 "lng_sessions_location" = "Location";
 "lng_sessions_location_about" = "This location is based only on the IP address and may not always be accurate.";
-"lng_sessions_about_apps" = "The official Telegram app is available for Android, iPhone, iPad, Windows, macOS and Linux.";
+"lng_sessions_about_apps" = "The official CloudVeil Messenger app is available for Android, iPhone, iPad, Windows, macOS and Linux.";
 
 "lng_blocked_list_title" = "Blocked users";
 "lng_blocked_list_unknown_phone" = "unknown phone number";
@@ -958,7 +960,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_blocked_list_about" = "Blocked users can't send you messages or add you to groups. They will not see your profile pictures, online and last seen status.";
 "lng_blocked_list_not_found" = "No users found.";
 "lng_blocked_list_confirm_title" = "Block {name}";
-"lng_blocked_list_confirm_text" = "Do you want to block {name} from messaging and calling you on Telegram?";
+"lng_blocked_list_confirm_text" = "Do you want to block {name} from messaging and calling you on CloudVeil Messenger?";
 "lng_blocked_list_confirm_clear" = "Delete this chat";
 "lng_blocked_list_confirm_ok" = "Block";
 "lng_blocked_list_empty_title" = "No blocked users";
@@ -978,7 +980,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_edit_privacy_phone_number_title" = "Phone number privacy";
 "lng_edit_privacy_phone_number_header" = "Who can see your phone number";
-"lng_edit_privacy_phone_number_warning" = "Users who already have your number saved in the contacts will also see it on Telegram.";
+"lng_edit_privacy_phone_number_warning" = "Users who already have your number saved in the contacts will also see it on CloudVeil Messenger.";
 "lng_edit_privacy_phone_number_always_empty" = "Always share with";
 "lng_edit_privacy_phone_number_never_empty" = "Never share with";
 "lng_edit_privacy_phone_number_exceptions" = "These settings will override the values above.";
@@ -986,7 +988,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_edit_privacy_phone_number_never_title" = "Never share with";
 
 "lng_edit_privacy_phone_number_find" = "Who can find me by my number";
-"lng_edit_privacy_phone_number_contacts" = "Users who add your number to their contacts will see it on Telegram only if they are your contacts.";
+"lng_edit_privacy_phone_number_contacts" = "Users who add your number to their contacts will see it on CloudVeil Messenger only if they are your contacts.";
 
 "lng_edit_privacy_lastseen_title" = "Last seen privacy";
 "lng_edit_privacy_lastseen_header" = "Who can see your last seen time";
@@ -1074,7 +1076,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_change_phone_new_submit" = "Submit";
 "lng_change_phone_code_title" = "Enter code";
-"lng_change_phone_error" = "You can only change your phone number using mobile Telegram apps. Please use an official Telegram app on your phone to update your number.";
+"lng_change_phone_error" = "You can only change your phone number using mobile CloudVeil Messenger apps. Please use an official CloudVeil Messenger app on your phone to update your number.";
 
 "lng_mute_menu_mute" = "Mute";
 "lng_mute_menu_unmute" = "Unmute";
@@ -1267,7 +1269,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_manage_peer_reactions_available" = "Available reactions";
 
 "lng_manage_peer_antispam" = "Aggressive Anti-Spam";
-"lng_manage_peer_antispam_about" = "Telegram will filter more spam but may occasionally affect ordinary messages. You can report False Positives in Recent Actions.";
+"lng_manage_peer_antispam_about" = "CloudVeil Messenger will filter more spam but may occasionally affect ordinary messages. You can report False Positives in Recent Actions.";
 "lng_manage_peer_antispam_not_enough#one" = "Aggressive filtering can be enabled only in groups with more than **{count} member**.";
 "lng_manage_peer_antispam_not_enough#other" = "Aggressive filtering can be enabled only in groups with more than **{count} members**.";
 
@@ -1447,7 +1449,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_sure_delete_selected_days#other" = "{count} selected days";
 
 "lng_message_empty" = "Empty Message";
-"lng_message_unsupported" = "This message is not supported by your version of Telegram Desktop. Please update to the latest version in Settings, or install it from {link}";
+"lng_message_unsupported" = "This message is not supported by your version of CloudVeil Messenger Desktop. Please update to the latest version in Settings, or install it from {link}";
 "lng_message_not_found" = "Message doesn't exist.";
 
 "lng_duration_minsec_minutes#one" = "{count} min";
@@ -1481,7 +1483,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_action_user_joined_by_request" = "{from} was accepted to the group";
 "lng_action_you_joined_by_request" = "Your request to join the group was approved";
 "lng_action_you_joined_by_request_channel" = "Your request to join the channel was approved";
-"lng_action_user_registered" = "{from} just joined Telegram";
+"lng_action_user_registered" = "{from} just joined CloudVeil Messenger";
 "lng_action_removed_photo" = "{from} removed group photo";
 "lng_action_removed_photo_channel" = "Channel photo removed";
 "lng_action_changed_photo" = "{from} updated group photo";
@@ -1638,8 +1640,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_group_invite_can_join#other" = "{count} can join";
 "lng_group_invite_days_left#one" = "{count} day left";
 "lng_group_invite_days_left#other" = "{count} days left";
-"lng_group_invite_about_permanent_group" = "Anyone who has Telegram installed will be able to join your group by following this link.";
-"lng_group_invite_about_permanent_channel" = "Anyone who has Telegram installed will be able to join your channel by following this link.";
+"lng_group_invite_about_permanent_group" = "Anyone who has CloudVeil Messenger installed will be able to join your group by following this link.";
+"lng_group_invite_about_permanent_channel" = "Anyone who has CloudVeil Messenger installed will be able to join your channel by following this link.";
 "lng_group_invite_title" = "Invite links";
 "lng_group_invite_add" = "Create a New Link";
 "lng_group_invite_add_about" = "You can generate invite links that will expire after they've been used.";
@@ -1682,7 +1684,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_group_invite_can_join_via_link#one" = "{count} person can join via this link.";
 "lng_group_invite_can_join_via_link#other" = "{count} people can join via this link.";
 "lng_group_invite_qr_title" = "Invite by QR Code";
-"lng_group_invite_qr_about" = "Everyone on Telegram can scan this code to join your group.";
+"lng_group_invite_qr_about" = "Everyone on CloudVeil Messenger can scan this code to join your group.";
 "lng_group_invite_qr_copied" = "QR Code copied to clipboard.";
 "lng_group_invite_request_approve" = "Request admin approval";
 "lng_group_invite_about_approve" = "New users will be able to join the group only after having been approved by the admins.";
@@ -1743,7 +1745,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_cancel_edit_post_yes" = "Yes";
 "lng_cancel_edit_post_no" = "No";
 
-"lng_bot_share_location_unavailable" = "Sorry, location sharing is currently unavailable in Telegram Desktop.";
+"lng_bot_share_location_unavailable" = "Sorry, location sharing is currently unavailable in CloudVeil Messenger Desktop.";
 "lng_bot_share_phone" = "Do you want to share your phone number with this bot?";
 "lng_bot_share_phone_confirm" = "Share";
 
@@ -1800,7 +1802,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_premium" = "Premium";
 "lng_premium_free" = "Free";
-"lng_premium_more_about" = "More About Telegram Premium";
+"lng_premium_more_about" = "More About CloudVeil Messenger Premium";
 "lng_premium_unlock_reactions" = "Unlock Premium Reactions";
 "lng_premium_unlock_stickers" = "Unlock Premium Stickers";
 "lng_premium_unlock_emoji" = "Unlock Animated Emoji";
@@ -1814,19 +1816,19 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_premium_emoji_status_title" = "{user} set this emoji from {link} as their current status.";
 "lng_premium_emoji_status_title_colored" = "{user} set this emoji as their current status.";
-"lng_premium_emoji_status_about" = "Emoji status is a premium feature. Other features included in **Telegram Premium**:";
+"lng_premium_emoji_status_about" = "Emoji status is a premium feature. Other features included in **CloudVeil Messenger Premium**:";
 "lng_premium_emoji_status_button" = "Unlock Emoji Status";
 
-"lng_premium_summary_user_title" = "{user} is a subscriber of Telegram Premium.";
-"lng_premium_summary_user_about" = "Owners of Telegram Premium accounts have exclusive access to multiple additional features.";
+"lng_premium_summary_user_title" = "{user} is a subscriber of CloudVeil Messenger Premium.";
+"lng_premium_summary_user_about" = "Owners of CloudVeil Messenger Premium accounts have exclusive access to multiple additional features.";
 
-"lng_premium_summary_title" = "Telegram Premium";
-"lng_premium_summary_top_about" = "Go **beyond the limits**, get **exclusive features** and support us by subscribing to **Telegram Premium**.";
+"lng_premium_summary_title" = "CloudVeil Messenger Premium";
+"lng_premium_summary_top_about" = "Go **beyond the limits**, get **exclusive features** and support us by subscribing to **CloudVeil Messenger Premium**.";
 "lng_premium_summary_title_subscribed" = "You are all set!";
-"lng_premium_summary_subtitle_gift#one" = "{user} has gifted you a {count}-month subscription for Telegram Premium.";
-"lng_premium_summary_subtitle_gift#other" = "{user} has gifted you a {count}-months subscription for Telegram Premium.";
-"lng_premium_summary_subtitle_gift_me#one" = "You gifted {user} a {count}-month subscription for Telegram Premium.";
-"lng_premium_summary_subtitle_gift_me#other" = "You gifted {user} a {count}-months subscription for Telegram Premium.";
+"lng_premium_summary_subtitle_gift#one" = "{user} has gifted you a {count}-month subscription for CloudVeil Messenger Premium.";
+"lng_premium_summary_subtitle_gift#other" = "{user} has gifted you a {count}-months subscription for CloudVeil Messenger Premium.";
+"lng_premium_summary_subtitle_gift_me#one" = "You gifted {user} a {count}-month subscription for CloudVeil Messenger Premium.";
+"lng_premium_summary_subtitle_gift_me#other" = "You gifted {user} a {count}-months subscription for CloudVeil Messenger Premium.";
 "lng_premium_summary_subtitle_double_limits" = "Doubled Limits";
 "lng_premium_summary_about_double_limits" = "Up to 1000 channels, 20 folders, 10 pins, 20 public links, 4 accounts and more.";
 "lng_premium_summary_subtitle_more_upload" = "4Gb Upload Size";
@@ -1836,7 +1838,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_premium_summary_subtitle_voice_to_text" = "Voice-to-Text Conversion";
 "lng_premium_summary_about_voice_to_text" = "Ability to read the transcript of any incoming voice message.";
 "lng_premium_summary_subtitle_no_ads" = "No Ads";
-"lng_premium_summary_about_no_ads" = "No more ads in public channels where Telegram sometimes shows ads.";
+"lng_premium_summary_about_no_ads" = "No more ads in public channels where CloudVeil Messenger sometimes shows ads.";
 "lng_premium_summary_subtitle_emoji_status" = "Emoji Status";
 "lng_premium_summary_about_emoji_status" = "Add any of thousands emoji next to your name to display current activity.";
 "lng_premium_summary_subtitle_infinite_reactions" = "Infinite Reactions";
@@ -1848,17 +1850,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_premium_summary_subtitle_advanced_chat_management" = "Advanced Chat Management";
 "lng_premium_summary_about_advanced_chat_management" = "Tools to set default folder, auto-archive and hide new chats from non-contacts.";
 "lng_premium_summary_subtitle_profile_badge" = "Profile Badge";
-"lng_premium_summary_about_profile_badge" = "A badge next to your name showing that you are helping support Telegram.";
+"lng_premium_summary_about_profile_badge" = "A badge next to your name showing that you are helping support CloudVeil Messenger.";
 "lng_premium_summary_subtitle_animated_userpics" = "Animated Profile Pictures";
 "lng_premium_summary_about_animated_userpics" = "Video avatars animated in chat lists and chats to allow for additional self-expression.";
 "lng_premium_summary_subtitle_translation" = "Real-Time Translation";
 "lng_premium_summary_about_translation" = "Real-time translation of channels and chats into other languages.";
-"lng_premium_summary_bottom_subtitle" = "About Telegram Premium";
-"lng_premium_summary_bottom_about" = "While the free version of Telegram already gives its users more than any other messaging application, **Telegram Premium** pushes its capabilities even further.\n\n**Telegram Premium** is a paid option, because most Premium Features require additional expenses from Telegram to third parties such as data center providers and server manufacturers. Contributions from **Telegram Premium** users allow us to cover such costs and also help Telegram stay free for everyone.";
+"lng_premium_summary_bottom_subtitle" = "About CloudVeil Messenger Premium";
+"lng_premium_summary_bottom_about" = "While the free version of CloudVeil Messenger already gives its users more than any other messaging application, **CloudVeil Messenger Premium** pushes its capabilities even further.\n\n**CloudVeil Messenger Premium** is a paid option, because most Premium Features require additional expenses from CloudVeil Messenger to third parties such as data center providers and server manufacturers. Contributions from **CloudVeil Messenger Premium** users allow us to cover such costs and also help Telegram stay free for everyone.";
 "lng_premium_summary_button" = "Subscribe for {cost} per month";
 
-"lng_premium_success" = "You've successfully subscribed to Telegram Premium!";
-"lng_premium_unavailable" = "This feature requires subscription to **Telegram Premium**.\n\nUnfortunately, **Telegram Premium** is not available in your region.";
+"lng_premium_success" = "You've successfully subscribed to CloudVeil Messenger Premium!";
+"lng_premium_unavailable" = "This feature requires subscription to **CloudVeil Messenger Premium**.\n\nUnfortunately, **CloudVeil Messenger Premium** is not available in your region.";
 
 // Doubled Limits.
 "lng_premium_double_limits_subtitle_channels" = "Groups and Channels";
@@ -1900,17 +1902,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_premium_double_limits_about_accounts#other" = "Connect {count} accounts with different mobile numbers";
 //
 
-"lng_premium_gift_title" = "Gift Telegram Premium";
-"lng_premium_gift_about" = "Let **{user}** enjoy exclusive features of Telegram with **Telegram Premium**.";
+"lng_premium_gift_title" = "Gift CloudVeil Messenger Premium";
+"lng_premium_gift_about" = "Let **{user}** enjoy exclusive features of CloudVeil Messenger with **CloudVeil Messenger Premium**.";
 "lng_premium_gift_button" = "Gift Subscription for {cost}";
 "lng_premium_gift_per" = "{cost} / month";
-"lng_premium_gift_terms" = "You can review the list of features and terms of use for Telegram Premium {link}.";
+"lng_premium_gift_terms" = "You can review the list of features and terms of use for CloudVeil Messenger Premium {link}.";
 "lng_premium_gift_terms_link" = "here";
 
 "lng_accounts_limit_title" = "Limit Reached";
 "lng_accounts_limit1#one" = "You have reached the limit of **{count}** connected accounts.";
 "lng_accounts_limit1#other" = "You have reached the limit of **{count}** connected accounts.";
-"lng_accounts_limit2" = "You can free one space by subscribing to **Telegram Premium** with one of these connected accounts:";
+"lng_accounts_limit2" = "You can free one space by subscribing to **CloudVeil Messenger Premium** with one of these connected accounts:";
 
 "lng_emoji_status_for_title" = "Set Status for...";
 "lng_emoji_status_for_submit" = "Set Status";
@@ -2023,7 +2025,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_new_contact_from_request_channel" = "{user} is an admin of {name}, a channel you requested to join.";
 "lng_new_contact_from_request_group" = "{user} is an admin of {name}, a group you requested to join.";
 "lng_new_contact_about_status" = "This account uses {emoji} as a custom status next to its\nname. Such emoji statuses are available to all\nsubscribers of {link}.";
-"lng_new_contact_about_status_link" = "Telegram Premium";
+"lng_new_contact_about_status_link" = "CloudVeil Messenger Premium";
 "lng_from_request_title_channel" = "Chat with channel's admin";
 "lng_from_request_title_group" = "Chat with group's admin";
 "lng_from_request_body" = "You received this message because you requested to join {name} on {date}.";
@@ -2066,7 +2068,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_send_as_title" = "Send message as...";
 "lng_send_as_anonymous_admin" = "Anonymous admin";
 "lng_send_as_premium_required" = "Subscribe to {link} to be able to comment on behalf of your channels in group chats.";
-"lng_send_as_premium_required_link" = "Telegram Premium";
+"lng_send_as_premium_required_link" = "CloudVeil Messenger Premium";
 "lng_record_cancel" = "Release outside this field to cancel";
 "lng_record_cancel_stories" = "Release outside to cancel";
 "lng_record_lock_cancel_sure" = "Are you sure you want to stop recording and discard your voice message?";
@@ -2132,12 +2134,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_dialogs_skip_archive_in_search" = "Skip results from archive";
 "lng_dialogs_show_archive_in_search" = "With results from archive";
 
-"lng_about_random" = "Send a {emoji} emoji to any chat to get a random number from Telegram.";
+"lng_about_random" = "Send a {emoji} emoji to any chat to get a random number from CloudVeil Messenger.";
 "lng_about_random_send" = "Send";
 
 "lng_open_this_link" = "Open this link?";
 "lng_open_link" = "Open";
-"lng_allow_bot_pass" = "Allow {bot_name} to pass your Telegram name and ID to the web pages you open via this bot?";
+"lng_allow_bot_pass" = "Allow {bot_name} to pass your CloudVeil Messenger name and ID to the web pages you open via this bot?";
 "lng_allow_bot" = "Allow";
 "lng_allow_bot_webview" = "{bot_name} would like to open its web app to proceed.\n\nIt will be able to access your **IP address** and basic device info.";
 "lng_url_auth_open_confirm" = "Do you want to open {link}?";
@@ -2420,7 +2422,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_contacts_stories_status#other" = "{count} stories";
 "lng_contacts_stories_status_new#one" = "{count} new story";
 "lng_contacts_stories_status_new#other" = "{count} new stories";
-"lng_contact_not_joined" = "Unfortunately {name} has not joined Telegram yet, but you can send them an invitation.\n\nWe will notify you about any of your contacts who join Telegram.";
+"lng_contact_not_joined" = "Unfortunately {name} has not joined CloudVeil Messenger yet, but you can send them an invitation.\n\nWe will notify you about any of your contacts who join CloudVeil Messenger.";
 "lng_try_other_contact" = "Try someone else";
 "lng_create_group_link" = "Link";
 "lng_create_group_invite_link" = "Invite link";
@@ -2471,10 +2473,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_about_version" = "version {version}";
 "lng_about_text1" = "Official free messaging app based on {api_link}\nfor speed and security.";
-"lng_about_text1_api" = "Telegram API";
+"lng_about_text1_api" = "CloudVeil Messenger API";
 "lng_about_text2" = "This software is licensed under {gpl_link} version 3.\nSource code is available on {github_link}.";
 "lng_about_text3" = "Visit {faq_link} for more info.";
-"lng_about_text3_faq" = "Telegram FAQ";
+"lng_about_text3_faq" = "CloudVeil Messenger FAQ";
 "lng_about_done" = "Done";
 
 "lng_search_no_results" = "No messages found";
@@ -2560,7 +2562,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_confirm_phone_link_invalid" = "This link is broken or has expired.";
 "lng_confirm_phone_title" = "Cancel account reset";
-"lng_confirm_phone_about" = "Somebody with access to your phone number {phone} has requested to delete your Telegram account and reset your 2-Step Verification password.\n\nIf this wasn't you, please enter the code we've just sent you via SMS to your number.";
+"lng_confirm_phone_about" = "Somebody with access to your phone number {phone} has requested to delete your CloudVeil Messenger account and reset your 2-Step Verification password.\n\nIf this wasn't you, please enter the code we've just sent you via SMS to your number.";
 "lng_confirm_phone_success" = "Success!\n\nThe deletion process was cancelled for your account {phone}. You may close this window now.";
 "lng_confirm_phone_send" = "Send";
 "lng_confirm_phone_enter_code" = "Please enter the code.";
@@ -2577,7 +2579,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_theme_editor_error" = "The editor encountered an error :( See 'log.txt' for details.";
 "lng_theme_editor_sure_close" = "Are you sure you want to close the editor? Your changes won't be saved.";
 "lng_theme_editor_need_auth" = "You need to log in to save your theme.";
-"lng_theme_editor_need_unlock" = "You need to unlock Telegram to save your theme.";
+"lng_theme_editor_need_unlock" = "You need to unlock CloudVeil Messenger to save your theme.";
 "lng_theme_editor_done" = "Theme exported successfully!";
 "lng_theme_editor_title" = "Edit color palette";
 "lng_theme_editor_save_button" = "Save theme";
@@ -2631,7 +2633,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_payments_to_provider_phone" = "Phone will be passed to {provider} as billing info.";
 "lng_payments_processed_by" = "Processed by {provider}";
 "lng_payments_warning_title" = "Warning";
-"lng_payments_warning_body" = "Neither Telegram, nor {bot1} will have access to your credit card information. Credit card details will be handled only by the payment system, {provider}.\n\nPayments will go directly to the developer of {bot2}. Telegram cannot provide any guarantees, so proceed at your own risk. In case of problems, please contact the developer of {bot3} or your bank.";
+"lng_payments_warning_body" = "Neither CloudVeil Messenger, nor {bot1} will have access to your credit card information. Credit card details will be handled only by the payment system, {provider}.\n\nPayments will go directly to the developer of {bot2}. CloudVeil Messenger cannot provide any guarantees, so proceed at your own risk. In case of problems, please contact the developer of {bot3} or your bank.";
 "lng_payments_shipping_address_title" = "Shipping Information";
 "lng_payments_card_title" = "New Card";
 "lng_payments_card_number" = "Card Number";
@@ -2687,7 +2689,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_call_leave_to_other_sure_channel" = "Do you want to end your active call and join a live stream in this channel?";
 
 "lng_call_box_title" = "Calls";
-"lng_call_box_about" = "You haven't made any Telegram calls yet.";
+"lng_call_box_about" = "You haven't made any CloudVeil Messenger calls yet.";
 "lng_call_box_status_today" = "{time}";
 "lng_call_box_status_yesterday" = "Yesterday at {time}";
 "lng_call_box_status_date" = "{date} at {time}";
@@ -2827,11 +2829,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_group_call_context_remove" = "Remove";
 "lng_group_call_remove_channel" = "Remove {channel} from the voice chat?";
 "lng_group_call_remove_channel_from_channel" = "Remove {channel} from the live stream?";
-"lng_group_call_mac_access" = "Telegram Desktop does not have access to system wide keyboard input required for Push to Talk.";
-"lng_group_call_mac_input" = "Please allow **Input Monitoring** for Telegram in Privacy Settings.";
-"lng_group_call_mac_accessibility" = "Please allow **Accessibility** for Telegram in Privacy Settings.\n\nApp restart may be required.";
-"lng_group_call_mac_screencast_access" = "Telegram Desktop does not have access to screen recording required for Screen Sharing.";
-"lng_group_call_mac_recording" = "Please allow **Screen Recording** for Telegram in Privacy Settings.";
+"lng_group_call_mac_access" = "CloudVeil Messenger Desktop does not have access to system wide keyboard input required for Push to Talk.";
+"lng_group_call_mac_input" = "Please allow **Input Monitoring** for CloudVeil Messenger in Privacy Settings.";
+"lng_group_call_mac_accessibility" = "Please allow **Accessibility** for CloudVeil Messenger in Privacy Settings.\n\nApp restart may be required.";
+"lng_group_call_mac_screencast_access" = "CloudVeil Messenger Desktop does not have access to screen recording required for Screen Sharing.";
+"lng_group_call_mac_recording" = "Please allow **Screen Recording** for CloudVeil Messenger in Privacy Settings.";
 "lng_group_call_mac_settings" = "Open Settings";
 
 "lng_group_call_start_as_header" = "Start Voice Chat as...";
@@ -2906,8 +2908,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_group_call_title_changed_channel" = "Live stream title changed to {title}";
 "lng_group_call_join_as_changed" = "Members of this voice chat will now see you as {name}";
 "lng_group_call_join_as_changed_channel" = "Members of this live stream will now see you as {name}";
-"lng_group_call_no_stream_admin" = "Oops! Telegram doesn't see any stream coming from your streaming app. Please make sure you entered the right Server URL and Stream Key in your app..";
-"lng_group_call_no_stream" = "{group} is currently not broadcasting live stream data to Telegram.";
+"lng_group_call_no_stream_admin" = "Oops! CloudVeil Messenger doesn't see any stream coming from your streaming app. Please make sure you entered the right Server URL and Stream Key in your app..";
+"lng_group_call_no_stream" = "{group} is currently not broadcasting live stream data to CloudVeil Messenger.";
 
 "lng_menu_start_group_call" = "Start video chat";
 "lng_menu_start_group_call_scheduled" = "Schedule video chat";
@@ -2933,7 +2935,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_group_call_rtmp_viewers#one" = "{count} viewer";
 "lng_group_call_rtmp_viewers#other" = "{count} viewers";
 
-"lng_no_mic_permission" = "Telegram needs access to your microphone so that you can make calls and record voice messages.";
+"lng_no_mic_permission" = "CloudVeil Messenger needs access to your microphone so that you can make calls and record voice messages.";
 
 "lng_player_message_today" = "Today at {time}";
 "lng_player_message_yesterday" = "Yesterday at {time}";
@@ -3273,11 +3275,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_terms_age#other" = "I confirm that I am {count} or over";
 "lng_terms_agree" = "Agree & Continue";
 "lng_terms_decline" = "Decline";
-"lng_terms_signup_sorry" = "We're very sorry, but this means you can't sign up for Telegram.\n\nUnlike others, we don't use your data for ad targeting or other commercial purposes. Telegram only stores the information it needs to function as a feature-rich cloud service. You can adjust how we use your data in Privacy & Security settings.\n\nBut if you're generally not OK with Telegram's modest needs, it won't be possible for us to provide this service.";
-"lng_terms_update_sorry" = "We're very sorry, but this means we must part ways here. Unlike others, we don't use your data for ad targeting or other commercial purposes. Telegram only stores the information it needs to function as a feature-rich cloud service. You can adjust how we use your data in Privacy & Security settings.\n\nBut if you're generally not OK with Telegram's modest needs, it won't be possible for us to provide this service. You can deactivate your account now — or look around some more and deactivate it later if you feel you're not happy with the way we use your data. How does that sound?";
+"lng_terms_signup_sorry" = "We're very sorry, but this means you can't sign up for CloudVeil Messenger.\n\nUnlike others, we don't use your data for ad targeting or other commercial purposes. CloudVeil Messenger only stores the information it needs to function as a feature-rich cloud service. You can adjust how we use your data in Privacy & Security settings.\n\nBut if you're generally not OK with CloudVeil Messenger's modest needs, it won't be possible for us to provide this service.";
+"lng_terms_update_sorry" = "We're very sorry, but this means we must part ways here. Unlike others, we don't use your data for ad targeting or other commercial purposes. CloudVeil Messenger only stores the information it needs to function as a feature-rich cloud service. You can adjust how we use your data in Privacy & Security settings.\n\nBut if you're generally not OK with CloudVeil Messenger's modest needs, it won't be possible for us to provide this service. You can deactivate your account now — or look around some more and deactivate it later if you feel you're not happy with the way we use your data. How does that sound?";
 "lng_terms_decline_and_delete" = "Decline & Delete";
 "lng_terms_back" = "Back";
-"lng_terms_delete_warning" = "Warning, this will irreversibly delete your Telegram account along with all the data you store in the Telegram cloud.\n\nWe will provide a tool to download your data before June, 23 – so you may want to wait a little before deleting.";
+"lng_terms_delete_warning" = "Warning, this will irreversibly delete your CloudVeil Messenger account along with all the data you store in the CloudVeil Messenger cloud.\n\nWe will provide a tool to download your data before June, 23 – so you may want to wait a little before deleting.";
 "lng_terms_delete_now" = "Delete now";
 "lng_terms_agree_to_proceed" = "Please agree and proceed to {bot}.";
 
@@ -3297,7 +3299,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_forward_change_recipient" = "Change recipient";
 "lng_forward_sender_names_removed" = "Sender names removed";
 
-"lng_passport_title" = "Telegram passport";
+"lng_passport_title" = "CloudVeil Messenger passport";
 "lng_passport_request1" = "{bot} requests access to your personal data";
 "lng_passport_request2" = "to sign you up for their services";
 "lng_passport_create_password" = "Please create a password which will be used\nto encrypt your personal data.";
@@ -3398,10 +3400,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_passport_postcode" = "Postcode";
 "lng_passport_translation" = "Translation";
 "lng_passport_use_existing" = "USE {existing}";
-"lng_passport_use_existing_phone" = "Use the same phone number as on Telegram.";
+"lng_passport_use_existing_phone" = "Use the same phone number as on CloudVeil Messenger.";
 "lng_passport_new_phone" = "Or enter a new phone number";
 "lng_passport_new_phone_code" = "Note: You will receive a confirmation code on the phone number you provide.";
-"lng_passport_use_existing_email" = "Use the same email address as on Telegram.";
+"lng_passport_use_existing_email" = "Use the same email address as on CloudVeil Messenger.";
 "lng_passport_new_email" = "Or enter a new email";
 "lng_passport_new_email_code" = "Note: You will receive a confirmation code to the email address you provide.";
 "lng_passport_confirm_phone" = "We've sent an SMS with a confirmation code to your phone {phone}.";
@@ -3421,21 +3423,21 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_passport_success" = "Authorization successful!";
 "lng_passport_stop_sure" = "Are you sure you want to stop this authorization?";
 "lng_passport_stop" = "Stop";
-"lng_passport_restart_sure" = "An unexpected error has occurred. Perhaps some changes were made from a different Telegram application. Would you like to restart this authorization?";
+"lng_passport_restart_sure" = "An unexpected error has occurred. Perhaps some changes were made from a different CloudVeil Messenger application. Would you like to restart this authorization?";
 "lng_passport_restart" = "Restart";
 "lng_passport_error_too_large" = "Sorry, this file is too large.";
 "lng_passport_error_bad_size" = "Sorry, this image has wrong dimensions.";
 "lng_passport_error_cant_read" = "Can't read this file. Please choose an image.";
 "lng_passport_bad_name" = "Please use latin characters only.";
 "lng_passport_wait_upload" = "Please wait while upload is finished.";
-"lng_passport_app_out_of_date" = "Sorry, your Telegram app is out of date and can't handle this request. Please update Telegram.";
+"lng_passport_app_out_of_date" = "Sorry, your CloudVeil Messenger app is out of date and can't handle this request. Please update CloudVeil Messenger.";
 
 "lng_export_title" = "Export Personal Data";
 "lng_export_progress_title" = "Exporting personal data";
 "lng_export_option_info" = "Account information";
 "lng_export_option_info_about" = "Your chosen screen name, username, phone number and profile pictures.";
 "lng_export_option_contacts" = "Contacts list";
-"lng_export_option_contacts_about" = "If you allow access, contacts are continuously synced with Telegram. You can adjust this in Settings > Privacy & Security on mobile devices.";
+"lng_export_option_contacts_about" = "If you allow access, contacts are continuously synced with CloudVeil Messenger. You can adjust this in Settings > Privacy & Security on mobile devices.";
 "lng_export_option_stories" = "Stories archive";
 "lng_export_option_stories_about" = "All stories you posted from Telegram mobile apps.";
 "lng_export_option_sessions" = "Active sessions";
@@ -3477,7 +3479,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_export_state_chats_list" = "Processing chats...";
 "lng_export_state_chats" = "Chats";
 "lng_export_skip_file" = "Skip this file";
-"lng_export_progress" = "You can close this window now. Please don't quit Telegram until the data export is completed.";
+"lng_export_progress" = "You can close this window now. Please don't quit CloudVeil Messenger until the data export is completed.";
 "lng_export_stop" = "Stop";
 "lng_export_sure_stop" = "Are you sure you want to stop exporting your data?\n\nIf you do, you'll need to start over.";
 "lng_export_about_done" = "Your data was successfully exported.";
@@ -3492,11 +3494,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_export_suggest_title" = "Data export ready";
 "lng_export_suggest_text" = "You can now download the data you requested. Start exporting data?";
 "lng_export_suggest_cancel" = "Not now";
-"lng_export_about_telegram" = "Here is all the data you requested. Remember: we don’t use your data for ad targeting, we don’t sell it to others, and we’re not part of any “family of companies.”\n\nTelegram only keeps the information it needs to function as a feature-rich cloud service – for example, your cloud chats so that you can access them from any devices without using third-party backups, or your contacts so that you can rely on your existing social graph when messaging people on Telegram.\n\nCheck out Settings > Privacy & Security on Telegram's mobile apps for relevant settings.";
-"lng_export_about_contacts" = "If you allow access, your contacts are continuously synced with Telegram. Thanks to this, you can easily switch to Telegram without losing your existing social graph – and connect with friends across all your devices. We use data about your contacts to let you know when they join Telegram. We also use it to make sure that you see the names you have in your phone book instead of the screen names people choose for themselves.\n\nYou can disable contact syncing or delete your stored contacts in Settings > Privacy & Security on Telegram's mobile apps.";
-"lng_export_about_frequent" = "This rating shows which people you are likelier to message frequently. Telegram uses this data to populate the 'People' box at the top of the Search section. This rating is also calculated for inline bots so that the app can suggest the bots you are most likely to use in the attachment menu (or when you start a new message with \"@\").\n\nTo delete this data, go to Settings > Privacy & Security and disable 'Suggest Frequent Contacts' (requires Telegram for iOS v.4.8.3 or Telegram for Android v.4.8.10 or higher).";
+"lng_export_about_telegram" = "Here is all the data you requested. Remember: we don’t use your data for ad targeting, we don’t sell it to others, and we’re not part of any “family of companies.”\n\nCloudVeil Messenger only keeps the information it needs to function as a feature-rich cloud service – for example, your cloud chats so that you can access them from any devices without using third-party backups, or your contacts so that you can rely on your existing social graph when messaging people on CloudVeil Messenger.\n\nCheck out Settings > Privacy & Security on CloudVeil Messenger's mobile apps for relevant settings.";
+"lng_export_about_contacts" = "If you allow access, your contacts are continuously synced with CloudVeil Messenger. Thanks to this, you can easily switch to CloudVeil Messenger without losing your existing social graph – and connect with friends across all your devices. We use data about your contacts to let you know when they join CloudVeil Messenger. We also use it to make sure that you see the names you have in your phone book instead of the screen names people choose for themselves.\n\nYou can disable contact syncing or delete your stored contacts in Settings > Privacy & Security on CloudVeil Messenger's mobile apps.";
+"lng_export_about_frequent" = "This rating shows which people you are likelier to message frequently. CloudVeil Messenger uses this data to populate the 'People' box at the top of the Search section. This rating is also calculated for inline bots so that the app can suggest the bots you are most likely to use in the attachment menu (or when you start a new message with \"@\").\n\nTo delete this data, go to Settings > Privacy & Security and disable 'Suggest Frequent Contacts' (requires CloudVeil Messenger for iOS v.4.8.3 or CloudVeil Messenger for Android v.4.8.10 or higher).";
 "lng_export_about_sessions" = "We store session info to display your connected devices in Settings > Privacy & Security > Active Sessions.";
-"lng_export_about_web_sessions" = "We store this to display the websites where you logged in using authentication via Telegram. This information is shown in Settings > Privacy & Security > Active Sessions.";
+"lng_export_about_web_sessions" = "We store this to display the websites where you logged in using authentication via CloudVeil Messenger. This information is shown in Settings > Privacy & Security > Active Sessions.";
 "lng_export_about_chats" = "This page lists all chats from this export and where to look for their data.";
 "lng_export_about_left_chats" = "Below are the supergroups and channels from this export that you've left or where you were banned.\n\nNote that when you leave a channel or supergroup you've created, you have the option to either delete it, or simply leave (in case you want to rejoin later, or keep the community alive despite not being a member).";
 
@@ -3508,7 +3510,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_language_not_found" = "Sorry, this language pack doesn't exist.";
 "lng_language_already" = "You're already using this language pack. You can change your language back in Settings.";
 "lng_language_not_ready_title" = "Insufficient data";
-"lng_language_not_ready_about" = "Unfortunately, this custom language pack ({lang_name}) doesn't contain data for Telegram Desktop. You can contribute to this language pack using the {link}.";
+"lng_language_not_ready_about" = "Unfortunately, this custom language pack ({lang_name}) doesn't contain data for CloudVeil Messenger Desktop. You can contribute to this language pack using the {link}.";
 "lng_language_not_ready_link" = "translations platform";
 
 "lng_translate_box_error" = "Translate failed.";
@@ -3572,8 +3574,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_outdated_title" = "PLEASE UPDATE YOUR OPERATING SYSTEM.";
 "lng_outdated_title_bits" = "PLEASE SWITCH TO 64 BIT OPERATING SYSTEM.";
-"lng_outdated_soon" = "Otherwise, Telegram Desktop will stop updating on {date}.";
-"lng_outdated_now" = "So that Telegram Desktop can update to newer versions.";
+"lng_outdated_soon" = "Otherwise, CloudVeil Messenger Desktop will stop updating on {date}.";
+"lng_outdated_now" = "So that CloudVeil Messenger Desktop can update to newer versions.";
 
 "lng_filters_all" = "All chats";
 "lng_filters_setup" = "Edit";
@@ -3733,12 +3735,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 "lng_sponsored_hide_ads" = "Hide";
 "lng_sponsored_title" = "What are sponsored messages?";
-"lng_sponsored_info_description1" = "Unlike other apps, Telegram never uses your private data to target ads. Sponsored messages on Telegram are based solely on the topic of the public channels in which they are shown. This means that no user data is mined or analyzed to display ads, and every user viewing a channel on Telegram sees the same sponsored messages.\n\nUnlike other apps, Telegram doesn't track whether you tapped on a sponsored message and doesn't profile you based on your activity. We also prevent external links in sponsored messages to ensure that third parties can’t spy on our users. We believe that everyone has the right to privacy, and technological platforms should respect that.\n\nTelegram offers a free and unlimited service to hundreds of millions of users, which involves significant server and traffic costs. In order to remain independent and stay true to its values, Telegram developed a paid tool to promote messages with user privacy in mind. We welcome responsible advertisers at:";
+"lng_sponsored_info_description1" = "Unlike other apps, CloudVeil Messenger never uses your private data to target ads. Sponsored messages on CloudVeil Messenger are based solely on the topic of the public channels in which they are shown. This means that no user data is mined or analyzed to display ads, and every user viewing a channel on CloudVeil Messenger sees the same sponsored messages.\n\nUnlike other apps, CloudVeil Messenger doesn't track whether you tapped on a sponsored message and doesn't profile you based on your activity. We also prevent external links in sponsored messages to ensure that third parties can’t spy on our users. We believe that everyone has the right to privacy, and technological platforms should respect that.\n\CloudVeil Messenger offers a free and unlimited service to hundreds of millions of users, which involves significant server and traffic costs. In order to remain independent and stay true to its values, CloudVeil Messenger developed a paid tool to promote messages with user privacy in mind. We welcome responsible advertisers at:";
 "lng_sponsored_info_description2" = "Sponsored Messages are currently in test mode. Once they are fully launched and allow Telegram to cover its basic costs, we will start sharing ad revenue with the owners of public channels in which sponsored messages are displayed.\n\nOnline ads should no longer be synonymous with abuse of user privacy. Let us redefine how a tech company should operate – together.";
 "lng_sponsored_info_menu" = "About this ad";
 "lng_sponsored_info_submenu" = "Advertiser: {text}";
 
-"lng_telegram_features_url" = "https://t.me/TelegramTips";
+"lng_telegram_features_url" = "https://t.me/CloudVeil MessengerTips";
 
 "lng_ringtones_box_title" = "Notification Sound";
 "lng_ringtones_box_cloud_subtitle" = "Choose your tone";
@@ -3931,7 +3933,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_mac_menu_add_contact" = "Add Contact";
 "lng_mac_menu_new_group" = "New Group";
 "lng_mac_menu_new_channel" = "New Channel";
-"lng_mac_menu_show" = "Show Telegram";
+"lng_mac_menu_show" = "Show CloudVeil Messenger";
 "lng_mac_menu_emoji_and_symbols" = "Emoji & Symbols";
 
 "lng_mac_menu_player_pause" = "Pause";
@@ -3942,5 +3944,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 "lng_mac_touchbar_favorite_stickers" = "Favorite stickers";
 
 "lng_mac_hold_to_quit" = "Hold {text} to Quit";
-
+//CloudVeil Start
+"lng_dialog_forbidden" = "This channel/group/bot is blocked by our server policy. Please contact CloudVeil Support to request it be unblocked.";
+"lng_feature_forbidden" = "This feature is blocked by our server policy. Please contact CloudVeil Support at support@cloudveil.org to request it be unblocked.";
+"lng_blocked_for_protection" = "Content blocked for your protection.";
+"lng_download_click" = "Download";
+"lng_contact" = "Contact";
+"lng_change" = "Change";
+"lng_change_organization" = "Please Select Your Organization. It is important that you select your correct church organization so that your app works as expected. Unblock requests will NOT work correctly if you select the wrong group. This one-time step is required to allow organizations more flexibility in supporting their own members and is based off of church membership.";
+"lng_about_us" = "About Us";
+//CloudVeil end
 // Keys finished

@@ -316,6 +316,12 @@ void Application::run() {
 	_domain->activeChanges(
 	) | rpl::start_with_next([=](not_null<Main::Account*> account) {
 		showAccount(account);
+		//CloudVeil start
+        // FIXME: This no longer compiles, and I don't know what it was supposed to do.
+		//if (_primaryWindows->widget()->sessionContent() != nullptr) {
+		//	_primaryWindows->widget()->sessionContent()->dialogsUpdated();
+		//}
+		//CloudVeil end
 	}, _lifetime);
 
 	(

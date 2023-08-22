@@ -1805,6 +1805,11 @@ bool History::unreadCountKnown() const {
 void History::setUnreadCount(int newUnreadCount) {
 	Expects(folderKnown());
 
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getSettings().isDialogAllowed(this)) {
+		return;
+	}
+	//CloudVeil end
 	if (_unreadCount == newUnreadCount) {
 		return;
 	}

@@ -301,7 +301,7 @@ void MainWindow::createGlobalMenu() {
 		}
 	};
 
-	auto main = psMainMenu.addMenu(u"Telegram"_q);
+	auto main = psMainMenu.addMenu(u"CloudVeil Messenger"_q);
 	{
 		auto callback = [=] {
 			ensureWindowShown();

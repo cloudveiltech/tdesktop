@@ -1051,7 +1051,9 @@ Fn<void(const MTP::Error &error)> MtpChecker::failHandler() {
 } // namespace
 
 bool UpdaterDisabled() {
-	return UpdaterIsDisabled;
+	//CloudVeil start
+	return true;// UpdaterIsDisabled;
+	//CloudVeil end
 }
 
 void SetUpdaterDisabledAtStartup() {

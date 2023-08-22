@@ -1,10 +1,15 @@
-#define MyAppShortName "Telegram"
-#define MyAppName "Telegram Desktop"
-#define MyAppPublisher "Telegram FZ-LLC"
-#define MyAppURL "https://desktop.telegram.org"
-#define MyAppExeName "Telegram.exe"
-#define MyAppId "53F49750-6209-4FBF-9CA8-7A333C87D1ED"
+#define MyAppShortName "CloudVeil Messenger"
+#define MyAppName "CloudVeil Messenger Desktop"
+#define MyAppPublisher "CloudVeil"
+#define MyAppURL "https://github.com/cloudveiltech"
+#define MyAppExeName "CloudVeilMessenger.exe"
+#define MyAppId "7BF3C861-C022-41EC-8C16-87EBECBDCE4B"
 #define CurrentYear GetDateTimeString('yyyy','','')
+
+#define MyBuildTarget "win64"
+#define MyAppVersion "4.4.1"
+#define MyAppVersionFull "4.4.1"
+#define ReleasePath "..\..\out\Release"
 
 [Setup]
 ; NOTE: The value of AppId uniquely identifies this application.
@@ -24,7 +29,7 @@ AllowNoIcons=yes
 OutputDir={#ReleasePath}
 SetupIconFile={#SourcePath}..\Resources\art\icon256.ico
 UninstallDisplayName={#MyAppName}
-UninstallDisplayIcon={app}\Telegram.exe
+UninstallDisplayIcon={app}\CloudVeilMessenger.exe
 Compression=lzma
 SolidCompression=yes
 DisableStartupPrompt=yes
@@ -35,14 +40,14 @@ DisableDirPage=no
 DisableProgramGroupPage=no
 
 #if MyBuildTarget == "win64"
-  ArchitecturesAllowed="x64 arm64"
-  ArchitecturesInstallIn64BitMode="x64 arm64"
-  OutputBaseFilename=tsetup-x64.{#MyAppVersionFull}
-  #define ArchModulesFolder "x64"
+ArchitecturesAllowed="x64 arm64"
+ArchitecturesInstallIn64BitMode="x64 arm64"
+  OutputBaseFilename=cloudveil_messenger_setup-x64.{#MyAppVersionFull}
+#define ArchModulesFolder "x64"
   AppVerName={#MyAppName} {#MyAppVersion} 64bit
 #else
-  OutputBaseFilename=tsetup.{#MyAppVersionFull}
-  #define ArchModulesFolder "x86"
+   OutputBaseFilename=cloudveil_messenger_setup.{#MyAppVersionFull}
+#define ArchModulesFolder "x86"
   AppVerName={#MyAppName} {#MyAppVersion} 32bit
 #endif
 
@@ -64,8 +69,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; OnlyBelowVersion: 0,6.1
 
 [Files]
-Source: "{#ReleasePath}\Telegram.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#ReleasePath}\Updater.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ReleasePath}\CloudVeilMessenger.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ReleasePath}\libcrypto-1_1-x64.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ReleasePath}\zlib1.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ReleasePath}\{#ModulesFolder}\d3d\d3dcompiler_47.dll"; DestDir: "{app}\{#ModulesFolder}\d3d"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 

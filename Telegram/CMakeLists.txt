@@ -90,6 +90,24 @@ PRIVATE
     desktop-app::external_xxhash
 )
 
+if (WIN32)
+   # if (CMAKE_BUILD_TYPE MATCHES Release)
+        target_link_libraries(Telegram
+            PRIVATE
+            dbghelp
+            winhttp
+            ${src_loc}/cloudveil/sentry/release/breakpad_client.lib
+            ${src_loc}/cloudveil/sentry/release/sentry.lib
+        )
+elseif (APPLE)
+    target_link_libraries(Telegram
+     PRIVATE
+        curl
+        ${src_loc}/cloudveil/sentry/release/libbreakpad_client.a        
+        ${src_loc}/cloudveil/sentry/release/libsentry.a
+    )
+endif()
+
 target_precompile_headers(Telegram PRIVATE $<$<COMPILE_LANGUAGE:CXX,OBJCXX>:${src_loc}/stdafx.h>)
 nice_target_sources(Telegram ${src_loc}
 PRIVATE
@@ -1432,6 +1450,20 @@ PRIVATE
     stdafx.h
     tray.cpp
     tray.h
+
+	cloudveil/GlobalSecuritySettings.h
+	cloudveil/GlobalSecuritySettings.cpp
+	cloudveil/request/SettingsRequest.h
+	cloudveil/request/SettingsRequest.cpp
+	cloudveil/response/SettingsResponse.h
+	cloudveil/response/SettingsResponse.cpp
+	cloudveil/SimpleUpdater.h
+	cloudveil/SimpleUpdater.cpp
+	cloudveil/response/UpdateResponse.h
+	cloudveil/response/UpdateResponse.cpp
+	cloudveil/FileDownloader.h
+	cloudveil/FileDownloader.cpp
+	cloudveil/sentry/include/sentry.h
 )
 
 if (NOT build_winstore)

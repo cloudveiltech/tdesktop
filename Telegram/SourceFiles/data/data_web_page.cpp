@@ -270,17 +270,19 @@ bool WebPageData::applyChanges(
 		_owner->session().api().clearWebPageRequest(this);
 	}
 	type = newType;
+	//CloudVeil start
 	url = resultUrl;
-	displayUrl = resultDisplayUrl;
+	//displayUrl = resultDisplayUrl;
 	siteName = resultSiteName;
-	title = resultTitle;
-	description = newDescription;
+	//title = resultTitle;
+	//description = newDescription;
 	storyId = newStoryId;
-	photo = newPhoto;
-	document = newDocument;
-	collage = std::move(newCollage);
-	duration = newDuration;
-	author = resultAuthor;
+	//photo = newPhoto;
+	//document = newDocument;
+	//collage = std::move(newCollage);
+	//duration = newDuration;
+	//author = resultAuthor;
+	//CloudVeil end
 	pendingTill = newPendingTill;
 	++version;
 

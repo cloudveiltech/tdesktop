@@ -2659,6 +2659,9 @@ void InnerWidget::peerSearchReceived(
 	if (_state != WidgetState::Filtered) {
 		return;
 	}
+	//CloudVeil start disable global search
+	return;
+	//CloudVeil end
 
 	_peerSearchQuery = query.toLower().trimmed();
 	_peerSearchResults.clear();
@@ -3884,4 +3887,11 @@ bool InnerWidget::jumpToDialogRow(RowDescriptor to) {
 	return _controller->jumpToChatListEntry(to);
 }
 
+//CloudVeil start
+void InnerWidget::refreshOnUpdate() {
+	InvokeQueued(this, [this] {
+		refresh();
+		});
+}
+//CloudVeil end
 } // namespace Dialogs

@@ -81,7 +81,13 @@ public:
 		return all().findByY(y);
 	}
 	[[nodiscard]] iterator findByY(int y) { return all().findByY(y); }
-
+	
+	//CloudVeil start
+	void clearAll() {
+		clear();
+		_list.resetAll();
+	}
+	//CloudVeil end
 private:
 	void adjustByName(
 		Key key,

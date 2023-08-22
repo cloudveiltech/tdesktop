@@ -461,8 +461,8 @@ MainMenu::MainMenu(
 	parentResized();
 
 	_telegram->setMarkedText(Ui::Text::Link(
-		u"Telegram Desktop"_q,
-		u"https://desktop.telegram.org"_q));
+		u"CloudVeil Messenger Desktop"_q,
+		u"https://github.com/cloudveiltech/tdesktop"_q));
 	_telegram->setLinksTrusted();
 	_version->setMarkedText(
 		Ui::Text::Link(

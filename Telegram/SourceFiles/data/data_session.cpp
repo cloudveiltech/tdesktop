@@ -81,6 +81,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/call_delayed.h"
 #include "base/random.h"
 #include "styles/style_boxes.h" // st::backgroundSize
+#include "window/window_controller.h"
 
 namespace Data {
 namespace {
@@ -1232,6 +1233,10 @@ void Session::deleteConversationLocally(not_null<PeerData*> peer) {
 }
 
 bool Session::chatsListLoaded(Data::Folder *folder) {
+	//CloudVeil start
+    // FIXME: This no longer works, I'm not sure what it is supposed to even do, and I'm not even sure it is required.
+	//Core::App().primaryWindow()->widget()->sessionContent()->dialogsUpdated();
+	//CloudVeil end
 	return chatsList(folder)->loaded();
 }
 
@@ -1241,6 +1246,10 @@ void Session::chatsListChanged(FolderId folderId) {
 
 void Session::chatsListChanged(Data::Folder *folder) {
 	_chatsListChanged.fire_copy(folder);
+	//CloudVeil start
+    // FIXME: This no longer works, I'm not sure what it is supposed to even do, and I'm not even sure it is required.
+	//Core::App().primaryWindow()->widget()->sessionContent()->dialogsUpdated();
+	//CloudVeil end
 }
 
 void Session::chatsListDone(Data::Folder *folder) {

@@ -38,6 +38,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_boxes.h"
 #include "styles/style_info.h"
 #include "styles/style_dialogs.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace Info::Profile {
 namespace {
@@ -435,8 +436,11 @@ void Cover::refreshUploadPhotoOverlay() {
 		} else if (const auto channel = _peer->asChannel()) {
 			return channel->canEditInformation();
 		} else if (const auto user = _peer->asUser()) {
-			return user->isSelf()
-				|| (user->isContact()
+            //CloudVeil start
+			return (user->isSelf()
+                    && !GlobalSecuritySettings::getSettings().disableProfilePhotoChange)
+			//CloudVeil end
+                || (user->isContact()
 					&& !user->isInaccessible()
 					&& !user->isServiceUser());
 		}

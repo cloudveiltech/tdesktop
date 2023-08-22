@@ -38,6 +38,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 #include "styles/style_chat_helpers.h"
 #include "styles/style_menu_icons.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace ChatHelpers {
 
@@ -1021,6 +1022,12 @@ void TabbedSelector::showAll() {
 	}
 }
 
+//CloudVeil start
+void TabbedSelector::refreshOnSettingsUpdate() {
+	fillTabsSliderSections();
+}
+//CloudVeil end
+
 void TabbedSelector::hideForSliding() {
 	hideChildren();
 	if (_topShadow) {
@@ -1074,9 +1081,19 @@ void TabbedSelector::fillTabsSliderSections() {
 	const auto sections = ranges::views::all(
 		_tabs
 	) | ranges::views::filter([&](const Tab &tab) {
-		return (tab.type() == SelectorTab::Masks)
-			? !masks()->mySetsEmpty()
-			: true;
+		//CloudVeil start
+		if (tab.type() == SelectorTab::Stickers && GlobalSecuritySettings::getSettings().disableStickers) {
+			return false;
+		}
+		else if (tab.type() == SelectorTab::Gifs && GlobalSecuritySettings::getSettings().disableGifs) {
+			return false;
+		}
+		else {
+			return (tab.type() == SelectorTab::Masks)
+				? !masks()->mySetsEmpty()
+				: true;
+		}
+		//CloudVeil end
 	}) | ranges::views::transform([&](const Tab &tab) {
 		return [&] {
 			switch (tab.type()) {

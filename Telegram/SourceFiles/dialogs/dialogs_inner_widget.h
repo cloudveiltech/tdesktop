@@ -166,6 +166,9 @@ public:
 
 	void parentGeometryChanged();
 
+	//CloudVeil start
+	void refreshOnUpdate();
+	//CloudVeil end
 protected:
 	void visibleTopBottomUpdated(
 		int visibleTop,

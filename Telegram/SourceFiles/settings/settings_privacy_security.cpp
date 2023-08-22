@@ -462,6 +462,7 @@ void SetupSensitiveContent(
 		not_null<Window::SessionController*> controller,
 		not_null<Ui::VerticalLayout*> container,
 		rpl::producer<> updateTrigger) {
+	/*CloudVeil disabled
 	using namespace rpl::mappers;
 
 	const auto wrap = container->add(
@@ -497,6 +498,7 @@ void SetupSensitiveContent(
 	AddDividerText(inner, tr::lng_settings_sensitive_about());
 
 	wrap->toggleOn(session->api().sensitiveContent().canChange());
+	*/
 }
 
 void SetupSelfDestruction(

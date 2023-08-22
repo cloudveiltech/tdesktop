@@ -360,6 +360,13 @@ void Widget::inlineBotChanged() {
 }
 
 void Widget::inlineResultsDone(const MTPmessages_BotResults &result) {
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getInstance()->getSettings().isDialogAllowed(_inlineBot)) {
+		hideAnimated();
+		return;
+	}
+	//CloudVeil end
+
 	_inlineRequestId = 0;
 	_requesting.fire(false);
 
@@ -418,6 +425,13 @@ void Widget::inlineResultsDone(const MTPmessages_BotResults &result) {
 }
 
 void Widget::queryInlineBot(UserData *bot, PeerData *peer, QString query) {
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getInstance()->getSettings().isDialogAllowed(bot)) {
+		hideAnimated();
+		return;
+	}
+	//CloudVeil end
+
 	bool force = false;
 	_inlineQueryPeer = peer;
 	if (bot != _inlineBot) {

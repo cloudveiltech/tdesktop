@@ -45,6 +45,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QTextBlock>
 #include <QtGui/QClipboard>
 #include <QtWidgets/QApplication>
+#include "cloudveil/GlobalSecuritySettings.h"
 
 namespace {
 
@@ -483,6 +484,17 @@ InlineBotQuery ParseInlineBotQuery(
 				result.query = inlineUsernameEqualsText
 					? QString()
 					: text.mid(inlineUsernameEnd + 1);
+
+				//CloudVeil start
+				if (!GlobalSecuritySettings::getSettings().isDialogAllowed(result.bot)) {
+					GlobalSecuritySettings::getInstance()->addAdditionalDataToRequest(result.bot);
+					GlobalSecuritySettings::getInstance()->updateFromServer();
+
+					result.bot = nullptr;
+					result.username = QString();
+					result.query = QString();
+				}
+				//CloudVeil end
 				return result;
 			}
 		} else {

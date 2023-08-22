@@ -238,19 +238,23 @@ void Manager::showNextFromQueue() {
 		_queuedNotifications.pop_front();
 
 		subscribeToSession(&queued.history->session());
-		_notifications.push_back(std::make_unique<Notification>(
-			this,
-			queued.history,
-			queued.topicRootId,
-			queued.peer,
-			queued.author,
-			queued.item,
-			queued.reaction,
-			queued.forwardedCount,
-			queued.fromScheduled,
-			startPosition,
-			startShift,
-			shiftDirection));
+		//CloudVeil start
+		if (!GlobalSecuritySettings::getSettings().isDialogAllowed(queued.peer)) {
+			_notifications.push_back(std::make_unique<Notification>(
+				this,
+				queued.history,
+				queued.topicRootId,
+				queued.peer,
+				queued.author,
+				queued.item,
+				queued.reaction,
+				queued.forwardedCount,
+				queued.fromScheduled,
+				startPosition,
+				startShift,
+				shiftDirection));
+		}
+		//CloudVeil end
 		--count;
 	} while (count > 0 && !_queuedNotifications.empty());
 

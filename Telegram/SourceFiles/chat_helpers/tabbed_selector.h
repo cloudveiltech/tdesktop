@@ -178,6 +178,9 @@ public:
 	class Inner;
 	class InnerFooter;
 
+	//CloudVeil start
+	void refreshOnSettingsUpdate();
+	//CloudVeil end
 protected:
 	void paintEvent(QPaintEvent *e) override;
 	void resizeEvent(QResizeEvent *e) override;

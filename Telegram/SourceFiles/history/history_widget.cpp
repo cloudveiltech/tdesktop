@@ -172,6 +172,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QWindow>
 #include <QtCore/QMimeData>
 
+//CloudVeil start
+#include <QtGui/QDesktopServices>
+//CloudVeil end
+
 namespace {
 
 constexpr auto kMessagesPerPageFirst = 30;
@@ -1978,6 +1982,31 @@ void HistoryWidget::showHistory(
 		const PeerId &peerId,
 		MsgId showAtMsgId,
 		bool reload) {
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getSettings().isDialogAllowed(session().data().peer(peerId))) {
+		controller()->showPeerHistory(session().user()->id);
+		Ui::show(Ui::MakeConfirmBox({
+					.text = tr::lng_dialog_forbidden(),
+					.confirmed = [=](Fn<void()>&& close) {
+						PeerData* peer = session().data().peer(peerId);
+						int32 dialogId = peer->id.value;
+						QString url = QString("https://messenger.cloudveil.org/unblock/%1/%2")
+							.arg(QString::number(session().user()->id.value), QString::number(dialogId));
+
+						QDesktopServices::openUrl(QUrl(url, QUrl::TolerantMode));
+					},
+					.confirmText = tr::lng_contact(),
+
+			})
+		);
+		return;
+	}
+	if (!GlobalSecuritySettings::getSettings().isDialogSecured(session().data().peer(peerId))) {
+		GlobalSecuritySettings::getInstance()->addAdditionalDataToRequest(session().data().peer(peerId));
+		GlobalSecuritySettings::getInstance()->updateFromServer();
+	}
+	//CloudVeil end
+
 	_pinnedClickedId = FullMsgId();
 	_minPinnedId = std::nullopt;
 
@@ -2358,7 +2387,30 @@ void HistoryWidget::showHistory(
 	session().data().itemVisibilitiesUpdated();
 
 	crl::on_main(this, [=] { controller()->widget()->setInnerFocus(); });
+
+	//CloudVeil start
+	if (!GlobalSecuritySettings::getSettings().isDialogSecured(session().data().peer(peerId))) {
+		if (_list != nullptr) {
+			_list->hide();
+		}
+	}
+	else 
+	{
+		if (_list != nullptr) {
+			_list->show();
+		}
+	}
+	//CloudVeil end
 }
+
+//CloudVeil start
+void HistoryWidget::onSettingsUpdate() {
+	if (_peer) {
+		showHistory(_peer->id, _showAtMsgId);
+		refreshTabbedPanel();
+	}
+}
+//CloudVeil end
 
 void HistoryWidget::setHistory(History *history) {
 	if (_history == history) {

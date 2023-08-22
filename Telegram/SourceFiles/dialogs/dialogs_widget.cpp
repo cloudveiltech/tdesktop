@@ -3095,4 +3095,9 @@ Widget::~Widget() {
 	base::take(_downloadBar);
 }
 
+//CloudVeil start
+void Widget::refreshOnUpdate() {
+	_inner->refreshOnUpdate();
+}
+//CloudVeil end
 } // namespace Dialogs

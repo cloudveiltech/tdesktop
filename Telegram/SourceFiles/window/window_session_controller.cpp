@@ -315,7 +315,7 @@ void SessionNavigation::showPeerByLink(const PeerByLinkInfo &info) {
 			if (info.startAutoSubmit) {
 				peer->session().api().blockedPeers().unblock(
 					peer,
-					[=] { showPeerByLinkResolved(peer, info); },
+					[=](bool) { showPeerByLinkResolved(peer, info); },
 					true);
 			} else {
 				showPeerByLinkResolved(peer, info);
@@ -590,13 +590,21 @@ void SessionNavigation::showPeerByLinkResolved(
 				: nullptr;
 			bot->session().attachWebView().requestAddToMenu(
 				bot,
-				*info.attachBotToggleCommand,
+				InlineBots::AddToMenuOpenAttach{
+					.startCommand = *info.attachBotToggleCommand,
+					.chooseTypes = info.attachBotChooseTypes,
+				},
 				parentController(),
 				(contextUser
 					? Api::SendAction(
 						contextUser->owner().history(contextUser))
-					: std::optional<Api::SendAction>()),
-				info.attachBotChooseTypes);
+					: std::optional<Api::SendAction>()));
+		} else if (bot && info.attachBotMenuOpen) {
+			bot->session().attachWebView().requestAddToMenu(
+				bot,
+				InlineBots::AddToMenuOpenMenu(),
+				parentController(),
+				std::optional<Api::SendAction>());
 		} else {
 			crl::on_main(this, [=] {
 				showPeerHistory(peer, params, msgId);

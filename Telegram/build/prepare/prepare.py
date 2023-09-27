@@ -83,9 +83,9 @@ for singlePrefix in pathPrefixes:
 
 environment = {
     'MAKE_THREADS_CNT': '-j8',
-    'MACOSX_DEPLOYMENT_TARGET': '10.12',
+    'MACOSX_DEPLOYMENT_TARGET': '10.13',
     'UNGUARDED': '-Werror=unguarded-availability-new',
-    'MIN_VER': '-mmacosx-version-min=10.12',
+    'MIN_VER': '-mmacosx-version-min=10.13',
     'USED_PREFIX': usedPrefix,
     'ROOT_DIR': rootDir,
     'LIBS_DIR': libsDir,
@@ -404,7 +404,7 @@ if customRunCommand:
 stage('patches', """
     git clone https://github.com/desktop-app/patches.git
     cd patches
-    git checkout 24d8dc2bde
+    git checkout b1907e1250
 """)
 
 stage('msys64', """
@@ -624,6 +624,7 @@ mac:
 stage('rnnoise', """
     git clone https://github.com/desktop-app/rnnoise.git
     cd rnnoise
+    git checkout fe37e57d09
     mkdir out
     cd out
 win:
@@ -822,7 +823,7 @@ stage('libvpx', """
     git clone https://github.com/webmproject/libvpx.git
 depends:patches/libvpx/*.patch
     cd libvpx
-    git checkout v1.11.0
+    git checkout e1c124f89
 win:
     for /r %%i in (..\\patches\\libvpx\\*) do git apply %%i
 
@@ -895,27 +896,31 @@ win:
     copy out\\release-static\\$X8664\\lib\\libwebpdemux.lib out\\release-static\\$X8664\\lib\\webpdemux.lib
     copy out\\release-static\\$X8664\\lib\\libwebpmux.lib out\\release-static\\$X8664\\lib\\webpmux.lib
 mac:
-    CFLAGS=$UNGUARDED cmake -B build.arm64 -G Ninja . \\
-        -D CMAKE_BUILD_TYPE=Release \\
-        -D CMAKE_INSTALL_PREFIX=$USED_PREFIX \\
-        -D CMAKE_OSX_DEPLOYMENT_TARGET:STRING=$MACOSX_DEPLOYMENT_TARGET \\
-        -D CMAKE_OSX_ARCHITECTURES=arm64
-    cmake --build build.arm64 $MAKE_THREADS_CNT
-    CFLAGS=$UNGUARDED cmake -B build -G Ninja . \\
-        -D CMAKE_BUILD_TYPE=Release \\
-        -D CMAKE_INSTALL_PREFIX=$USED_PREFIX \\
-        -D CMAKE_OSX_DEPLOYMENT_TARGET:STRING=$MACOSX_DEPLOYMENT_TARGET \\
-        -D CMAKE_OSX_ARCHITECTURES=x86_64
-    cmake --build build $MAKE_THREADS_CNT
+    buildOneArch() {
+        arch=$1
+        folder=$2
 
-    lipo -create build.arm64/libexampleutil.a build/libexampleutil.a -output build/libexampleutil.a
-    lipo -create build.arm64/libextras.a build/libextras.a -output build/libextras.a
-    lipo -create build.arm64/libimagedec.a build/libimagedec.a -output build/libimagedec.a
-    lipo -create build.arm64/libimageenc.a build/libimageenc.a -output build/libimageenc.a
-    lipo -create build.arm64/libimageioutil.a build/libimageioutil.a -output build/libimageioutil.a
+        CFLAGS=$UNGUARDED cmake -B $folder -G Ninja . \\
+            -D CMAKE_BUILD_TYPE=Release \\
+            -D CMAKE_INSTALL_PREFIX=$USED_PREFIX \\
+            -D CMAKE_OSX_DEPLOYMENT_TARGET:STRING=$MACOSX_DEPLOYMENT_TARGET \\
+            -D CMAKE_OSX_ARCHITECTURES=$arch \\
+            -D WEBP_BUILD_ANIM_UTILS=OFF \\
+            -D WEBP_BUILD_CWEBP=OFF \\
+            -D WEBP_BUILD_DWEBP=OFF \\
+            -D WEBP_BUILD_GIF2WEBP=OFF \\
+            -D WEBP_BUILD_IMG2WEBP=OFF \\
+            -D WEBP_BUILD_VWEBP=OFF \\
+            -D WEBP_BUILD_WEBPMUX=OFF \\
+            -D WEBP_BUILD_WEBPINFO=OFF \\
+            -D WEBP_BUILD_EXTRAS=OFF
+        cmake --build $folder $MAKE_THREADS_CNT
+    }
+    buildOneArch arm64 build.arm64
+    buildOneArch x86_64 build
+
     lipo -create build.arm64/libsharpyuv.a build/libsharpyuv.a -output build/libsharpyuv.a
     lipo -create build.arm64/libwebp.a build/libwebp.a -output build/libwebp.a
-    lipo -create build.arm64/libwebpdecoder.a build/libwebpdecoder.a -output build/libwebpdecoder.a
     lipo -create build.arm64/libwebpdemux.a build/libwebpdemux.a -output build/libwebpdemux.a
     lipo -create build.arm64/libwebpmux.a build/libwebpmux.a -output build/libwebpmux.a
     cmake --install build
@@ -1359,22 +1364,22 @@ mac:
 """)
 
 if buildQt6:
-    stage('qt_6_3_2', """
+    stage('qt_6_2_5', """
 mac:
-    git clone -b v6.3.2 https://code.qt.io/qt/qt5.git qt_6_3_2
-    cd qt_6_3_2
+    git clone -b v6.2.5-lts-lgpl https://code.qt.io/qt/qt5.git qt_6_2_5
+    cd qt_6_2_5
     perl init-repository --module-subset=qtbase,qtimageformats,qtsvg
-depends:patches/qtbase_6.3.2/*.patch
+depends:patches/qtbase_6.2.5/*.patch
     cd qtbase
-
-    find ../../patches/qtbase_6.3.2 -type f -print0 | sort -z | xargs -0 git apply
+    find ../../patches/qtbase_6.2.5 -type f -print0 | sort -z | xargs -0 git apply
     cd ..
+    sed -i.bak 's/tqtc-//' {qtimageformats,qtsvg}/dependencies.yaml
 
     CONFIGURATIONS=-debug
 release:
     CONFIGURATIONS=-debug-and-release
 mac:
-    ./configure -prefix "$USED_PREFIX/Qt-6.3.2" \
+    ./configure -prefix "$USED_PREFIX/Qt-6.2.5" \
         $CONFIGURATIONS \
         -force-debug-info \
         -opensource \
@@ -1399,7 +1404,7 @@ mac:
 stage('tg_owt', """
     git clone https://github.com/desktop-app/tg_owt.git
     cd tg_owt
-    git checkout dcb5069ff7
+    git checkout 592b14d13b
     git submodule init
     git submodule update
 win:

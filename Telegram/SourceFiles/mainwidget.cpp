@@ -282,7 +282,6 @@ MainWidget::MainWidget(
 	}
 
 	//CloudVeil start
-	connect(this, &MainWidget::dialogsUpdated, this, &MainWidget::requestCloudVeil);
 	connect(simpleUpdater, &SimpleUpdater::updateReceived, this, &MainWidget::simpleUpdateReceived);
 	connect(globalSettings, &GlobalSecuritySettings::settingsReady, this, &MainWidget::onSettingsUpdate);
 	//CloudVeil end
@@ -466,11 +465,6 @@ void MainWidget::simpleUpdateReceived(UpdateResponse* response) {
 						},
 						.confirmText = tr::lng_download_click(),
 		}), Ui::LayerOption::KeepOther);
-}
-
-void MainWidget::requestCloudVeil() {
-	globalSettings->updateFromServer();
-	simpleUpdater->startUpdateChecking(AppVersion);
 }
 
 void MainWidget::showOrganizationChangeRequired() {

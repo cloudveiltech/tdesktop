@@ -76,6 +76,15 @@ void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 		disableProfileVideoChange = jsonObject["disable_profile_video_change"].toBool();
 	}
 
+	if (jsonObject.contains("disable_stories") && jsonObject["disable_stories"].isBool())
+	{
+		disableStories = jsonObject["disable_stories"].toBool();
+	}
+	if (jsonObject.contains("disable_emoji_status") && jsonObject["disable_emoji_status"].isBool())
+	{
+		disableEmojiStatus = jsonObject["disable_emoji_status"].toBool();
+	}
+
 	if (jsonObject.contains("organization") && jsonObject["organization"].isObject())
 	{
 		auto organizationJson = jsonObject["organization"].toObject();
@@ -132,6 +141,8 @@ void SettingsResponse::writeToJson(QJsonObject &json)
 	json["profile_photo_limit"] = profilePhotoLimit;
 	json["disable_profile_video"] = disableProfileVideo;
 	json["disable_profile_video_change"] = disableProfileVideoChange;
+	json["disable_stories"] = disableStories;
+	json["disable_emoji_status"] = disableEmojiStatus;
 
 	QJsonObject accessObject;
 

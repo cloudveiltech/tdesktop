@@ -355,6 +355,11 @@ void Stories::parseAndApply(const MTPPeerStories &stories) {
 	const auto readTill = std::max(
 		data.vmax_read_id().value_or_empty(),
 		(already != end(_readTill) ? already->second : 0));
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableStories) {
+		return;
+	}
+	//CloudVeil end
 	const auto peer = _owner->peer(peerId);
 	auto result = StoriesSource{
 		.peer = peer,

@@ -106,7 +106,7 @@ void Badge::setContent(Content content) {
 	_view->show();
 	switch (_content.badge) {
 	case BadgeType::Verified:
-	case BadgeType::Premium: {
+	case BadgeType::Premium: {		
 		if (const auto id = _content.emojiStatusId) {
 			_emojiStatus = _session->data().customEmojiManager().create(
 				id,

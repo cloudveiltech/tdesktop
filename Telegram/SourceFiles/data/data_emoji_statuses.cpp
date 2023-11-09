@@ -345,6 +345,11 @@ bool EmojiStatuses::setting() const {
 }
 
 EmojiStatusData ParseEmojiStatus(const MTPEmojiStatus &status) {
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableEmojiStatus) {
+		return EmojiStatusData();
+	}
+	//CloudVeil end
 	return status.match([](const MTPDemojiStatus &data) {
 		return EmojiStatusData{ data.vdocument_id().v };
 	}, [](const MTPDemojiStatusUntil &data) {

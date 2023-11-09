@@ -34,7 +34,9 @@ public:
 	int profilePhotoLimit;
 	bool disableProfileVideo;
 	bool disableProfileVideoChange;
+	bool disableEmojiStatus;
 	bool manageUsers;
+	bool disableStories;
 	Organization orgranization;
 
 public:

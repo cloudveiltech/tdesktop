@@ -258,10 +258,7 @@ public:
 
 	//CloudVeil start
 public Q_SLOTS:
-	void requestCloudVeil();
 	void simpleUpdateReceived(UpdateResponse* response);
-Q_SIGNALS:
-	void dialogsUpdated();
 	//CloudVeil end
 
 protected:

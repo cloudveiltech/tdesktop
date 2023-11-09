@@ -110,6 +110,13 @@ void MainList::removeEntry(Key key) {
 
 void MainList::recomputeFullListSize() {
 	_fullListSize = std::max(_all.size(), loaded() ? 0 : _cloudListSize);
+
+	//CloudVeil start
+	auto securityInstance = GlobalSecuritySettings::getInstance();
+	if (securityInstance != nullptr) {
+		securityInstance->updateFromServer();
+	}
+	//CloudVeil end
 }
 
 void MainList::unreadStateChanged(

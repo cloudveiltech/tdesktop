@@ -241,15 +241,29 @@ std::unique_ptr<Data::Media> HistoryItem::CreateMedia(
 				"without document and without ttl_seconds."));
 			return nullptr;
 		}
-		return document->match([&](const MTPDdocument &document) -> Result {
-			return std::make_unique<Data::MediaFile>(
-				item,
-				item->history()->owner().processDocument(document),
-				media.is_nopremium(),
-				media.is_spoiler());
-		}, [](const MTPDdocumentEmpty &) -> Result {
-			return nullptr;
-		});
+		return document->match([&](const MTPDdocument& document) -> Result {
+			//CloudVeil start
+			auto processedDoc = item->history()->owner().processDocument(document);
+
+			item->isSticker = false;
+			if (!processedDoc->sticker() || GlobalSecuritySettings::getSettings().isStickerSetAllowed(processedDoc)) {
+				return std::make_unique<Data::MediaFile>(
+					item,
+					processedDoc,
+					media.is_nopremium(),
+					media.is_spoiler());
+			}
+			else {
+				if (processedDoc->sticker()) {
+					item->stickerAlt = processedDoc->sticker()->alt;
+					item->isSticker = true;
+				}
+				return nullptr;
+			}
+			//CloudVeil end
+			}, [](const MTPDdocumentEmpty&) -> Result {
+				return nullptr;
+				});
 	}, [&](const MTPDmessageMediaWebPage &media) {
 		return media.vwebpage().match([](const MTPDwebPageEmpty &) -> Result {
 			return nullptr;
@@ -652,14 +666,25 @@ HistoryItem::HistoryItem(
 			? injectedAfter->date()
 			: 0),
 		/*from.peer ? from.peer->id : */PeerId(0)) {
+	//CloudVeil start
+	isSticker = false;
+	//CloudVeil end
+
 	createComponentsHelper(
 		_flags,
 		FullReplyTo(),
 		UserId(0), // viaBotId
 		QString(), // postAuthor
 		HistoryMessageMarkupData());
-	setText(textWithEntities);
 	setSponsoredFrom(from);
+	//CloudVeil start
+	if (isSticker) {
+		setText(TextWithEntities{ stickerAlt });
+	}
+	else {
+		setText(textWithEntities);
+	}
+	//CloudVeil end
 }
 
 HistoryItem::HistoryItem(

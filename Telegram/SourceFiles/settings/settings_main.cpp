@@ -617,34 +617,28 @@ void SetupHelp(
 		}
 	});
 	button->addClickHandler([=] {
-		const auto sure = crl::guard(button, [=] {
-			if (*requestId) {
-				return;
-			}
-			*requestId = controller->session().api().request(
-				MTPhelp_GetSupport()
-			).done([=](const MTPhelp_Support &result) {
-				*requestId = 0;
-				result.match([&](const MTPDhelp_support &data) {
-					auto &owner = controller->session().data();
-					if (const auto user = owner.processUser(data.vuser())) {
-						controller->showPeerHistory(user);
-					}
-				});
-			}).fail([=] {
-				*requestId = 0;
-			}).send();
-		});
-		auto box = Ui::MakeConfirmBox({
-			.text = tr::lng_settings_ask_sure(),
-			.confirmed = sure,
-			.cancelled = OpenFaq,
-			.confirmText = tr::lng_settings_ask_ok(),
-			.cancelText = tr::lng_settings_faq_button(),
-			.strictCancel = true,
-		});
-		controller->show(std::move(box));
+		//CloudVeil start
+		controller->showPeerByLink(Window::SessionNavigation::PeerByLinkInfo{
+		.usernameOrId = "cloudveilbot",
+		.messageId = ShowAtUnreadMsgId
+			});
+		//CloudVeil end
 	});
+
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().orgranization.aboutUrl.isEmpty()) {
+		return;
+	}
+	const auto buttonAbout = AddButton(
+		container,
+		tr::lng_about_us(),
+		st::settingsButton,
+		{ &st::menuIconAddress });
+
+	buttonAbout->addClickHandler([=] {
+		UrlClickHandler::Open(GlobalSecuritySettings::getSettings().orgranization.aboutUrl);
+		});
+	//CloudVeil end
 }
 
 Main::Main(

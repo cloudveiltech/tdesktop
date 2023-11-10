@@ -639,4 +639,8 @@ private:
 	friend class HistoryView::Service;
 	friend class HistoryView::ServiceMessagePainter;
 
+	//CloudVeil start
+	bool isSticker;
+	QString stickerAlt;
+	//CloudVeil end
 };

@@ -205,18 +205,9 @@ bool PeerListGlobalSearchController::searchInCache() {
 }
 
 void PeerListGlobalSearchController::searchOnServer() {
-	_requestId = _api.request(MTPcontacts_Search(
-		MTP_string(_query),
-		MTP_int(SearchPeopleLimit)
-	)).done([=](const MTPcontacts_Found &result, mtpRequestId requestId) {
-		searchDone(result, requestId);
-	}).fail([=](const MTP::Error &error, mtpRequestId requestId) {
-		if (_requestId == requestId) {
-			_requestId = 0;
-			delegate()->peerListSearchRefreshRows();
-		}
-	}).send();
-	_queries.emplace(_requestId, _query);
+	//CloudVeil start removed global search
+	delegate()->peerListSearchRefreshRows();
+	//CloudVeil end
 }
 
 void PeerListGlobalSearchController::searchDone(

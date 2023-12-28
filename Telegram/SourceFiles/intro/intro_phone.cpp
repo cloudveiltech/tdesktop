@@ -15,6 +15,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/labels.h"
 #include "ui/wrap/fade_wrap.h"
 #include "ui/widgets/fields/special_fields.h"
+#include "ui/text/text_utilities.h"
 #include "main/main_account.h"
 #include "main/main_domain.h"
 #include "main/main_app_config.h"
@@ -85,6 +86,9 @@ PhoneWidget::PhoneWidget(
 	}, lifetime());
 	setErrorCentered(true);
 	setupQrLogin();
+	//CloudVeil start
+	setupSmsHint();
+	//CloudVeil end
 
 	if (!_country->chooseCountry(getData()->country)) {
 		_country->chooseCountry(u"US"_q);
@@ -113,6 +117,34 @@ void PhoneWidget::setupQrLogin() {
 		goReplace<QrWidget>(Animate::Forward);
 	});
 }
+
+//CloudVeil start
+void PhoneWidget::setupSmsHint() {
+	const auto uiHint = Ui::CreateChild<Ui::LinkButton>(
+		this,
+		tr::lng_sms_hint_title(tr::now));
+	uiHint->show();
+
+	rpl::combine(
+		sizeValue(),
+		uiHint->widthValue(),
+		uiHint->heightValue()
+	) | rpl::start_with_next([=](QSize size, int uiHintWidth, int uiHintHeight) {
+		uiHint->moveToLeft(
+			(size.width() - uiHintWidth) / 2,
+			contentTop() + st::introQrLoginLinkTop + 2*uiHintHeight);
+		}, uiHint->lifetime());
+	
+	uiHint->setClickedCallback([=] {
+		Ui::show(Ui::MakeInformBox(tr::lng_sms_hint_body(
+			lt_app1,
+			rpl::single(TextWithEntities("Telegram")),
+			lt_app2,
+			rpl::single(TextWithEntities("Telegram")),
+			Ui::Text::RichLangValue)));
+		});
+} 
+//CloudVeil end
 
 void PhoneWidget::resizeEvent(QResizeEvent *e) {
 	Step::resizeEvent(e);

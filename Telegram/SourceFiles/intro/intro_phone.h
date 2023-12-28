@@ -45,6 +45,9 @@ protected:
 
 private:
 	void setupQrLogin();
+	//CloudVeil start
+	void setupSmsHint();
+	//CloudVeil end
 	void phoneChanged();
 	void checkRequest();
 	void countryChanged();

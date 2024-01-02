@@ -16,6 +16,8 @@ QJsonObject SettingsResponse::Organization::toJsonObject() {
 	organizationObject["id"] = id;
 	organizationObject["name"] = name;
 	organizationObject["need_change"] = needChange;
+	organizationObject["about_url"] = aboutUrl;
+	organizationObject["policy_url"] = policyUrl;
 	return organizationObject;
 }
 
@@ -31,6 +33,9 @@ void SettingsResponse::Organization::readFromJson(QJsonObject& object) {
 	}
 	if (object.contains("about_url")) {
 		aboutUrl = object["about_url"].toString();
+	}
+	if (object.contains("policy_url")) {
+		policyUrl = object["policy_url"].toString();
 	}
 }
 

@@ -626,18 +626,28 @@ void SetupHelp(
 	});
 
 	//CloudVeil start
-	if (GlobalSecuritySettings::getSettings().orgranization.aboutUrl.isEmpty()) {
-		return;
-	}
-	const auto buttonAbout = AddButton(
-		container,
-		tr::lng_about_us(),
-		st::settingsButton,
-		{ &st::menuIconAddress });
+	if (!GlobalSecuritySettings::getSettings().orgranization.aboutUrl.isEmpty()) {
+		const auto buttonAbout = AddButton(
+			container,
+			tr::lng_about_us(),
+			st::settingsButton,
+			{ &st::menuIconAddress });
 
-	buttonAbout->addClickHandler([=] {
-		UrlClickHandler::Open(GlobalSecuritySettings::getSettings().orgranization.aboutUrl);
-		});
+		buttonAbout->addClickHandler([=] {
+			UrlClickHandler::Open(GlobalSecuritySettings::getSettings().orgranization.aboutUrl);
+			});
+	}
+	if (!GlobalSecuritySettings::getSettings().orgranization.policyUrl.isEmpty()) {
+		const auto buttonAbout = AddButton(
+			container,
+			tr::lng_organizational_policy(),
+			st::settingsButton,
+			{ &st::menuIconSigned });
+
+		buttonAbout->addClickHandler([=] {
+			UrlClickHandler::Open(GlobalSecuritySettings::getSettings().orgranization.policyUrl);
+			});
+	}
 	//CloudVeil end
 }
 

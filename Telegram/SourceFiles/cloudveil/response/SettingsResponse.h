@@ -13,6 +13,7 @@ public:
 		int id;
 		bool needChange;
 		QString aboutUrl;
+		QString policyUrl;
 
 		QJsonObject toJsonObject();
 		void readFromJson(QJsonObject& object);

@@ -4137,6 +4137,7 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_change" = "Change";
 "lng_change_organization" = "Please Select Your Organization. It is important that you select your correct church organization so that your app works as expected. Unblock requests will NOT work correctly if you select the wrong group. This one-time step is required to allow organizations more flexibility in supporting their own members and is based off of church membership.";
 "lng_about_us" = "About Us";
+"lng_organizational_policy" = "Organizational Policy";
 "lng_sms_hint_title" = "How can I receive the code?";
 "lng_sms_hint_body" = "**Use the following steps to receive the code.**\n\n1. Log into {app1}.\n2. Open CloudVeil Messenger and restart the login process.\n3. Enter the code that you receive on {app2}.";
 //CloudVeil end

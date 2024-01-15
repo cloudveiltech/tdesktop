@@ -138,15 +138,15 @@ void PhoneWidget::setupSmsHint() {
 	uiHint->setClickedCallback([=] {
 		Ui::show(Ui::MakeInformBox(tr::lng_sms_hint_body(
 			lt_app1,
-			rpl::single(TextWithEntities("Telegram")),
+			rpl::single(TextWithEntities::Simple(qs("Telegram"))),
 			lt_app2,
-			rpl::single(TextWithEntities("Telegram")),
+			rpl::single(TextWithEntities::Simple(qs("Telegram"))),
 			Ui::Text::RichLangValue)));
-		});
+	});
 } 
 //CloudVeil end
 
-void PhoneWidget::resizeEvent(QResizeEvent *e) {
+void PhoneWidget::resizeEvent(QResizeEvent *e) { 
 	Step::resizeEvent(e);
 	_country->moveToLeft(contentLeft(), contentTop() + st::introStepFieldTop);
 	auto phoneTop = _country->y() + _country->height() + st::introPhoneTop;

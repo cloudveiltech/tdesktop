@@ -283,6 +283,7 @@ MainWidget::MainWidget(
 
 	//CloudVeil start
 	connect(simpleUpdater, &SimpleUpdater::updateReceived, this, &MainWidget::simpleUpdateReceived);
+	connect(simpleUpdater, &SimpleUpdater::downloadFinished, this, &MainWidget::simpleUpdateDownloaded);
 	connect(globalSettings, &GlobalSecuritySettings::settingsReady, this, &MainWidget::onSettingsUpdate);
 	//CloudVeil end
 
@@ -461,10 +462,26 @@ void MainWidget::simpleUpdateReceived(UpdateResponse* response) {
 						.text = response->message,
 						.confirmed = [=] {
 							Ui::hideLayer();
-							QDesktopServices::openUrl(response->url);
+							simpleUpdater->downloadUpdate();
 						},
 						.confirmText = tr::lng_download_click(),
 		}), Ui::LayerOption::KeepOther);
+}
+
+void MainWidget::simpleUpdateDownloaded(QString message) {
+	if (message == "") {		
+		Ui::show(Ui::MakeConfirmBox({
+						.text = tr::lng_update_ready(),
+						.confirmed = [=] {
+							Ui::hideLayer();
+							simpleUpdater->startUpdateProcess();
+						},
+						.confirmText = tr::lng_box_yes(),
+			}), Ui::LayerOption::KeepOther);
+	}
+	else {
+		Ui::show(Ui::MakeInformBox(message), Ui::LayerOption::KeepOther);
+	}	
 }
 
 void MainWidget::showOrganizationChangeRequired() {
@@ -477,12 +494,17 @@ void MainWidget::showOrganizationChangeRequired() {
 	}
 	lastOrganizationPopupShownTime = now;
 
+	Main::Session* s = Core::App().maybePrimarySession();
+	if (s == nullptr) {
+		return;
+	}
+	Main::Session& session = *s;
+	auto userId = session.user()->id.value;
+
 	Ui::show(Ui::MakeConfirmBox({
 				.text = tr::lng_change_organization(),
 				.confirmed = [=](Fn<void()>&& close) {
 					Ui::hideLayer();
-					auto user = session().user();
-					int userId = user->id.value;
 					QString url = QString("https://messenger.cloudveil.org/unblock_status/%1").arg(QString::number(userId));
 
 					QDesktopServices::openUrl(QUrl(url, QUrl::TolerantMode));

@@ -3,6 +3,7 @@
 #include "cloudveil/response/UpdateResponse.h"
 #include <QtCore/QJsonDocument>
 
+#include "ui/boxes/confirm_box.h"
 //one day
 #define UPDATE_PERIOD_MS 86400000 
 
@@ -22,16 +23,28 @@ SimpleUpdater::SimpleUpdater(QObject *parent) : QObject(parent), manager(this)
 {
 	lastUpdateCheck = 0;
 	versionNumber = AppVersion;
+
 	connect(&timer, SIGNAL(timeout()), SLOT(doServerRequest()));
+	connect(&manager, SIGNAL(finished(QNetworkReply*)), this, SLOT(networkRequestDone(QNetworkReply*)));
 }
 
 
 void SimpleUpdater::startUpdateChecking(int currentVersionNumber)
 {
-    this->versionNumber = currentVersionNumber;
+	this->versionNumber = currentVersionNumber;
 	timer.stop();
 	timer.setSingleShot(true);
 	timer.start(2000);
+}
+
+void SimpleUpdater::downloadUpdate() {
+	QNetworkRequest request(lastResponse.url);
+	manager.get(request);
+}
+
+void SimpleUpdater::startUpdateProcess() {
+	QString filePath = downloadedFile.fileName();
+	QProcess::startDetached(filePath, QStringList());
 }
 
 void SimpleUpdater::doServerRequest() {
@@ -44,42 +57,86 @@ void SimpleUpdater::doServerRequest() {
 
 	QNetworkRequest request(url);
 
-	request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-
-	connect(&manager, SIGNAL(finished(QNetworkReply*)), this, SLOT(requestFinished(QNetworkReply*)));
-
+	request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");	
 	manager.get(request);
 }
 
+void SimpleUpdater::networkRequestDone(QNetworkReply *networkReply) {
+	bool isUpdateCheckResponse = networkReply->request().header(QNetworkRequest::ContentTypeHeader).toString().contains("/json");
+	if (isUpdateCheckResponse) {
+		processCheckResponse(networkReply);
+	}
+	else {
+		processDownloadedResponse(networkReply);
+	}
+	
+	networkReply->deleteLater();
+}
 
-void SimpleUpdater::requestFinished(QNetworkReply *networkReply) {
+void SimpleUpdater::processCheckResponse(QNetworkReply* networkReply) {
 	auto error = networkReply->error();
-
-	if (error == QNetworkReply::NoError)
-	{
+	if (error == QNetworkReply::NoError) {
 		qint32 httpStatusCode = networkReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
 
-		if (httpStatusCode >= 200 && httpStatusCode < 300) // OK
-		{
+		if (httpStatusCode >= 200 && httpStatusCode < 300) {
 			QJsonDocument json = QJsonDocument::fromJson(networkReply->readAll());
 			if (!json.isEmpty()) {
 				QJsonObject jsonObj = json.object();
 				lastResponse.readFromJson(jsonObj);
-				
+
 				if (lastResponse.url.size() > 0) {
 					this->updateReceived(&lastResponse);
 				}
 			}
+			lastUpdateCheck = QDateTime::currentMSecsSinceEpoch();
 		}
-
-		lastUpdateCheck = QDateTime::currentMSecsSinceEpoch();
 	}
-	else
-	{
+	else {
 		qDebug() << "errorString: " << networkReply->errorString();
 	}
+}
 
-	networkReply->deleteLater();
+void SimpleUpdater::processDownloadedResponse(QNetworkReply* networkReply) {
+	auto error = networkReply->error();
+	if (error == QNetworkReply::NoError) {
+		qint32 httpStatusCode = networkReply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+
+		if (httpStatusCode >= 200 && httpStatusCode < 300) {
+
+			QByteArray data = networkReply->readAll();
+			if (downloadedFile.isOpen()) {
+				downloadedFile.close();
+			}
+			
+			QString path = QDir::tempPath() + "/cvm_update_package.exe";
+			downloadedFile.setFileName(path);
+			if (QFile::exists(path)) {
+				downloadedFile.remove();
+			}
+			if (downloadedFile.open(QIODevice::ReadWrite)) {
+				if (data.size() != downloadedFile.write(data)) {
+					downloadedFile.close();
+					this->downloadFinished("Error writing update file.");
+					qDebug() << "error: Can't write temp file";
+				}
+				else {
+					downloadedFile.close();
+					this->downloadFinished("");
+				}
+			}
+			else {
+				this->downloadFinished("Error writing update file.");
+				qDebug() << "error: Can't save temp file";
+			}
+		}
+		else {
+			this->downloadFinished("Error downloading " + networkReply->errorString());
+		}
+	}
+	else {
+		this->downloadFinished("Error downloading " + networkReply->errorString());
+		qDebug() << "errorString: " << networkReply->errorString();	
+	}
 }
 
 SimpleUpdater::~SimpleUpdater()

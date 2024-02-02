@@ -259,6 +259,7 @@ public:
 	//CloudVeil start
 public Q_SLOTS:
 	void simpleUpdateReceived(UpdateResponse* response);
+	void simpleUpdateDownloaded(QString message);
 	//CloudVeil end
 
 protected:

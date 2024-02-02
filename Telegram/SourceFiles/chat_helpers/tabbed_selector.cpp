@@ -1109,7 +1109,11 @@ void TabbedSelector::fillTabsSliderSections() {
 			Unexpected("SelectorTab value in fillTabsSliderSections.");
 		}()(tr::now);
 	}) | ranges::to_vector;
-	_tabsSlider->setSections(sections);
+	//CloudVeil start check size
+	if (sections.size() != 0) {
+		_tabsSlider->setSections(sections);
+	}
+	//CloudVeil end
 }
 
 bool TabbedSelector::hasSectionIcons() const {

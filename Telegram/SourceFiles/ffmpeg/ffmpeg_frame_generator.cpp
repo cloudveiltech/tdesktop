@@ -310,6 +310,11 @@ void FrameGenerator::Impl::resolveNextFrameTiming() {
 void FrameGenerator::Impl::readNextFrame() {
 	auto frame = _next.frame ? base::take(_next.frame) : MakeFramePointer();
 	while (true) {
+		//CloudVeil fix null ptr crash
+		if (!_codec) {
+			return;
+		}
+		//CloudVeil end
 		auto result = avcodec_receive_frame(_codec.get(), frame.get());
 		if (result >= 0) {
 			if (frame->width * frame->height > kMaxArea) {

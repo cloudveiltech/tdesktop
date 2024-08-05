@@ -1995,7 +1995,7 @@ void HistoryWidget::showHistory(
 					.text = tr::lng_dialog_forbidden(),
 					.confirmed = [=](Fn<void()>&& close) {
 						PeerData* peer = session().data().peer(peerId);
-						int32 dialogId = peer->id.value;
+						const auto dialogId = DeserializePeerId(peer->id.value).value;
 						QString url = QString("https://messenger.cloudveil.org/unblock/%1/%2")
 							.arg(QString::number(session().user()->id.value), QString::number(dialogId));
 

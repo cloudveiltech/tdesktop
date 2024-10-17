@@ -89,6 +89,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_layers.h" // st::boxLabel
 #include "styles/style_premium.h"
 #include "cloudveil/GlobalSecuritySettings.h"
+#include "cloudveil/DialogHelper.h"
 
 namespace Window {
 namespace {
@@ -1337,6 +1338,12 @@ void SessionController::closeFolder() {
 void SessionController::showForum(
 		not_null<Data::Forum*> forum,
 		const SectionShow &params) {
+	//CloudVeil start
+	if (DialogHelper::CheckDialogResult::APPROVED != DialogHelper::checkAndShowDialogForbidden(forum->history()->peer, session().user(), _window->sessionController())) {		
+		return;
+	}
+	//CloudVeil end
+
 	if (!isPrimary()) {
 		auto primary = Core::App().windowFor(&session().account());
 		if (&primary->account() != &session().account()) {

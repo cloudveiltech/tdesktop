@@ -1472,6 +1472,8 @@ PRIVATE
 	cloudveil/response/UpdateResponse.cpp
 	cloudveil/FileDownloader.h
 	cloudveil/FileDownloader.cpp
+	cloudveil/DialogHelper.h
+	cloudveil/DialogHelper.cpp
 	cloudveil/sentry/include/sentry.h
 )
 

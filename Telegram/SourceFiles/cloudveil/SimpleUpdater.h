@@ -36,7 +36,7 @@ public:
 	
 	void startUpdateChecking(int currentVersionNumber);
 	void downloadUpdate();
-	void startUpdateProcess();
+	bool startUpdateProcess();
 
 	~SimpleUpdater();
 };

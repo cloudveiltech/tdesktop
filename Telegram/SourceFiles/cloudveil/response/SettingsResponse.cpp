@@ -266,7 +266,7 @@ bool SettingsResponse::isDialogSecured(PeerData *peer) {
 	if (peer == nullptr) {
 		return true;
 	}
-	
+		
 	if (peer->isUser() && !manageUsers) {
 		if (peer->asUser()->botInfo == NULL) {
 			return true;

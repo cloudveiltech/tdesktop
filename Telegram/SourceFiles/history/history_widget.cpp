@@ -164,11 +164,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QMimeData>
 
 //CloudVeil start
-#include <QtGui/QDesktopServices>
+#include "cloudveil/DialogHelper.h"
 //CloudVeil end
 
 namespace {
-
 constexpr auto kMessagesPerPageFirst = 30;
 constexpr auto kMessagesPerPage = 50;
 constexpr auto kPreloadHeightsCount = 3; // when 3 screens to scroll left make a preload request
@@ -1988,28 +1987,9 @@ void HistoryWidget::showHistory(
 		const PeerId &peerId,
 		MsgId showAtMsgId,
 		bool reload) {
-	//CloudVeil start
-	if (!GlobalSecuritySettings::getSettings().isDialogAllowed(session().data().peer(peerId))) {
-		controller()->showPeerHistory(session().user()->id);
-		Ui::show(Ui::MakeConfirmBox({
-					.text = tr::lng_dialog_forbidden(),
-					.confirmed = [=](Fn<void()>&& close) {
-						PeerData* peer = session().data().peer(peerId);
-						const auto dialogId = DeserializePeerId(peer->id.value).value;
-						QString url = QString("https://messenger.cloudveil.org/unblock/%1/%2")
-							.arg(QString::number(session().user()->id.value), QString::number(dialogId));
-
-						QDesktopServices::openUrl(QUrl(url, QUrl::TolerantMode));
-					},
-					.confirmText = tr::lng_contact(),
-
-			})
-		);
+	//CloudVeil start	
+	if (DialogHelper::CheckDialogResult::BLOCKED == DialogHelper::checkAndShowDialogForbidden(session().data().peer(peerId), session().user(), controller())) {
 		return;
-	}
-	if (!GlobalSecuritySettings::getSettings().isDialogSecured(session().data().peer(peerId))) {
-		GlobalSecuritySettings::getInstance()->addAdditionalDataToRequest(session().data().peer(peerId));
-		GlobalSecuritySettings::getInstance()->updateFromServer();
 	}
 	//CloudVeil end
 

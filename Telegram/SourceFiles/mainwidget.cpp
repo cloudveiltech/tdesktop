@@ -465,6 +465,7 @@ void MainWidget::simpleUpdateReceived(UpdateResponse* response) {
 							simpleUpdater->downloadUpdate();
 						},
 						.confirmText = tr::lng_download_click(),
+						.title = QString("CloudVeil Messenger"),
 		}), Ui::LayerOption::KeepOther);
 }
 
@@ -474,7 +475,9 @@ void MainWidget::simpleUpdateDownloaded(QString message) {
 						.text = tr::lng_update_ready(),
 						.confirmed = [=] {
 							Ui::hideLayer();
-							simpleUpdater->startUpdateProcess();
+							if (simpleUpdater->startUpdateProcess()) {
+								QCoreApplication::instance()->quit();
+							}
 						},
 						.confirmText = tr::lng_box_yes(),
 			}), Ui::LayerOption::KeepOther);

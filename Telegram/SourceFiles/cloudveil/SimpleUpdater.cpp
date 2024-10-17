@@ -42,9 +42,9 @@ void SimpleUpdater::downloadUpdate() {
 	manager.get(request);
 }
 
-void SimpleUpdater::startUpdateProcess() {
+bool SimpleUpdater::startUpdateProcess() {
 	QString filePath = downloadedFile.fileName();
-	QProcess::startDetached(filePath, QStringList());
+	return QProcess::startDetached(filePath, QStringList());
 }
 
 void SimpleUpdater::doServerRequest() {

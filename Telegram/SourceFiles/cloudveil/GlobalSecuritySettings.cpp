@@ -69,7 +69,6 @@ void GlobalSecuritySettings::doServerRequest() {
 
 	if (!request.isEmpty()) {
 		sendRequest(request);
-		suscribeToSupportChannel(request);
 	}
 }
 
@@ -248,6 +247,9 @@ void GlobalSecuritySettings::gotStickersSet(const MTPmessages_StickerSet &set) {
 	updateFromServer();
 }
 
+/*
+* Deprecated
+*/
 void GlobalSecuritySettings::suscribeToSupportChannel(SettingsRequest& request) {
 	for (size_t i = 0; i < request.channels.size(); i++) {
 		if (request.channels[i].userName.compare(CLOUDVEIL_CHANNEL_USERNAME, Qt::CaseSensitivity::CaseInsensitive) == 0) {

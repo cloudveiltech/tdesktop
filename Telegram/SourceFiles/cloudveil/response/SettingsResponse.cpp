@@ -234,7 +234,8 @@ bool SettingsResponse::isDialogAllowed(PeerData *peer) {
 		return true;
 	}
 
-	const auto dialogId = DeserializePeerId(peer->id.value).value;
+	//const auto dialogId = DeserializePeerId(peer->id.value).value;
+	const auto dialogId = peer->id.value;
 	if (peer->isChat() || peer->isMegagroup()) {
 		return groups.contains(dialogId) && groups[dialogId];
 	}
@@ -275,7 +276,8 @@ bool SettingsResponse::isDialogSecured(PeerData *peer) {
 	if (peer->isUser() && peer->asUser()->isSelf()) {
 		return true;
 	}
-	const auto dialogId = DeserializePeerId(peer->id.value).value;
+	//const auto dialogId = DeserializePeerId(peer->id.value).value;
+	const auto dialogId = peer->id.value;
 	return bots.contains(dialogId) ||
 		channels.contains(dialogId) ||
 		groups.contains(dialogId) ||

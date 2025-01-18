@@ -183,19 +183,22 @@ void GlobalSecuritySettings::checkStickerSetByDocumentAsync(DocumentData* sticke
 }
 
 void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerData *peer) {
-	qint64 dialogId = DeserializePeerId(peer->id.value).value;
-	
+	//qint64 dialogId = DeserializePeerId(peer->id.value).value;
+	qint64 dialogId = peer->id.value; //for CV Manage, we want the bare value
+
 	SettingsRequest::Row row;
 	row.id = dialogId;
 
-	row.userName = peer->userName();
+	row.userName = peer->userName(); // should we be setting this one? 
+	//If it's Chat, it can't have userName; if it's Channel or User it may. 
+	// If there's a chance this results in 'N/A' or similar, we don't want it.
 	row.isMegagroup = false;
 	row.isPublic = false;
 
 	if (peer->isChat()) {
 		row.title = peer->asChat()->name();
-		row.userName = row.title;
-		row.isPublic = peer->asChat()->flags() & 0x00000040;
+		//row.userName = row.title; //this should not be set, was it set to solve a different problem?
+		row.isPublic = peer->asChat()->flags() & 0x00000040; //2025-01-18 currently, Chat can only be Private, not Public
 		request.groups.append(row);
 	}
 	else if (peer->isChannel()) {

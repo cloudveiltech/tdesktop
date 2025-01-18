@@ -11,7 +11,8 @@ DialogHelper::CheckDialogResult DialogHelper::checkAndShowDialogForbidden(PeerDa
 		controller->show(Ui::MakeConfirmBox({
 					.text = tr::lng_dialog_forbidden(),
 					.confirmed = [=](Fn<void()>&& close) {
-						const auto dialogId = DeserializePeerId(peerData->id.value).value;
+						//const auto dialogId = DeserializePeerId(peerData->id.value).value; // this was causing 404s on unblock requests
+						const auto dialogId = peerData->id.value;
 						QString url = QString("https://messenger.cloudveil.org/unblock/%1/%2")
 							.arg(QString::number(userData->id.value), QString::number(dialogId));
 

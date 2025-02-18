@@ -183,22 +183,21 @@ void GlobalSecuritySettings::checkStickerSetByDocumentAsync(DocumentData* sticke
 }
 
 void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerData *peer) {
-	qint64 dialogId = DeserializePeerId(peer->id.value).value;
-	
 	SettingsRequest::Row row;
-	row.id = dialogId;
 
 	row.userName = peer->userName();
 	row.isMegagroup = false;
 	row.isPublic = false;
 
 	if (peer->isChat()) {
+		row.id = peerToChat(peer->id).bare;
 		row.title = peer->asChat()->name();
 		row.userName = row.title;
 		row.isPublic = peer->asChat()->flags() & 0x00000040;
 		request.groups.append(row);
 	}
 	else if (peer->isChannel()) {
+		row.id = peerToChannel(peer->id).bare;
 		row.title = peer->asChannel()->name();
 		row.userName = peer->asChannel()->userName();
 		row.isPublic = peer->asChannel()->isPublic();
@@ -212,6 +211,7 @@ void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerDa
 		}
 	}
 	else if (peer->isUser()) {
+		row.id = peerToUser(peer->id).bare;
 		row.title = peer->asUser()->name();
 		if (peer->asUser()->botInfo.get() != nullptr) {
 			request.bots.append(row);
@@ -219,6 +219,9 @@ void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerDa
 		else if (!peer->asUser()->isSelf()) {
 			request.users.append(row);
 		}
+	}
+	else {
+		row.id = DeserializePeerId(peer->id.value).value;
 	}
 }
 

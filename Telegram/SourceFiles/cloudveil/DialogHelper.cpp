@@ -30,3 +30,17 @@ DialogHelper::CheckDialogResult DialogHelper::checkAndShowDialogForbidden(PeerDa
 	}
 	return DialogHelper::CheckDialogResult::APPROVED;
 }
+
+BareId DialogHelper::getDialogId(PeerData* peer)
+{
+	if (peer->isChat()) {
+		return peerToChat(peer->id).bare;
+	}
+	else if (peer->isChannel()) {
+		return peerToChannel(peer->id).bare;
+	}
+	else if (peer->isUser()) {
+		return peerToUser(peer->id).bare;
+	}
+	return DeserializePeerId(peer->id.value).value;	
+}

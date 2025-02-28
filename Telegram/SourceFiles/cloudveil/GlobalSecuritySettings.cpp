@@ -16,6 +16,7 @@
 #include "main/main_session.h"
 #include "storage/storage_account.h"
 #include "core/application.h"
+#include "./DialogHelper.h"
 
 #define MAX_REQUEST_INTERVAL_MS 10*60*1000
 
@@ -189,15 +190,14 @@ void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerDa
 	row.isMegagroup = false;
 	row.isPublic = false;
 
+	row.id = DialogHelper::getDialogId(peer);
 	if (peer->isChat()) {
-		row.id = peerToChat(peer->id).bare;
 		row.title = peer->asChat()->name();
 		row.userName = peer->asChat()->userName();
 		row.isPublic = peer->isMegagroup() && peer->asChannel()->isPublic(); //copied from delete_messages_box.cpp
 		request.groups.append(row);
 	}
 	else if (peer->isChannel()) {
-		row.id = peerToChannel(peer->id).bare;
 		row.title = peer->asChannel()->name();
 		row.userName = peer->asChannel()->userName();
 		row.isPublic = peer->asChannel()->isPublic();
@@ -211,7 +211,6 @@ void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerDa
 		}
 	}
 	else if (peer->isUser()) {
-		row.id = peerToUser(peer->id).bare;
 		row.title = peer->asUser()->name();
 		if (peer->asUser()->botInfo.get() != nullptr) {
 			request.bots.append(row);
@@ -219,9 +218,6 @@ void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerDa
 		else if (!peer->asUser()->isSelf()) {
 			request.users.append(row);
 		}
-	}
-	else {
-		row.id = DeserializePeerId(peer->id.value).value;
 	}
 }
 

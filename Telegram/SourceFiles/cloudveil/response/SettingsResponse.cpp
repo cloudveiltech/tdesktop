@@ -7,6 +7,7 @@
 #include "history/history.h"
 #include "data/data_user.h"
 #include <QtCore/QJsonArray>
+#include <cloudveil/DialogHelper.h>
 
 #define EMOJI_STICKERSET_ID 1258816259751983
 
@@ -234,7 +235,7 @@ bool SettingsResponse::isDialogAllowed(PeerData *peer) {
 		return true;
 	}
 
-	const auto dialogId = DeserializePeerId(peer->id.value).value;
+	const auto dialogId = DialogHelper::getDialogId(peer);
 	if (peer->isChat() || peer->isMegagroup()) {
 		return groups.contains(dialogId) && groups[dialogId];
 	}
@@ -275,7 +276,7 @@ bool SettingsResponse::isDialogSecured(PeerData *peer) {
 	if (peer->isUser() && peer->asUser()->isSelf()) {
 		return true;
 	}
-	const auto dialogId = DeserializePeerId(peer->id.value).value;
+	const auto dialogId = DialogHelper::getDialogId(peer);
 	return bots.contains(dialogId) ||
 		channels.contains(dialogId) ||
 		groups.contains(dialogId) ||

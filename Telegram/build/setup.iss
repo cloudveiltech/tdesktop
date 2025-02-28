@@ -7,8 +7,8 @@
 #define CurrentYear GetDateTimeString('yyyy','','')
 
 #define MyBuildTarget "win64"
-#define MyAppVersion "4.10.7
-#define MyAppVersionFull "4.10.7"
+#define MyAppVersion "4.10.8
+#define MyAppVersionFull "4.10.8"
 #define ReleasePath "..\..\out\Release"
 
 [Setup]

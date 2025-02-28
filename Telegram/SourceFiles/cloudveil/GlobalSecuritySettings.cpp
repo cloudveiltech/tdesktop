@@ -192,8 +192,8 @@ void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerDa
 	if (peer->isChat()) {
 		row.id = peerToChat(peer->id).bare;
 		row.title = peer->asChat()->name();
-		row.userName = row.title;
-		row.isPublic = peer->asChat()->flags() & 0x00000040;
+		row.userName = peer->asChat()->userName();
+		row.isPublic = peer->isMegagroup() && peer->asChannel()->isPublic(); //copied from delete_messages_box.cpp
 		request.groups.append(row);
 	}
 	else if (peer->isChannel()) {

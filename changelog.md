@@ -1,3 +1,9 @@
+# v4.10.8  - 17 Oct 2024
+
+Bugfix with botIds, public groups and usernames.
+
+#public
+
 # v4.10.6  - 17 Oct 2024
 
 Topics fitlering implemented. CloudVeil support channel autojoin disabled.

@@ -9,39 +9,53 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "api/api_attached_stickers.h"
 #include "api/api_editing.h"
+#include "api/api_global_privacy.h"
 #include "api/api_polls.h"
 #include "api/api_report.h"
 #include "api/api_ringtones.h"
 #include "api/api_transcribes.h"
 #include "api/api_who_reacted.h"
 #include "api/api_toggling_media.h" // Api::ToggleFavedSticker
+#include "base/qt/qt_key_modifiers.h"
 #include "base/unixtime.h"
 #include "history/view/history_view_list_widget.h"
 #include "history/view/history_view_cursor_state.h"
 #include "history/history.h"
 #include "history/history_item.h"
+#include "history/history_item_components.h"
 #include "history/history_item_text.h"
 #include "history/view/history_view_schedule_box.h"
 #include "history/view/media/history_view_media.h"
 #include "history/view/media/history_view_web_page.h"
 #include "history/view/reactions/history_view_reactions_list.h"
+#include "info/info_memento.h"
+#include "info/profile/info_profile_widget.h"
 #include "ui/widgets/popup_menu.h"
+#include "ui/widgets/menu/menu_action.h"
+#include "ui/widgets/menu/menu_common.h"
 #include "ui/widgets/menu/menu_multiline_action.h"
 #include "ui/image/image.h"
 #include "ui/toast/toast.h"
+#include "ui/text/format_song_document_name.h"
 #include "ui/text/text_utilities.h"
 #include "ui/controls/delete_message_context_action.h"
 #include "ui/controls/who_reacted_context_action.h"
-#include "ui/boxes/report_box.h"
+#include "ui/boxes/edit_factcheck_box.h"
+#include "ui/boxes/report_box_graphics.h"
 #include "ui/ui_utility.h"
 #include "menu/menu_item_download_files.h"
 #include "menu/menu_send.h"
 #include "ui/boxes/confirm_box.h"
+#include "ui/boxes/show_or_premium_box.h"
+#include "ui/widgets/fields/input_field.h"
+#include "ui/power_saving.h"
 #include "boxes/delete_messages_box.h"
+#include "boxes/moderate_messages_box.h"
 #include "boxes/report_messages_box.h"
 #include "boxes/sticker_set_box.h"
 #include "boxes/stickers_box.h"
 #include "boxes/translate_box.h"
+#include "data/components/factchecks.h"
 #include "data/data_photo.h"
 #include "data/data_photo_media.h"
 #include "data/data_document.h"
@@ -51,14 +65,18 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_stories.h"
 #include "data/data_groups.h"
 #include "data/data_channel.h"
+#include "data/data_chat.h"
 #include "data/data_file_click_handler.h"
 #include "data/data_file_origin.h"
 #include "data/data_message_reactions.h"
+#include "data/data_user.h"
 #include "data/stickers/data_custom_emoji.h"
+#include "chat_helpers/message_field.h" // FactcheckFieldIniter.
 #include "core/file_utilities.h"
 #include "core/click_handler_types.h"
 #include "base/platform/base_platform_info.h"
 #include "base/call_delayed.h"
+#include "settings/settings_premium.h"
 #include "window/window_peer_menu.h"
 #include "window/window_controller.h"
 #include "window/window_session_controller.h"
@@ -79,6 +97,8 @@ namespace HistoryView {
 namespace {
 
 constexpr auto kRescheduleLimit = 20;
+constexpr auto kTagNameLimit = 12;
+constexpr auto kPublicPostLinkToastDuration = 4 * crl::time(1000);
 
 bool HasEditMessageAction(
 		const ContextMenuRequest &request,
@@ -90,7 +110,10 @@ bool HasEditMessageAction(
 		|| item->hasFailed()
 		|| item->isEditingMedia()
 		|| !request.selectedItems.empty()
-		|| (context != Context::History && context != Context::Replies)) {
+		|| (context != Context::History
+			&& context != Context::Replies
+			&& context != Context::ShortcutMessages
+			&& context != Context::ScheduledTopic)) {
 		return false;
 	}
 	const auto peer = item->history()->peer;
@@ -108,7 +131,7 @@ void SavePhotoToFile(not_null<PhotoData*> photo) {
 		return;
 	}
 
-	const auto image = media->image(Data::PhotoSize::Large)->original();
+	const auto image = media->image(Data::PhotoSize::Large)->original(); // clazy:exclude=unused-non-trivial-variable
 	FileDialog::GetWritePath(
 		Core::App().getFileDialogParent(),
 		tr::lng_save_photo(tr::now),
@@ -215,7 +238,7 @@ void AddSaveDocumentAction(
 		HistoryItem *item,
 		not_null<DocumentData*> document,
 		not_null<ListWidget*> list) {
-	if (list->hasCopyMediaRestriction(item)) {
+	if (list->hasCopyMediaRestriction(item) || ItemHasTtl(item)) {
 		return;
 	}
 	const auto origin = item ? item->fullId() : FullMsgId();
@@ -315,6 +338,10 @@ void AddDocumentActions(
 		AddSaveSoundForNotifications(menu, item, document, controller);
 	}
 	AddSaveDocumentAction(menu, item, document, list);
+	AddCopyFilename(
+		menu,
+		document,
+		[=] { return list->showCopyRestrictionForSelected(); });
 }
 
 void AddPostLinkAction(
@@ -496,7 +523,7 @@ bool AddRescheduleAction(
 	const auto owner = &request.navigation->session().data();
 
 	const auto goodSingle = HasEditMessageAction(request, list)
-		&& request.item->isScheduled();
+		&& request.item->allowsReschedule();
 	const auto goodMany = [&] {
 		if (goodSingle) {
 			return false;
@@ -508,7 +535,7 @@ bool AddRescheduleAction(
 		if (items.size() > kRescheduleLimit) {
 			return false;
 		}
-		return ranges::all_of(items, &SelectedItem::canSendNow);
+		return ranges::all_of(items, &SelectedItem::canReschedule);
 	}();
 	if (!goodSingle && !goodMany) {
 		return false;
@@ -533,13 +560,17 @@ bool AddRescheduleAction(
 		}
 		const auto callback = [=](Api::SendOptions options) {
 			list->cancelSelection();
+			auto groupedIds = std::vector<MessageGroupId>();
 			for (const auto &id : ids) {
 				const auto item = owner->message(id);
 				if (!item || !item->isScheduled()) {
 					continue;
 				}
-				if (!item->media() || !item->media()->webpage()) {
-					options.removeWebPageId = true;
+				if (const auto groupId = item->groupId()) {
+					if (ranges::contains(groupedIds, groupId)) {
+						continue;
+					}
+					groupedIds.push_back(groupId);
 				}
 				Api::RescheduleMessage(item, options);
 				// Increase the scheduled date by 1s to keep the order.
@@ -550,22 +581,26 @@ bool AddRescheduleAction(
 		const auto peer = firstItem->history()->peer;
 		const auto sendMenuType = !peer
 			? SendMenu::Type::Disabled
+			: peer->starsPerMessageChecked()
+			? SendMenu::Type::SilentOnly
 			: peer->isSelf()
 			? SendMenu::Type::Reminder
 			: HistoryView::CanScheduleUntilOnline(peer)
 			? SendMenu::Type::ScheduledToUser
-			: SendMenu::Type::Scheduled;
+			: SendMenu::Type::Disabled;
 
 		const auto itemDate = firstItem->date();
 		const auto date = (itemDate == Api::kScheduledUntilOnlineTimestamp)
 			? HistoryView::DefaultScheduleTime()
-			: itemDate + 600;
+			: itemDate + (firstItem->isScheduled() ? 0 : crl::time(600));
 
 		const auto box = request.navigation->parentController()->show(
 			HistoryView::PrepareScheduleBox(
 				&request.navigation->session(),
-				sendMenuType,
+				request.navigation->uiShow(),
+				{ .type = sendMenuType, .effectAllowed = false },
 				callback,
+				{}, // initial options
 				date));
 
 		owner->itemRemoved(
@@ -583,25 +618,36 @@ bool AddReplyToMessageAction(
 		const ContextMenuRequest &request,
 		not_null<ListWidget*> list) {
 	const auto context = list->elementContext();
-	const auto item = request.item;
+	const auto item = request.quote.item
+		? request.quote.item
+		: request.item;
 	const auto topic = item ? item->topic() : nullptr;
 	const auto peer = item ? item->history()->peer.get() : nullptr;
 	if (!item
 		|| !item->isRegular()
-		|| !(topic
-			? Data::CanSendAnything(topic)
-			: Data::CanSendAnything(peer))
 		|| (context != Context::History && context != Context::Replies)) {
 		return false;
 	}
-	const auto owner = &item->history()->owner();
-	const auto itemId = item->fullId();
-	menu->addAction(tr::lng_context_reply_msg(tr::now), [=] {
-		const auto item = owner->message(itemId);
-		if (!item) {
-			return;
-		}
-		list->replyToMessageRequestNotify(item->fullId());
+	const auto canSendReply = topic
+		? Data::CanSendAnything(topic)
+		: Data::CanSendAnything(peer);
+	const auto canReply = canSendReply || item->allowsForward();
+	if (!canReply) {
+		return false;
+	}
+
+	const auto &quote = request.quote;
+	auto text = (quote.text.empty()
+		? tr::lng_context_reply_msg
+		: tr::lng_context_quote_and_reply)(
+			tr::now,
+			Ui::Text::FixAmpersandInAction);
+	menu->addAction(std::move(text), [=, itemId = item->fullId()] {
+		list->replyToMessageRequestNotify({
+			.messageId = itemId,
+			.quote = quote.text,
+			.quoteOffset = quote.offset,
+		}, base::IsCtrlPressed());
 	}, &st::menuIconReply);
 	return true;
 }
@@ -673,6 +719,31 @@ bool AddEditMessageAction(
 		list->editMessageRequestNotify(item->fullId());
 	}, &st::menuIconEdit);
 	return true;
+}
+
+void AddFactcheckAction(
+		not_null<Ui::PopupMenu*> menu,
+		const ContextMenuRequest &request,
+		not_null<ListWidget*> list) {
+	const auto item = request.item;
+	if (!item || !item->history()->session().factchecks().canEdit(item)) {
+		return;
+	}
+	const auto itemId = item->fullId();
+	const auto text = item->factcheckText();
+	const auto session = &item->history()->session();
+	const auto phrase = text.empty()
+		? tr::lng_context_add_factcheck(tr::now)
+		: tr::lng_context_edit_factcheck(tr::now);
+	menu->addAction(phrase, [=] {
+		const auto limit = session->factchecks().lengthLimit();
+		const auto controller = request.navigation->parentController();
+		controller->show(Box(EditFactcheckBox, text, limit, [=](
+				TextWithEntities result) {
+			const auto show = controller->uiShow();
+			session->factchecks().save(itemId, text, result, show);
+		}, FactcheckFieldIniter(controller->uiShow())));
+	}, &st::menuIconFactcheck);
 }
 
 bool AddPinMessageAction(
@@ -797,9 +868,15 @@ bool AddDeleteMessageAction(
 				controller->cancelUploadLayer(item);
 				return;
 			}
-			const auto suggestModerateActions = true;
-			controller->show(
-				Box<DeleteMessagesBox>(item, suggestModerateActions));
+			const auto list = HistoryItemsList{ item };
+			if (CanCreateModerateMessagesBox(list)) {
+				controller->show(
+					Box(CreateModerateMessagesBox, list, nullptr));
+			} else {
+				const auto suggestModerateActions = false;
+				controller->show(
+					Box<DeleteMessagesBox>(item, suggestModerateActions));
+			}
 		}
 	});
 	if (item->isUploading()) {
@@ -830,7 +907,9 @@ void AddDownloadFilesAction(
 		not_null<Ui::PopupMenu*> menu,
 		const ContextMenuRequest &request,
 		not_null<ListWidget*> list) {
-	if (!request.overSelection || request.selectedItems.empty()) {
+	if (!request.overSelection
+		|| request.selectedItems.empty()
+		|| list->hasCopyRestrictionForSelected()) {
 		return;
 	}
 	Menu::AddDownloadFilesAction(
@@ -856,11 +935,15 @@ void AddReportAction(
 	const auto callback = crl::guard(controller, [=] {
 		if (const auto item = owner->message(itemId)) {
 			const auto group = owner->groups().find(item);
-			controller->show(ReportItemsBox(
-				item->history()->peer,
-				(group
-					? owner->itemsToIds(group->items)
-					: MessageIdsList{ 1, itemId })));
+			const auto ids = group
+				? (ranges::views::all(
+					group->items
+				) | ranges::views::transform([](const auto &i) {
+					return i->fullId().msg;
+				}) | ranges::to_vector)
+				: std::vector<MsgId>{ 1, itemId.msg };
+			const auto peer = item->history()->peer;
+			ShowReportMessageBox(controller->uiShow(), peer, ids, {});
 		}
 	});
 	menu->addAction(
@@ -923,10 +1006,10 @@ void AddTopMessageActions(
 		not_null<Ui::PopupMenu*> menu,
 		const ContextMenuRequest &request,
 		not_null<ListWidget*> list) {
-	AddReplyToMessageAction(menu, request, list);
 	AddGoToMessageAction(menu, request, list);
 	AddViewRepliesAction(menu, request, list);
 	AddEditMessageAction(menu, request, list);
+	AddFactcheckAction(menu, request, list);
 	AddPinMessageAction(menu, request, list);
 }
 
@@ -959,6 +1042,112 @@ void AddCopyLinkAction(
 		action,
 		[=] { QGuiApplication::clipboard()->setText(text); },
 		&st::menuIconCopy);
+}
+
+void EditTagBox(
+		not_null<Ui::GenericBox*> box,
+		not_null<Window::SessionController*> controller,
+		const Data::ReactionId &id) {
+	const auto owner = &controller->session().data();
+	const auto title = owner->reactions().myTagTitle(id);
+	box->setTitle(title.isEmpty()
+		? tr::lng_context_tag_add_name()
+		: tr::lng_context_tag_edit_name());
+	box->addRow(object_ptr<Ui::FlatLabel>(
+		box,
+		tr::lng_edit_tag_about(),
+		st::editTagAbout));
+	const auto field = box->addRow(object_ptr<Ui::InputField>(
+		box,
+		st::editTagField,
+		tr::lng_edit_tag_name(),
+		title));
+	field->setMaxLength(kTagNameLimit * 2);
+	box->setFocusCallback([=] {
+		field->setFocusFast();
+	});
+
+	struct State {
+		std::unique_ptr<Ui::Text::CustomEmoji> custom;
+		QImage image;
+	};
+	const auto state = field->lifetime().make_state<State>();
+
+	if (const auto customId = id.custom()) {
+		state->custom = owner->customEmojiManager().create(
+			customId,
+			[=] { field->update(); });
+	} else {
+		owner->reactions().preloadReactionImageFor(id);
+	}
+	field->paintRequest() | rpl::start_with_next([=](QRect clip) {
+		auto p = QPainter(field);
+		const auto top = st::editTagField.textMargins.top();
+		if (const auto custom = state->custom.get()) {
+			const auto inactive = !field->window()->isActiveWindow();
+			custom->paint(p, {
+				.textColor = st::windowFg->c,
+				.now = crl::now(),
+				.position = QPoint(0, top),
+				.paused = inactive || On(PowerSaving::kEmojiChat),
+			});
+		} else {
+			if (state->image.isNull()) {
+				state->image = owner->reactions().resolveReactionImageFor(
+					id);
+			}
+			if (!state->image.isNull()) {
+				const auto size = st::reactionInlineSize;
+				const auto skip = (size - st::reactionInlineImage) / 2;
+				p.drawImage(skip, top + skip, state->image);
+			}
+		}
+	}, field->lifetime());
+
+	Ui::AddLengthLimitLabel(field, kTagNameLimit);
+
+	const auto save = [=] {
+		const auto text = field->getLastText();
+		if (text.size() > kTagNameLimit) {
+			field->showError();
+			return;
+		}
+		const auto weak = Ui::MakeWeak(box);
+		controller->session().data().reactions().renameTag(id, text);
+		if (const auto strong = weak.data()) {
+			strong->closeBox();
+		}
+	};
+
+	field->submits(
+	) | rpl::start_with_next(save, field->lifetime());
+
+	box->addButton(tr::lng_settings_save(), save);
+	box->addButton(tr::lng_cancel(), [=] {
+		box->closeBox();
+	});
+}
+
+void ShowWhoReadInfo(
+		not_null<Window::SessionController*> controller,
+		FullMsgId itemId,
+		Ui::WhoReadParticipant who) {
+	const auto peer = controller->session().data().peer(itemId.peer);
+	const auto participant = peer->owner().peer(PeerId(who.id));
+	const auto migrated = participant->migrateFrom();
+	const auto origin = who.dateReacted
+		? Info::Profile::Origin{
+			Info::Profile::GroupReactionOrigin{ peer, itemId.msg },
+		}
+		: Info::Profile::Origin();
+	auto memento = std::make_shared<Info::Memento>(
+		std::vector<std::shared_ptr<Info::ContentMemento>>{
+		std::make_shared<Info::Profile::Memento>(
+			participant,
+			migrated ? migrated->id : PeerId(),
+			origin),
+	});
+	controller->showSection(std::move(memento));
 }
 
 } // namespace
@@ -994,6 +1183,8 @@ base::unique_qptr<Ui::PopupMenu> FillContextMenu(
 	auto result = base::make_unique_q<Ui::PopupMenu>(
 		list,
 		st::popupMenuWithIcons);
+
+	AddReplyToMessageAction(result, request, list);
 
 	if (request.overSelection
 		&& !list->hasCopyRestrictionForSelected()
@@ -1079,20 +1270,25 @@ base::unique_qptr<Ui::PopupMenu> FillContextMenu(
 		}
 	}
 
-	if (!view || !list->hasCopyRestriction(view->data())) {
-		AddCopyLinkAction(result, link);
-	}
+	AddCopyLinkAction(result, link);
 	AddMessageActions(result, request, list);
 
-	if (item) {
+	const auto wasAmount = result->actions().size();
+	if (const auto textItem = view ? view->textItem() : item) {
 		AddEmojiPacksAction(
 			result,
-			item,
+			textItem,
 			HistoryView::EmojiPacksSource::Message,
 			list->controller());
 	}
+	if (item) {
+		const auto added = (result->actions().size() > wasAmount);
+		AddSelectRestrictionAction(result, item, !added);
+	}
 	if (hasWhoReactedItem) {
 		AddWhoReactedAction(result, list, item, list->controller());
+	} else if (item) {
+		MaybeAddWhenEditedForwardedAction(result, item);
 	}
 
 	return result;
@@ -1101,18 +1297,33 @@ base::unique_qptr<Ui::PopupMenu> FillContextMenu(
 void CopyPostLink(
 		not_null<Window::SessionController*> controller,
 		FullMsgId itemId,
-		Context context) {
-	const auto item = controller->session().data().message(itemId);
+		Context context,
+		std::optional<TimeId> videoTimestamp) {
+	CopyPostLink(controller->uiShow(), itemId, context, videoTimestamp);
+}
+
+void CopyPostLink(
+		std::shared_ptr<Main::SessionShow> show,
+		FullMsgId itemId,
+		Context context,
+		std::optional<TimeId> videoTimestamp) {
+	const auto item = show->session().data().message(itemId);
 	if (!item || !item->hasDirectLink()) {
 		return;
 	}
 	const auto inRepliesContext = (context == Context::Replies);
+	const auto forceNonPublicLink = !videoTimestamp && base::IsCtrlPressed();
 	QGuiApplication::clipboard()->setText(
 		item->history()->session().api().exportDirectMessageLink(
 			item,
-			inRepliesContext));
+			inRepliesContext,
+			forceNonPublicLink,
+			videoTimestamp));
 
 	const auto isPublicLink = [&] {
+		if (forceNonPublicLink) {
+			return false;
+		}
 		const auto channel = item->history()->peer->asChannel();
 		Assert(channel != nullptr);
 		if (const auto rootId = item->replyToTop()) {
@@ -1128,10 +1339,20 @@ void CopyPostLink(
 		}
 		return channel->hasUsername();
 	}();
-
-	controller->showToast(isPublicLink
-		? tr::lng_channel_public_link_copied(tr::now)
-		: tr::lng_context_about_private_link(tr::now));
+	if (isPublicLink && !videoTimestamp) {
+		show->showToast({
+			.text = tr::lng_channel_public_link_copied(
+				tr::now, Ui::Text::Bold
+			).append('\n').append(Platform::IsMac()
+				? tr::lng_public_post_private_hint_cmd(tr::now)
+				: tr::lng_public_post_private_hint_ctrl(tr::now)),
+			.duration = kPublicPostLinkToastDuration,
+		});
+	} else {
+		show->showToast(isPublicLink
+			? tr::lng_channel_public_link_copied(tr::now)
+			: tr::lng_context_about_private_link(tr::now));
+	}
 }
 
 void CopyStoryLink(
@@ -1159,22 +1380,23 @@ void AddPollActions(
 		const auto radio = QString::fromUtf8(kRadio);
 		auto text = poll->question;
 		for (const auto &answer : poll->answers) {
-			text += '\n' + radio + answer.text;
+			text.append('\n').append(radio).append(answer.text);
 		}
-		if (!Ui::SkipTranslate({ text })) {
+		if (!Ui::SkipTranslate(text)) {
 			menu->addAction(tr::lng_context_translate(tr::now), [=] {
 				controller->show(Box(
 					Ui::TranslateBox,
 					item->history()->peer,
 					MsgId(),
-					TextWithEntities{ .text = text },
+					std::move(text),
 					item->forbidsForward()));
 			}, &st::menuIconTranslate);
 		}
 	}
 	if ((context != Context::History)
 		&& (context != Context::Replies)
-		&& (context != Context::Pinned)) {
+		&& (context != Context::Pinned)
+		&& (context != Context::ScheduledTopic)) {
 		return;
 	}
 	if (poll->closed()) {
@@ -1208,6 +1430,9 @@ void AddSaveSoundForNotifications(
 		not_null<HistoryItem*> item,
 		not_null<DocumentData*> document,
 		not_null<Window::SessionController*> controller) {
+	if (ItemHasTtl(item)) {
+		return;
+	}
 	const auto &ringtones = document->session().api().ringtones();
 	if (document->size > ringtones.maxSize()) {
 		return;
@@ -1215,11 +1440,11 @@ void AddSaveSoundForNotifications(
 		return;
 	} else if (int(ringtones.list().size()) >= ringtones.maxSavedCount()) {
 		return;
-	} else if (const auto song = document->song()) {
+	} else if (document->song()) {
 		if (document->duration() > ringtones.maxDuration()) {
 			return;
 		}
-	} else if (const auto voice = document->voice()) {
+	} else if (document->voice()) {
 		if (document->duration() > ringtones.maxDuration()) {
 			return;
 		}
@@ -1237,6 +1462,31 @@ void AddSaveSoundForNotifications(
 	}, &st::menuIconSoundAdd);
 }
 
+void AddWhenEditedForwardedActionHelper(
+		not_null<Ui::PopupMenu*> menu,
+		not_null<HistoryItem*> item,
+		bool insertSeparator) {
+	if (const auto forwarded = item->Get<HistoryMessageForwarded>()) {
+		if (!forwarded->story && forwarded->psaType.isEmpty()) {
+			if (insertSeparator && !menu->empty()) {
+				menu->addSeparator(&st::expandedMenuSeparator);
+			}
+			menu->addAction(Ui::WhenReadContextAction(
+				menu.get(),
+				Api::WhenOriginal(item->from(), forwarded->originalDate)));
+		}
+	} else if (const auto edited = item->Get<HistoryMessageEdited>()) {
+		if (!item->hideEditedBadge()) {
+			if (insertSeparator && !menu->empty()) {
+				menu->addSeparator(&st::expandedMenuSeparator);
+			}
+			menu->addAction(Ui::WhenReadContextAction(
+				menu.get(),
+				Api::WhenEdited(item->from(), edited->date)));
+		}
+	}
+}
+
 void AddWhoReactedAction(
 		not_null<Ui::PopupMenu*> menu,
 		not_null<QWidget*> context,
@@ -1244,11 +1494,27 @@ void AddWhoReactedAction(
 		not_null<Window::SessionController*> controller) {
 	const auto whoReadIds = std::make_shared<Api::WhoReadList>();
 	const auto weak = Ui::MakeWeak(menu.get());
-	const auto participantChosen = [=](uint64 id) {
+	const auto user = item->history()->peer;
+	const auto showOrPremium = [=] {
 		if (const auto strong = weak.data()) {
 			strong->hideMenu();
 		}
-		controller->showPeerInfo(PeerId(id));
+		const auto type = Ui::ShowOrPremium::ReadTime;
+		const auto name = user->shortName();
+		auto box = Box(Ui::ShowOrPremiumBox, type, name, [=] {
+			const auto api = &controller->session().api();
+			api->globalPrivacy().updateHideReadTime({});
+		}, [=] {
+			Settings::ShowPremium(controller, u"revtime_hidden"_q);
+		});
+		controller->show(std::move(box));
+	};
+	const auto itemId = item->fullId();
+	const auto participantChosen = [=](Ui::WhoReadParticipant who) {
+		if (const auto strong = weak.data()) {
+			strong->hideMenu();
+		}
+		ShowWhoReadInfo(controller, itemId, who);
 	};
 	const auto showAllChosen = [=, itemId = item->fullId()]{
 		// Pressing on an item that has a submenu doesn't hide it :(
@@ -1256,22 +1522,160 @@ void AddWhoReactedAction(
 			strong->hideMenu();
 		}
 		if (const auto item = controller->session().data().message(itemId)) {
-			controller->window().show(Reactions::FullListBox(
-				controller,
-				item,
-				{},
-				whoReadIds));
+			controller->showSection(
+				std::make_shared<Info::Memento>(
+					whoReadIds,
+					itemId,
+					HistoryView::Reactions::DefaultSelectedTab(
+						item,
+						whoReadIds)));
 		}
 	};
 	if (!menu->empty()) {
 		menu->addSeparator(&st::expandedMenuSeparator);
 	}
-	menu->addAction(Ui::WhoReactedContextAction(
-		menu.get(),
-		Api::WhoReacted(item, context, st::defaultWhoRead, whoReadIds),
-		Data::ReactedMenuFactory(&controller->session()),
-		participantChosen,
-		showAllChosen));
+	if (item->history()->peer->isUser()) {
+		AddWhenEditedForwardedActionHelper(menu, item, false);
+		menu->addAction(Ui::WhenReadContextAction(
+			menu.get(),
+			Api::WhoReacted(item, context, st::defaultWhoRead, whoReadIds),
+			showOrPremium));
+	} else {
+		menu->addAction(Ui::WhoReactedContextAction(
+			menu.get(),
+			Api::WhoReacted(item, context, st::defaultWhoRead, whoReadIds),
+			Data::ReactedMenuFactory(&controller->session()),
+			participantChosen,
+			showAllChosen));
+		AddWhenEditedForwardedActionHelper(menu, item, true);
+	}
+}
+
+void MaybeAddWhenEditedForwardedAction(
+		not_null<Ui::PopupMenu*> menu,
+		not_null<HistoryItem*> item) {
+	AddWhenEditedForwardedActionHelper(menu, item, true);
+}
+
+void AddEditTagAction(
+		not_null<Ui::PopupMenu*> menu,
+		const Data::ReactionId &id,
+		not_null<Window::SessionController*> controller) {
+	const auto owner = &controller->session().data();
+	const auto editLabel = owner->reactions().myTagTitle(id).isEmpty()
+		? tr::lng_context_tag_add_name(tr::now)
+		: tr::lng_context_tag_edit_name(tr::now);
+	menu->addAction(editLabel, [=] {
+		controller->show(Box(EditTagBox, controller, id));
+	}, &st::menuIconTagRename);
+}
+
+void AddTagPackAction(
+		not_null<Ui::PopupMenu*> menu,
+		const Data::ReactionId &id,
+		not_null<Window::SessionController*> controller) {
+	if (const auto custom = id.custom()) {
+		const auto owner = &controller->session().data();
+		if (const auto set = owner->document(custom)->sticker()) {
+			if (set->set.id) {
+				AddEmojiPacksAction(
+					menu,
+					{ set->set },
+					EmojiPacksSource::Tag,
+					controller);
+			}
+		}
+	}
+}
+
+void ShowTagMenu(
+		not_null<base::unique_qptr<Ui::PopupMenu>*> menu,
+		QPoint position,
+		not_null<QWidget*> context,
+		not_null<HistoryItem*> item,
+		const Data::ReactionId &id,
+		not_null<Window::SessionController*> controller) {
+	using namespace Data;
+	const auto itemId = item->fullId();
+	const auto owner = &controller->session().data();
+	*menu = base::make_unique_q<Ui::PopupMenu>(
+		context,
+		st::popupMenuExpandedSeparator);
+	(*menu)->addAction(tr::lng_context_filter_by_tag(tr::now), [=] {
+		HashtagClickHandler(SearchTagToQuery(id)).onClick({
+			.button = Qt::LeftButton,
+			.other = QVariant::fromValue(ClickHandlerContext{
+				.sessionWindow = controller,
+			}),
+		});
+	}, &st::menuIconTagFilter);
+
+	AddEditTagAction(menu->get(), id, controller);
+
+	const auto removeTag = [=] {
+		if (const auto item = owner->message(itemId)) {
+			const auto &list = item->reactions();
+			if (ranges::contains(list, id, &MessageReaction::id)) {
+				item->toggleReaction(id, HistoryReactionSource::Quick);
+			}
+		}
+	};
+	(*menu)->addAction(base::make_unique_q<Ui::Menu::Action>(
+		(*menu)->menu(),
+		st::menuWithIconsAttention,
+		Ui::Menu::CreateAction(
+			(*menu)->menu(),
+			tr::lng_context_remove_tag(tr::now),
+			removeTag),
+		&st::menuIconTagRemoveAttention,
+		&st::menuIconTagRemoveAttention));
+
+	AddTagPackAction(menu->get(), id, controller);
+
+	(*menu)->popup(position);
+}
+
+void ShowTagInListMenu(
+		not_null<base::unique_qptr<Ui::PopupMenu>*> menu,
+		QPoint position,
+		not_null<QWidget*> context,
+		const Data::ReactionId &id,
+		not_null<Window::SessionController*> controller) {
+	*menu = base::make_unique_q<Ui::PopupMenu>(
+		context,
+		st::popupMenuExpandedSeparator);
+
+	AddEditTagAction(menu->get(), id, controller);
+	AddTagPackAction(menu->get(), id, controller);
+
+	(*menu)->popup(position);
+}
+
+void AddCopyFilename(
+		not_null<Ui::PopupMenu*> menu,
+		not_null<DocumentData*> document,
+		Fn<bool()> showCopyRestrictionForSelected) {
+	const auto filenameToCopy = [&] {
+		if (document->isAudioFile()) {
+			return TextForMimeData().append(
+				Ui::Text::FormatSongNameFor(document).string());
+		} else if (document->sticker()
+			|| document->isAnimation()
+			|| document->isVideoMessage()
+			|| document->isVideoFile()
+			|| document->isVoiceMessage()) {
+			return TextForMimeData();
+		} else {
+			return TextForMimeData().append(document->filename());
+		}
+	}();
+	if (!filenameToCopy.empty()) {
+		menu->addAction(tr::lng_context_copy_filename(tr::now), [=] {
+			if (!showCopyRestrictionForSelected()) {
+				TextUtilities::SetClipboardText(filenameToCopy);
+			}
+		}, &st::menuIconCopy);
+	}
 }
 
 void ShowWhoReactedMenu(
@@ -1282,25 +1686,32 @@ void ShowWhoReactedMenu(
 		const Data::ReactionId &id,
 		not_null<Window::SessionController*> controller,
 		rpl::lifetime &lifetime) {
+	if (item->reactionsAreTags()) {
+		ShowTagMenu(menu, position, context, item, id, controller);
+		return;
+	}
+
 	struct State {
 		int addedToBottom = 0;
 	};
-	const auto participantChosen = [=](uint64 id) {
-		controller->showPeerInfo(PeerId(id));
+	const auto itemId = item->fullId();
+	const auto participantChosen = [=](Ui::WhoReadParticipant who) {
+		ShowWhoReadInfo(controller, itemId, who);
 	};
 	const auto showAllChosen = [=, itemId = item->fullId()]{
 		if (const auto item = controller->session().data().message(itemId)) {
-			controller->window().show(Reactions::FullListBox(
-				controller,
-				item,
-				id));
+			controller->showSection(std::make_shared<Info::Memento>(
+				nullptr,
+				itemId,
+				HistoryView::Reactions::DefaultSelectedTab(item, id)));
 		}
 	};
 	const auto owner = &controller->session().data();
 	const auto reactions = &owner->reactions();
 	const auto &list = reactions->list(
 		Data::Reactions::Type::Active);
-	const auto activeNonQuick = (id != reactions->favoriteId())
+	const auto activeNonQuick = !id.paid()
+		&& (id != reactions->favoriteId())
 		&& (ranges::contains(list, id, &Data::Reaction::id)
 			|| (controller->session().premium() && id.custom()));
 	const auto filler = lifetime.make_state<Ui::WhoReactedListMenu>(
@@ -1314,7 +1725,7 @@ void ShowWhoReactedMenu(
 		context,
 		st::defaultWhoRead
 	) | rpl::filter([=](const Ui::WhoReadContent &content) {
-		return !content.unknown;
+		return content.state != Ui::WhoReadState::Unknown;
 	}) | rpl::start_with_next([=, &lifetime](Ui::WhoReadContent &&content) {
 		const auto creating = !*menu;
 		const auto refillTop = [=] {
@@ -1427,6 +1838,12 @@ void AddEmojiPacksAction(
 					lt_name,
 					TextWithEntities{ name },
 					Ui::Text::RichLangValue);
+		case EmojiPacksSource::Tag:
+			return tr::lng_context_animated_tag(
+				tr::now,
+				lt_name,
+				TextWithEntities{ name },
+				Ui::Text::RichLangValue);
 		case EmojiPacksSource::Reaction:
 			if (!name.text.isEmpty()) {
 				return tr::lng_context_animated_reaction(
@@ -1487,6 +1904,39 @@ void AddEmojiPacksAction(
 		controller);
 }
 
+void AddSelectRestrictionAction(
+		not_null<Ui::PopupMenu*> menu,
+		not_null<HistoryItem*> item,
+		bool addIcon) {
+	const auto peer = item->history()->peer;
+	if ((peer->allowsForwarding() && !item->forbidsForward())
+		|| item->isSponsored()) {
+		return;
+	}
+	if (addIcon && !menu->empty()) {
+		menu->addSeparator();
+	}
+	auto button = base::make_unique_q<Ui::Menu::MultilineAction>(
+		menu->menu(),
+		menu->st().menu,
+		st::historyHasCustomEmoji,
+		addIcon
+			? st::historySponsoredAboutMenuLabelPosition
+			: st::historyHasCustomEmojiPosition,
+		(peer->isMegagroup()
+			? tr::lng_context_noforwards_info_group
+			: (peer->isChannel())
+			? tr::lng_context_noforwards_info_channel
+			: (peer->isUser() && peer->asUser()->isBot())
+			? tr::lng_context_noforwards_info_channel
+			: tr::lng_context_noforwards_info_bot)(
+			tr::now,
+			Ui::Text::RichLangValue),
+		addIcon ? &st::menuIconCopyright : nullptr);
+	button->setAttribute(Qt::WA_TransparentForMouseEvents);
+	menu->addAction(std::move(button));
+}
+
 TextWithEntities TransribedText(not_null<HistoryItem*> item) {
 	const auto media = item->media();
 	const auto document = media ? media->document() : nullptr;
@@ -1503,6 +1953,12 @@ TextWithEntities TransribedText(not_null<HistoryItem*> item) {
 		return { entry.result };
 	}
 	return {};
+}
+
+bool ItemHasTtl(HistoryItem *item) {
+	return (item && item->media())
+		? (item->media()->ttlSeconds() > 0)
+		: false;
 }
 
 } // namespace HistoryView

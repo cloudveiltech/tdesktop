@@ -30,6 +30,9 @@ public:
 		ProfilePhoto,
 		Voices,
 		About,
+		Birthday,
+		GiftsAutoSave,
+		NoPaidMessages,
 	};
 	enum class Option {
 		Everyone,
@@ -37,10 +40,15 @@ public:
 		CloseFriends,
 		Nobody,
 	};
+	struct Exceptions {
+		std::vector<not_null<PeerData*>> peers;
+		bool premiums = false;
+		bool miniapps = false;
+	};
 	struct Rule {
 		Option option = Option::Everyone;
-		std::vector<not_null<PeerData*>> always;
-		std::vector<not_null<PeerData*>> never;
+		Exceptions always;
+		Exceptions never;
 		bool ignoreAlways = false;
 		bool ignoreNever = false;
 	};

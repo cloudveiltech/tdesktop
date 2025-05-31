@@ -63,11 +63,11 @@ void TopicsView::prepare(MsgId frontRootId, Fn<void()> customEmojiRepaint) {
 			&& title.version == topic->titleVersion()) {
 			continue;
 		}
-		const auto context = Core::MarkedTextContext{
+		const auto context = Core::TextContext({
 			.session = &topic->session(),
-			.customEmojiRepaint = customEmojiRepaint,
+			.repaint = customEmojiRepaint,
 			.customEmojiLoopLimit = kIconLoopCount,
-		};
+		});
 		auto topicTitle = topic->titleWithIcon();
 		title.topicRootId = rootId;
 		title.version = topic->titleVersion();
@@ -75,7 +75,7 @@ void TopicsView::prepare(MsgId frontRootId, Fn<void()> customEmojiRepaint) {
 		title.title.setMarkedText(
 			st::dialogsTextStyle,
 			(unread
-				? Ui::Text::PlainLink(
+				? Ui::Text::Colorized(
 					Ui::Text::Wrapped(
 						std::move(topicTitle),
 						EntityType::Bold))

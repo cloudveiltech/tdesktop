@@ -22,6 +22,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "data/data_user.h"
 #include "ui/boxes/confirm_box.h"
+#include "boxes/abstract_box.h"
 #include "boxes/phone_banned_box.h"
 #include "core/application.h"
 #include "window/window_controller.h"
@@ -32,11 +33,16 @@ namespace Intro {
 namespace details {
 namespace {
 
-bool AllowPhoneAttempt(const QString &phone) {
+[[nodiscard]] bool AllowPhoneAttempt(const QString &phone) {
 	const auto digits = ranges::count_if(
 		phone,
 		[](QChar ch) { return ch.isNumber(); });
 	return (digits > 1);
+}
+
+[[nodiscard]] QString DigitsOnly(QString value) {
+	static const auto RegExp = QRegularExpression("[^0-9]");
+	return value.replace(RegExp, QString());
 }
 
 } // namespace
@@ -75,6 +81,9 @@ PhoneWidget::PhoneWidget(
 	) | rpl::start_with_next([=](const QString &added) {
 		_phone->addedToNumber(added);
 	}, _phone->lifetime());
+	_code->spacePressed() | rpl::start_with_next([=] {
+		submit();
+	}, _code->lifetime());
 	connect(_phone, &Ui::PhonePartInput::changed, [=] { phoneChanged(); });
 	connect(_code, &Ui::CountryCodeInput::changed, [=] { phoneChanged(); });
 
@@ -199,15 +208,12 @@ void PhoneWidget::submit() {
 	cancelNearestDcRequest();
 
 	// Check if such account is authorized already.
-	const auto digitsOnly = [](QString value) {
-		return value.replace(QRegularExpression("[^0-9]"), QString());
-	};
-	const auto phoneDigits = digitsOnly(phone);
+	const auto phoneDigits = DigitsOnly(phone);
 	for (const auto &[index, existing] : Core::App().domain().accounts()) {
 		const auto raw = existing.get();
 		if (const auto session = raw->maybeSession()) {
 			if (raw->mtp().environment() == account().mtp().environment()
-				&& digitsOnly(session->user()->phone()) == phoneDigits) {
+				&& DigitsOnly(session->user()->phone()) == phoneDigits) {
 				crl::on_main(raw, [=] {
 					Core::App().domain().activate(raw);
 				});
@@ -261,7 +267,7 @@ void PhoneWidget::phoneSubmitDone(const MTPauth_SentCode &result) {
 
 	result.match([&](const MTPDauth_sentCode &data) {
 		fillSentCodeData(data);
-		getData()->phone = _sentPhone;
+		getData()->phone = DigitsOnly(_sentPhone);
 		getData()->phoneHash = qba(data.vphone_code_hash());
 		const auto next = data.vnext_type();
 		if (next && next->type() == mtpc_auth_codeTypeCall) {
@@ -274,6 +280,9 @@ void PhoneWidget::phoneSubmitDone(const MTPauth_SentCode &result) {
 		goNext<CodeWidget>();
 	}, [&](const MTPDauth_sentCodeSuccess &data) {
 		finish(data.vauthorization());
+	}, [](const MTPDauth_sentCodePaymentRequired &) {
+		LOG(("API Error: Unexpected auth.sentCodePaymentRequired "
+			"(PhoneWidget::phoneSubmitDone)."));
 	});
 }
 

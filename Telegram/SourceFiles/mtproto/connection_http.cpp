@@ -56,7 +56,8 @@ void HttpConnection::disconnectFromServer() {
 	if (_status == Status::Finished) return;
 	_status = Status::Finished;
 
-	for (const auto request : base::take(_requests)) {
+	const auto requests = base::take(_requests);
+	for (const auto request : requests) {
 		request->abort();
 		request->deleteLater();
 	}
@@ -86,8 +87,7 @@ void HttpConnection::connectToServer(
 	if (Logs::DebugEnabled()) {
 		_debugId = u"%1(dc:%2,%3)"_q
 			.arg(_debugId.toInt())
-			.arg(ProtocolDcDebugId(protocolDcId))
-			.arg(url().toDisplayString());
+			.arg(ProtocolDcDebugId(protocolDcId), url().toDisplayString());
 	}
 
 	_pingTime = crl::now();

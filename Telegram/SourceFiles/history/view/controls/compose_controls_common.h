@@ -21,17 +21,46 @@ struct MessageToEdit {
 	FullMsgId fullId;
 	Api::SendOptions options;
 	TextWithTags textWithTags;
+	bool spoilered = false;
 };
 struct VoiceToSend {
 	QByteArray bytes;
 	VoiceWaveform waveform;
 	crl::time duration = 0;
 	Api::SendOptions options;
+	bool video = false;
 };
 struct SendActionUpdate {
 	Api::SendProgressType type = Api::SendProgressType();
 	int progress = 0;
 	bool cancel = false;
+};
+
+enum class WriteRestrictionType {
+	None,
+	Rights,
+	PremiumRequired,
+	Frozen,
+};
+
+struct WriteRestriction {
+	using Type = WriteRestrictionType;
+
+	QString text;
+	QString button;
+	Type type = Type::None;
+	int boostsToLift = false;
+
+	[[nodiscard]] bool empty() const {
+		return (type == Type::None);
+	}
+	explicit operator bool() const {
+		return !empty();
+	}
+
+	friend inline bool operator==(
+		const WriteRestriction &a,
+		const WriteRestriction &b) = default;
 };
 
 struct SetHistoryArgs {
@@ -42,7 +71,7 @@ struct SetHistoryArgs {
 	rpl::producer<int> slowmodeSecondsLeft;
 	rpl::producer<bool> sendDisabledBySlowmode;
 	rpl::producer<bool> liked;
-	rpl::producer<std::optional<QString>> writeRestriction;
+	rpl::producer<WriteRestriction> writeRestriction;
 };
 
 struct ReplyNextRequest {

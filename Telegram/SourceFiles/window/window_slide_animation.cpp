@@ -53,9 +53,10 @@ void SlideAnimation::paintContents(QPainter &p) const {
 					0,
 					0,
 					_cacheUnder,
-					(_cacheUnder.width() - leftWidth * cIntRetinaFactor()),
+					_cacheUnder.width()
+						- leftWidth * style::DevicePixelRatio(),
 					0,
-					leftWidth * cIntRetinaFactor(),
+					leftWidth * style::DevicePixelRatio(),
 					_topSkip * retina);
 			}
 
@@ -67,7 +68,7 @@ void SlideAnimation::paintContents(QPainter &p) const {
 					_cacheOver,
 					0,
 					0,
-					rightWidth * cIntRetinaFactor(),
+					rightWidth * style::DevicePixelRatio(),
 					_topSkip * retina);
 			}
 
@@ -193,11 +194,15 @@ void SlideAnimation::start() {
 		fromLeft ? 0. : 1.,
 		st::slideDuration,
 		transition());
-	_repaintCallback();
+	if (const auto onstack = _repaintCallback) {
+		onstack();
+	}
 }
 
 void SlideAnimation::animationCallback() {
-	_repaintCallback();
+	if (const auto onstack = _repaintCallback) {
+		onstack();
+	}
 	if (!_animation.animating()) {
 		if (const auto onstack = _finishedCallback) {
 			onstack();

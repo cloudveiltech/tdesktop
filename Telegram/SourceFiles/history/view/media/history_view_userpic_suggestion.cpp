@@ -146,10 +146,8 @@ void ShowSetToast(
 	const auto weak = controller->showToast({
 		.text = text,
 		.st = st.get(),
+		.attach = RectPart::Bottom,
 		.duration = kToastDuration,
-		.multiline = true,
-		.dark = true,
-		.slideSide = RectPart::Bottom,
 	});
 	if (const auto strong = weak.get()) {
 		const auto widget = strong->widget();
@@ -199,16 +197,16 @@ QSize UserpicSuggestion::size() {
 	return { _photo.maxWidth(), _photo.minHeight() };
 }
 
-QString UserpicSuggestion::title() {
-	return QString();
+TextWithEntities UserpicSuggestion::title() {
+	return {};
 }
 
-QString UserpicSuggestion::button() {
+rpl::producer<QString> UserpicSuggestion::button() {
 	return _photo.getPhoto()->hasVideo()
 		? (_photo.parent()->data()->out()
-			? tr::lng_action_suggested_video_button(tr::now)
-			: tr::lng_profile_set_video_button(tr::now))
-		: tr::lng_action_suggested_photo_button(tr::now);
+			? tr::lng_action_suggested_video_button()
+			: tr::lng_profile_set_video_button())
+		: tr::lng_action_suggested_photo_button();
 }
 
 TextWithEntities UserpicSuggestion::subtitle() {

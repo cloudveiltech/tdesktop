@@ -42,6 +42,15 @@ QSizeF FlipSizeByRotation(const QSizeF &size, int angle) {
 	return (((angle / 90) % 2) == 1) ? size.transposed() : size;
 }
 
+[[nodiscard]] QRectF OriginalCrop(QSize outer, QSize inner) {
+	const auto size = inner.scaled(outer, Qt::KeepAspectRatio);
+	return QRectF(
+		(outer.width() - size.width()) / 2,
+		(outer.height() - size.height()) / 2,
+		size.width(),
+		size.height());
+}
+
 } // namespace
 
 Crop::Crop(
@@ -60,6 +69,8 @@ Crop::Crop(
 , _data(std::move(data))
 , _cropOriginal(modifications.crop.isValid()
 	? modifications.crop
+	: !_data.exactSize.isEmpty()
+	? OriginalCrop(_imageSize, _data.exactSize)
 	: QRectF(QPoint(), _imageSize))
 , _angle(modifications.angle)
 , _flipped(modifications.flipped)
@@ -212,8 +223,8 @@ void Crop::computeDownState(const QPoint &p) {
 	const auto edge = mouseState(p);
 	const auto &inner = _innerRect;
 	const auto &crop = _cropPaint;
-	const auto [iLeft, iTop, iRight, iBottom] = RectEdges(inner);
-	const auto [cLeft, cTop, cRight, cBottom] = RectEdges(crop);
+	const auto &[iLeft, iTop, iRight, iBottom] = RectEdges(inner);
+	const auto &[cLeft, cTop, cRight, cBottom] = RectEdges(crop);
 	_down = InfoAtDown{
 		.rect = crop,
 		.edge = edge,

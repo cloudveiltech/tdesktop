@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_common.h"
 #include "chat_helpers/compose/compose_features.h"
 #include "ui/rp_widget.h"
+#include "ui/controls/swipe_handler_data.h"
 #include "ui/effects/animations.h"
 #include "ui/effects/message_sending_animation_common.h"
 #include "ui/effects/panel_animation.h"
@@ -36,7 +37,7 @@ class TabbedSearch;
 } // namespace Ui
 
 namespace SendMenu {
-enum class Type;
+struct Details;
 } // namespace SendMenu
 
 namespace style {
@@ -62,6 +63,8 @@ struct FileChosen {
 	not_null<DocumentData*> document;
 	Api::SendOptions options;
 	Ui::MessageSendingAnimationFrom messageSendingFrom;
+	std::shared_ptr<Data::EmojiStatusCollectible> collectible;
+	TextWithTags caption;
 };
 
 struct PhotoChosen {
@@ -79,8 +82,15 @@ using InlineChosen = InlineBots::ResultSelected;
 enum class TabbedSelectorMode {
 	Full,
 	EmojiOnly,
+	StickersOnly,
 	MediaEditor,
 	EmojiStatus,
+	ChannelStatus,
+	BackgroundEmoji,
+	FullReactions,
+	RecentReactions,
+	PeerTitle,
+	ChatIntro,
 };
 
 struct TabbedSelectorDescriptor {
@@ -88,16 +98,23 @@ struct TabbedSelectorDescriptor {
 	const style::EmojiPan &st;
 	PauseReason level = {};
 	TabbedSelectorMode mode = TabbedSelectorMode::Full;
+	Fn<QColor()> customTextColor;
 	ComposeFeatures features;
 };
 
+enum class TabbedSearchType {
+	Emoji,
+	Status,
+	ProfilePhoto,
+	Stickers,
+	Greeting,
+};
 [[nodiscard]] std::unique_ptr<Ui::TabbedSearch> MakeSearch(
 	not_null<Ui::RpWidget*> parent,
 	const style::EmojiPan &st,
 	Fn<void(std::vector<QString>&&)> callback,
 	not_null<Main::Session*> session,
-	bool statusCategories = false,
-	bool profilePhotoCategories = false);
+	TabbedSearchType type);
 
 class TabbedSelector : public Ui::RpWidget {
 public:
@@ -139,7 +156,7 @@ public:
 	void refreshStickers();
 	void setCurrentPeer(PeerData *peer);
 	void provideRecentEmoji(
-		const std::vector<DocumentId> &customRecentList);
+		const std::vector<EmojiStatusId> &customRecentList);
 
 	void hideFinished();
 	void showStarted();
@@ -164,7 +181,7 @@ public:
 		_beforeHidingCallback = std::move(callback);
 	}
 
-	void showMenuWithType(SendMenu::Type type);
+	void showMenuWithDetails(SendMenu::Details details);
 	void setDropDown(bool dropDown);
 
 	// Float player interface.
@@ -193,16 +210,19 @@ private:
 		object_ptr<Inner> takeWidget();
 		void returnWidget(object_ptr<Inner> widget);
 
-		SelectorTab type() const {
+		[[nodiscard]] SelectorTab type() const {
 			return _type;
 		}
-		int index() const {
+		[[nodiscard]] int index() const {
 			return _index;
 		}
-		Inner *widget() const {
+		[[nodiscard]] Inner *widget() const {
 			return _weak;
 		}
-		not_null<InnerFooter*> footer() const {
+		[[nodiscard]] bool hasFooter() const {
+			return _footer != nullptr;
+		}
+		[[nodiscard]] not_null<InnerFooter*> footer() const {
 			return _footer;
 		}
 
@@ -210,7 +230,7 @@ private:
 		void saveScrollTop(int scrollTop) {
 			_scrollTop = scrollTop;
 		}
-		int getScrollTop() const {
+		[[nodiscard]] int getScrollTop() const {
 			return _scrollTop;
 		}
 
@@ -271,14 +291,20 @@ private:
 	not_null<GifsListWidget*> gifs() const;
 	not_null<StickersListWidget*> masks() const;
 
+	void reinstallSwipe(not_null<Ui::RpWidget*> widget);
+
 	const style::EmojiPan &_st;
 	const ComposeFeatures _features;
 	const std::shared_ptr<Show> _show;
 	const PauseReason _level = {};
+	const Fn<QColor()> _customTextColor;
+
+	Ui::Controls::SwipeBackResult _swipeBackData;
 
 	Mode _mode = Mode::Full;
 	int _roundRadius = 0;
 	int _footerTop = 0;
+	bool _noFooter = false;
 	Ui::CornersPixmaps _panelRounding;
 	Ui::CornersPixmaps _categoriesRounding;
 	PeerData *_currentPeer = nullptr;
@@ -292,6 +318,7 @@ private:
 	object_ptr<Ui::PlainShadow> _bottomShadow;
 	object_ptr<Ui::ScrollArea> _scroll;
 	object_ptr<Ui::FlatLabel> _restrictedLabel = { nullptr };
+	QString _restrictedLabelKey;
 	std::vector<Tab> _tabs;
 	SelectorTab _currentTabType = SelectorTab::Emoji;
 
@@ -309,6 +336,8 @@ private:
 
 	rpl::event_stream<> _showRequests;
 	rpl::event_stream<> _slideFinished;
+
+	rpl::lifetime _swipeLifetime;
 
 };
 
@@ -364,7 +393,7 @@ public:
 	virtual void beforeHiding() {
 	}
 	[[nodiscard]] virtual base::unique_qptr<Ui::PopupMenu> fillContextMenu(
-			SendMenu::Type type) {
+			const SendMenu::Details &details) {
 		return nullptr;
 	}
 
@@ -406,7 +435,7 @@ private:
 
 	int _visibleTop = 0;
 	int _visibleBottom = 0;
-	int _minimalHeight = 0;
+	std::optional<int> _minimalHeight;
 
 	rpl::event_stream<int> _scrollToRequests;
 	rpl::event_stream<bool> _disableScrollRequests;

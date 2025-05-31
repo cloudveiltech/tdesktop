@@ -4,14 +4,7 @@
 # For license and copyright information please follow this link:
 # https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
-if (APPLE)
-    # target_precompile_headers with COMPILE_LANGUAGE restriction.
-    cmake_minimum_required(VERSION 3.23)
-else()
-    cmake_minimum_required(VERSION 3.16)
-endif()
-cmake_policy(SET CMP0076 NEW)
-cmake_policy(SET CMP0091 NEW)
+cmake_minimum_required(VERSION 3.25...3.31)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
@@ -56,17 +49,10 @@ include(cmake/validate_d3d_compiler.cmake)
 include(cmake/target_prepare_qrc.cmake)
 
 include(cmake/options.cmake)
-
-if (NOT DESKTOP_APP_USE_PACKAGED)
-    if (WIN32)
-        set(qt_version 5.15.10)
-    elseif (APPLE)
-        set(qt_version 6.2.5)
-    endif()
-endif()
 include(cmake/external/qt/package.cmake)
 
 set(desktop_app_skip_libs
+    glibmm
     variant
 )
 

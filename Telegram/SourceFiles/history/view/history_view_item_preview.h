@@ -16,6 +16,9 @@ struct ItemPreviewImage {
 	[[nodiscard]] bool hasSpoiler() const {
 		return (cacheKey & 1);
 	}
+	[[nodiscard]] bool isEllipse() const {
+		return (cacheKey & 2);
+	}
 
 	explicit operator bool() const {
 		return !data.isNull();
@@ -40,6 +43,7 @@ struct ToPreviewOptions {
 	const std::vector<ItemPreviewImage> *existing = nullptr;
 	bool hideSender = false;
 	bool hideCaption = false;
+	bool ignoreMessageText = false;
 	bool generateImages = true;
 	bool ignoreGroup = false;
 	bool ignoreTopic = true;

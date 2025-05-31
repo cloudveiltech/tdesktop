@@ -137,7 +137,8 @@ DocumentData *Document::readFromStreamHelper(
 				|| info->setId == Data::Stickers::CloudRecentSetId
 				|| info->setId == Data::Stickers::CloudRecentAttachedSetId
 				|| info->setId == Data::Stickers::FavedSetId
-				|| info->setId == Data::Stickers::CustomSetId) {
+				|| info->setId == Data::Stickers::CustomSetId
+				|| info->setId == Data::Stickers::CollectibleSetId) {
 				typeOfSet = StickerSetTypeEmpty;
 			}
 
@@ -207,7 +208,9 @@ DocumentData *Document::readFromStreamHelper(
 				MTP_double(duration / 1000.),
 				MTP_int(width),
 				MTP_int(height),
-				MTPint())); // preload_prefix_size
+				MTPint(), // preload_prefix_size
+				MTPdouble(), // video_start_ts
+				MTPstring())); // video_codec
 		} else {
 			attributes.push_back(MTP_documentAttributeImageSize(
 				MTP_int(width),

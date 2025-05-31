@@ -8,16 +8,22 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "api/api_common.h"
+#include "base/object_ptr.h"
 #include "menu/menu_send.h"
 #include "data/data_poll.h"
 #include "ui/widgets/menu/menu_add_action_callback.h"
 
 class History;
 
+namespace Api {
+struct SendOptions;
+} // namespace Api
+
 namespace Ui {
 class RpWidget;
 class BoxContent;
 class GenericBox;
+class Show;
 } // namespace Ui
 
 namespace Data {
@@ -33,6 +39,8 @@ namespace Dialogs {
 class MainList;
 struct EntryState;
 struct UnreadState;
+class Key;
+class Entry;
 } // namespace Dialogs
 
 namespace ChatHelpers {
@@ -63,8 +71,16 @@ bool FillVideoChatMenu(
 	Dialogs::EntryState request,
 	const PeerMenuCallback &addAction);
 
+void FillSenderUserpicMenu(
+	not_null<SessionController*> controller,
+	not_null<PeerData*> peer,
+	Ui::InputField *fieldForMention,
+	Dialogs::Key searchInEntry,
+	const PeerMenuCallback &addAction);
+
 void MenuAddMarkAsReadAllChatsAction(
-	not_null<Window::SessionController*> controller,
+	not_null<Main::Session*> session,
+	std::shared_ptr<Ui::Show> show,
 	const PeerMenuCallback &addAction);
 
 void MenuAddMarkAsReadChatListAction(
@@ -73,7 +89,9 @@ void MenuAddMarkAsReadChatListAction(
 	const PeerMenuCallback &addAction,
 	Fn<Dialogs::UnreadState()> customUnreadState = nullptr);
 
-void PeerMenuExportChat(not_null<PeerData*> peer);
+void PeerMenuExportChat(
+	not_null<Window::SessionController*> controller,
+	not_null<PeerData*> peer);
 void PeerMenuDeleteContact(
 	not_null<Window::SessionController*> controller,
 	not_null<UserData*> user);
@@ -86,12 +104,11 @@ void PeerMenuAddChannelMembers(
 void PeerMenuCreatePoll(
 	not_null<Window::SessionController*> controller,
 	not_null<PeerData*> peer,
-	MsgId replyToId = 0,
-	MsgId topicRootId = 0,
+	FullReplyTo replyTo = FullReplyTo(),
 	PollData::Flags chosen = PollData::Flags(),
 	PollData::Flags disabled = PollData::Flags(),
 	Api::SendType sendType = Api::SendType::Normal,
-	SendMenu::Type sendMenuType = SendMenu::Type::Scheduled);
+	SendMenu::Details sendMenuDetails = SendMenu::Details());
 void PeerMenuDeleteTopicWithConfirmation(
 	not_null<Window::SessionNavigation*> navigation,
 	not_null<Data::ForumTopic*> topic);
@@ -110,14 +127,19 @@ void PeerMenuBlockUserBox(
 	not_null<PeerData*> peer,
 	std::variant<v::null_t, bool> suggestReport,
 	std::variant<v::null_t, ClearChat, ClearReply> suggestClear);
-void PeerMenuUnblockUserWithBotRestart(not_null<UserData*> user);
+void PeerMenuUnblockUserWithBotRestart(
+	std::shared_ptr<Ui::Show> show,
+	not_null<UserData*> user);
 
 void BlockSenderFromRepliesBox(
 	not_null<Ui::GenericBox*> box,
 	not_null<Window::SessionController*> controller,
 	FullMsgId id);
 
-void ToggleHistoryArchived(not_null<History*> history, bool archived);
+void ToggleHistoryArchived(
+	std::shared_ptr<ChatHelpers::Show> show,
+	not_null<History*> history,
+	bool archived);
 Fn<void()> ClearHistoryHandler(
 	not_null<Window::SessionController*> controller,
 	not_null<PeerData*> peer);
@@ -125,6 +147,15 @@ Fn<void()> DeleteAndLeaveHandler(
 	not_null<Window::SessionController*> controller,
 	not_null<PeerData*> peer);
 
+object_ptr<Ui::BoxContent> PrepareChooseRecipientBox(
+	not_null<Main::Session*> session,
+	FnMut<bool(not_null<Data::Thread*>)> &&chosen,
+	rpl::producer<QString> titleOverride = nullptr,
+	FnMut<void()> &&successCallback = nullptr,
+	InlineBots::PeerTypes typesRestriction = 0,
+	Fn<void(
+		std::vector<not_null<Data::Thread*>>,
+		Api::SendOptions)> sendMany = nullptr);
 QPointer<Ui::BoxContent> ShowChooseRecipientBox(
 	not_null<Window::SessionNavigation*> navigation,
 	FnMut<bool(not_null<Data::Thread*>)> &&chosen,
@@ -168,6 +199,11 @@ void ToggleMessagePinned(
 	not_null<Window::SessionNavigation*> navigation,
 	FullMsgId itemId,
 	bool pin);
+void TogglePinnedThread(
+	not_null<Window::SessionController*> controller,
+	not_null<Dialogs::Entry*> entry,
+	FilterId filterId,
+	Fn<void()> onToggled);
 void HidePinnedBar(
 	not_null<Window::SessionNavigation*> navigation,
 	not_null<PeerData*> peer,
@@ -181,5 +217,8 @@ void UnpinAllMessages(
 void MarkAsReadThread(not_null<Data::Thread*> thread);
 
 void AddSeparatorAndShiftUp(const PeerMenuCallback &addAction);
+
+[[nodiscard]] bool IsArchived(not_null<History*> history);
+[[nodiscard]] bool CanArchive(History *history, PeerData *peer);
 
 } // namespace Window

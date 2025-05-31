@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history.h"
 #include "history/history_item_components.h"
 #include "history/history_item.h"
+#include "history/history_view_swipe_back_session.h"
 #include "ui/boxes/confirm_box.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/shadow.h"
@@ -94,6 +95,7 @@ PinnedWidget::PinnedWidget(
 	not_null<Window::SessionController*> controller,
 	not_null<Data::Thread*> thread)
 : Window::SectionWidget(parent, controller, thread->peer())
+, WindowListDelegate(controller)
 , _thread(thread->migrateToOrMe())
 , _history(thread->owningHistory())
 , _migratedPeer(thread->asHistory()
@@ -161,7 +163,7 @@ PinnedWidget::PinnedWidget(
 
 	_inner = _scroll->setOwnedWidget(object_ptr<ListWidget>(
 		this,
-		controller,
+		&controller->session(),
 		static_cast<ListDelegate*>(this)));
 	_scroll->move(0, _topBar->height());
 	_scroll->show();
@@ -172,6 +174,7 @@ PinnedWidget::PinnedWidget(
 
 	setupClearButton();
 	setupTranslateBar();
+	Window::SetupSwipeBackSection(this, _scroll.get(), _inner);
 }
 
 PinnedWidget::~PinnedWidget() = default;
@@ -262,7 +265,7 @@ void PinnedWidget::showAtPosition(
 		FullMsgId originId) {
 	_inner->showAtPosition(
 		position,
-		anim::type::normal,
+		{},
 		_cornerButtons.doneJumpFrom(position.fullId, originId));
 }
 
@@ -346,7 +349,7 @@ void PinnedWidget::restoreState(not_null<PinnedMemento*> memento) {
 				? FullMsgId(_history->peer->id, highlight)
 				: FullMsgId(_migratedPeer->id, -highlight)),
 			.date = TimeId(0),
-		}, anim::type::instant);
+		}, { Window::SectionShow::Way::Forward, anim::type::instant });
 	}
 }
 
@@ -597,7 +600,11 @@ void PinnedWidget::listUpdateDateLink(
 }
 
 bool PinnedWidget::listElementHideReply(not_null<const Element*> view) {
-	return (view->data()->replyToId() == _thread->topicRootId());
+	if (const auto reply = view->data()->Get<HistoryMessageReply>()) {
+		return !reply->fields().manualQuote
+			&& (reply->messageId() == _thread->topicRootId());
+	}
+	return false;
 }
 
 bool PinnedWidget::listElementShownUnread(not_null<const Element*> view) {
@@ -612,6 +619,15 @@ bool PinnedWidget::listIsGoodForAroundPosition(
 void PinnedWidget::listSendBotCommand(
 	const QString &command,
 	const FullMsgId &context) {
+}
+
+void PinnedWidget::listSearch(
+		const QString &query,
+		const FullMsgId &context) {
+	const auto inChat = _history->peer->isUser()
+		? Dialogs::Key()
+		: Dialogs::Key(_history);
+	controller()->searchMessages(query, inChat);
 }
 
 void PinnedWidget::listHandleViaClick(not_null<UserData*> bot) {
@@ -663,6 +679,11 @@ void PinnedWidget::listPaintEmpty(
 
 QString PinnedWidget::listElementAuthorRank(not_null<const Element*> view) {
 	return {};
+}
+
+bool PinnedWidget::listElementHideTopicButton(
+		not_null<const Element*> view) {
+	return true;
 }
 
 History *PinnedWidget::listTranslateHistory() {

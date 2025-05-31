@@ -7,8 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "ui/text/text.h"
 #include "ui/effects/animations.h"
+#include "ui/text/text.h"
 #include "ui/unread_badge.h"
 #include "ui/userpic_view.h"
 #include "dialogs/dialogs_key.h"
@@ -39,6 +39,7 @@ class Entry;
 enum class SortMode;
 
 [[nodiscard]] QRect CornerBadgeTTLRect(int photoSize);
+[[nodiscard]] QImage BlurredDarkenedPart(QImage image, QRect part);
 
 class BasicRow {
 public:
@@ -50,7 +51,8 @@ public:
 		not_null<Entry*> entry,
 		PeerData *peer,
 		Ui::VideoUserpic *videoUserpic,
-		const Ui::PaintContext &context) const;
+		const Ui::PaintContext &context,
+		bool hasUnreadBadgesAbove) const;
 
 	void addRipple(QPoint origin, QSize size, Fn<void()> updateCallback);
 	virtual void stopLastRipple();
@@ -93,17 +95,19 @@ public:
 
 		return _height;
 	}
-	void recountHeight(float64 narrowRatio);
+	void recountHeight(float64 narrowRatio, FilterId filterId);
 
 	void updateCornerBadgeShown(
 		not_null<PeerData*> peer,
-		Fn<void()> updateCallback = nullptr) const;
+		Fn<void()> updateCallback = nullptr,
+		bool hasUnreadBadgesAbove = false) const;
 	void paintUserpic(
 		Painter &p,
 		not_null<Entry*> entry,
 		PeerData *peer,
 		Ui::VideoUserpic *videoUserpic,
-		const Ui::PaintContext &context) const final override;
+		const Ui::PaintContext &context,
+		bool hasUnreadBadgesAbove) const final override;
 
 	[[nodiscard]] bool lookupIsInTopicJump(int x, int y) const;
 	void stopLastRipple() override;
@@ -129,6 +133,9 @@ public:
 	}
 	[[nodiscard]] Data::Thread *thread() const {
 		return _id.thread();
+	}
+	[[nodiscard]] Data::SavedSublist *sublist() const {
+		return _id.sublist();
 	}
 	[[nodiscard]] not_null<Entry*> entry() const {
 		return _id.entry();
@@ -188,7 +195,8 @@ private:
 		PeerData *peer,
 		Ui::VideoUserpic *videoUserpic,
 		Ui::PeerUserpicView &view,
-		const Ui::PaintContext &context);
+		const Ui::PaintContext &context,
+		bool subscribed);
 
 	Key _id;
 	mutable std::unique_ptr<CornerBadgeUserpic> _cornerBadgeUserpic;

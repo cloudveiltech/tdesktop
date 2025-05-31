@@ -372,10 +372,16 @@ void TranslateBar::setup(not_null<History*> history) {
 			const auto&,
 			const auto&) {
 		using Flag = PeerData::TranslationFlag;
+		const auto automatic = history->peer->autoTranslation();
 		return (history->peer->translationFlag() != Flag::Enabled)
 			? rpl::single(QString())
 			: history->translatedTo()
-			? tr::lng_translate_show_original()
+			? (automatic
+				? tr::lng_translate_return_original(
+					lt_language,
+					rpl::single(Ui::LanguageName(
+						history->translateOfferedFrom())))
+				: tr::lng_translate_show_original())
 			: history->translateOfferedFrom()
 			? Ui::TranslateBarTo(to)
 			: rpl::single(QString());
@@ -518,22 +524,20 @@ void TranslateBar::showToast(
 		const QString &buttonText,
 		Fn<void()> buttonCallback) {
 	const auto st = std::make_shared<style::Toast>(st::historyPremiumToast);
-	st->padding.setRight(st::historyPremiumViewSet.font->width(buttonText)
+	st->padding.setRight(st::historyPremiumViewSet.style.font->width(buttonText)
 		- st::historyPremiumViewSet.width);
 
 	const auto weak = Ui::Toast::Show(_wrap.window(), Ui::Toast::Config{
 		.text = std::move(text),
 		.st = st.get(),
+		.attach = RectPart::Bottom,
+		.acceptinput = true,
 		.duration = kToastDuration,
-		.multiline = true,
-		.dark = true,
-		.slideSide = RectPart::Bottom,
 	});
 	const auto strong = weak.get();
 	if (!strong) {
 		return;
 	}
-	strong->setInputUsed(true);
 	const auto widget = strong->widget();
 	widget->lifetime().add([st] {});
 	const auto hideToast = [weak] {

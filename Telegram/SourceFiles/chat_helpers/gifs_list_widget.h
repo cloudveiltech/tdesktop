@@ -40,7 +40,7 @@ class SessionController;
 } // namespace Window
 
 namespace SendMenu {
-enum class Type;
+struct Details;
 } // namespace SendMenu
 
 namespace Data {
@@ -102,7 +102,7 @@ public:
 	rpl::producer<> cancelRequests() const;
 
 	base::unique_qptr<Ui::PopupMenu> fillContextMenu(
-		SendMenu::Type type) override;
+		const SendMenu::Details &details) override;
 
 	~GifsListWidget();
 
@@ -131,7 +131,7 @@ private:
 	};
 
 	using InlineResult = InlineBots::Result;
-	using InlineResults = std::vector<std::unique_ptr<InlineResult>>;
+	using InlineResults = std::vector<std::shared_ptr<InlineResult>>;
 	using LayoutItem = InlineBots::Layout::ItemBase;
 
 	struct InlineCacheEntry {
@@ -162,7 +162,8 @@ private:
 
 	void clearInlineRows(bool resultsDeleted);
 	LayoutItem *layoutPrepareSavedGif(not_null<DocumentData*> document);
-	LayoutItem *layoutPrepareInlineResult(not_null<InlineResult*> result);
+	LayoutItem *layoutPrepareInlineResult(
+		std::shared_ptr<InlineResult> result);
 
 	void deleteUnusedGifLayouts();
 
@@ -172,7 +173,8 @@ private:
 	void selectInlineResult(
 		int index,
 		Api::SendOptions options,
-		bool forceSend = false);
+		bool forceSend = false,
+		TextWithTags caption = {});
 
 	const std::shared_ptr<Show> _show;
 	std::unique_ptr<Ui::TabbedSearch> _search;

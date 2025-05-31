@@ -7,9 +7,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "settings/settings_chat.h"
 
-#include "settings/settings_common.h"
+#include "base/timer_rpl.h"
 #include "settings/settings_advanced.h"
+#include "settings/settings_privacy_security.h"
 #include "settings/settings_experimental.h"
+#include "settings/settings_shortcuts.h"
+#include "boxes/abstract_box.h"
+#include "boxes/peers/edit_peer_color_box.h"
 #include "boxes/connection_box.h"
 #include "boxes/auto_download_box.h"
 #include "boxes/reactions_settings_box.h"
@@ -19,14 +23,17 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/background_preview_box.h"
 #include "boxes/download_path_box.h"
 #include "boxes/local_storage_box.h"
+#include "dialogs/ui/dialogs_quick_action_context.h"
+#include "dialogs/dialogs_quick_action.h"
+#include "ui/boxes/choose_font_box.h"
 #include "ui/wrap/vertical_layout.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/widgets/fields/input_field.h"
 #include "ui/widgets/checkbox.h"
 #include "ui/widgets/color_editor.h"
 #include "ui/widgets/buttons.h"
-#include "ui/widgets/labels.h"
 #include "ui/chat/attach/attach_extensions.h"
+#include "ui/chat/chat_style.h"
 #include "ui/chat/chat_theme.h"
 #include "ui/layers/generic_box.h"
 #include "ui/effects/radial_animation.h"
@@ -34,9 +41,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/toast/toast.h"
 #include "ui/image/image.h"
 #include "ui/painter.h"
+#include "ui/rect.h"
+#include "ui/vertical_list.h"
 #include "ui/ui_utility.h"
+#include "ui/widgets/menu/menu_add_action_callback.h"
 #include "history/view/history_view_quick_action.h"
 #include "lang/lang_keys.h"
+#include "lottie/lottie_icon.h"
 #include "export/export_manager.h"
 #include "window/themes/window_theme.h"
 #include "window/themes/window_themes_embedded.h"
@@ -55,21 +66,21 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_file_origin.h"
 #include "data/data_message_reactions.h"
 #include "data/data_peer_values.h"
+#include "data/data_user.h"
 #include "chat_helpers/emoji_sets_manager.h"
 #include "base/platform/base_platform_info.h"
-#include "platform/platform_specific.h"
 #include "base/call_delayed.h"
 #include "support/support_common.h"
 #include "support/support_templates.h"
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
 #include "mainwidget.h"
-#include "mainwindow.h"
 #include "styles/style_chat_helpers.h" // stickersRemove
 #include "styles/style_settings.h"
 #include "styles/style_layers.h"
 #include "styles/style_menu_icons.h"
 #include "styles/style_window.h"
+#include "styles/style_dialogs.h"
 
 namespace Settings {
 namespace {
@@ -363,7 +374,7 @@ void ColorsPalette::updateInnerGeometry() {
 	const auto width = inner->width() - padding.left() - padding.right();
 	const auto skip = (width - size * _buttons.size())
 		/ float64(_buttons.size() - 1);
-	const auto y = st::settingsSectionSkip * 2;
+	const auto y = st::defaultVerticalListSkip * 2;
 	auto x = float64(padding.left());
 	for (const auto &button : _buttons) {
 		button->moveToLeft(int(base::SafeRound(x)), y);
@@ -476,7 +487,7 @@ void BackgroundRow::paintEvent(QPaintEvent *e) {
 			const auto &pix = backThumb->pix(
 				st::settingsBackgroundThumb,
 				{ .options = Images::Option::Blur });
-			const auto factor = cIntRetinaFactor();
+			const auto factor = style::DevicePixelRatio();
 			p.drawPixmap(
 				0,
 				0,
@@ -583,7 +594,7 @@ void BackgroundRow::radialAnimationCallback(crl::time now) {
 
 void BackgroundRow::updateImage() {
 	const auto size = st::settingsBackgroundThumb;
-	const auto fullsize = size * cIntRetinaFactor();
+	const auto fullsize = size * style::DevicePixelRatio();
 
 	const auto &background = *Window::Theme::Background();
 	const auto &paper = background.paper();
@@ -617,7 +628,7 @@ void BackgroundRow::updateImage() {
 		auto result = QImage(
 			QSize{ fullsize, fullsize },
 			QImage::Format_ARGB32_Premultiplied);
-		result.setDevicePixelRatio(cRetinaFactor());
+		result.setDevicePixelRatio(style::DevicePixelRatio());
 		if (const auto color = background.colorForFill()) {
 			result.fill(*color);
 			return result;
@@ -642,7 +653,7 @@ void BackgroundRow::updateImage() {
 		: prepareNormal();
 	_background = Ui::PixmapFromImage(
 		Images::Round(std::move(back), ImageRoundRadius::Small));
-	_background.setDevicePixelRatio(cRetinaFactor());
+	_background.setDevicePixelRatio(style::DevicePixelRatio());
 
 	rtlupdate(radialRect());
 
@@ -700,10 +711,9 @@ void ChooseFromFile(
 void SetupStickersEmoji(
 		not_null<Window::SessionController*> controller,
 		not_null<Ui::VerticalLayout*> container) {
-	AddDivider(container);
-	AddSkip(container);
+	Ui::AddSkip(container);
 
-	AddSubsectionTitle(container, tr::lng_settings_stickers_emoji());
+	Ui::AddSubsectionTitle(container, tr::lng_settings_stickers_emoji());
 
 	const auto session = &controller->session();
 
@@ -803,7 +813,7 @@ void SetupStickersEmoji(
 			Core::App().saveSettingsDelayed();
 		});
 
-	AddButton(
+	AddButtonWithIcon(
 		container,
 		tr::lng_stickers_you_have(),
 		st::settingsButton,
@@ -814,7 +824,7 @@ void SetupStickersEmoji(
 			StickersBox::Section::Installed));
 	});
 
-	AddButton(
+	AddButtonWithIcon(
 		container,
 		tr::lng_emoji_manage_sets(),
 		st::settingsButton,
@@ -823,18 +833,18 @@ void SetupStickersEmoji(
 		controller->show(Box<Ui::Emoji::ManageSetsBox>(session));
 	});
 
-	AddSkip(container, st::settingsCheckboxesSkip);
+	Ui::AddSkip(container, st::settingsCheckboxesSkip);
 }
 
 void SetupMessages(
 		not_null<Window::SessionController*> controller,
 		not_null<Ui::VerticalLayout*> container) {
-	AddDivider(container);
-	AddSkip(container);
+	Ui::AddDivider(container);
+	Ui::AddSkip(container);
 
-	AddSubsectionTitle(container, tr::lng_settings_messages());
+	Ui::AddSubsectionTitle(container, tr::lng_settings_messages());
 
-	AddSkip(container, st::settingsSendTypeSkip);
+	Ui::AddSkip(container, st::settingsSendTypeSkip);
 
 	using SendByType = Ui::InputSubmitSettings;
 	using Quick = HistoryView::DoubleClickQuickAction;
@@ -870,10 +880,9 @@ void SetupMessages(
 	groupSend->setChangedCallback([=](SendByType value) {
 		Core::App().settings().setSendSubmitWay(value);
 		Core::App().saveSettingsDelayed();
-		controller->content()->ctrlEnterSubmitUpdated();
 	});
 
-	AddSkip(inner, st::settingsCheckboxesSkip);
+	Ui::AddSkip(inner, st::settingsCheckboxesSkip);
 
 	const auto groupQuick = std::make_shared<Ui::RadioenumGroup<Quick>>(
 		Core::App().settings().chatQuickAction());
@@ -892,24 +901,10 @@ void SetupMessages(
 		Quick::React,
 		tr::lng_settings_chat_quick_action_react(tr::now));
 
-	class EmptyButton final : public Ui::IconButton {
-	public:
-		EmptyButton(not_null<Ui::RpWidget*> p, const style::IconButton &st)
-		: Ui::IconButton(p, st)
-		, _rippleAreaPosition(st.rippleAreaPosition) {
-		}
-	protected:
-		void paintEvent(QPaintEvent *e) override {
-			auto p = QPainter(this);
-
-			paintRipple(p, _rippleAreaPosition, nullptr);
-		}
-	private:
-		const QPoint _rippleAreaPosition;
-	};
-	const auto buttonRight = Ui::CreateChild<EmptyButton>(
+	const auto buttonRight = Ui::CreateSimpleCircleButton(
 		inner,
-		st::stickersRemove);
+		st::stickersRemove.ripple);
+	buttonRight->resize(st::stickersRemove.width, st::stickersRemove.height);
 	const auto toggleButtonRight = [=](bool value) {
 		buttonRight->setAttribute(Qt::WA_TransparentForMouseEvents, !value);
 	};
@@ -998,7 +993,7 @@ void SetupMessages(
 		show->showBox(Box(ReactionsSettingsBox, controller));
 	});
 
-	AddSkip(inner, st::settingsSendTypeSkip);
+	Ui::AddSkip(inner, st::settingsSendTypeSkip);
 
 	inner->add(
 		object_ptr<Ui::Checkbox>(
@@ -1013,17 +1008,26 @@ void SetupMessages(
 		Core::App().saveSettingsDelayed();
 	}, inner->lifetime());
 
-	AddSkip(inner, st::settingsCheckboxesSkip);
+	Ui::AddSkip(inner);
 }
 
 void SetupArchive(
 		not_null<Window::SessionController*> controller,
-		not_null<Ui::VerticalLayout*> container) {
-	AddDivider(container);
-	AddSkip(container);
+		not_null<Ui::VerticalLayout*> container,
+		Fn<void(Type)> showOther) {
+	Ui::AddSkip(container);
+
+	AddButtonWithIcon(
+		container,
+		tr::lng_settings_shortcuts(),
+		st::settingsButton,
+		{ &st::menuIconShortcut }
+	)->addClickHandler([=] {
+		showOther(Shortcuts::Id());
+	});
 
 	PreloadArchiveSettings(&controller->session());
-	AddButton(
+	AddButtonWithIcon(
 		container,
 		tr::lng_context_archive_settings(),
 		st::settingsButton,
@@ -1037,7 +1041,7 @@ void SetupExport(
 		not_null<Window::SessionController*> controller,
 		not_null<Ui::VerticalLayout*> container,
 		Fn<void(Type)> showOther) {
-	AddButton(
+	AddButtonWithIcon(
 		container,
 		tr::lng_settings_export_data(),
 		st::settingsButton,
@@ -1051,7 +1055,7 @@ void SetupExport(
 			[=] { Core::App().exportManager().start(session); });
 	});
 
-	AddButton(
+	AddButtonWithIcon(
 		container,
 		tr::lng_settings_experimental(),
 		st::settingsButton,
@@ -1064,14 +1068,12 @@ void SetupExport(
 void SetupLocalStorage(
 		not_null<Window::SessionController*> controller,
 		not_null<Ui::VerticalLayout*> container) {
-	AddButton(
+	AddButtonWithIcon(
 		container,
 		tr::lng_settings_manage_local_storage(),
 		st::settingsButton,
 		{ &st::menuIconStorage }
-	)->addClickHandler([=] {
-		LocalStorageBox::Show(&controller->session());
-	});
+	)->addClickHandler([=] { LocalStorageBox::Show(controller); });
 }
 
 void SetupDataStorage(
@@ -1079,9 +1081,9 @@ void SetupDataStorage(
 		not_null<Ui::VerticalLayout*> container) {
 	using namespace rpl::mappers;
 
-	AddSkip(container);
+	Ui::AddSkip(container);
 
-	AddSubsectionTitle(container, tr::lng_settings_data_storage());
+	Ui::AddSubsectionTitle(container, tr::lng_settings_data_storage());
 
 	SetupConnectionType(
 		&controller->window(),
@@ -1095,7 +1097,7 @@ void SetupDataStorage(
 	const auto path = container->add(
 		object_ptr<Ui::SlideWrap<Button>>(
 			container,
-			CreateButton(
+			CreateButtonWithIcon(
 				container,
 				tr::lng_download_path(),
 				st::settingsButton,
@@ -1103,7 +1105,7 @@ void SetupDataStorage(
 	auto pathtext = Core::App().settings().downloadPathValue(
 	) | rpl::map([](const QString &text) {
 		if (text.isEmpty()) {
-			return Core::App().canReadDefaultDownloadPath(true)
+			return Core::App().canReadDefaultDownloadPath()
 				? tr::lng_download_path_default(tr::now)
 				: tr::lng_download_path_temp(tr::now);
 		} else if (text == FileDialog::Tmp()) {
@@ -1123,7 +1125,7 @@ void SetupDataStorage(
 
 	SetupLocalStorage(controller, container);
 
-	AddButton(
+	AddButtonWithIcon(
 		container,
 		tr::lng_downloads_section(),
 		st::settingsButton,
@@ -1133,11 +1135,11 @@ void SetupDataStorage(
 			Info::Downloads::Make(controller->session().user()));
 	});
 
-	const auto ask = AddButton(
+	const auto ask = container->add(object_ptr<Ui::SettingsButton>(
 		container,
 		tr::lng_download_path_ask(),
 		st::settingsButtonNoIcon
-	)->toggleOn(rpl::single(Core::App().settings().askDownloadPath()));
+	))->toggleOn(rpl::single(Core::App().settings().askDownloadPath()));
 
 	ask->toggledValue(
 	) | rpl::filter([](bool checked) {
@@ -1156,23 +1158,23 @@ void SetupDataStorage(
 	path->toggleOn(ask->toggledValue() | rpl::map(!_1));
 #endif // OS_WIN_STORE
 
-	AddSkip(container, st::settingsCheckboxesSkip);
+	Ui::AddSkip(container, st::settingsCheckboxesSkip);
 }
 
 void SetupAutoDownload(
 		not_null<Window::SessionController*> controller,
 		not_null<Ui::VerticalLayout*> container) {
-	AddDivider(container);
-	AddSkip(container);
+	Ui::AddDivider(container);
+	Ui::AddSkip(container);
 
-	AddSubsectionTitle(container, tr::lng_media_auto_settings());
+	Ui::AddSubsectionTitle(container, tr::lng_media_auto_settings());
 
 	using Source = Data::AutoDownload::Source;
 	const auto add = [&](
 		rpl::producer<QString> label,
 		Source source,
 		IconDescriptor &&descriptor) {
-		AddButton(
+		AddButtonWithIcon(
 			container,
 			std::move(label),
 			st::settingsButton,
@@ -1195,16 +1197,16 @@ void SetupAutoDownload(
 		Source::Channel,
 		{ &st::menuIconChannel });
 
-	AddSkip(container, st::settingsCheckboxesSkip);
+	Ui::AddSkip(container, st::settingsCheckboxesSkip);
 }
 
 void SetupChatBackground(
 		not_null<Window::SessionController*> controller,
 		not_null<Ui::VerticalLayout*> container) {
-	AddDivider(container);
-	AddSkip(container);
+	Ui::AddDivider(container);
+	Ui::AddSkip(container);
 
-	AddSubsectionTitle(container, tr::lng_settings_section_background());
+	Ui::AddSubsectionTitle(container, tr::lng_settings_section_background());
 
 	container->add(
 		object_ptr<BackgroundRow>(container, controller),
@@ -1220,7 +1222,7 @@ void SetupChatBackground(
 			std::move(wrap),
 			QMargins(0, skipTop, 0, skipBottom)));
 
-	AddSkip(container, st::settingsTileSkip);
+	Ui::AddSkip(container, st::settingsTileSkip);
 
 	const auto background = Window::Theme::Background();
 	const auto tile = inner->add(
@@ -1273,6 +1275,234 @@ void SetupChatBackground(
 		Core::App().settings().setAdaptiveForWide(checked);
 		Core::App().saveSettingsDelayed();
 	}, adaptive->lifetime());
+}
+
+void SetupChatListQuickAction(
+		not_null<Window::SessionController*> controller,
+		not_null<Ui::VerticalLayout*> container) {
+	Ui::AddDivider(container);
+	Ui::AddSkip(container);
+	Ui::AddSubsectionTitle(
+		container,
+		tr::lng_settings_quick_dialog_action_title());
+
+	using Type = Dialogs::Ui::QuickDialogAction;
+	using LabelType = Dialogs::Ui::QuickDialogActionLabel;
+	const auto group = std::make_shared<Ui::RadioenumGroup<Type>>(
+		Core::App().settings().quickDialogAction());
+	group->setChangedCallback([=](Type value) {
+		Core::App().settings().setQuickDialogAction(value);
+		Core::App().saveSettings();
+	});
+
+	const auto actionToLabel = [](Type value) {
+		switch (value) {
+		case Type::Mute: return LabelType::Mute;
+		case Type::Pin: return LabelType::Pin;
+		case Type::Read: return LabelType::Read;
+		case Type::Archive: return LabelType::Archive;
+		case Type::Delete: return LabelType::Delete;
+		default: return LabelType::Disabled;
+		}
+	};
+	static constexpr auto kDisabledIconRatio = 1.25;
+
+	const auto addPreview = [=](not_null<Ui::VerticalLayout*> container) {
+		const auto widget = container->add(
+			object_ptr<Ui::RpWidget>(container));
+		widget->resize(0, st::dialogsRowHeight);
+		struct State {
+			std::unique_ptr<Lottie::Icon> icon;
+		};
+		const auto state = widget->lifetime().make_state<State>();
+		group->value() | rpl::start_with_next([=](Type value) {
+			const auto label = actionToLabel(value);
+			state->icon = Lottie::MakeIcon({
+				.name = Dialogs::ResolveQuickDialogLottieIconName(label),
+				.sizeOverride = Size((label == LabelType::Disabled)
+					? int(st::dialogsQuickActionSize * kDisabledIconRatio)
+					: st::dialogsQuickActionSize),
+			});
+			state->icon->animate(
+				[=] { widget->update(); },
+				0,
+				state->icon->framesCount() - 1);
+			widget->update();
+		}, widget->lifetime());
+		widget->paintRequest() | rpl::start_with_next([=] {
+			auto p = QPainter(widget);
+
+			const auto height = st::dialogsRowHeight;
+			const auto actionWidth = st::dialogsQuickActionRippleSize * 0.75;
+			const auto rightOffset = st::dialogsQuickActionRippleSize
+				+ st::dialogsQuickActionSize;
+			const auto rect = QRect(
+				widget->width()
+					- actionWidth
+					- st::boxRowPadding.right()
+					- rightOffset,
+				0,
+				actionWidth,
+				height);
+
+	        auto path = QPainterPath();
+	        path.addRoundedRect(
+	        	QRect(
+	        		-actionWidth,
+	        		0,
+	        		rect::right(rect) + actionWidth,
+	        		height),
+	        	st::roundRadiusLarge,
+	        	st::roundRadiusLarge);
+	        p.setClipPath(path);
+
+			const auto label = actionToLabel(group->current());
+			const auto isDisabled = (label == LabelType::Disabled);
+
+			auto hq = PainterHighQualityEnabler(p);
+			p.fillRect(
+				QRect(0, 0, rect::right(rect), st::lineWidth),
+				st::windowBgOver);
+			p.fillRect(
+				QRect(
+					0,
+					rect::bottom(rect) - st::lineWidth,
+					rect::right(rect),
+					st::lineWidth),
+				st::windowBgOver);
+			p.fillRect(rect, Dialogs::ResolveQuickActionBg(label));
+			if (state->icon) {
+				Dialogs::DrawQuickAction(
+					p,
+					rect,
+					state->icon.get(),
+					label,
+					isDisabled ? kDisabledIconRatio : 1.,
+					isDisabled);
+			}
+			p.translate(-height / 2, 0);
+			p.setPen(Qt::NoPen);
+			p.setBrush(st::windowBgOver);
+			p.drawEllipse(Rect(Size(height)) - Margins(height / 6));
+
+			const auto h = st::normalFont->ascent / 1.5;
+			p.drawRoundedRect(
+				height,
+				height / 2 - h * 1.5,
+				st::dialogsQuickActionRippleSize * 0.6,
+				h,
+				h / 2,
+				h / 2);
+			p.drawRoundedRect(
+				height,
+				height / 2 + h,
+				st::dialogsQuickActionRippleSize * 1.0,
+				h,
+				h / 2,
+				h / 2);
+
+			p.setClipping(false);
+			p.resetTransform();
+			p.setFont(st::settingsQuickDialogActionsTriggerFont);
+			p.setPen(st::windowSubTextFg);
+			p.drawText(
+				QRect(
+					widget->width()
+						- st::dialogsQuickActionRippleSize
+						- st::boxRowPadding.right(),
+					0,
+					st::dialogsQuickActionRippleSize,
+					height),
+				isDisabled
+					? tr::lng_settings_quick_dialog_action_swipe(tr::now)
+					: tr::lng_settings_quick_dialog_action_both(tr::now),
+				style::al_center);
+		}, widget->lifetime());
+	};
+
+	const auto &st = st::settingsButton;
+	const auto button = container->add(
+		object_ptr<Ui::SettingsButton>(
+			container,
+			group->value() | rpl::map([](Type value) {
+				return ((value == Dialogs::Ui::QuickDialogAction::Mute)
+					? tr::lng_settings_quick_dialog_action_mute
+					: (value == Dialogs::Ui::QuickDialogAction::Pin)
+					? tr::lng_settings_quick_dialog_action_pin
+					: (value == Dialogs::Ui::QuickDialogAction::Read)
+					? tr::lng_settings_quick_dialog_action_read
+					: (value == Dialogs::Ui::QuickDialogAction::Archive)
+					? tr::lng_settings_quick_dialog_action_archive
+					: tr::lng_settings_quick_dialog_action_disabled)();
+			}) | rpl::flatten_latest(),
+			st));
+
+	{
+		const auto icon = button->lifetime().make_state<Ui::RpWidget>(button);
+		icon->setAttribute(Qt::WA_TransparentForMouseEvents);
+		icon->resize(st::menuIconArchive.size());
+		icon->show();
+		button->sizeValue(
+		) | rpl::start_with_next([=, left = st.iconLeft](QSize size) {
+			icon->moveToLeft(
+				left,
+				(size.height() - icon->height()) / 2,
+				size.width());
+		}, icon->lifetime());
+		icon->paintRequest(
+		) | rpl::start_with_next([=] {
+			auto p = QPainter(icon);
+			const auto value = group->current();
+			((value == Dialogs::Ui::QuickDialogAction::Mute)
+				? st::menuIconMute
+				: (value == Dialogs::Ui::QuickDialogAction::Pin)
+				? st::menuIconPin
+				: (value == Dialogs::Ui::QuickDialogAction::Read)
+				? st::menuIconMarkRead
+				: (value == Dialogs::Ui::QuickDialogAction::Delete)
+				? st::menuIconDelete
+				: (value == Dialogs::Ui::QuickDialogAction::Archive)
+				? st::menuIconArchive
+				: st::menuIconShowInFolder).paintInCenter(p, icon->rect());
+		}, icon->lifetime());
+	}
+
+	button->setClickedCallback([=] {
+		controller->uiShow()->showBox(Box([=](not_null<Ui::GenericBox*> box) {
+			box->setTitle(tr::lng_settings_quick_dialog_action_title());
+			const auto addRadio = [&](Type value, tr::phrase<> phrase) {
+				box->verticalLayout()->add(
+					object_ptr<Ui::Radioenum<Type>>(
+						box->verticalLayout(),
+						group,
+						value,
+						phrase(tr::now),
+						st::settingsSendType),
+					st::settingsSendTypePadding);
+			};
+			addPreview(box->verticalLayout());
+			Ui::AddSkip(box->verticalLayout());
+			Ui::AddSkip(box->verticalLayout());
+			addRadio(Type::Mute, tr::lng_settings_quick_dialog_action_mute);
+			addRadio(Type::Pin, tr::lng_settings_quick_dialog_action_pin);
+			addRadio(Type::Read, tr::lng_settings_quick_dialog_action_read);
+			addRadio(
+				Type::Archive,
+				tr::lng_settings_quick_dialog_action_archive);
+			addRadio(
+				Type::Delete,
+				tr::lng_settings_quick_dialog_action_delete);
+			addRadio(
+				Type::Disabled,
+				tr::lng_settings_quick_dialog_action_disabled);
+			box->addButton(tr::lng_box_ok(), [=] { box->closeBox(); });
+		}));
+	});
+	Ui::AddSkip(container);
+	Ui::AddDividerText(
+		container,
+		tr::lng_settings_quick_dialog_action_about());
+	Ui::AddSkip(container);
 }
 
 void SetupDefaultThemes(
@@ -1342,11 +1572,12 @@ void SetupDefaultThemes(
 			block,
 			group,
 			scheme.type,
-			scheme.name(tr::now),
+			QString(),
 			st::settingsTheme,
 			std::move(check));
-		scheme.name(
-		) | rpl::start_with_next([=](const auto &themeName) {
+		rpl::duplicate(
+			scheme.name
+		) | rpl::start_with_next([=](const QString &themeName) {
 			result->setText(themeName);
 		}, result->lifetime());
 		result->addClickHandler([=] {
@@ -1452,7 +1683,7 @@ void SetupDefaultThemes(
 		apply(*scheme);
 	}, container->lifetime());
 
-	AddSkip(container);
+	Ui::AddSkip(container);
 }
 
 void SetupThemeOptions(
@@ -1460,13 +1691,13 @@ void SetupThemeOptions(
 		not_null<Ui::VerticalLayout*> container) {
 	using namespace Window::Theme;
 
-	AddSkip(container, st::settingsPrivacySkip);
+	Ui::AddSkip(container, st::settingsPrivacySkip);
 
-	AddSubsectionTitle(container, tr::lng_settings_themes());
+	Ui::AddSubsectionTitle(container, tr::lng_settings_themes());
 
-	AddSkip(container, st::settingsThemesTopSkip);
+	Ui::AddSkip(container, st::settingsThemesTopSkip);
 	SetupDefaultThemes(&controller->window(), container);
-	AddSkip(container);
+	Ui::AddSkip(container);
 }
 
 void SetupCloudThemes(
@@ -1482,8 +1713,8 @@ void SetupCloudThemes(
 	)->setDuration(0);
 	const auto inner = wrap->entity();
 
-	AddDivider(inner);
-	AddSkip(inner, st::settingsPrivacySkip);
+	Ui::AddDivider(inner);
+	Ui::AddSkip(inner, st::settingsPrivacySkip);
 
 	const auto title = AddSubsectionTitle(
 		inner,
@@ -1498,12 +1729,12 @@ void SetupCloudThemes(
 		showAll->widthValue()
 	) | rpl::start_with_next([=](int top, int outerWidth, int width) {
 		showAll->moveToRight(
-			st::settingsSubsectionTitlePadding.left(),
+			st::defaultSubsectionTitlePadding.left(),
 			top,
 			outerWidth);
 	}, showAll->lifetime());
 
-	AddSkip(inner, st::settingsThemesTopSkip);
+	Ui::AddSkip(inner, st::settingsThemesTopSkip);
 
 	const auto list = inner->lifetime().make_state<CloudList>(
 		inner,
@@ -1532,8 +1763,8 @@ void SetupCloudThemes(
 	)->setDuration(0);
 	const auto edit = editWrap->entity();
 
-	AddSkip(edit, st::settingsThemesBottomSkip);
-	AddButton(
+	Ui::AddSkip(edit, st::settingsThemesBottomSkip);
+	AddButtonWithIcon(
 		edit,
 		tr::lng_settings_bg_theme_edit(),
 		st::settingsButton,
@@ -1556,58 +1787,98 @@ void SetupCloudThemes(
 		return (Background()->themeObject().cloud.createdBy == userId);
 	}));
 
-	AddSkip(inner, 2 * st::settingsSectionSkip);
+	Ui::AddSkip(inner, 2 * st::defaultVerticalListSkip);
 
 	wrap->setDuration(0)->toggleOn(list->empty() | rpl::map(!_1));
 }
 
-void SetupAutoNightMode(
+void SetupThemeSettings(
 		not_null<Window::SessionController*> controller,
 		not_null<Ui::VerticalLayout*> container) {
-	if (!Core::App().settings().systemDarkMode().has_value()) {
-		return;
+	Ui::AddDivider(container);
+	Ui::AddSkip(container, st::settingsPrivacySkip);
+
+	Ui::AddSubsectionTitle(container, tr::lng_settings_theme_settings());
+
+	AddPeerColorButton(
+		container,
+		controller->uiShow(),
+		controller->session().user(),
+		st::settingsColorButton);
+
+	const auto settings = &Core::App().settings();
+	if (settings->systemDarkMode().has_value()) {
+		auto label = settings->systemDarkModeEnabledValue(
+		) | rpl::map([=](bool enabled) {
+			return enabled
+				? tr::lng_settings_auto_night_mode_on()
+				: tr::lng_settings_auto_night_mode_off();
+		}) | rpl::flatten_latest();
+		AddButtonWithLabel(
+			container,
+			tr::lng_settings_auto_night_mode(),
+			std::move(label),
+			st::settingsButton,
+			{ &st::menuIconNightMode }
+		)->setClickedCallback([=] {
+			const auto now = !settings->systemDarkModeEnabled();
+			if (now && Window::Theme::Background()->editingTheme()) {
+				controller->show(Ui::MakeInformBox(
+					tr::lng_theme_editor_cant_change_theme()));
+			} else {
+				settings->setSystemDarkModeEnabled(now);
+				Core::App().saveSettingsDelayed();
+			}
+		});
 	}
 
-	AddDivider(container);
-	AddSkip(container, st::settingsPrivacySkip);
-
-	AddSubsectionTitle(container, tr::lng_settings_auto_night_mode());
-
-	auto wrap = object_ptr<Ui::VerticalLayout>(container);
-	const auto autoNight = wrap->add(
-		object_ptr<Ui::Checkbox>(
-			wrap,
-			tr::lng_settings_auto_night_enabled(tr::now),
-			Core::App().settings().systemDarkModeEnabled(),
-			st::settingsCheckbox),
-		st::settingsCheckboxPadding);
-
-	autoNight->checkedChanges(
-	) | rpl::filter([=](bool checked) {
-		return (checked != Core::App().settings().systemDarkModeEnabled());
-	}) | rpl::start_with_next([=](bool checked) {
-		if (checked && Window::Theme::Background()->editingTheme()) {
-			autoNight->setChecked(false);
-			controller->show(Ui::MakeInformBox(
-				tr::lng_theme_editor_cant_change_theme()));
-		} else {
-			Core::App().settings().setSystemDarkModeEnabled(checked);
-			Core::App().saveSettingsDelayed();
-		}
-	}, autoNight->lifetime());
-
-	Core::App().settings().systemDarkModeEnabledChanges(
-	) | rpl::filter([=](bool value) {
-		return (value != autoNight->checked());
-	}) | rpl::start_with_next([=](bool value) {
-		autoNight->setChecked(value);
-	}, autoNight->lifetime());
-
-	container->add(object_ptr<Ui::OverrideMargins>(
+	const auto family = container->lifetime().make_state<
+		rpl::variable<QString>
+	>(settings->customFontFamily());
+	auto label = family->value() | rpl::map([](QString family) {
+		return family.isEmpty()
+			? tr::lng_font_default(tr::now)
+			: (family == style::SystemFontTag())
+			? tr::lng_font_system(tr::now)
+			: family;
+	});
+	AddButtonWithLabel(
 		container,
-		std::move(wrap)));
+		tr::lng_settings_font_family(),
+		std::move(label),
+		st::settingsButton,
+		{ &st::menuIconFont }
+	)->setClickedCallback([=] {
+		const auto save = [=](QString chosen) {
+			*family = chosen;
+			settings->setCustomFontFamily(chosen);
+			Local::writeSettings();
+			Core::Restart();
+		};
 
-	AddSkip(container, st::settingsCheckboxesSkip);
+		const auto theme = std::shared_ptr<Ui::ChatTheme>(
+			Window::Theme::DefaultChatThemeOn(container->lifetime()));
+		const auto generateBg = [=] {
+			const auto size = st::boxWidth;
+			const auto ratio = style::DevicePixelRatio();
+			auto result = QImage(
+				QSize(size, size) * ratio,
+				QImage::Format_ARGB32_Premultiplied);
+			auto p = QPainter(&result);
+			Window::SectionWidget::PaintBackground(
+				p,
+				theme.get(),
+				QSize(size, size * 3),
+				QRect(0, 0, size, size));
+			p.end();
+
+			return result;
+		};
+		controller->show(
+			Box(Ui::ChooseFontBox, generateBg, family->current(), save));
+	});
+
+	Ui::AddSkip(container, st::settingsCheckboxesSkip);
 }
 
 void SetupSupportSwitchSettings(
@@ -1678,11 +1949,11 @@ void SetupSupportChatsLimitSlice(
 void SetupSupport(
 		not_null<Window::SessionController*> controller,
 		not_null<Ui::VerticalLayout*> container) {
-	AddSkip(container);
+	Ui::AddSkip(container);
 
-	AddSubsectionTitle(container, rpl::single(u"Support settings"_q));
+	Ui::AddSubsectionTitle(container, rpl::single(u"Support settings"_q));
 
-	AddSkip(container, st::settingsSendTypeSkip);
+	Ui::AddSkip(container, st::settingsSendTypeSkip);
 
 	const auto skip = st::settingsSendTypeSkip;
 	auto wrap = object_ptr<Ui::VerticalLayout>(container);
@@ -1695,7 +1966,7 @@ void SetupSupport(
 
 	SetupSupportSwitchSettings(controller, inner);
 
-	AddSkip(inner, st::settingsCheckboxesSkip);
+	Ui::AddSkip(inner, st::settingsCheckboxesSkip);
 
 	inner->add(
 		object_ptr<Ui::Checkbox>(
@@ -1725,19 +1996,20 @@ void SetupSupport(
 		controller->session().saveSettingsDelayed();
 	}, inner->lifetime());
 
-	AddSkip(inner, st::settingsCheckboxesSkip);
+	Ui::AddSkip(inner, st::settingsCheckboxesSkip);
 
-	AddSubsectionTitle(inner, rpl::single(u"Load chats for a period"_q));
+	Ui::AddSubsectionTitle(inner, rpl::single(u"Load chats for a period"_q));
 
 	SetupSupportChatsLimitSlice(controller, inner);
 
-	AddSkip(inner, st::settingsCheckboxesSkip);
+	Ui::AddSkip(inner, st::settingsCheckboxesSkip);
 
-	AddSkip(inner);
+	Ui::AddSkip(inner);
 }
 
 Chat::Chat(QWidget *parent, not_null<Window::SessionController*> controller)
-: Section(parent) {
+: Section(parent)
+, _controller(controller) {
 	setupContent(controller);
 }
 
@@ -1745,16 +2017,30 @@ rpl::producer<QString> Chat::title() {
 	return tr::lng_settings_section_chat_settings();
 }
 
+void Chat::fillTopBarMenu(const Ui::Menu::MenuCallback &addAction) {
+	const auto window = &_controller->window();
+	addAction(
+		tr::lng_settings_bg_theme_create(tr::now),
+		[=] { window->show(Box(Window::Theme::CreateBox, window)); },
+		&st::menuIconChangeColors);
+}
+
 void Chat::setupContent(not_null<Window::SessionController*> controller) {
 	const auto content = Ui::CreateChild<Ui::VerticalLayout>(this);
 
+	auto updateOnTick = rpl::single(
+	) | rpl::then(base::timer_each(60 * crl::time(1000)));
+
 	SetupThemeOptions(controller, content);
-	SetupAutoNightMode(controller, content);
+	SetupThemeSettings(controller, content);
 	SetupCloudThemes(controller, content);
 	SetupChatBackground(controller, content);
+	SetupChatListQuickAction(controller, content);
 	SetupStickersEmoji(controller, content);
 	SetupMessages(controller, content);
-	SetupArchive(controller, content);
+	Ui::AddDivider(content);
+	SetupSensitiveContent(controller, content, std::move(updateOnTick));
+	SetupArchive(controller, content, showOtherMethod());
 
 	Ui::ResizeFitChild(this, content);
 }

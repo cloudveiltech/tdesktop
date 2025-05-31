@@ -18,6 +18,9 @@ Release/
 *.xcodeproj
 ipch/
 .vs/
+.vscode/
+.cache/
+compile_commands.json
 
 /Telegram/log.txt
 /Telegram/data

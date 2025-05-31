@@ -11,6 +11,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/admin_log/history_admin_log_filter.h"
 #include "profile/profile_back_button.h"
 #include "core/shortcuts.h"
+#include "ui/chat/chat_style.h"
+#include "ui/controls/swipe_handler.h"
 #include "ui/effects/animations.h"
 #include "ui/widgets/scroll_area.h"
 #include "ui/widgets/shadow.h"
@@ -141,7 +143,7 @@ FixedBar::FixedBar(
 }
 
 void FixedBar::applyFilter(const FilterValue &value) {
-	auto hasFilter = (value.flags != 0) || !value.allUsers;
+	auto hasFilter = value.flags || value.admins;
 	_backButton->setText(hasFilter
 		? tr::lng_admin_log_title_selected(tr::now)
 		: tr::lng_admin_log_title_all(tr::now));
@@ -341,6 +343,7 @@ Widget::Widget(
 	});
 
 	setupShortcuts();
+	setupSwipeReply();
 }
 
 void Widget::showFilter() {
@@ -414,6 +417,44 @@ void Widget::setupShortcuts() {
 			return true;
 		});
 	}, lifetime());
+}
+
+void Widget::setupSwipeReply() {
+	auto update = [=](Ui::Controls::SwipeContextData data) {
+		if (data.translation > 0) {
+			if (!_swipeBackData.callback) {
+				_swipeBackData = Ui::Controls::SetupSwipeBack(
+					this,
+					[=]() -> std::pair<QColor, QColor> {
+						auto context = _inner->preparePaintContext({});
+						return {
+							context.st->msgServiceBg()->c,
+							context.st->msgServiceFg()->c,
+						};
+					});
+			}
+			_swipeBackData.callback(data);
+			return;
+		} else if (_swipeBackData.lifetime) {
+			_swipeBackData = {};
+		}
+	};
+
+	auto init = [=](int, Qt::LayoutDirection direction) {
+		if (direction == Qt::RightToLeft) {
+			return Ui::Controls::DefaultSwipeBackHandlerFinishData([=] {
+				controller()->showBackFromStack();
+			});
+		}
+		return Ui::Controls::SwipeHandlerFinishData();
+	};
+
+	Ui::Controls::SetupSwipeHandler({
+		.widget = _inner.data(),
+		.scroll = _scroll.data(),
+		.update = std::move(update),
+		.init = std::move(init),
+	});
 }
 
 std::shared_ptr<Window::SectionMemento> Widget::createMemento() {

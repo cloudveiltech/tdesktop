@@ -49,8 +49,8 @@ constexpr auto kMaxInlineArea = 1280 * 720;
 	return dimensions.width() * dimensions.height() <= kMaxInlineArea;
 }
 
-FileBase::FileBase(not_null<Context*> context, not_null<Result*> result)
-: ItemBase(context, result) {
+FileBase::FileBase(not_null<Context*> context, std::shared_ptr<Result> result)
+: ItemBase(context, std::move(result)) {
 }
 
 FileBase::FileBase(
@@ -95,8 +95,8 @@ int FileBase::content_duration() const {
 	return getResultDuration();
 }
 
-Gif::Gif(not_null<Context*> context, not_null<Result*> result)
-: FileBase(context, result) {
+Gif::Gif(not_null<Context*> context, std::shared_ptr<Result> result)
+: FileBase(context, std::move(result)) {
 	Expects(getResultDocument() != nullptr);
 }
 
@@ -330,7 +330,7 @@ void Gif::validateThumbnail(
 		bool good) const {
 	if (!image || (_thumbGood && !good)) {
 		return;
-	} else if ((_thumb.size() == size * cIntRetinaFactor())
+	} else if ((_thumb.size() == size * style::DevicePixelRatio())
 		&& (_thumbGood || !good)) {
 		return;
 	}
@@ -442,8 +442,8 @@ void Gif::clipCallback(Media::Clip::Notification notification) {
 	}
 }
 
-Sticker::Sticker(not_null<Context*> context, not_null<Result*> result)
-: FileBase(context, result) {
+Sticker::Sticker(not_null<Context*> context, std::shared_ptr<Result> result)
+: FileBase(context, std::move(result)) {
 	Expects(getResultDocument() != nullptr);
 }
 
@@ -503,7 +503,7 @@ void Sticker::paint(Painter &p, const QRect &clip, const PaintContext *context) 
 	prepareThumbnail();
 	if (_lottie && _lottie->ready()) {
 		const auto frame = _lottie->frame();
-		const auto size = frame.size() / cIntRetinaFactor();
+		const auto size = frame.size() / style::DevicePixelRatio();
 		const auto pos = QPoint(
 			(st::stickerPanSize.width() - size.width()) / 2,
 			(st::stickerPanSize.height() - size.height()) / 2);
@@ -524,8 +524,11 @@ void Sticker::paint(Painter &p, const QRect &clip, const PaintContext *context) 
 			(st::stickerPanSize.height() - size.width()) / 2,
 			frame);
 	} else if (!_thumb.isNull()) {
-		int w = _thumb.width() / cIntRetinaFactor(), h = _thumb.height() / cIntRetinaFactor();
-		QPoint pos = QPoint((st::stickerPanSize.width() - w) / 2, (st::stickerPanSize.height() - h) / 2);
+		const auto w = _thumb.width() / style::DevicePixelRatio();
+		const auto h = _thumb.height() / style::DevicePixelRatio();
+		const auto pos = QPoint(
+			(st::stickerPanSize.width() - w) / 2,
+			(st::stickerPanSize.height() - h) / 2);
 		p.drawPixmap(pos, _thumb);
 	} else if (context->pathGradient) {
 		const auto thumbSize = getThumbSize();
@@ -583,7 +586,7 @@ void Sticker::setupLottie() const {
 	_lottie = ChatHelpers::LottiePlayerFromDocument(
 		_dataMedia.get(),
 		ChatHelpers::StickerLottieSize::InlineResults,
-		boundingBox() * cIntRetinaFactor());
+		boundingBox() * style::DevicePixelRatio());
 
 	_lottie->updates(
 	) | rpl::start_with_next([=] {
@@ -651,8 +654,8 @@ void Sticker::clipCallback(Media::Clip::Notification notification) {
 	update();
 }
 
-Photo::Photo(not_null<Context*> context, not_null<Result*> result)
-: ItemBase(context, result) {
+Photo::Photo(not_null<Context*> context, std::shared_ptr<Result> result)
+: ItemBase(context, std::move(result)) {
 	Expects(getShownPhoto() != nullptr);
 }
 
@@ -736,7 +739,7 @@ void Photo::validateThumbnail(
 		bool good) const {
 	if (!image || (_thumbGood && !good)) {
 		return;
-	} else if ((_thumb.size() == size * cIntRetinaFactor())
+	} else if ((_thumb.size() == size * style::DevicePixelRatio())
 		&& (_thumbGood || !good)) {
 		return;
 	}
@@ -766,8 +769,8 @@ void Photo::prepareThumbnail(QSize size, QSize frame) const {
 	validateThumbnail(_photoMedia->thumbnailInline(), size, frame, false);
 }
 
-Video::Video(not_null<Context*> context, not_null<Result*> result)
-: FileBase(context, result)
+Video::Video(not_null<Context*> context, std::shared_ptr<Result> result)
+: FileBase(context, std::move(result))
 , _link(getResultPreviewHandler())
 , _title(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineThumbSize - st::inlineThumbSkip)
 , _description(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineThumbSize - st::inlineThumbSkip) {
@@ -893,7 +896,7 @@ void Video::prepareThumbnail(QSize size) const {
 	if (!thumb) {
 		return;
 	}
-	if (_thumb.size() != size * cIntRetinaFactor()) {
+	if (_thumb.size() != size * style::DevicePixelRatio()) {
 		const auto width = size.width();
 		const auto height = size.height();
 		auto w = qMax(style::ConvertScale(thumb->width()), 1);
@@ -922,11 +925,11 @@ void CancelFileClickHandler::onClickImpl() const {
 	_result->cancelFile();
 }
 
-File::File(not_null<Context*> context, not_null<Result*> result)
-: FileBase(context, result)
+File::File(not_null<Context*> context, std::shared_ptr<Result> result)
+: FileBase(context, std::move(result))
 , _title(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineFileSize - st::inlineThumbSkip)
 , _description(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineFileSize - st::inlineThumbSkip)
-, _cancel(std::make_shared<CancelFileClickHandler>(result))
+, _cancel(std::make_shared<CancelFileClickHandler>(_result.get()))
 , _document(getShownDocument()) {
 	Expects(getResultDocument() != nullptr);
 
@@ -1170,8 +1173,8 @@ void File::setStatusSize(
 	}
 }
 
-Contact::Contact(not_null<Context*> context, not_null<Result*> result)
-: ItemBase(context, result)
+Contact::Contact(not_null<Context*> context, std::shared_ptr<Result> result)
+: ItemBase(context, std::move(result))
 , _title(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineThumbSize - st::inlineThumbSkip)
 , _description(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineThumbSize - st::inlineThumbSkip) {
 }
@@ -1225,7 +1228,8 @@ TextState Contact::getState(
 
 void Contact::prepareThumbnail(int width, int height) const {
 	if (!hasResultThumb()) {
-		if (_thumb.width() != width * cIntRetinaFactor() || _thumb.height() != height * cIntRetinaFactor()) {
+		if ((_thumb.width() != width * style::DevicePixelRatio())
+			|| (_thumb.height() != height * style::DevicePixelRatio())) {
 			_thumb = getResultContactAvatar(width, height);
 		}
 		return;
@@ -1234,8 +1238,8 @@ void Contact::prepareThumbnail(int width, int height) const {
 	const auto origin = fileOrigin();
 	const auto thumb = getResultThumb(origin);
 	if (!thumb
-		|| ((_thumb.width() == width * cIntRetinaFactor())
-			&& (_thumb.height() == height * cIntRetinaFactor()))) {
+		|| ((_thumb.width() == width * style::DevicePixelRatio())
+			&& (_thumb.height() == height * style::DevicePixelRatio()))) {
 		return;
 	}
 	auto w = qMax(style::ConvertScale(thumb->width()), 1);
@@ -1261,16 +1265,16 @@ void Contact::prepareThumbnail(int width, int height) const {
 
 Article::Article(
 	not_null<Context*> context,
-	not_null<Result*> result,
+	std::shared_ptr<Result> result,
 	bool withThumb)
-: ItemBase(context, result)
+: ItemBase(context, std::move(result))
 , _url(getResultUrlHandler())
 , _link(getResultPreviewHandler())
 , _withThumb(withThumb)
 , _title(st::emojiPanWidth / 2)
 , _description(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineThumbSize - st::inlineThumbSkip) {
 	if (!_link) {
-		if (const auto point = result->getLocationPoint()) {
+		if (const auto point = _result->getLocationPoint()) {
 			_link = std::make_shared<LocationClickHandler>(*point);
 		}
 	}
@@ -1296,7 +1300,7 @@ void Article::initDimensions() {
 	_minh += st::inlineRowMargin * 2 + st::inlineRowBorder;
 }
 
-int32 Article::resizeGetHeight(int32 width) {
+int Article::resizeGetHeight(int width) {
 	_width = qMin(width, _maxw);
 	if (_url) {
 		_urlText = getResultUrl();
@@ -1383,7 +1387,8 @@ TextState Article::getState(
 
 void Article::prepareThumbnail(int width, int height) const {
 	if (!hasResultThumb()) {
-		if (_thumb.width() != width * cIntRetinaFactor() || _thumb.height() != height * cIntRetinaFactor()) {
+		if ((_thumb.width() != width * style::DevicePixelRatio())
+			|| (_thumb.height() != height * style::DevicePixelRatio())) {
 			_thumb = getResultContactAvatar(width, height);
 		}
 		return;
@@ -1392,8 +1397,8 @@ void Article::prepareThumbnail(int width, int height) const {
 	const auto origin = fileOrigin();
 	const auto thumb = getResultThumb(origin);
 	if (!thumb
-		|| ((_thumb.width() == width * cIntRetinaFactor())
-			&& (_thumb.height() == height * cIntRetinaFactor()))) {
+		|| ((_thumb.width() == width * style::DevicePixelRatio())
+			&& (_thumb.height() == height * style::DevicePixelRatio()))) {
 		return;
 	}
 	auto w = qMax(style::ConvertScale(thumb->width()), 1);
@@ -1417,8 +1422,8 @@ void Article::prepareThumbnail(int width, int height) const {
 		});
 }
 
-Game::Game(not_null<Context*> context, not_null<Result*> result)
-: ItemBase(context, result)
+Game::Game(not_null<Context*> context, std::shared_ptr<Result> result)
+: ItemBase(context, std::move(result))
 , _title(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineThumbSize - st::inlineThumbSkip)
 , _description(st::emojiPanWidth - st::emojiScroll.width - st::inlineResultsLeft - st::inlineThumbSize - st::inlineThumbSkip) {
 	countFrameSize();
@@ -1577,11 +1582,11 @@ TextState Game::getState(
 }
 
 void Game::prepareThumbnail(QSize size) const {
-	if (const auto document = getResultDocument()) {
+	if ([[maybe_unused]] const auto document = getResultDocument()) {
 		Assert(_documentMedia != nullptr);
 		validateThumbnail(_documentMedia->thumbnail(), size, true);
 		validateThumbnail(_documentMedia->thumbnailInline(), size, false);
-	} else if (const auto photo = getResultPhoto()) {
+	} else if ([[maybe_unused]] const auto photo = getResultPhoto()) {
 		using Data::PhotoSize;
 		Assert(_photoMedia != nullptr);
 		validateThumbnail(_photoMedia->image(PhotoSize::Thumbnail), size, true);
@@ -1609,7 +1614,7 @@ void Game::ensureDataMediaCreated(not_null<PhotoData*> photo) const {
 void Game::validateThumbnail(Image *image, QSize size, bool good) const {
 	if (!image || (_thumbGood && !good)) {
 		return;
-	} else if ((_thumb.size() == size * cIntRetinaFactor())
+	} else if ((_thumb.size() == size * style::DevicePixelRatio())
 		&& (_thumbGood || !good)) {
 		return;
 	}

@@ -22,7 +22,7 @@ class SessionController;
 } // namespace Window
 
 namespace SendMenu {
-enum class Type;
+struct Details;
 } // namespace SendMenu
 
 namespace ChatHelpers {
@@ -40,9 +40,9 @@ enum class PauseReason {
 using PauseReasons = base::flags<PauseReason>;
 inline constexpr bool is_flag_type(PauseReason) { return true; };
 
-enum class WindowUsage {
-	PremiumPromo,
-};
+using ResolveWindow = Fn<Window::SessionController*(
+	not_null<Main::Session*>)>;
+[[nodiscard]] ResolveWindow ResolveWindowDefault();
 
 class Show : public Main::SessionShow {
 public:
@@ -52,7 +52,7 @@ public:
 	[[nodiscard]] virtual rpl::producer<> pauseChanged() const = 0;
 
 	[[nodiscard]] virtual rpl::producer<bool> adjustShadowLeft() const;
-	[[nodiscard]] virtual SendMenu::Type sendMenuType() const = 0;
+	[[nodiscard]] virtual SendMenu::Details sendMenuDetails() const = 0;
 
 	virtual bool showMediaPreview(
 		Data::FileOrigin origin,
@@ -63,8 +63,7 @@ public:
 
 	virtual void processChosenSticker(FileChosen &&chosen) const = 0;
 
-	[[nodiscard]] virtual Window::SessionController *resolveWindow(
-		WindowUsage) const;
+	[[nodiscard]] virtual Window::SessionController *resolveWindow() const;
 };
 
 } // namespace ChatHelpers

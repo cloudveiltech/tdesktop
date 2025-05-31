@@ -7,7 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
-#include "settings/settings_common.h"
+#include "settings/settings_common_session.h"
 
 namespace Main {
 class Account;
@@ -34,6 +34,9 @@ void SetupUpdate(not_null<Ui::VerticalLayout*> container);
 void SetupWindowTitleContent(
 	Window::SessionController *controller,
 	not_null<Ui::VerticalLayout*> container);
+void SetupWindowCloseBehaviorContent(
+	Window::SessionController *controller,
+	not_null<Ui::VerticalLayout*> container);
 void SetupSystemIntegrationContent(
 	Window::SessionController *controller,
 	not_null<Ui::VerticalLayout*> container);
@@ -54,12 +57,8 @@ public:
 
 	[[nodiscard]] rpl::producer<QString> title() override;
 
-	rpl::producer<Type> sectionShowOther() override;
-
 private:
 	void setupContent(not_null<Window::SessionController*> controller);
-
-	rpl::event_stream<Type> _showOther;
 
 };
 

@@ -11,7 +11,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/section_memento.h"
 #include "history/view/history_view_corner_buttons.h"
 #include "history/view/history_view_list_widget.h"
+#include "history/history_item_helpers.h"
 #include "data/data_messages.h"
+#include "ui/controls/swipe_handler_data.h"
 #include "base/timer.h"
 
 class History;
@@ -19,10 +21,11 @@ enum class SendMediaType;
 struct SendingAlbum;
 
 namespace SendMenu {
-enum class Type;
+struct Details;
 } // namespace SendMenu
 
 namespace Api {
+struct MessageToSend;
 struct SendOptions;
 struct SendAction;
 } // namespace Api
@@ -36,6 +39,7 @@ class PlainShadow;
 class FlatButton;
 class PinnedBar;
 struct PreparedList;
+struct PreparedBundle;
 class SendFilesWay;
 } // namespace Ui
 
@@ -62,6 +66,7 @@ class Element;
 class TopBarWidget;
 class RepliesMemento;
 class ComposeControls;
+class ComposeSearch;
 class SendActionPainter;
 class StickerToast;
 class TopicReopenBar;
@@ -71,7 +76,7 @@ class TranslateBar;
 
 class RepliesWidget final
 	: public Window::SectionWidget
-	, private ListDelegate
+	, private WindowListDelegate
 	, private CornerButtonsDelegate {
 public:
 	RepliesWidget(
@@ -152,6 +157,9 @@ public:
 	void listSendBotCommand(
 		const QString &command,
 		const FullMsgId &context) override;
+	void listSearch(
+		const QString &query,
+		const FullMsgId &context) override;
 	void listHandleViaClick(not_null<UserData*> bot) override;
 	not_null<Ui::ChatTheme*> listChatTheme() override;
 	CopyRestrictionType listCopyRestrictionType(HistoryItem *item) override;
@@ -172,9 +180,14 @@ public:
 		Painter &p,
 		const Ui::ChatPaintContext &context) override;
 	QString listElementAuthorRank(not_null<const Element*> view) override;
+	bool listElementHideTopicButton(not_null<const Element*> view) override;
 	History *listTranslateHistory() override;
 	void listAddTranslatedItems(
 		not_null<TranslateTracker*> tracker) override;
+	Ui::ChatPaintContext listPreparePaintContext(
+		Ui::ChatPaintContextArgs &&args) override;
+	base::unique_qptr<Ui::PopupMenu> listFillSenderUserpicMenu(
+		PeerId userpicPeerId) override;
 
 	// CornerButtonsDelegate delegate.
 	void cornerButtonsShowAtPosition(
@@ -196,6 +209,11 @@ private:
 	void checkActivation() override;
 	void doSetInnerFocus() override;
 
+	[[nodiscard]] bool checkSendPayment(
+		int messagesCount,
+		int starsApproved,
+		Fn<void(int)> withPaymentApproved);
+
 	void onScroll();
 	void updateInnerVisibleArea();
 	void updateControlsGeometry();
@@ -208,11 +226,15 @@ private:
 	void showAtEnd();
 	void showAtPosition(
 		Data::MessagePosition position,
-		FullMsgId originItemId = {},
-		anim::type animated = anim::type::normal);
+		FullMsgId originItemId = {});
+	void showAtPosition(
+		Data::MessagePosition position,
+		FullMsgId originItemId,
+		const Window::SectionShow &params);
 	void finishSending();
 
 	void setupComposeControls();
+	void setupSwipeReplyAndBack();
 
 	void setupRoot();
 	void setupRootView();
@@ -236,14 +258,15 @@ private:
 		Api::SendOptions options) const;
 	void send();
 	void send(Api::SendOptions options);
-	void sendVoice(Controls::VoiceToSend &&data);
+	void sendVoice(const Controls::VoiceToSend &data);
 	void edit(
 		not_null<HistoryItem*> item,
 		Api::SendOptions options,
-		mtpRequestId *const saveEditMsgRequestId);
+		mtpRequestId *const saveEditMsgRequestId,
+		bool spoilered);
 	void chooseAttach(std::optional<bool> overrideSendImagesAsPhotos);
-	[[nodiscard]] SendMenu::Type sendMenuType() const;
-	[[nodiscard]] MsgId replyToId() const;
+	[[nodiscard]] SendMenu::Details sendMenuDetails() const;
+	[[nodiscard]] FullReplyTo replyTo() const;
 	[[nodiscard]] HistoryItem *lookupRoot() const;
 	[[nodiscard]] Data::ForumTopic *lookupTopic();
 	[[nodiscard]] bool computeAreComments() const;
@@ -252,7 +275,7 @@ private:
 	void pushReplyReturn(not_null<HistoryItem*> item);
 	void checkReplyReturns();
 	void recountChatWidth();
-	void replyToMessage(FullMsgId itemId);
+	void replyToMessage(FullReplyTo id);
 	void refreshTopBarActiveChat();
 	void refreshUnreadCountBadge(std::optional<int> count);
 
@@ -292,21 +315,28 @@ private:
 		TextWithTags &&caption,
 		Api::SendOptions options,
 		bool ctrlShiftEnter);
+	void sendingFilesConfirmed(
+		std::shared_ptr<Ui::PreparedBundle> bundle,
+		Api::SendOptions options);
 
-	void sendExistingDocument(not_null<DocumentData*> document);
+	void sendBotCommandWithOptions(
+		const QString &command,
+		const FullMsgId &context,
+		Api::SendOptions options);
+
 	bool sendExistingDocument(
 		not_null<DocumentData*> document,
-		Api::SendOptions options,
+		Api::MessageToSend messageToSend,
 		std::optional<MsgId> localId);
 	void sendExistingPhoto(not_null<PhotoData*> photo);
 	bool sendExistingPhoto(
 		not_null<PhotoData*> photo,
 		Api::SendOptions options);
 	void sendInlineResult(
-		not_null<InlineBots::Result*> result,
+		std::shared_ptr<InlineBots::Result> result,
 		not_null<UserData*> bot);
 	void sendInlineResult(
-		not_null<InlineBots::Result*> result,
+		std::shared_ptr<InlineBots::Result> result,
 		not_null<UserData*> bot,
 		Api::SendOptions options,
 		std::optional<MsgId> localMessageId);
@@ -331,7 +361,9 @@ private:
 	object_ptr<TopBarWidget> _topBar;
 	object_ptr<Ui::PlainShadow> _topBarShadow;
 	std::unique_ptr<ComposeControls> _composeControls;
+	std::unique_ptr<ComposeSearch> _composeSearch;
 	std::unique_ptr<Ui::FlatButton> _joinGroup;
+	std::unique_ptr<Ui::FlatButton> _payForMessage;
 	std::unique_ptr<TopicReopenBar> _topicReopenBar;
 	std::unique_ptr<EmptyPainter> _emptyPainter;
 	bool _skipScrollEvent = false;
@@ -361,6 +393,11 @@ private:
 	HistoryView::CornerButtons _cornerButtons;
 	rpl::lifetime _topicLifetime;
 
+	Ui::Controls::SwipeContextData _gestureHorizontal;
+	Ui::Controls::SwipeBackResult _swipeBackData;
+
+	SendPaymentHelper _sendPayment;
+
 	int _lastScrollTop = 0;
 	int _topicReopenBarHeight = 0;
 	int _scrollTopDelta = 0;
@@ -371,13 +408,14 @@ private:
 
 };
 
-
 class RepliesMemento final : public Window::SectionMemento {
 public:
 	RepliesMemento(
 		not_null<History*> history,
 		MsgId rootId,
-		MsgId highlightId = 0);
+		MsgId highlightId = 0,
+		const TextWithEntities &highlightPart = {},
+		int highlightPartOffsetHint = 0);
 	explicit RepliesMemento(
 		not_null<HistoryItem*> commentsItem,
 		MsgId commentId = 0);
@@ -421,8 +459,14 @@ public:
 	[[nodiscard]] not_null<ListMemento*> list() {
 		return &_list;
 	}
-	[[nodiscard]] MsgId getHighlightId() const {
+	[[nodiscard]] MsgId highlightId() const {
 		return _highlightId;
+	}
+	[[nodiscard]] const TextWithEntities &highlightPart() const {
+		return _highlightPart;
+	}
+	[[nodiscard]] int highlightPartOffsetHint() const {
+		return _highlightPartOffsetHint;
 	}
 
 private:
@@ -430,6 +474,8 @@ private:
 
 	const not_null<History*> _history;
 	MsgId _rootId = 0;
+	const TextWithEntities _highlightPart;
+	const int _highlightPartOffsetHint = 0;
 	const MsgId _highlightId = 0;
 	ListMemento _list;
 	std::shared_ptr<Data::RepliesList> _replies;

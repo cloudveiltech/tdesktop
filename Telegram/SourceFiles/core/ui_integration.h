@@ -19,7 +19,7 @@ class ElementDelegate;
 
 namespace Core {
 
-struct MarkedTextContext {
+struct TextContextDetails {
 	enum class HashtagMentionType : uchar {
 		Telegram,
 		Twitter,
@@ -28,9 +28,15 @@ struct MarkedTextContext {
 
 	Main::Session *session = nullptr;
 	HashtagMentionType type = HashtagMentionType::Telegram;
-	Fn<void()> customEmojiRepaint;
+};
+
+struct TextContextArgs {
+	not_null<Main::Session*> session;
+	TextContextDetails details;
+	Fn<void()> repaint;
 	int customEmojiLoopLimit = 0;
 };
+[[nodiscard]] Ui::Text::MarkedContext TextContext(TextContextArgs &&args);
 
 class UiIntegration final : public Ui::Integration {
 public:
@@ -49,20 +55,14 @@ public:
 
 	std::shared_ptr<ClickHandler> createLinkHandler(
 		const EntityLinkData &data,
-		const std::any &context) override;
+		const Ui::Text::MarkedContext &context) override;
 	bool handleUrlClick(
 		const QString &url,
 		const QVariant &context) override;
+	bool copyPreOnClick(const QVariant &context) override;
 	rpl::producer<> forcePopupMenuHideRequests() override;
 	const Ui::Emoji::One *defaultEmojiVariant(
 		const Ui::Emoji::One *emoji) override;
-	std::unique_ptr<Ui::Text::CustomEmoji> createCustomEmoji(
-		const QString &data,
-		const std::any &context) override;
-	Fn<void()> createSpoilerRepaint(const std::any &context) override;
-	bool allowClickHandlerActivation(
-		const std::shared_ptr<ClickHandler> &handler,
-		const ClickContext &context) override;
 
 	QString phraseContextCopyText() override;
 	QString phraseContextCopyEmail() override;
@@ -76,6 +76,7 @@ public:
 	QString phraseFormattingItalic() override;
 	QString phraseFormattingUnderline() override;
 	QString phraseFormattingStrikeOut() override;
+	QString phraseFormattingBlockquote() override;
 	QString phraseFormattingMonospace() override;
 	QString phraseFormattingSpoiler() override;
 	QString phraseButtonOk() override;
@@ -90,6 +91,7 @@ public:
 	QString phraseBotAllowWrite() override;
 	QString phraseBotAllowWriteTitle() override;
 	QString phraseBotAllowWriteConfirm() override;
+	QString phraseQuoteHeaderCopy() override;
 
 };
 

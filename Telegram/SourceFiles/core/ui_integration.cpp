@@ -11,17 +11,20 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/local_url_handlers.h"
 #include "core/file_utilities.h"
 #include "core/application.h"
+#include "core/bank_card_click_handler.h"
 #include "core/sandbox.h"
 #include "core/click_handler_types.h"
 #include "data/stickers/data_custom_emoji.h"
 #include "data/data_session.h"
-#include "data/data_sponsored_messages.h"
+#include "iv/iv_instance.h"
 #include "ui/text/text_custom_emoji.h"
+#include "ui/text/text_utilities.h"
 #include "ui/basic_click_handlers.h"
 #include "ui/emoji_config.h"
 #include "lang/lang_keys.h"
 #include "platform/platform_specific.h"
 #include "boxes/url_auth_box.h"
+#include "core/phone_click_handler.h"
 #include "main/main_account.h"
 #include "main/main_session.h"
 #include "main/main_app_config.h"
@@ -50,8 +53,13 @@ const auto kBadPrefix = u"http://"_q;
 [[nodiscard]] QString UrlWithAutoLoginToken(
 		const QString &url,
 		QUrl parsed,
-		const QString &domain) {
-	const auto &active = Core::App().activeAccount();
+		const QString &domain,
+		QVariant context) {
+	const auto my = context.value<ClickHandlerContext>();
+	const auto window = my.sessionWindow.get();
+	const auto &active = window
+		? window->session().account()
+		: Core::App().activeAccount();
 	const auto token = active.mtp().configValues().autologinToken;
 	const auto domains = active.appConfig().get<std::vector<QString>>(
 		"autologin_domains",
@@ -102,6 +110,40 @@ const auto kBadPrefix = u"http://"_q;
 
 } // namespace
 
+Ui::Text::MarkedContext TextContext(TextContextArgs &&args) {
+	using Context = Ui::Text::MarkedContext;
+	using Factory = Ui::Text::CustomEmojiFactory;
+
+	const auto session = args.session;
+	auto simple = [session](QStringView data, const Context &context) {
+		return session->data().customEmojiManager().create(
+			data,
+			context.repaint);
+	};
+	auto factory = !args.customEmojiLoopLimit
+		? Factory(simple)
+		: (args.customEmojiLoopLimit > 0)
+		? Factory([simple, loop = args.customEmojiLoopLimit](
+				QStringView data,
+				const Context &context) {
+			return std::make_unique<Ui::Text::LimitedLoopsEmoji>(
+				simple(data, context),
+				loop);
+		})
+		: Factory([simple](
+				QStringView data,
+				const Context &context) {
+			return std::make_unique<Ui::Text::FirstFrameEmoji>(
+				simple(data, context));
+		});
+	args.details.session = session;
+	return {
+		.repaint = std::move(args.repaint),
+		.customEmojiFactory = std::move(factory),
+		.other = std::move(args.details),
+	};
+}
+
 void UiIntegration::postponeCall(FnMut<void()> &&callable) {
 	Sandbox::Instance().postponeCall(std::move(callable));
 }
@@ -142,8 +184,8 @@ bool UiIntegration::screenIsLocked() {
 
 std::shared_ptr<ClickHandler> UiIntegration::createLinkHandler(
 		const EntityLinkData &data,
-		const std::any &context) {
-	const auto my = std::any_cast<MarkedTextContext>(&context);
+		const Ui::Text::MarkedContext &context) {
+	const auto my = std::any_cast<Core::TextContextDetails>(&context.other);
 	switch (data.type) {
 	case EntityType::Url:
 		return (!data.data.isEmpty()
@@ -160,7 +202,7 @@ std::shared_ptr<ClickHandler> UiIntegration::createLinkHandler(
 		return std::make_shared<BotCommandClickHandler>(data.data);
 
 	case EntityType::Hashtag:
-		using HashtagMentionType = MarkedTextContext::HashtagMentionType;
+		using HashtagMentionType = TextContextDetails::HashtagMentionType;
 		if (my && my->type == HashtagMentionType::Twitter) {
 			return std::make_shared<UrlClickHandler>(
 				(u"https://twitter.com/hashtag/"_q
@@ -180,7 +222,7 @@ std::shared_ptr<ClickHandler> UiIntegration::createLinkHandler(
 		return std::make_shared<CashtagClickHandler>(data.data);
 
 	case EntityType::Mention:
-		using HashtagMentionType = MarkedTextContext::HashtagMentionType;
+		using HashtagMentionType = TextContextDetails::HashtagMentionType;
 		if (my && my->type == HashtagMentionType::Twitter) {
 			return std::make_shared<UrlClickHandler>(
 				u"https://twitter.com/"_q + data.data.mid(1),
@@ -211,6 +253,14 @@ std::shared_ptr<ClickHandler> UiIntegration::createLinkHandler(
 		return std::make_shared<MonospaceClickHandler>(data.text, data.type);
 	case EntityType::Pre:
 		return std::make_shared<MonospaceClickHandler>(data.text, data.type);
+	case EntityType::Phone:
+		return my->session
+			? std::make_shared<PhoneClickHandler>(my->session, data.text)
+			: nullptr;
+	case EntityType::BankCard:
+		return my->session
+			? std::make_shared<BankCardClickHandler>(my->session, data.text)
+			: nullptr;
 	}
 	return Integration::createLinkHandler(data, context);
 }
@@ -229,49 +279,37 @@ bool UiIntegration::handleUrlClick(
 	} else if (local.startsWith(u"tg://"_q, Qt::CaseInsensitive)) {
 		Core::App().openLocalUrl(local, context);
 		return true;
+	} else if (local.startsWith(u"tonsite://"_q, Qt::CaseInsensitive)) {
+		Core::App().iv().showTonSite(local, context);
+		return true;
 	} else if (local.startsWith(u"internal:"_q, Qt::CaseInsensitive)) {
 		Core::App().openInternalUrl(local, context);
 		return true;
+	} else if (Iv::PreferForUri(url)
+		&& !context.value<ClickHandlerContext>().ignoreIv) {
+		const auto my = context.value<ClickHandlerContext>();
+		if (const auto controller = my.sessionWindow.get()) {
+			Core::App().iv().openWithIvPreferred(controller, url, context);
+			return true;
+		}
 	}
 
 	auto parsed = UrlForAutoLogin(url);
 	const auto domain = DomainForAutoLogin(parsed);
 	const auto skip = context.value<ClickHandlerContext>().skipBotAutoLogin;
 	if (skip || !BotAutoLogin(url, domain, context)) {
-		File::OpenUrl(UrlWithAutoLoginToken(url, std::move(parsed), domain));
+		File::OpenUrl(
+			UrlWithAutoLoginToken(url, std::move(parsed), domain, context));
 	}
 	return true;
 }
 
-std::unique_ptr<Ui::Text::CustomEmoji> UiIntegration::createCustomEmoji(
-		const QString &data,
-		const std::any &context) {
-	const auto my = std::any_cast<MarkedTextContext>(&context);
-	if (!my || !my->session) {
-		return nullptr;
-	}
-	auto result = my->session->data().customEmojiManager().create(
-		data,
-		my->customEmojiRepaint);
-	if (my->customEmojiLoopLimit > 0) {
-		return std::make_unique<Ui::Text::LimitedLoopsEmoji>(
-			std::move(result),
-			my->customEmojiLoopLimit);
-	}
-	return result;
-}
-
-Fn<void()> UiIntegration::createSpoilerRepaint(const std::any &context) {
-	const auto my = std::any_cast<MarkedTextContext>(&context);
-	return my ? my->customEmojiRepaint : nullptr;
-}
-
-bool UiIntegration::allowClickHandlerActivation(
-		const std::shared_ptr<ClickHandler> &handler,
-		const ClickContext &context) {
-	const auto my = context.other.value<ClickHandlerContext>();
+bool UiIntegration::copyPreOnClick(const QVariant &context) {
+	const auto my = context.value<ClickHandlerContext>();
 	if (const auto window = my.sessionWindow.get()) {
-		window->session().data().sponsoredMessages().clicked(my.itemId);
+		window->showToast(tr::lng_code_copied(tr::now));
+	} else if (my.show) {
+		my.show->showToast(tr::lng_code_copied(tr::now));
 	}
 	return true;
 }
@@ -338,6 +376,10 @@ QString UiIntegration::phraseFormattingStrikeOut() {
 	return tr::lng_menu_formatting_strike_out(tr::now);
 }
 
+QString UiIntegration::phraseFormattingBlockquote() {
+	return tr::lng_menu_formatting_blockquote(tr::now);
+}
+
 QString UiIntegration::phraseFormattingMonospace() {
 	return tr::lng_menu_formatting_monospace(tr::now);
 }
@@ -392,6 +434,10 @@ QString UiIntegration::phraseBotAllowWriteTitle() {
 
 QString UiIntegration::phraseBotAllowWriteConfirm() {
 	return tr::lng_bot_allow_write_confirm(tr::now);
+}
+
+QString UiIntegration::phraseQuoteHeaderCopy() {
+	return tr::lng_code_block_header_copy(tr::now);
 }
 
 bool OpenGLLastCheckFailed() {

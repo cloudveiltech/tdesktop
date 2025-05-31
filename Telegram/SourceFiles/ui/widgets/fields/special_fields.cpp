@@ -50,6 +50,14 @@ void CountryCodeInput::codeSelected(const QString &code) {
 	changed();
 }
 
+void CountryCodeInput::keyPressEvent(QKeyEvent *e) {
+	if (e->key() == Qt::Key_Space) {
+		_spacePressed.fire({});
+	} else {
+		MaskedInputField::keyPressEvent(e);
+	}
+}
+
 void CountryCodeInput::correctValue(
 		const QString &was,
 		int wasCursor,
@@ -267,14 +275,14 @@ UsernameInput::UsernameInput(
 void UsernameInput::setLinkPlaceholder(const QString &placeholder) {
 	_linkPlaceholder = placeholder;
 	if (!_linkPlaceholder.isEmpty()) {
-		setTextMargins(style::margins(_st.textMargins.left() + _st.font->width(_linkPlaceholder), _st.textMargins.top(), _st.textMargins.right(), _st.textMargins.bottom()));
+		setTextMargins(style::margins(_st.textMargins.left() + _st.style.font->width(_linkPlaceholder), _st.textMargins.top(), _st.textMargins.right(), _st.textMargins.bottom()));
 		setPlaceholderHidden(true);
 	}
 }
 
 void UsernameInput::paintAdditionalPlaceholder(QPainter &p) {
 	if (!_linkPlaceholder.isEmpty()) {
-		p.setFont(_st.font);
+		p.setFont(_st.style.font);
 		p.setPen(_st.placeholderFg);
 		p.drawText(QRect(_st.textMargins.left(), _st.textMargins.top(), width(), height() - _st.textMargins.top() - _st.textMargins.bottom()), _linkPlaceholder, style::al_topleft);
 	}

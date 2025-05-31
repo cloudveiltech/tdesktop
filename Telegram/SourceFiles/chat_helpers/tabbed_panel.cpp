@@ -33,6 +33,10 @@ base::options::toggle TabbedPanelShowOnClick({
 
 const char kOptionTabbedPanelShowOnClick[] = "tabbed-panel-show-on-click";
 
+bool ShowPanelOnClick() {
+	return TabbedPanelShowOnClick.value();
+}
+
 TabbedPanel::TabbedPanel(
 	QWidget *parent,
 	not_null<Window::SessionController*> controller,
@@ -288,7 +292,11 @@ void TabbedPanel::otherLeave() {
 	if (_a_opacity.animating()) {
 		hideByTimerOrLeave();
 	} else {
-		_hideTimer.callOnce(0);
+		// In case of animations disabled add some delay before hiding.
+		// Otherwise if emoji suggestions panel is shown in between
+		// (z-order wise) the emoji toggle button and tabbed panel,
+		// we won't be able to move cursor from the button to the panel.
+		_hideTimer.callOnce(anim::Disabled() ? kHideTimeoutMs : 0);
 	}
 }
 
@@ -368,7 +376,11 @@ void TabbedPanel::startShowAnimation() {
 				? Ui::PanelAnimation::Origin::TopRight
 				: Ui::PanelAnimation::Origin::BottomRight));
 		auto inner = rect().marginsRemoved(st::emojiPanMargins);
-		_showAnimation->setFinalImage(std::move(image), QRect(inner.topLeft() * cIntRetinaFactor(), inner.size() * cIntRetinaFactor()));
+		_showAnimation->setFinalImage(
+			std::move(image),
+			QRect(
+				inner.topLeft() * style::DevicePixelRatio(),
+				inner.size() * style::DevicePixelRatio()));
 		_showAnimation->setCornerMasks(Images::CornersMask(st::emojiPanRadius));
 		_showAnimation->start();
 	}
@@ -386,9 +398,9 @@ QImage TabbedPanel::grabForAnimation() {
 	Ui::SendPendingMoveResizeEvents(this);
 
 	auto result = QImage(
-		size() * cIntRetinaFactor(),
+		size() * style::DevicePixelRatio(),
 		QImage::Format_ARGB32_Premultiplied);
-	result.setDevicePixelRatio(cRetinaFactor());
+	result.setDevicePixelRatio(style::DevicePixelRatio());
 	result.fill(Qt::transparent);
 	if (_selector) {
 		QPainter p(&result);

@@ -9,6 +9,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "boxes/peer_list_box.h"
 #include "ui/layers/generic_box.h"
+#include "mtproto/sender.h"
 
 namespace Window {
 class SessionController;
@@ -19,7 +20,7 @@ namespace GroupCalls {
 
 class ListController : public PeerListController {
 public:
-	explicit ListController(not_null<Window::SessionController*> window);
+	explicit ListController(not_null<::Window::SessionController*> window);
 
 	[[nodiscard]] rpl::producer<bool> shownValue() const;
 
@@ -29,7 +30,7 @@ public:
 	void rowRightActionClicked(not_null<PeerListRow*> row) override;
 
 private:
-	const not_null<Window::SessionController*> _window;
+	const not_null<::Window::SessionController*> _window;
 	base::flat_map<PeerId, not_null<PeerListRow*>> _groupCalls;
 	rpl::variable<int> _fullCount;
 
@@ -39,7 +40,7 @@ private:
 
 class BoxController : public PeerListController {
 public:
-	explicit BoxController(not_null<Window::SessionController*> window);
+	explicit BoxController(not_null<::Window::SessionController*> window);
 
 	Main::Session &session() const override;
 	void prepare() override;
@@ -67,7 +68,7 @@ private:
 	std::unique_ptr<PeerListRow> createRow(
 		not_null<HistoryItem*> item) const;
 
-	const not_null<Window::SessionController*> _window;
+	const not_null<::Window::SessionController*> _window;
 	MTP::Sender _api;
 
 	MsgId _offsetId = 0;
@@ -78,6 +79,8 @@ private:
 
 void ClearCallsBox(
 	not_null<Ui::GenericBox*> box,
-	not_null<Window::SessionController*> window);
+	not_null<::Window::SessionController*> window);
+
+void ShowCallsBox(not_null<::Window::SessionController*> window);
 
 } // namespace Calls

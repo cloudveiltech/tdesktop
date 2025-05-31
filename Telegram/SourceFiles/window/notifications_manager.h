@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_message_reaction_id.h"
 #include "base/timer.h"
 #include "base/type_traits.h"
+#include "media/audio/media_audio_local_cache.h"
 
 class History;
 
@@ -90,6 +91,11 @@ extern base::options::toggle OptionGNotification;
 
 class Manager;
 
+struct ActivateOptions {
+	TextWithTags draft;
+	bool allowNewWindow = false;
+};
+
 class System final {
 public:
 	System();
@@ -98,8 +104,7 @@ public:
 	[[nodiscard]] Main::Session *findSession(uint64 sessionId) const;
 
 	void createManager();
-	void setManager(std::unique_ptr<Manager> manager);
-	[[nodiscard]] Manager &manager() const;
+	void setManager(Fn<std::unique_ptr<Manager>()> create);
 
 	void checkDelayed();
 	void schedule(Data::ItemNotification notification);
@@ -117,6 +122,9 @@ public:
 	void notifySettingsChanged(ChangeType type);
 
 	void playSound(not_null<Main::Session*> session, DocumentId id);
+	[[nodiscard]] QByteArray lookupSoundBytes(
+		not_null<Data::Session*> owner,
+		DocumentId id);
 
 	[[nodiscard]] rpl::lifetime &lifetime() {
 		return _lifetime;
@@ -217,6 +225,7 @@ private:
 	int _lastForwardedCount = 0;
 	uint64 _lastHistorySessionId = 0;
 	FullMsgId _lastHistoryItemId;
+	std::optional<DocumentId> _lastSoundId;
 
 	rpl::lifetime _lifetime;
 
@@ -232,22 +241,6 @@ public:
 		friend inline auto operator<=>(
 			const ContextId&,
 			const ContextId&) = default;
-
-		[[nodiscard]] auto toTuple() const {
-			return std::make_tuple(
-				sessionId,
-				peerId.value,
-				topicRootId.bare);
-		}
-
-		template<typename T>
-		[[nodiscard]] static auto FromTuple(const T &tuple) {
-			return ContextId{
-				std::get<0>(tuple),
-				PeerIdHelper(std::get<1>(tuple)),
-				std::get<2>(tuple),
-			};
-		}
 	};
 	struct NotificationId {
 		ContextId contextId;
@@ -256,26 +249,13 @@ public:
 		friend inline auto operator<=>(
 			const NotificationId&,
 			const NotificationId&) = default;
-
-		[[nodiscard]] auto toTuple() const {
-			return std::make_tuple(
-				contextId.toTuple(),
-				msgId.bare);
-		}
-
-		template<typename T>
-		[[nodiscard]] static auto FromTuple(const T &tuple) {
-			return NotificationId{
-				ContextId::FromTuple(std::get<0>(tuple)),
-				std::get<1>(tuple),
-			};
-		}
 	};
 	struct NotificationFields {
 		not_null<HistoryItem*> item;
 		int forwardedCount = 0;
 		PeerData *reactionFrom = nullptr;
 		Data::ReactionId reactionId;
+		std::optional<DocumentId> soundId;
 	};
 
 	explicit Manager(not_null<System*> system) : _system(system) {
@@ -308,15 +288,15 @@ public:
 
 	void notificationActivated(
 		NotificationId id,
-		const TextWithTags &draft = {});
+		ActivateOptions &&options = {});
 	void notificationReplied(NotificationId id, const TextWithTags &reply);
 
 	struct DisplayOptions {
-		bool hideNameAndPhoto = false;
-		bool hideMessageText = false;
-		bool hideMarkAsRead = false;
-		bool hideReplyButton = false;
-		bool spoilerLoginCode = false;
+		bool hideNameAndPhoto : 1 = false;
+		bool hideMessageText : 1 = false;
+		bool hideMarkAsRead : 1 = false;
+		bool hideReplyButton : 1 = false;
+		bool spoilerLoginCode : 1 = false;
 	};
 	[[nodiscard]] DisplayOptions getNotificationOptions(
 		HistoryItem *item,
@@ -378,9 +358,10 @@ protected:
 	[[nodiscard]] virtual QString accountNameSeparator();
 
 private:
-	void openNotificationMessage(
+	Window::SessionController *openNotificationMessage(
 		not_null<History*> history,
-		MsgId messageId);
+		MsgId messageId,
+		bool openSeparated);
 
 	const not_null<System*> _system;
 
@@ -391,6 +372,18 @@ public:
 	[[nodiscard]] ManagerType type() const override {
 		return ManagerType::Native;
 	}
+
+	using NotificationSound = Media::Audio::LocalSound;
+	struct NotificationInfo {
+		not_null<PeerData*> peer;
+		MsgId topicRootId = 0;
+		MsgId itemId = 0;
+		QString title;
+		QString subtitle;
+		QString message;
+		Fn<NotificationSound()> sound;
+		DisplayOptions options;
+	};
 
 protected:
 	using Manager::Manager;
@@ -406,14 +399,11 @@ protected:
 	bool forceHideDetails() const override;
 
 	virtual void doShowNativeNotification(
-		not_null<PeerData*> peer,
-		MsgId topicRootId,
-		Ui::PeerUserpicView &userpicView,
-		MsgId msgId,
-		const QString &title,
-		const QString &subtitle,
-		const QString &msg,
-		DisplayOptions options) = 0;
+		NotificationInfo &&info,
+		Ui::PeerUserpicView &userpicView) = 0;
+
+private:
+	Media::Audio::LocalCache _localSoundCache;
 
 };
 
@@ -427,14 +417,8 @@ public:
 
 protected:
 	void doShowNativeNotification(
-		not_null<PeerData*> peer,
-		MsgId topicRootId,
-		Ui::PeerUserpicView &userpicView,
-		MsgId msgId,
-		const QString &title,
-		const QString &subtitle,
-		const QString &msg,
-		DisplayOptions options) override {
+		NotificationInfo &&info,
+		Ui::PeerUserpicView &userpicView) override {
 	}
 	void doClearAllFast() override {
 	}

@@ -38,13 +38,14 @@ void GenerateUserpicsInRow(
 	const auto single = st.size;
 	const auto shift = st.shift;
 	const auto width = single + (limit - 1) * (single - shift);
-	if (result.width() != width * cIntRetinaFactor()) {
+	const auto ratio = style::DevicePixelRatio();
+	if (result.width() != width * ratio) {
 		result = QImage(
-			QSize(width, single) * cIntRetinaFactor(),
+			QSize(width, single) * ratio,
 			QImage::Format_ARGB32_Premultiplied);
 	}
 	result.fill(Qt::transparent);
-	result.setDevicePixelRatio(cRetinaFactor());
+	result.setDevicePixelRatio(ratio);
 
 	auto q = Painter(&result);
 	auto hq = PainterHighQualityEnabler(q);
@@ -54,7 +55,7 @@ void GenerateUserpicsInRow(
 	for (auto i = count; i != 0;) {
 		auto &entry = list[--i];
 		q.setCompositionMode(QPainter::CompositionMode_SourceOver);
-		entry.peer->paintUserpic(q, entry.view, x, 0, single);
+		entry.peer->paintUserpic(q, entry.view, x, 0, single, true);
 		entry.uniqueKey = entry.peer->userpicUniqueKey(entry.view);
 		q.setCompositionMode(QPainter::CompositionMode_Source);
 		q.setBrush(Qt::NoBrush);
@@ -84,19 +85,29 @@ rpl::producer<Ui::GroupCallBarContent> GroupCallBarContentByCall(
 		return (~uint64(0)) - result; // sorting with less(), so invert.
 	};
 
+	static const auto RtmpCallTopBarParticipants = [](
+			not_null<Data::GroupCall*> call) {
+		using Participant = Data::GroupCallParticipant;
+		return std::vector<Participant>{ Participant{
+			.peer = call->peer(),
+		} };
+	};
+
 	constexpr auto kLimit = 3;
 	static const auto FillMissingUserpics = [](
 			not_null<State*> state,
 			not_null<Data::GroupCall*> call) {
 		const auto already = int(state->userpics.size());
-		const auto &participants = call->participants();
+		const auto &participants = call->rtmp()
+			? RtmpCallTopBarParticipants(call)
+			: call->participants();
 		if (already >= kLimit || participants.size() <= already) {
 			return false;
 		}
 		std::array<const Data::GroupCallParticipant*, kLimit> adding{
 			{ nullptr }
 		};
-		for (const auto &participant : call->participants()) {
+		for (const auto &participant : participants) {
 			const auto alreadyInList = ranges::contains(
 				state->userpics,
 				participant.peer,
@@ -142,7 +153,8 @@ rpl::producer<Ui::GroupCallBarContent> GroupCallBarContentByCall(
 		state->someUserpicsNotLoaded = false;
 		for (auto &userpic : state->userpics) {
 			userpic.peer->loadUserpic();
-			auto image = userpic.peer->generateUserpicImage(
+			auto image = PeerData::GenerateUserpicImage(
+				userpic.peer,
 				userpic.view,
 				userpicSize * style::DevicePixelRatio());
 			userpic.uniqueKey = userpic.peer->userpicUniqueKey(userpic.view);
@@ -184,6 +196,9 @@ rpl::producer<Ui::GroupCallBarContent> GroupCallBarContentByCall(
 			int userpicSize) {
 		Expects(state->userpics.size() <= kLimit);
 
+		if (call->rtmp()) {
+			return false;
+		}
 		const auto &participants = call->participants();
 		auto i = begin(state->userpics);
 

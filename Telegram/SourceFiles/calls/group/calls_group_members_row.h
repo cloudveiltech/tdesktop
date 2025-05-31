@@ -24,7 +24,7 @@ struct PeerUserpicView;
 
 namespace Calls::Group {
 
-enum class MembersRowStyle {
+enum class MembersRowStyle : uchar {
 	Default,
 	Narrow,
 	Video,
@@ -40,6 +40,7 @@ public:
 		bool mutedByMe = false;
 		bool raisedHand = false;
 		bool invited = false;
+		bool calling = false;
 		MembersRowStyle style = MembersRowStyle::Default;
 	};
 	virtual bool rowIsMe(not_null<PeerData*> participantPeer) = 0;
@@ -75,11 +76,15 @@ public:
 		Muted,
 		RaisedHand,
 		Invited,
+		Calling,
+		WithAccess,
 	};
 
 	void setAbout(const QString &about);
 	void setSkipLevelUpdate(bool value);
-	void updateState(const Data::GroupCallParticipant *participant);
+	void updateState(const Data::GroupCallParticipant &participant);
+	void updateStateInvited(bool calling);
+	void updateStateWithAccess();
 	void updateLevel(float level);
 	void updateBlobAnimation(crl::time now);
 	void clearRaisedHandStatus();
@@ -122,6 +127,8 @@ public:
 		bool selected,
 		bool actionSelected) override;
 
+	QString generateName() override;
+	QString generateShortName() override;
 	PaintRoundImageCallback generatePaintUserpicCallback(
 		bool forceRound) override;
 	void paintComplexUserpic(
@@ -208,7 +215,7 @@ private:
 	Ui::Animations::Simple _speakingAnimation; // For gray-red/green icon.
 	Ui::Animations::Simple _mutedAnimation; // For gray/red icon.
 	Ui::Animations::Simple _activeAnimation; // For icon cross animation.
-	QString _aboutText;
+	Ui::Text::String _about;
 	crl::time _speakingLastTime = 0;
 	uint64 _raisedHandRating = 0;
 	int _volume = Group::kDefaultVolume;

@@ -8,29 +8,25 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/polls/info_polls_results_inner_widget.h"
 
 #include "info/polls/info_polls_results_widget.h"
-#include "info/info_controller.h"
 #include "lang/lang_keys.h"
-#include "data/data_poll.h"
+#include "core/ui_integration.h"
 #include "data/data_peer.h"
-#include "data/data_user.h"
+#include "data/data_poll.h"
 #include "data/data_session.h"
 #include "ui/controls/peer_list_dummy.h"
-#include "ui/widgets/labels.h"
 #include "ui/widgets/buttons.h"
 #include "ui/wrap/vertical_layout.h"
-#include "ui/wrap/padding_wrap.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/text/text_utilities.h"
+#include "ui/vertical_list.h"
 #include "boxes/peer_list_box.h"
 #include "main/main_session.h"
 #include "history/history.h"
 #include "history/history_item.h"
 #include "styles/style_layers.h"
-#include "styles/style_boxes.h"
 #include "styles/style_info.h"
 
-namespace Info {
-namespace Polls {
+namespace Info::Polls {
 namespace {
 
 constexpr auto kFirstPage = 15;
@@ -51,10 +47,6 @@ public:
 	void peerListFinishSelectedRowsBunch() override;
 	void peerListSetDescription(
 		object_ptr<Ui::FlatLabel> description) override;
-	void peerListShowBox(
-		object_ptr<Ui::BoxContent> content,
-		Ui::LayerOptions options = Ui::LayerOption::KeepOther) override;
-	void peerListHideLayer() override;
 	std::shared_ptr<Main::SessionShow> peerListUiShow() override;
 
 };
@@ -90,14 +82,6 @@ void ListDelegate::peerListFinishSelectedRowsBunch() {
 void ListDelegate::peerListSetDescription(
 		object_ptr<Ui::FlatLabel> description) {
 	description.destroy();
-}
-
-void ListDelegate::peerListShowBox(
-	object_ptr<Ui::BoxContent> content,
-	Ui::LayerOptions options) {
-}
-
-void ListDelegate::peerListHideLayer() {
 }
 
 std::shared_ptr<Main::SessionShow> ListDelegate::peerListUiShow() {
@@ -278,7 +262,7 @@ void ListController::collapse() {
 	_preloaded.reserve(_preloaded.size() + remove);
 	for (auto i = 0; i != remove; ++i) {
 		const auto row = delegate()->peerListRowAt(count - i - 1);
-		_preloaded.push_back(row->peer()->asUser());
+		_preloaded.push_back(row->peer());
 		delegate()->peerListRemoveRow(row);
 	}
 	ranges::actions::reverse(_preloaded);
@@ -290,8 +274,8 @@ void ListController::collapse() {
 }
 
 void ListController::addPreloaded() {
-	for (const auto user : base::take(_preloaded)) {
-		appendRow(user);
+	for (const auto peer : base::take(_preloaded)) {
+		appendRow(peer);
 	}
 	preloadedAdded();
 }
@@ -384,10 +368,7 @@ void ListController::restoreState(std::unique_ptr<PeerListState> state) {
 
 std::unique_ptr<PeerListRow> ListController::createRestoredRow(
 		not_null<PeerData*> peer) {
-	if (const auto user = peer->asUser()) {
-		return createRow(user);
-	}
-	return nullptr;
+	return createRow(peer);
 }
 
 void ListController::rowClicked(not_null<PeerListRow*> row) {
@@ -476,11 +457,14 @@ ListController *CreateAnswerRows(
 		container.get(),
 		object_ptr<Ui::FlatLabel>(
 			container,
-			(answer.text
-				+ QString::fromUtf8(" \xe2\x80\x94 ")
-				+ QString::number(percent)
-				+ "%"),
-			st::boxDividerLabel),
+			rpl::single(
+				TextWithEntities(answer.text)
+					.append(QString::fromUtf8(" \xe2\x80\x94 "))
+					.append(QString::number(percent))
+					.append('%')),
+			st::boxDividerLabel,
+			st::defaultPopupMenu,
+			Core::TextContext({ .session = session })),
 		style::margins(
 			st::pollResultsHeaderPadding.left(),
 			st::pollResultsHeaderPadding.top(),
@@ -628,13 +612,21 @@ void InnerWidget::setupContent() {
 	_content->add(
 		object_ptr<Ui::FlatLabel>(
 			_content,
-			_poll->question,
-			st::pollResultsQuestion),
-		style::margins{
-			st::boxRowPadding.left(),
-			0,
-			st::boxRowPadding.right(),
-			st::boxMediumSkip });
+			rpl::single(_poll->question),
+			st::pollResultsQuestion,
+			st::defaultPopupMenu,
+			Core::TextContext({ .session = &_controller->session() })),
+		st::boxRowPadding);
+	Ui::AddSkip(_content, st::boxLittleSkip / 2);
+	_content->add(
+		object_ptr<Ui::FlatLabel>(
+			_content,
+			tr::lng_polls_votes_count(
+				lt_count_decimal,
+				rpl::single(float64(_poll->totalVoters))),
+			st::boxDividerLabel),
+		st::boxRowPadding);
+	Ui::AddSkip(_content, st::boxLittleSkip);
 	for (const auto &answer : _poll->answers) {
 		const auto session = &_controller->session();
 		const auto controller = CreateAnswerRows(
@@ -678,6 +670,4 @@ auto InnerWidget::showPeerInfoRequests() const
 	return _showPeerInfoRequests.events();
 }
 
-} // namespace Polls
-} // namespace Info
-
+} // namespace Info::Polls

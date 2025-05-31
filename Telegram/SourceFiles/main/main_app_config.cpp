@@ -7,9 +7,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "main/main_app_config.h"
 
-#include "main/main_account.h"
-#include "base/call_delayed.h"
+#include "api/api_authorizations.h"
 #include "apiwrap.h"
+#include "base/call_delayed.h"
+#include "main/main_account.h"
+#include "main/main_session.h"
+#include "data/data_session.h"
+#include "ui/chat/chat_style.h"
 
 namespace Main {
 namespace {
@@ -23,27 +27,131 @@ AppConfig::AppConfig(not_null<Account*> account) : _account(account) {
 	) | rpl::filter([=](Session *session) {
 		return (session != nullptr);
 	}) | rpl::start_with_next([=] {
+		_lastFrozenRefresh = 0;
 		refresh();
 	}, _lifetime);
 }
+
+AppConfig::~AppConfig() = default;
 
 void AppConfig::start() {
 	_account->mtpMainSessionValue(
 	) | rpl::start_with_next([=](not_null<MTP::Instance*> instance) {
 		_api.emplace(instance);
 		refresh();
+
+		_frozenTrackLifetime = instance->frozenErrorReceived(
+		) | rpl::start_with_next([=] {
+			if (!get<int>(u"freeze_since_date"_q, 0)) {
+				const auto now = crl::now();
+				if (!_lastFrozenRefresh
+					|| now > _lastFrozenRefresh + kRefreshTimeout) {
+					_lastFrozenRefresh = now;
+					refresh();
+				}
+			}
+		});
 	}, _lifetime);
 }
 
-void AppConfig::refresh() {
+int AppConfig::quoteLengthMax() const {
+	return get<int>(u"quote_length_max"_q, 1024);
+}
+
+int AppConfig::stargiftConvertPeriodMax() const {
+	return get<int>(
+		u"stargifts_convert_period_max"_q,
+		_account->mtp().isTestMode() ? 300 : (90 * 86400));
+}
+
+const std::vector<QString> &AppConfig::startRefPrefixes() {
+	if (_startRefPrefixes.empty()) {
+		_startRefPrefixes = get<std::vector<QString>>(
+			u"starref_start_param_prefixes"_q,
+			std::vector<QString>());
+	}
+	return _startRefPrefixes;
+}
+
+bool AppConfig::starrefSetupAllowed() const {
+	return get<bool>(u"starref_program_allowed"_q, false);
+}
+
+bool AppConfig::starrefJoinAllowed() const {
+	return get<bool>(u"starref_connect_allowed"_q, false);
+}
+
+int AppConfig::starrefCommissionMin() const {
+	return get<int>(u"starref_min_commission_permille"_q, 1);
+}
+
+int AppConfig::starrefCommissionMax() const {
+	return get<int>(u"starref_max_commission_permille"_q, 900);
+}
+
+float64 AppConfig::starsWithdrawRate() const {
+	return get<float64>(u"stars_usd_withdraw_rate_x1000"_q, 1300) / 1000.;
+}
+
+bool AppConfig::paidMessagesAvailable() const {
+	return get<bool>(u"stars_paid_messages_available"_q, false);
+}
+
+int AppConfig::paidMessageStarsMax() const {
+	return get<int>(u"stars_paid_message_amount_max"_q, 10'000);
+}
+
+int AppConfig::paidMessageCommission() const {
+	return get<int>(u"stars_paid_message_commission_permille"_q, 850);
+}
+
+int AppConfig::pinnedGiftsLimit() const {
+	return get<int>(u"stargifts_pinned_to_top_limit"_q, 6);
+}
+
+bool AppConfig::callsDisabledForSession() const {
+	const auto authorizations = _account->sessionExists()
+		? &_account->session().api().authorizations()
+		: nullptr;
+	return get<bool>(
+		u"call_requests_disabled"_q,
+		authorizations->callsDisabledHere());
+}
+
+int AppConfig::confcallSizeLimit() const {
+	return get<int>(
+		u"conference_call_size_limit"_q,
+		_account->mtp().isTestMode() ? 5 : 100);
+}
+
+bool AppConfig::confcallPrioritizeVP8() const {
+	return get<bool>(u"confcall_use_vp8"_q, false);
+}
+
+int AppConfig::giftResalePriceMax() const {
+	return get<int>(u"stars_stargift_resale_amount_max"_q, 35000);
+}
+
+int AppConfig::giftResalePriceMin() const {
+	return get<int>(u"stars_stargift_resale_amount_min"_q, 125);
+}
+
+int AppConfig::giftResaleReceiveThousandths() const {
+	return get<int>(u"stars_stargift_resale_commission_permille"_q, 800);
+}
+
+void AppConfig::refresh(bool force) {
 	if (_requestId || !_api) {
+		if (force) {
+			_pendingRefresh = true;
+		}
 		return;
 	}
+	_pendingRefresh = false;
 	_requestId = _api->request(MTPhelp_GetAppConfig(
 		MTP_int(_hash)
 	)).done([=](const MTPhelp_AppConfig &result) {
 		_requestId = 0;
-		refreshDelayed();
 		result.match([&](const MTPDhelp_appConfig &data) {
 			_hash = data.vhash().v;
 
@@ -52,15 +160,25 @@ void AppConfig::refresh() {
 				LOG(("API Error: Unexpected config type."));
 				return;
 			}
+			auto was = ignoredRestrictionReasons();
+
 			_data.clear();
 			for (const auto &element : config.c_jsonObject().vvalue().v) {
 				element.match([&](const MTPDjsonObjectValue &data) {
 					_data.emplace_or_assign(qs(data.vkey()), data.vvalue());
 				});
 			}
+			updateIgnoredRestrictionReasons(std::move(was));
+
 			DEBUG_LOG(("getAppConfig result handled."));
 			_refreshed.fire({});
 		}, [](const MTPDhelp_appConfigNotModified &) {});
+
+		if (base::take(_pendingRefresh)) {
+			refresh();
+		} else {
+			refreshDelayed();
+		}
 	}).fail([=] {
 		_requestId = 0;
 		refreshDelayed();
@@ -71,6 +189,24 @@ void AppConfig::refreshDelayed() {
 	base::call_delayed(kRefreshTimeout, _account, [=] {
 		refresh();
 	});
+}
+
+void AppConfig::updateIgnoredRestrictionReasons(std::vector<QString> was) {
+	_ignoreRestrictionReasons = get<std::vector<QString>>(
+		u"ignore_restriction_reasons"_q,
+		std::vector<QString>());
+	ranges::sort(_ignoreRestrictionReasons);
+	if (_ignoreRestrictionReasons != was) {
+		for (const auto &reason : _ignoreRestrictionReasons) {
+			const auto i = ranges::remove(was, reason);
+			if (i != end(was)) {
+				was.erase(i, end(was));
+			} else {
+				was.push_back(reason);
+			}
+		}
+		_ignoreRestrictionChanges.fire(std::move(was));
+	}
 }
 
 rpl::producer<> AppConfig::refreshed() const {
@@ -141,28 +277,22 @@ std::vector<QString> AppConfig::getStringArray(
 	});
 }
 
-std::vector<std::map<QString, QString>> AppConfig::getStringMapArray(
+base::flat_map<QString, QString> AppConfig::getStringMap(
 		const QString &key,
-		std::vector<std::map<QString, QString>> &&fallback) const {
+		base::flat_map<QString, QString> &&fallback) const {
 	return getValue(key, [&](const MTPJSONValue &value) {
-		return value.match([&](const MTPDjsonArray &data) {
-			auto result = std::vector<std::map<QString, QString>>();
+		return value.match([&](const MTPDjsonObject &data) {
+			auto result = base::flat_map<QString, QString>();
 			result.reserve(data.vvalue().v.size());
 			for (const auto &entry : data.vvalue().v) {
-				if (entry.type() != mtpc_jsonObject) {
+				const auto &data = entry.data();
+				const auto &value = data.vvalue();
+				if (value.type() != mtpc_jsonString) {
 					return std::move(fallback);
 				}
-				auto element = std::map<QString, QString>();
-				for (const auto &field : entry.c_jsonObject().vvalue().v) {
-					const auto &data = field.c_jsonObjectValue();
-					if (data.vvalue().type() != mtpc_jsonString) {
-						return std::move(fallback);
-					}
-					element.emplace(
-						qs(data.vkey()),
-						qs(data.vvalue().c_jsonString().vvalue()));
-				}
-				result.push_back(std::move(element));
+				result.emplace(
+					qs(data.vkey()),
+					qs(value.c_jsonString().vvalue()));
 			}
 			return result;
 		}, [&](const auto &data) {
@@ -171,32 +301,31 @@ std::vector<std::map<QString, QString>> AppConfig::getStringMapArray(
 	});
 }
 
-bool AppConfig::suggestionCurrent(const QString &key) const {
-	return !_dismissedSuggestions.contains(key)
-		&& ranges::contains(
-			get<std::vector<QString>>(
-				u"pending_suggestions"_q,
-				std::vector<QString>()),
-			key);
-}
-
-rpl::producer<> AppConfig::suggestionRequested(const QString &key) const {
-	return value(
-	) | rpl::filter([=] {
-		return suggestionCurrent(key);
+std::vector<int> AppConfig::getIntArray(
+		const QString &key,
+		std::vector<int> &&fallback) const {
+	return getValue(key, [&](const MTPJSONValue &value) {
+		return value.match([&](const MTPDjsonArray &data) {
+			auto result = std::vector<int>();
+			result.reserve(data.vvalue().v.size());
+			for (const auto &entry : data.vvalue().v) {
+				if (entry.type() != mtpc_jsonNumber) {
+					return std::move(fallback);
+				}
+				result.push_back(
+					int(base::SafeRound(entry.c_jsonNumber().vvalue().v)));
+			}
+			return result;
+		}, [&](const auto &data) {
+			return std::move(fallback);
+		});
 	});
 }
 
-void AppConfig::dismissSuggestion(const QString &key) {
-	Expects(_api.has_value());
-
-	if (!_dismissedSuggestions.emplace(key).second) {
-		return;
-	}
-	_api->request(MTPhelp_DismissSuggestion(
-		MTP_inputPeerEmpty(),
-		MTP_string(key)
-	)).send();
+bool AppConfig::newRequirePremiumFree() const {
+	return get<bool>(
+		u"new_noncontact_peers_require_premium_without_ownpremium"_q,
+		false);
 }
 
 } // namespace Main

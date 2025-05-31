@@ -35,7 +35,7 @@ AlbumThumbnail::AlbumThumbnail(
 	Fn<void()> deleteCallback)
 : _st(st)
 , _layout(layout)
-, _fullPreview(file.preview)
+, _fullPreview(file.videoCover ? file.videoCover->preview : file.preview)
 , _shrinkSize(int(std::ceil(st::roundRadiusLarge / 1.4)))
 , _isPhoto(file.type == PreparedFile::Type::Photo)
 , _isVideo(file.type == PreparedFile::Type::Video)
@@ -324,7 +324,7 @@ void AlbumThumbnail::drawSimpleFrame(QPainter &p, QRect to, QSize size) const {
 	const auto Round = [](float64 value) {
 		return int(base::SafeRound(value));
 	};
-	const auto [from, fillBlack] = [&] {
+	const auto &[from, fillBlack] = [&] {
 		if (previewWidth < width && previewHeight < height) {
 			const auto toWidth = Round(previewWidth * scaleWidth);
 			const auto toHeight = Round(previewHeight * scaleHeight);
@@ -501,6 +501,10 @@ void AlbumThumbnail::paintFile(
 	_lastRectOfModify = QRect(
 		QPoint(left, top),
 		_fileThumb.size() / style::DevicePixelRatio());
+}
+
+QRect AlbumThumbnail::geometry() const {
+	return _layout.geometry;
 }
 
 bool AlbumThumbnail::containsPoint(QPoint position) const {

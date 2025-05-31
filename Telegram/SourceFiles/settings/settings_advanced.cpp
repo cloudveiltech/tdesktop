@@ -9,7 +9,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include "api/api_global_privacy.h"
 #include "apiwrap.h"
-#include "settings/settings_common.h"
 #include "settings/settings_chat.h"
 #include "settings/settings_power_saving.h"
 #include "settings/settings_privacy_security.h"
@@ -23,6 +22,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/format_values.h"
 #include "ui/boxes/single_choice_box.h"
 #include "ui/painter.h"
+#include "ui/vertical_list.h"
+#include "ui/ui_utility.h"
 #include "boxes/connection_box.h"
 #include "boxes/about_box.h"
 #include "ui/boxes/confirm_box.h"
@@ -118,12 +119,12 @@ void SetupUpdate(not_null<Ui::VerticalLayout*> container) {
 		tr::now,
 		lt_version,
 		currentVersionText());
-	const auto toggle = AddButton(
+	const auto toggle = container->add(object_ptr<Button>(
 		container,
 		tr::lng_settings_update_automatically(),
-		st::settingsUpdateToggle);
+		st::settingsUpdateToggle));
 	const auto label = Ui::CreateChild<Ui::FlatLabel>(
-		toggle.get(),
+		toggle,
 		texts->events(),
 		st::settingsUpdateState);
 
@@ -132,17 +133,19 @@ void SetupUpdate(not_null<Ui::VerticalLayout*> container) {
 			container,
 			object_ptr<Ui::VerticalLayout>(container)));
 	const auto inner = options->entity();
-	const auto install = cAlphaVersion() ? nullptr : AddButton(
-		inner,
-		tr::lng_settings_install_beta(),
-		st::settingsButtonNoIcon).get();
+	const auto install = cAlphaVersion()
+		? nullptr
+		: inner->add(object_ptr<Button>(
+			inner,
+			tr::lng_settings_install_beta(),
+			st::settingsButtonNoIcon));
 
-	const auto check = AddButton(
+	const auto check = inner->add(object_ptr<Button>(
 		inner,
 		tr::lng_settings_check_now(),
-		st::settingsButtonNoIcon);
+		st::settingsButtonNoIcon));
 	const auto update = Ui::CreateChild<Button>(
-		check.get(),
+		check,
 		tr::lng_update_telegram(),
 		st::settingsUpdate);
 	update->hide();
@@ -285,13 +288,13 @@ void SetupSpellchecker(
 	const auto session = &controller->session();
 	const auto settings = &Core::App().settings();
 	const auto isSystem = Platform::Spellchecker::IsSystemSpellchecker();
-	const auto button = AddButton(
+	const auto button = container->add(object_ptr<Button>(
 		container,
 		isSystem
 			? tr::lng_settings_system_spellchecker()
 			: tr::lng_settings_custom_spellchecker(),
 		st::settingsButtonNoIcon
-	)->toggleOn(
+	))->toggleOn(
 		rpl::single(settings->spellcheckerEnabled())
 	);
 
@@ -312,11 +315,11 @@ void SetupSpellchecker(
 			container,
 			object_ptr<Ui::VerticalLayout>(container)));
 
-	AddButton(
+	sliding->entity()->add(object_ptr<Button>(
 		sliding->entity(),
 		tr::lng_settings_auto_download_dictionaries(),
 		st::settingsButtonNoIcon
-	)->toggleOn(
+	))->toggleOn(
 		rpl::single(settings->autoDownloadDictionaries())
 	)->toggledValue(
 	) | rpl::filter([=](bool enabled) {
@@ -453,18 +456,35 @@ void SetupSystemIntegrationContent(
 				st::settingsCheckboxPadding));
 	};
 
+	const auto settings = &Core::App().settings();
 	if (Platform::TrayIconSupported()) {
-		const auto trayEnabled = [] {
-			const auto workMode = Core::App().settings().workMode();
+		const auto trayEnabled = [=] {
+			const auto workMode = settings->workMode();
 			return (workMode == WorkMode::TrayOnly)
 				|| (workMode == WorkMode::WindowAndTray);
 		};
 		const auto tray = addCheckbox(
 			tr::lng_settings_workmode_tray(),
 			trayEnabled());
+		const auto monochrome = Platform::HasMonochromeSetting()
+			? addSlidingCheckbox(
+				tr::lng_settings_monochrome_icon(),
+				settings->trayIconMonochrome())
+			: nullptr;
+		if (monochrome) {
+			monochrome->toggle(tray->checked(), anim::type::instant);
 
-		const auto taskbarEnabled = [] {
-			const auto workMode = Core::App().settings().workMode();
+			monochrome->entity()->checkedChanges(
+			) | rpl::filter([=](bool value) {
+				return (value != settings->trayIconMonochrome());
+			}) | rpl::start_with_next([=](bool value) {
+				settings->setTrayIconMonochrome(value);
+				Core::App().saveSettingsDelayed();
+			}, monochrome->lifetime());
+		}
+
+		const auto taskbarEnabled = [=] {
+			const auto workMode = settings->workMode();
 			return (workMode == WorkMode::WindowOnly)
 				|| (workMode == WorkMode::WindowAndTray);
 		};
@@ -482,10 +502,10 @@ void SetupSystemIntegrationContent(
 				: WorkMode::WindowOnly;
 			if ((newMode == WorkMode::WindowAndTray
 				|| newMode == WorkMode::TrayOnly)
-				&& Core::App().settings().workMode() != newMode) {
+				&& settings->workMode() != newMode) {
 				cSetSeenTrayTooltip(false);
 			}
-			Core::App().settings().setWorkMode(newMode);
+			settings->setWorkMode(newMode);
 			Core::App().saveSettingsDelayed();
 		};
 
@@ -497,6 +517,9 @@ void SetupSystemIntegrationContent(
 				taskbar->setChecked(true);
 			} else {
 				updateWorkmode();
+			}
+			if (monochrome) {
+				monochrome->toggle(checked, anim::type::normal);
 			}
 		}, tray->lifetime());
 
@@ -519,19 +542,19 @@ void SetupSystemIntegrationContent(
 		tr::lng_settings_mac_warn_before_quit(
 			lt_text,
 			rpl::single(Platform::ConfirmQuit::QuitKeysString())),
-		Core::App().settings().macWarnBeforeQuit());
+		settings->macWarnBeforeQuit());
 	warnBeforeQuit->checkedChanges(
 	) | rpl::filter([=](bool checked) {
-		return (checked != Core::App().settings().macWarnBeforeQuit());
+		return (checked != settings->macWarnBeforeQuit());
 	}) | rpl::start_with_next([=](bool checked) {
-		Core::App().settings().setMacWarnBeforeQuit(checked);
+		settings->setMacWarnBeforeQuit(checked);
 		Core::App().saveSettingsDelayed();
 	}, warnBeforeQuit->lifetime());
 
 #ifndef OS_MAC_STORE
-	const auto enabled = [] {
+	const auto enabled = [=] {
 		const auto digest = base::Platform::CurrentCustomAppIconDigest();
-		return digest && (Core::App().settings().macRoundIconDigest() == digest);
+		return digest && (settings->macRoundIconDigest() == digest);
 	};
 	const auto roundIcon = addCheckbox(
 		tr::lng_settings_mac_round_icon(),
@@ -548,32 +571,35 @@ void SetupSystemIntegrationContent(
 		}
 		Window::OverrideApplicationIcon(checked ? IconMacRound() : QImage());
 		Core::App().refreshApplicationIcon();
-		Core::App().settings().setMacRoundIconDigest(digest);
+		settings->setMacRoundIconDigest(digest);
 		Core::App().saveSettings();
 	}, roundIcon->lifetime());
 #endif // OS_MAC_STORE
-#endif // Q_OS_MAC
+#elif defined Q_OS_WIN // Q_OS_MAC
+	using Behavior = Core::Settings::CloseBehavior;
+	const auto closeToTaskbar = addSlidingCheckbox(
+		tr::lng_settings_close_to_taskbar(),
+		settings->closeBehavior() == Behavior::CloseToTaskbar);
 
-	if (!Platform::RunInBackground()) {
-		const auto closeToTaskbar = addSlidingCheckbox(
-			tr::lng_settings_close_to_taskbar(),
-			Core::App().settings().closeToTaskbar());
+	const auto closeToTaskbarShown = std::make_shared<
+		rpl::variable<bool>
+	>(false);
+	settings->workModeValue(
+	) | rpl::start_with_next([=](WorkMode workMode) {
+		*closeToTaskbarShown = !Core::App().tray().has();
+	}, closeToTaskbar->lifetime());
 
-		const auto closeToTaskbarShown = std::make_shared<rpl::variable<bool>>(false);
-		Core::App().settings().workModeValue(
-		) | rpl::start_with_next([=](WorkMode workMode) {
-			*closeToTaskbarShown = !Core::App().tray().has();
-		}, closeToTaskbar->lifetime());
-
-		closeToTaskbar->toggleOn(closeToTaskbarShown->value());
-		closeToTaskbar->entity()->checkedChanges(
-		) | rpl::filter([=](bool checked) {
-			return (checked != Core::App().settings().closeToTaskbar());
-		}) | rpl::start_with_next([=](bool checked) {
-			Core::App().settings().setCloseToTaskbar(checked);
-			Local::writeSettings();
-		}, closeToTaskbar->lifetime());
-	}
+	closeToTaskbar->toggleOn(closeToTaskbarShown->value());
+	closeToTaskbar->entity()->checkedChanges(
+	) | rpl::map([=](bool checked) {
+		return checked ? Behavior::CloseToTaskbar : Behavior::Quit;
+	}) | rpl::filter([=](Behavior value) {
+		return (settings->closeBehavior() != value);
+	}) | rpl::start_with_next([=](Behavior value) {
+		settings->setCloseBehavior(value);
+		Local::writeSettings();
+	}, closeToTaskbar->lifetime());
+#endif // Q_OS_MAC || Q_OS_WIN
 
 	if (Platform::AutostartSupported() && controller) {
 		const auto minimizedToggled = [=] {
@@ -663,7 +689,7 @@ void CheckNonEmptyOptions(
 		container->add(object_ptr<Ui::OverrideMargins>(
 			container,
 			std::move(wrap)));
-		AddSkip(container, st::settingsCheckboxesSkip);
+		Ui::AddSkip(container, st::settingsCheckboxesSkip);
 	}
 }
 
@@ -688,13 +714,11 @@ void SetupWindowTitleOptions(
 void SetupAnimations(
 		not_null<Window::Controller*> window,
 		not_null<Ui::VerticalLayout*> container) {
-	AddButton(
+	container->add(object_ptr<Button>(
 		container,
 		tr::lng_settings_power_menu(),
 		st::settingsButtonNoIcon
-	)->setClickedCallback([=] {
-		window->show(Box(PowerSavingBox));
-	});
+	))->setClickedCallback([=] { window->show(Box(PowerSavingBox)); });
 }
 
 void ArchiveSettingsBox(
@@ -719,11 +743,11 @@ void ArchiveSettingsBox(
 	AddSubsectionTitle(container, tr::lng_settings_unmuted_chats());
 
 	using Unarchive = Api::UnarchiveOnNewMessage;
-	AddButton(
+	container->add(object_ptr<Button>(
 		container,
 		tr::lng_settings_always_in_archive(),
 		st::settingsButtonNoIcon
-	)->toggleOn(privacy->unarchiveOnNewMessage(
+	))->toggleOn(privacy->unarchiveOnNewMessage(
 	) | rpl::map(
 		rpl::mappers::_1 == Unarchive::None
 	))->toggledChanges(
@@ -750,11 +774,11 @@ void ArchiveSettingsBox(
 	AddSkip(inner);
 	AddSubsectionTitle(inner, tr::lng_settings_chats_from_folders());
 
-	state->folders = AddButton(
+	state->folders = inner->add(object_ptr<Button>(
 		inner,
 		tr::lng_settings_always_in_archive(),
 		st::settingsButtonNoIcon
-	)->toggleOn(privacy->unarchiveOnNewMessage(
+	))->toggleOn(privacy->unarchiveOnNewMessage(
 	) | rpl::map(
 		rpl::mappers::_1 != Unarchive::AnyUnmuted
 	));
@@ -787,11 +811,11 @@ void PreloadArchiveSettings(not_null<::Main::Session*> session) {
 
 void SetupHardwareAcceleration(not_null<Ui::VerticalLayout*> container) {
 	const auto settings = &Core::App().settings();
-	AddButton(
+	container->add(object_ptr<Button>(
 		container,
 		tr::lng_settings_enable_hwaccel(),
 		st::settingsButtonNoIcon
-	)->toggleOn(
+	))->toggleOn(
 		rpl::single(settings->hardwareAcceleratedVideo())
 	)->toggledValue(
 	) | rpl::filter([=](bool enabled) {
@@ -802,7 +826,7 @@ void SetupHardwareAcceleration(not_null<Ui::VerticalLayout*> container) {
 	}, container->lifetime());
 }
 
-#ifdef Q_OS_WIN
+#ifdef DESKTOP_APP_USE_ANGLE
 void SetupANGLE(
 		not_null<Window::SessionController*> controller,
 		not_null<Ui::VerticalLayout*> container) {
@@ -875,7 +899,7 @@ void SetupANGLE(
 		}));
 	});
 }
-#endif // Q_OS_WIN
+#endif // DESKTOP_APP_USE_ANGLE
 
 void SetupOpenGL(
 		not_null<Window::SessionController*> controller,
@@ -883,11 +907,11 @@ void SetupOpenGL(
 	const auto toggles = container->lifetime().make_state<
 		rpl::event_stream<bool>
 	>();
-	const auto button = AddButton(
+	const auto button = container->add(object_ptr<Button>(
 		container,
 		tr::lng_settings_enable_opengl(),
 		st::settingsButtonNoIcon
-	)->toggleOn(
+	))->toggleOn(
 		toggles->events_starting_with_copy(
 			!Core::App().settings().disableOpenGL())
 	);
@@ -918,13 +942,13 @@ void SetupPerformance(
 		not_null<Ui::VerticalLayout*> container) {
 	SetupAnimations(&controller->window(), container);
 	SetupHardwareAcceleration(container);
-#ifdef Q_OS_WIN
+#ifdef DESKTOP_APP_USE_ANGLE
 	SetupANGLE(controller, container);
-#else // Q_OS_WIN
+#else // DESKTOP_APP_USE_ANGLE
 	if constexpr (!Platform::IsMac()) {
 		SetupOpenGL(controller, container);
 	}
-#endif // Q_OS_WIN
+#endif // DESKTOP_APP_USE_ANGLE
 }
 
 void SetupWindowTitle(
@@ -935,6 +959,65 @@ void SetupWindowTitle(
 	AddSubsectionTitle(container, tr::lng_settings_window_system());
 	SetupWindowTitleOptions(controller, container);
 	AddSkip(container);
+}
+
+void SetupWindowCloseBehavior(
+		not_null<Window::SessionController*> controller,
+		not_null<Ui::VerticalLayout*> container) {
+#if !defined Q_OS_WIN && !defined Q_OS_MAC
+	const auto wrap = container->add(
+		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
+			container,
+			object_ptr<Ui::VerticalLayout>(container)));
+	const auto inner = wrap->entity();
+	AddDivider(inner);
+	AddSkip(inner);
+	AddSubsectionTitle(inner, tr::lng_settings_window_close());
+
+	const auto settings = &Core::App().settings();
+	using Behavior = Core::Settings::CloseBehavior;
+	const auto group = std::make_shared<Ui::RadioenumGroup<Behavior>>(
+		settings->closeBehavior());
+	const auto add = [&](Behavior value, const QString &label) {
+		inner->add(
+			object_ptr<Ui::Radioenum<Behavior>>(
+				inner,
+				group,
+				value,
+				label,
+				st::settingsSendType),
+			st::settingsSendTypePadding);
+	};
+
+	add(
+		Behavior::RunInBackground,
+		tr::lng_settings_run_in_background(tr::now));
+	add(
+		Behavior::CloseToTaskbar,
+		tr::lng_settings_close_to_taskbar(tr::now));
+	add(
+		Behavior::Quit,
+		tr::lng_settings_quit_on_close(tr::now));
+
+	group->value() | rpl::filter([=](Behavior value) {
+		return (value != settings->closeBehavior());
+	}) | rpl::start_with_next([=](Behavior value) {
+		settings->setCloseBehavior(value);
+		Local::writeSettings();
+	}, inner->lifetime());
+
+	AddSkip(inner);
+
+	if (!Platform::TrayIconSupported()) {
+		wrap->toggle(true, anim::type::instant);
+	} else {
+		wrap->toggleOn(Core::App().settings().workModeValue(
+		) | rpl::map([=](Core::Settings::WorkMode mode) {
+			return (mode == Core::Settings::WorkMode::WindowOnly);
+		}) | rpl::distinct_until_changed(), anim::type::normal);
+		wrap->finishAnimating();
+	}
+#endif
 }
 
 void SetupSystemIntegration(
@@ -956,10 +1039,6 @@ Advanced::Advanced(
 
 rpl::producer<QString> Advanced::title() {
 	return tr::lng_settings_advanced();
-}
-
-rpl::producer<Type> Advanced::sectionShowOther() {
-	return _showOther.events();
 }
 
 void Advanced::setupContent(not_null<Window::SessionController*> controller) {
@@ -989,6 +1068,7 @@ void Advanced::setupContent(not_null<Window::SessionController*> controller) {
 	SetupDataStorage(controller, content);
 	SetupAutoDownload(controller, content);
 	SetupWindowTitle(controller, content);
+	SetupWindowCloseBehavior(controller, content);
 	SetupSystemIntegration(controller, content);
 	empty = false;
 
@@ -1013,9 +1093,7 @@ void Advanced::setupContent(not_null<Window::SessionController*> controller) {
 	AddSkip(content);
 	AddDivider(content);
 	AddSkip(content);
-	SetupExport(controller, content, [=](Type type) {
-		_showOther.fire_copy(type);
-	});
+	SetupExport(controller, content, showOtherMethod());
 
 	Ui::ResizeFitChild(this, content);
 }

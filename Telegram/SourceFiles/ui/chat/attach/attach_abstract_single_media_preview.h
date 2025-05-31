@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/chat/attach/attach_abstract_single_preview.h"
 #include "ui/chat/attach/attach_controls.h"
 #include "ui/chat/attach/attach_send_files_way.h"
+#include "ui/effects/spoiler_mess.h"
 #include "ui/abstract_button.h"
 
 namespace style {
@@ -25,7 +26,8 @@ public:
 	AbstractSingleMediaPreview(
 		QWidget *parent,
 		const style::ComposeControls &st,
-		AttachControls::Type type);
+		AttachControls::Type type,
+		Fn<bool(AttachActionType)> actionAllowed);
 	~AbstractSingleMediaPreview();
 
 	void setSendWay(SendFilesWay way);
@@ -34,12 +36,17 @@ public:
 	[[nodiscard]] rpl::producer<> deleteRequests() const override;
 	[[nodiscard]] rpl::producer<> editRequests() const override;
 	[[nodiscard]] rpl::producer<> modifyRequests() const override;
+	[[nodiscard]] rpl::producer<> editCoverRequests() const;
+	[[nodiscard]] rpl::producer<> clearCoverRequests() const;
 
 	[[nodiscard]] bool isPhoto() const;
 
 	void setSpoiler(bool spoiler);
 	[[nodiscard]] bool hasSpoiler() const;
 	[[nodiscard]] bool canHaveSpoiler() const;
+	[[nodiscard]] rpl::producer<bool> spoileredChanges() const;
+
+	[[nodiscard]] QImage generatePriceTagBackground() const;
 
 protected:
 	virtual bool supportsSpoilers() const = 0;
@@ -69,6 +76,7 @@ private:
 
 	const style::ComposeControls &_st;
 	SendFilesWay _sendWay;
+	Fn<bool(AttachActionType)> _actionAllowed;
 	bool _animated = false;
 	QPixmap _preview;
 	QPixmap _previewBlurred;
@@ -78,10 +86,13 @@ private:
 	int _previewHeight = 0;
 
 	std::unique_ptr<SpoilerAnimation> _spoiler;
+	rpl::event_stream<bool> _spoileredChanges;
 
 	const int _minThumbH;
 	const base::unique_qptr<AttachControlsWidget> _controls;
 	rpl::event_stream<> _photoEditorRequests;
+	rpl::event_stream<> _editCoverRequests;
+	rpl::event_stream<> _clearCoverRequests;
 
 	style::cursor _cursor = style::cur_default;
 	bool _pressed = false;

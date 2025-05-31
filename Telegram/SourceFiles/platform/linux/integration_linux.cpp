@@ -12,13 +12,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/platform/linux/base_linux_xdp_utilities.h"
 #include "core/sandbox.h"
 #include "core/application.h"
+#if QT_VERSION < QT_VERSION_CHECK(6, 5, 0)
 #include "core/core_settings.h"
+#endif
 #include "base/random.h"
 
 #include <QtCore/QAbstractEventDispatcher>
-#include <qpa/qwindowsysteminterface.h>
 
-#include <glibmm.h>
 #include <gio/gio.hpp>
 #include <xdpinhibit/xdpinhibit.hpp>
 
@@ -26,6 +26,7 @@ namespace Platform {
 namespace {
 
 using namespace gi::repository;
+namespace GObject = gi::repository::GObject;
 
 class Application : public Gio::impl::ApplicationImpl {
 public:
@@ -54,17 +55,17 @@ public:
 		});
 	}
 
-	void open_(GFile **files, int n_files, const char*) noexcept override {
-		Core::Sandbox::Instance().customEnterFromEventLoop([&] {
-			for (int i = 0; i < n_files; ++i) {
-				QFileOpenEvent e(
-					QUrl(QString::fromUtf8(g_file_get_uri(files[i]))));
-				QGuiApplication::sendEvent(qApp, &e);
-			}
-		});
+	void open_(
+			gi::Collection<gi::DSpan, ::GFile*, gi::transfer_none_t> files,
+			const gi::cstring_v hint) noexcept override {
+		for (auto file : files) {
+			QFileOpenEvent e(QUrl(QString::fromStdString(file.get_uri())));
+			QGuiApplication::sendEvent(qApp, &e);
+		}
 	}
 
-	void add_platform_data_(GLib::VariantBuilder builder) noexcept override {
+	void add_platform_data_(
+			GLib::VariantBuilder_Ref builder) noexcept override {
 		if (Platform::IsWayland()) {
 			const auto token = qgetenv("XDG_ACTIVATION_TOKEN");
 			if (!token.isEmpty()) {
@@ -99,73 +100,17 @@ Application::Application()
 	});
 	actionMap.add_action(quitAction);
 
-	using Window::Notifications::Manager;
-	using NotificationId = Manager::NotificationId;
-	using NotificationIdTuple = std::invoke_result_t<
-		decltype(&NotificationId::toTuple),
-		NotificationId*
-	>;
-
-	const auto notificationIdVariantType = [] {
-		try {
-			return gi::wrap(
-				Glib::create_variant(
-					NotificationId().toTuple()
-				).get_type().gobj_copy(),
-				gi::transfer_full,
-				gi::direction_out
-			);
-		} catch (...) {
-			return GLib::VariantType();
-		}
-	}();
+	const auto notificationIdVariantType = GLib::VariantType::new_("a{sv}");
 
 	auto notificationActivateAction = Gio::SimpleAction::new_(
 		"notification-activate",
 		notificationIdVariantType);
-
-	notificationActivateAction.signal_activate().connect([](
-			Gio::SimpleAction,
-			GLib::Variant parameter) {
-		Core::Sandbox::Instance().customEnterFromEventLoop([&] {
-			try {
-				const auto &app = Core::App();
-				app.notifications().manager().notificationActivated(
-					NotificationId::FromTuple(
-						Glib::wrap(
-							parameter.gobj_copy_()
-						).get_dynamic<NotificationIdTuple>()
-					)
-				);
-			} catch (...) {
-			}
-		});
-	});
 
 	actionMap.add_action(notificationActivateAction);
 
 	auto notificationMarkAsReadAction = Gio::SimpleAction::new_(
 		"notification-mark-as-read",
 		notificationIdVariantType);
-
-	notificationMarkAsReadAction.signal_activate().connect([](
-			Gio::SimpleAction,
-			GLib::Variant parameter) {
-		Core::Sandbox::Instance().customEnterFromEventLoop([&] {
-			try {
-				const auto &app = Core::App();
-				app.notifications().manager().notificationReplied(
-					NotificationId::FromTuple(
-						Glib::wrap(
-							parameter.gobj_copy_()
-						).get_dynamic<NotificationIdTuple>()
-					),
-					{}
-				);
-			} catch (...) {
-			}
-		});
-	});
 
 	actionMap.add_action(notificationMarkAsReadAction);
 }
@@ -180,7 +125,7 @@ gi::ref_ptr<Application> MakeApplication() {
 	return result;
 }
 
-class LinuxIntegration final : public Integration {
+class LinuxIntegration final : public Integration, public base::has_weak_ptr {
 public:
 	LinuxIntegration();
 
@@ -195,30 +140,24 @@ private:
 
 	const gi::ref_ptr<Application> _application;
 	XdpInhibit::InhibitProxy _inhibitProxy;
+#if QT_VERSION < QT_VERSION_CHECK(6, 5, 0)
 	base::Platform::XDP::SettingWatcher _darkModeWatcher;
+#endif // Qt < 6.5.0
 };
 
 LinuxIntegration::LinuxIntegration()
 : _application(MakeApplication())
-, _inhibitProxy(
-	XdpInhibit::InhibitProxy::new_for_bus_sync(
-		Gio::BusType::SESSION_,
-		Gio::DBusProxyFlags::DO_NOT_AUTO_START_AT_CONSTRUCTION_,
-		base::Platform::XDP::kService,
-		base::Platform::XDP::kObjectPath,
-		nullptr))
+#if QT_VERSION < QT_VERSION_CHECK(6, 5, 0)
 , _darkModeWatcher(
 	"org.freedesktop.appearance",
 	"color-scheme",
-	[](uint value) {
-#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
-		QWindowSystemInterface::handleThemeChange();
-#else // Qt >= 6.5.0
+	[](GLib::Variant value) {
 		Core::Sandbox::Instance().customEnterFromEventLoop([&] {
-			Core::App().settings().setSystemDarkMode(value == 1);
+			Core::App().settings().setSystemDarkMode(value.get_uint32() == 1);
 		});
+})
 #endif // Qt < 6.5.0
-}) {
+{
 	LOG(("Icon theme: %1").arg(QIcon::themeName()));
 	LOG(("Fallback icon theme: %1").arg(QIcon::fallbackThemeName()));
 
@@ -230,7 +169,18 @@ LinuxIntegration::LinuxIntegration()
 }
 
 void LinuxIntegration::init() {
-	initInhibit();
+	XdpInhibit::InhibitProxy::new_for_bus(
+		Gio::BusType::SESSION_,
+		Gio::DBusProxyFlags::NONE_,
+		base::Platform::XDP::kService,
+		base::Platform::XDP::kObjectPath,
+		crl::guard(this, [=](GObject::Object, Gio::AsyncResult res) {
+			_inhibitProxy = XdpInhibit::InhibitProxy::new_for_bus_finish(
+				res,
+				nullptr);
+
+			initInhibit();
+		}));
 }
 
 void LinuxIntegration::initInhibit() {
@@ -238,11 +188,7 @@ void LinuxIntegration::initInhibit() {
 		return;
 	}
 
-	auto uniqueName = _inhibitProxy
-		.get_connection()
-		.get_unique_name()
-		.value_or("");
-
+	std::string uniqueName = _inhibitProxy.get_connection().get_unique_name();
 	uniqueName.erase(0, 1);
 	uniqueName.replace(uniqueName.find('.'), 1, 1, '_');
 
@@ -252,7 +198,8 @@ void LinuxIntegration::initInhibit() {
 	const auto sessionHandleToken = "tdesktop"
 		+ std::to_string(base::RandomValue<uint>());
 
-	const auto sessionHandle = "/org/freedesktop/portal/desktop/session/"
+	const auto sessionHandle = base::Platform::XDP::kObjectPath
+		+ std::string("/session/")
 		+ uniqueName
 		+ '/'
 		+ sessionHandleToken;
@@ -276,20 +223,18 @@ void LinuxIntegration::initInhibit() {
 		);
 	});
 
-	const auto options = std::array{
-		GLib::Variant::new_dict_entry(
-			GLib::Variant::new_string("handle_token"),
-			GLib::Variant::new_variant(
-				GLib::Variant::new_string(handleToken))),
-		GLib::Variant::new_dict_entry(
-			GLib::Variant::new_string("session_handle_token"),
-			GLib::Variant::new_variant(
-				GLib::Variant::new_string(sessionHandleToken))),
-	};
-
 	inhibit().call_create_monitor(
-		{},
-		GLib::Variant::new_array(options.data(), options.size()),
+		"",
+		GLib::Variant::new_array({
+			GLib::Variant::new_dict_entry(
+				GLib::Variant::new_string("handle_token"),
+				GLib::Variant::new_variant(
+					GLib::Variant::new_string(handleToken))),
+			GLib::Variant::new_dict_entry(
+				GLib::Variant::new_string("session_handle_token"),
+				GLib::Variant::new_variant(
+					GLib::Variant::new_string(sessionHandleToken))),
+		}),
 		nullptr);
 }
 

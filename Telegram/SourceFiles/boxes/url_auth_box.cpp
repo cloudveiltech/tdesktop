@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/url_auth_box.h"
 
+#include "boxes/abstract_box.h"
 #include "history/history.h"
 #include "history/history_item.h"
 #include "history/history_item_components.h"
@@ -143,7 +144,7 @@ void UrlAuthBox::Request(
 	const auto callback = [=](Result result) {
 		if (result == Result::None) {
 			finishWithUrl(url);
-		} else if (const auto msg = session->data().message(itemId)) {
+		} else if (session->data().message(itemId)) {
 			const auto allowWrite = (result == Result::AuthAndAllowWrite);
 			using Flag = MTPmessages_AcceptUrlAuth::Flag;
 			const auto flags = (allowWrite ? Flag::f_write_allowed : Flag(0))

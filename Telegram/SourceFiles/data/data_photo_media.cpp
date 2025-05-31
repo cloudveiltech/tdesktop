@@ -7,16 +7,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_photo_media.h"
 
-#include "data/data_photo.h"
-#include "data/data_session.h"
 #include "data/data_file_origin.h"
-#include "data/data_auto_download.h"
+#include "data/data_session.h"
+#include "history/history.h"
+#include "history/history_item.h"
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
-#include "history/history_item.h"
-#include "history/history.h"
 #include "storage/file_download.h"
-#include "ui/image/image.h"
 
 #include <QtGui/QGuiApplication>
 #include <QtGui/QClipboard>
@@ -68,13 +65,13 @@ QByteArray PhotoMedia::imageBytes(PhotoSize size) const {
 auto PhotoMedia::resolveLoadedImage(PhotoSize size) const
 -> const PhotoImage * {
 	const auto &original = _images[PhotoSizeIndex(size)];
-	if (const auto image = original.data.get()) {
+	if (original.data) {
 		if (original.goodFor >= size) {
 			return &original;
 		}
 	}
 	const auto &valid = _images[_owner->validSizeIndex(size)];
-	if (const auto image = valid.data.get()) {
+	if (valid.data.get()) {
 		if (valid.goodFor >= size) {
 			return &valid;
 		}
@@ -229,7 +226,6 @@ bool PhotoMedia::setToClipboard() {
 	if (fallback.isNull()) {
 		return false;
 	}
-	const auto bytes = imageBytes(large);
 	auto mime = std::make_unique<QMimeData>();
 	mime->setImageData(std::move(fallback));
 	if (auto bytes = imageBytes(large); !bytes.isEmpty()) {

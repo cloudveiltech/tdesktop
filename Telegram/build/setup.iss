@@ -38,12 +38,19 @@ VersionInfoVersion={#MyAppVersion}.0
 CloseApplications=force
 DisableDirPage=no
 DisableProgramGroupPage=no
+WizardStyle=modern
+SignTool=sha256
 
-#if MyBuildTarget == "win64"
-ArchitecturesAllowed="x64 arm64"
-ArchitecturesInstallIn64BitMode="x64 arm64"
+#if MyBuildTarget == "winarm"
+  ArchitecturesAllowed="arm64"
+  OutputBaseFilename=cloudveil_messenger_setup-arm64.{#MyAppVersionFull}
+  #define ArchModulesFolder "arm64"
+  AppVerName={#MyAppName} {#MyAppVersion} arm64
+#elif MyBuildTarget == "win64"
+  ArchitecturesAllowed="x64compatible"
+  ArchitecturesInstallIn64BitMode="x64compatible"
   OutputBaseFilename=cloudveil_messenger_setup-x64.{#MyAppVersionFull}
-#define ArchModulesFolder "x64"
+  #define ArchModulesFolder "x64"
   AppVerName={#MyAppName} {#MyAppVersion} 64bit
 #else
    OutputBaseFilename=cloudveil_messenger_setup.{#MyAppVersionFull}
@@ -72,7 +79,9 @@ Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescrip
 Source: "{#ReleasePath}\CloudVeilMessenger.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ReleasePath}\libcrypto-1_1-x64.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ReleasePath}\zlib1.dll"; DestDir: "{app}"; Flags: ignoreversion
+#if MyBuildTarget != "winarm"
 Source: "{#ReleasePath}\{#ModulesFolder}\d3d\d3dcompiler_47.dll"; DestDir: "{app}\{#ModulesFolder}\d3d"; Flags: ignoreversion
+#endif
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]

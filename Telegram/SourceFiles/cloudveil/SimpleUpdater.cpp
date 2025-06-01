@@ -2,6 +2,7 @@
 #include "SimpleUpdater.h"
 #include "cloudveil/response/UpdateResponse.h"
 #include <QtCore/QJsonDocument>
+#include <QtCore/QProcess>
 
 #include "ui/boxes/confirm_box.h"
 //one day

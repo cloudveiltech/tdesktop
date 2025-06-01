@@ -97,6 +97,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QMimeData>
 #include <QtGui/QDesktopServices>
 
+//CloudVeil start
+#include "boxes/abstract_box.h" 
+//CloudVeil end
 
 namespace {
 

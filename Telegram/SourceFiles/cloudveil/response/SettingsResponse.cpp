@@ -254,7 +254,7 @@ bool SettingsResponse::isDialogAllowed(PeerData *peer) {
 				return true;
 			}
 		} else {
-			if (peer->userName() == "cloudveilbot") {
+            if (peer->username() == "cloudveilbot") {
 				return true;
 			}
 			return bots.contains(dialogId) && bots[dialogId];

@@ -227,15 +227,14 @@ public:
 
 	void showNonPremiumLimitToast(bool download);
 
+    void dialogsCancelled();
+    void toggleFiltersMenu(bool value) const;
+
 	//CloudVeil start
 public Q_SLOTS:
 	void simpleUpdateReceived(UpdateResponse* response);
 	void simpleUpdateDownloaded(QString message);
 	//CloudVeil end
-
-protected:
-	void dialogsCancelled();
-	void toggleFiltersMenu(bool value) const;
 
 private:
 	void paintEvent(QPaintEvent *e) override;

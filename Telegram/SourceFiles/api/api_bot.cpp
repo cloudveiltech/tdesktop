@@ -38,10 +38,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/toast/toast.h"
 #include "ui/layers/generic_box.h"
 #include "ui/text/text_utilities.h"
-#include "cloudveil/GlobalSecuritySettings.h"
 
 #include <QtGui/QGuiApplication>
 #include <QtGui/QClipboard>
+
+//CloudVeil start
+#include "boxes/abstract_box.h"
+#include "cloudveil/GlobalSecuritySettings.h"
+//CloudVeil end
 
 namespace Api {
 namespace {

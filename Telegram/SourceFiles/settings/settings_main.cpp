@@ -80,6 +80,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QClipboard>
 #include <QtGui/QWindow>
 
+//Cloudveil start
+#include "window/window_session_controller_link_info.h"
+//Cloudveil end
+
 namespace Settings {
 namespace {
 
@@ -892,16 +896,17 @@ void SetupHelp(
 	});
 	button->addClickHandler([=] {
 		//CloudVeil start
-		controller->showPeerByLink(Window::SessionNavigation::PeerByLinkInfo{
+		controller->showPeerByLink(Window::PeerByLinkInfo{
 		.usernameOrId = "cloudveilbot",
-		.messageId = ShowAtUnreadMsgId
+        .resolveType = Window::ResolveType::BotStart,
+		.messageId = ShowAtUnreadMsgId,
 			});
 		//CloudVeil end
 	});
 
 	//CloudVeil start
 	if (!GlobalSecuritySettings::getSettings().orgranization.aboutUrl.isEmpty()) {
-		const auto buttonAbout = AddButton(
+		const auto buttonAbout = AddButtonWithIcon(
 			container,
 			tr::lng_about_us(),
 			st::settingsButton,
@@ -912,7 +917,7 @@ void SetupHelp(
 			});
 	}
 	if (!GlobalSecuritySettings::getSettings().orgranization.policyUrl.isEmpty()) {
-		const auto buttonAbout = AddButton(
+		const auto buttonAbout = AddButtonWithIcon(
 			container,
 			tr::lng_organizational_policy(),
 			st::settingsButton,

@@ -308,7 +308,7 @@ std::unique_ptr<Data::Media> HistoryItem::CreateMedia(
 			const auto data = owner->processDocument(document, list);
 			item->isSticker = false;
 			using Args = Data::MediaFile::Args;
-			if (!data->sticker() || GlobalSecuritySettings::getSettings().isStickerSetAllowed(processedDoc)) {
+			if (!data->sticker() || GlobalSecuritySettings::getSettings().isStickerSetAllowed(data)) {
 				return std::make_unique<Data::MediaFile>(item, data, Args{
 								.ttlSeconds = media.vttl_seconds().value_or_empty(),
 								.videoCover = (media.vvideo_cover()

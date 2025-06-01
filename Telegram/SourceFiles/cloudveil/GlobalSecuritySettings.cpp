@@ -130,7 +130,7 @@ void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 
 	auto user = session.user();
 	request.userId = user->id.value;
-	request.userName = user->userName();
+	request.userName = user->username();
 	request.userPhone = user->phone();
 
 	if (!sessionUids.contains(request.userId)) {
@@ -186,20 +186,20 @@ void GlobalSecuritySettings::checkStickerSetByDocumentAsync(DocumentData* sticke
 void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerData *peer) {
 	SettingsRequest::Row row;
 
-	row.userName = peer->userName();
+	row.userName = peer->username();
 	row.isMegagroup = false;
 	row.isPublic = false;
 
 	row.id = DialogHelper::getDialogId(peer);
 	if (peer->isChat()) {
 		row.title = peer->asChat()->name();
-		row.userName = peer->asChat()->userName();
+		row.userName = peer->asChat()->username();
 		row.isPublic = peer->isMegagroup() && peer->asChannel()->isPublic(); //copied from delete_messages_box.cpp
 		request.groups.append(row);
 	}
 	else if (peer->isChannel()) {
 		row.title = peer->asChannel()->name();
-		row.userName = peer->asChannel()->userName();
+		row.userName = peer->asChannel()->username();
 		row.isPublic = peer->asChannel()->isPublic();
 
 		if (peer->isMegagroup()) {
@@ -261,7 +261,9 @@ void GlobalSecuritySettings::suscribeToSupportChannel(SettingsRequest& request) 
 		return;
 	}
 	MTP::Sender api(&session->mtp());
-	api.request(MTPcontacts_ResolveUsername(username)).done([=](const MTPcontacts_ResolvedPeer& result) {
+	api.request(MTPcontacts_ResolveUsername(MTP_flags(0),
+                                            username,
+                                            MTP_string())).done([=](const MTPcontacts_ResolvedPeer& result) {
 		usernameResolveDone(result);
 	}).send();
 }

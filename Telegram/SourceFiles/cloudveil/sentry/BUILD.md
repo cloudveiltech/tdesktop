@@ -73,6 +73,7 @@ Breakpad is an older backend and is less commonly used on macOS, but is availabl
 
 ### Configure
 
+MAC
 ```sh
 cmake -B build-macos-breakpad \
   -DSENTRY_BUILD_SHARED_LIBS=OFF \
@@ -81,10 +82,21 @@ cmake -B build-macos-breakpad \
   -DCMAKE_OSX_SYSROOT=$(xcrun --sdk macosx --show-sdk-path)
 ```
 
-### Build
+WINDOWS
+```sh
+cmake -B build-win-breakpad -DSENTRY_BUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSENTRY_BACKEND=breakpad
+```
+Note: current this window build is broken the telegram build. So we still use the old version 4.x.x
 
+### Build
+MAC
 ```sh
 cmake --build build-macos-breakpad --parallel
+```
+
+WIN
+```sh
+cmake --build build-win-breakpad --parallel
 ```
 
 ### Locate the Static Libraries
@@ -115,6 +127,13 @@ rm -rf build-macos-crashpad build-macos-breakpad
 ```
 
 ---
+
+## 7. Build issue
+- The current sentry window build is broken the telegram build. So we are using the prebuilt version.
+- Please use the prebuilt version in the sentry folder tdesktop>Telegram>SourceFiles>cloudveil>sentry>include_win
+- The prebuilt version for mac is available at include_mac folder
+
+- Please rename the `include_x` and `release_x` to `inclued` and `release` before make the build. Where x is the the OS environment.
 
 ## References
 

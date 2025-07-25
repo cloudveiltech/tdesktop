@@ -897,10 +897,10 @@ void SetupHelp(
 	button->addClickHandler([=] {
 		//CloudVeil start
 		controller->showPeerByLink(Window::PeerByLinkInfo{
-		.usernameOrId = "cloudveilbot",
-        .resolveType = Window::ResolveType::BotStart,
-		.messageId = ShowAtUnreadMsgId,
-			});
+			.usernameOrId = "cloudveilbot",
+			.messageId = ShowAtUnreadMsgId,
+			.resolveType = Window::ResolveType::BotStart,
+		});
 		//CloudVeil end
 	});
 

@@ -11,7 +11,7 @@ DialogHelper::CheckDialogResult DialogHelper::checkAndShowDialogForbidden(PeerDa
 		controller->show(Ui::MakeConfirmBox({
 					.text = tr::lng_dialog_forbidden(),
 					.confirmed = [=](Fn<void()>&& close) {
-						const auto dialogId = DeserializePeerId(peerData->id.value).value;
+                        const auto dialogId = getDialogId(peerData);
 						QString url = QString("https://messenger.cloudveil.org/unblock/%1/%2")
 							.arg(QString::number(userData->id.value), QString::number(dialogId));
 

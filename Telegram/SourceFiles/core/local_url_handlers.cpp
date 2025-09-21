@@ -79,6 +79,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <QtGui/QGuiApplication>
 
+//CloudVeil start
+#include "boxes/abstract_box.h"
+//CloudVeil end
+
 namespace Core {
 namespace {
 
@@ -1527,6 +1531,19 @@ bool ResolveStarsSettings(
 	return true;
 }
 
+//CloudVeil start
+bool HandleBlockedContent(
+        Window::SessionController *controller,
+        const Match &match,
+        const QVariant &context) {
+    if (!controller) {
+        return false;
+    }
+    Ui::show(Ui::MakeInformBox(tr::lng_blocked_for_protection(tr::now)));
+    return true;
+}
+//CloudVeil end
+
 } // namespace
 
 const std::vector<LocalUrlHandler> &LocalUrlHandlers() {
@@ -1537,11 +1554,21 @@ const std::vector<LocalUrlHandler> &LocalUrlHandlers() {
 		},
 		{
 			u"^addlist/?\\?slug=([a-zA-Z0-9\\.\\_\\-]+)(&|$)"_q,
-			JoinFilterBySlug
+			//CloudVeil start
+			//JoinFilterBySlug
+			HandleBlockedContent
+			//CloudVeil end
 		},
 		{
 			u"^(addstickers|addemoji)/?\\?set=([a-zA-Z0-9\\.\\_]+)(&|$)"_q,
-			ShowStickerSet
+			//CloudVeil start
+			//ShowStickerSet
+			HandleBlockedContent
+			//CloudVeil end
+		},
+		{
+			u"^resolve/?\\?domain=(folders|folder)(.+)(#|$)"_q,
+			HandleBlockedContent
 		},
 		{
 			u"^addtheme/?\\?slug=([a-zA-Z0-9\\.\\_]+)(&|$)"_q,

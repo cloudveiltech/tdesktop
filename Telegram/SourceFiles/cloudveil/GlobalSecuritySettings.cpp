@@ -248,6 +248,7 @@ void GlobalSecuritySettings::gotStickersSet(const MTPmessages_StickerSet &set) {
 
 /*
 * Deprecated
+* Disable forcing to join CloudVeil Messenger Announcements channel
 */
 void GlobalSecuritySettings::suscribeToSupportChannel(SettingsRequest& request) {
 	for (size_t i = 0; i < request.channels.size(); i++) {

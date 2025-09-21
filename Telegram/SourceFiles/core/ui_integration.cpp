@@ -33,6 +33,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_session_controller.h"
 #include "mainwindow.h"
 
+//CloudVeil start
+#include "boxes/abstract_box.h"
+#include "ui/boxes/confirm_box.h"
+//CloudVeil end
+
 namespace Core {
 namespace {
 
@@ -280,7 +285,11 @@ bool UiIntegration::handleUrlClick(
 		Core::App().openLocalUrl(local, context);
 		return true;
 	} else if (local.startsWith(u"tonsite://"_q, Qt::CaseInsensitive)) {
-		Core::App().iv().showTonSite(local, context);
+		//CloudVeil start
+		//Block tonsite
+		//Core::App().iv().showTonSite(local, context);
+		Ui::show(Ui::MakeInformBox(tr::lng_blocked_for_protection(tr::now)));
+		//CloudVeil end
 		return true;
 	} else if (local.startsWith(u"internal:"_q, Qt::CaseInsensitive)) {
 		Core::App().openInternalUrl(local, context);

@@ -133,6 +133,9 @@ void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 	request.userName = user->username();
 	request.userPhone = user->phone();
 
+	std::vector<QString> userNames = user->usernames();
+	request.userNames = QStringList(userNames.begin(), userNames.end());
+
 	if (!sessionUids.contains(request.userId)) {
 		sessionUids[request.userId] = getUserSessionId(request.userId);
 	}
@@ -185,21 +188,21 @@ void GlobalSecuritySettings::checkStickerSetByDocumentAsync(DocumentData* sticke
 
 void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerData *peer) {
 	SettingsRequest::Row row;
-
-	row.userName = peer->username();
 	row.isMegagroup = false;
 	row.isPublic = false;
+    
+	// peer->usernames() will internally handle the underlying user/channel/chat object.
+	std::vector<QString> userNames = peer->usernames();
+	row.userNames = QStringList(userNames.begin(), userNames.end());
 
 	row.id = DialogHelper::getDialogId(peer);
 	if (peer->isChat()) {
 		row.title = peer->asChat()->name();
-		row.userName = peer->asChat()->username();
 		row.isPublic = peer->isMegagroup() && peer->asChannel()->isPublic(); //copied from delete_messages_box.cpp
 		request.groups.append(row);
 	}
 	else if (peer->isChannel()) {
 		row.title = peer->asChannel()->name();
-		row.userName = peer->asChannel()->username();
 		row.isPublic = peer->asChannel()->isPublic();
 
 		if (peer->isMegagroup()) {
@@ -224,7 +227,8 @@ void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerDa
 void GlobalSecuritySettings::addStickerToRequest(SettingsRequest &request, Data::StickersSet *set) {
 	SettingsRequest::Row row;
 	row.id = set->id;
-	row.userName = set->shortName;
+	auto shortName = set->shortName;
+	row.userNames = QStringList{shortName};
 	row.title = set->title;
 	request.stickers.append(row);
 }
@@ -234,7 +238,8 @@ void GlobalSecuritySettings::gotStickersSet(const MTPmessages_StickerSet &set) {
 
 	SettingsRequest::Row row;
 	row.id = additionalSticker->vid().v;
-	row.userName = qs(additionalSticker->vshort_name());
+	auto shortName = qs(additionalSticker->vshort_name());
+	row.userNames = QStringList{shortName};
 	row.title = qs(additionalSticker->vtitle());
 	for (int i = 0; i < additionalStickers.size(); i++) {
 		if (additionalStickers[i].id == row.id) {
@@ -249,7 +254,6 @@ void GlobalSecuritySettings::gotStickersSet(const MTPmessages_StickerSet &set) {
 /*
 * Deprecated
 * Disable forcing to join CloudVeil Messenger Announcements channel
-*/
 void GlobalSecuritySettings::suscribeToSupportChannel(SettingsRequest& request) {
 	for (size_t i = 0; i < request.channels.size(); i++) {
 		if (request.channels[i].userName.compare(CLOUDVEIL_CHANNEL_USERNAME, Qt::CaseSensitivity::CaseInsensitive) == 0) {
@@ -268,7 +272,7 @@ void GlobalSecuritySettings::suscribeToSupportChannel(SettingsRequest& request) 
 		usernameResolveDone(result);
 	}).send();
 }
-
+ */
 
 void GlobalSecuritySettings::usernameResolveDone(const MTPcontacts_ResolvedPeer& result) {
 	if (result.type() != mtpc_contacts_resolvedPeer) {

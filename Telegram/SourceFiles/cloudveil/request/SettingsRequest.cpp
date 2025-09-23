@@ -3,11 +3,38 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QUuid>
 
+void SettingsRequest::Row::writeToJson(QJsonObject &json, bool writeIsMegagroup, bool writeIsPublic) {
+    json["id"] = QString::number(id);
+    json["title"] = title;
+    if (writeIsMegagroup) {
+        json["is_megagroup"] = isMegagroup;
+    }
+    if (writeIsPublic) {
+        json["is_public"] = isPublic;
+    }
+    if (!userNames.isEmpty()) {
+        auto arr = QJsonArray::fromStringList(userNames);
+        json["user_names"] = arr;
+    }
+}
+
+bool SettingsRequest::Row::equalsTo(Row& r) {
+    return this->id == r.id &&
+        this->title == r.title &&
+        this->isMegagroup == r.isMegagroup &&
+        this->isPublic == r.isPublic &&
+        this->userNames == r.userNames;
+}
+
 void SettingsRequest::writeToJson(QJsonObject & json)
 {
 	json["user_id"] = (qint64)userId;
 	json["user_phone"] = userPhone;
 	json["user_name"] = userName;
+	if (!userNames.isEmpty()) {
+		auto arr = QJsonArray::fromStringList(userNames);
+		json["user_names"] = arr;
+	}
 	json["client_os_type"] = clientOsType;
 	json["client_session_id"] = clientSessionId;
 	json["client_version_code"] = clientVersionCode;
@@ -49,7 +76,8 @@ bool SettingsRequest::equalsTo(SettingsRequest& request)
 {
 	if (this->userId != request.userId ||
 		this->userPhone != request.userPhone || 
-		this->userName != request.userName) {
+		this->userName != request.userName ||
+		this->userNames != request.userNames) {
 		return false;
 	}
 

@@ -5,34 +5,18 @@ public:
 	struct Row {
 		qint64 id;
 		QString title;
-		QString userName;
+		QStringList userNames;
 		bool isMegagroup;
 		bool isPublic;
-
-		void writeToJson(QJsonObject &json, bool writeIsMegagroup = false, bool writeIsPublic=false) {			
-			json["id"] = QString::number(id);
-			json["title"] = title;
-			json["user_name"] = userName;
-			if (writeIsMegagroup) {
-				json["is_megagroup"] = isMegagroup;
-			}
-			if (writeIsPublic) {
-				json["is_public"] = isPublic;
-			}
-		}
-
-		bool equalsTo(Row& r) {
-			return this->id == r.id && 
-				this->title == r.title &&
-				this->userName == r.userName && 
-				this->isMegagroup == r.isMegagroup && 
-				this->isPublic == r.isPublic;
-		}
+        
+		void writeToJson(QJsonObject &json, bool writeIsMegagroup = false, bool writeIsPublic=false);
+		bool equalsTo(Row& r);
 	};
 
 	qint64 userId;
 	QString userPhone;
 	QString userName;
+	QStringList userNames;
 #ifdef __APPLE__
 	QString clientOsType = "macOS";
 #else

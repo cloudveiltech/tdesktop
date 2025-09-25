@@ -2888,7 +2888,11 @@ void Widget::requestPublicPosts(bool fromStart) {
 			MTP_int(fromStart ? 0 : _postsProcess.lastId),
 			MTP_int(kSearchPerPage))
 	).done([=](const MTPmessages_Messages &result) {
-		searchReceived(type, result, &_postsProcess);
+		//CloudVeil start
+		//searchReceived(type, result, &_postsProcess);
+		//Don't show public posts
+		searchApplyEmpty(type, &_postsProcess);
+		//CloudVeil end
 	}).fail([=](const MTP::Error &error) {
 		searchFailed(type, error, &_postsProcess);
 	}).send();

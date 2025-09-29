@@ -637,6 +637,15 @@ void SessionNavigation::showPeerByLinkResolved(
 			}
 		}));
 	} else if (bot && resolveType == ResolveType::BotApp) {
+		//CloudVeil start
+		if (DialogHelper::CheckDialogResult::APPROVED != DialogHelper::checkAndShowDialogForbidden(
+                                                               peer,
+                                                               session().user(),
+                                                               parentController())) {
+			return;
+		}
+		//CloudVeil end
+        
 		const auto itemId = info.clickFromMessageId;
 		const auto item = _session->data().message(itemId);
 		const auto contextPeer = item

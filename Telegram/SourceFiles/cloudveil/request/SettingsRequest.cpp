@@ -16,6 +16,9 @@ void SettingsRequest::Row::writeToJson(QJsonObject &json, bool writeIsMegagroup,
         auto arr = QJsonArray::fromStringList(userNames);
         json["user_names"] = arr;
     }
+    if (migratedFromTelegramId != 0) {
+        json["migrated_from_telegram_id"] = QString::number(migratedFromTelegramId);
+    }
 }
 
 bool SettingsRequest::Row::equalsTo(Row& r) {
@@ -23,6 +26,7 @@ bool SettingsRequest::Row::equalsTo(Row& r) {
         this->title == r.title &&
         this->isMegagroup == r.isMegagroup &&
         this->isPublic == r.isPublic &&
+        this->migratedFromTelegramId == r.migratedFromTelegramId &&
         this->userNames == r.userNames;
 }
 

@@ -207,6 +207,11 @@ void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerDa
 
 		if (peer->isMegagroup()) {
 			row.isMegagroup = true;
+			ChatData* migratedFromChat = peer->migrateFrom();
+			if (migratedFromChat != nullptr) {
+				qint64 migratedFromChatId = DialogHelper::getDialogId(migratedFromChat);
+				row.migratedFromTelegramId = migratedFromChatId;
+			}
 			request.groups.append(row);
 		}
 		else {
@@ -272,7 +277,7 @@ void GlobalSecuritySettings::suscribeToSupportChannel(SettingsRequest& request) 
 		usernameResolveDone(result);
 	}).send();
 }
- */
+*/
 
 void GlobalSecuritySettings::usernameResolveDone(const MTPcontacts_ResolvedPeer& result) {
 	if (result.type() != mtpc_contacts_resolvedPeer) {

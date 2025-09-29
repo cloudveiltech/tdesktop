@@ -8,6 +8,7 @@ public:
 		QStringList userNames;
 		bool isMegagroup;
 		bool isPublic;
+		qint64 migratedFromTelegramId;
         
 		void writeToJson(QJsonObject &json, bool writeIsMegagroup = false, bool writeIsPublic=false);
 		bool equalsTo(Row& r);

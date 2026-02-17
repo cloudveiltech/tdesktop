@@ -105,6 +105,7 @@ if (WIN32)
             ${src_loc}/cloudveil/sentry/release/breakpad_client.lib
             ${src_loc}/cloudveil/sentry/release/sentry.lib
         )
+        target_compile_definitions(Telegram PRIVATE DESKTOP_APP_USE_SENTRY=1)
 elseif (APPLE)
     target_link_libraries(Telegram
      PRIVATE
@@ -112,6 +113,7 @@ elseif (APPLE)
         ${src_loc}/cloudveil/sentry/release_mac/libbreakpad_client.a
         ${src_loc}/cloudveil/sentry/release_mac/libsentry.a
     )
+    target_compile_definitions(Telegram PRIVATE DESKTOP_APP_USE_SENTRY=1)
 endif()
 
 target_precompile_headers(Telegram PRIVATE $<$<COMPILE_LANGUAGE:CXX,OBJCXX>:${src_loc}/stdafx.h>)
@@ -1899,9 +1901,9 @@ else()
     endif()
     set(bundle_entitlements "Telegram.entitlements")
     if (LINUX AND DESKTOP_APP_USE_PACKAGED)
-        set(output_name "telegram-desktop")
+        set(output_name "cloudveil-messenger")
     else()
-        set(output_name "Telegram")
+        set(output_name "CloudVeil Messenger")
     endif()
 endif()
 

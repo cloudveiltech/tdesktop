@@ -20,6 +20,8 @@ public:
 	QStringList userNames;
 #ifdef __APPLE__
 	QString clientOsType = "macOS";
+#elif defined(__linux__)
+	QString clientOsType = "Linux";
 #else
 	QString clientOsType = "Windows";
 #endif

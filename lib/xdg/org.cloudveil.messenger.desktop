@@ -1,9 +1,9 @@
 [Desktop Entry]
-Name=Telegram
-Comment=New era of messaging
+Name=CloudVeil Messenger
+Comment=Secure messaging with CloudVeil
 TryExec=telegram-desktop
 Exec=telegram-desktop -- %u
-Icon=org.telegram.desktop
+Icon=org.cloudveil.messenger
 Terminal=false
 StartupWMClass=TelegramDesktop
 Type=Application
@@ -18,5 +18,5 @@ X-GNOME-SingleWindow=true
 
 [Desktop Action quit]
 Exec=telegram-desktop -quit
-Name=Quit Telegram
+Name=Quit CloudVeil Messenger
 Icon=application-exit

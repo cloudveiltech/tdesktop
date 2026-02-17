@@ -374,6 +374,10 @@ bool GenerateDesktopFile(
 		hashMd5Hex(d.constData(), d.size(), md5Hash);
 
 		if (!Core::Launcher::Instance().customWorkingDir()) {
+			QFile::remove(u"%1org.cloudveil.messenger._%2.desktop"_q.arg(
+				targetPath,
+				md5Hash));
+			// Also remove old Telegram desktop file for migration
 			QFile::remove(u"%1org.telegram.desktop._%2.desktop"_q.arg(
 				targetPath,
 				md5Hash));
@@ -383,6 +387,10 @@ bool GenerateDesktopFile(
 			hashMd5Hex(exePath.constData(), exePath.size(), md5Hash);
 		}
 
+		QFile::remove(u"%1org.cloudveil.messenger.%2.desktop"_q.arg(
+			targetPath,
+			md5Hash));
+		// Also remove old Telegram desktop file for migration
 		QFile::remove(u"%1org.telegram.desktop.%2.desktop"_q.arg(
 			targetPath,
 			md5Hash));
@@ -442,6 +450,10 @@ bool GenerateServiceFile(bool silent = false) {
 		const auto d = QFile::encodeName(QDir(cWorkingDir()).absolutePath());
 		hashMd5Hex(d.constData(), d.size(), md5Hash);
 
+		QFile::remove(u"%1org.cloudveil.messenger._%2.service"_q.arg(
+			targetPath,
+			md5Hash));
+		// Also remove old Telegram service file for migration
 		QFile::remove(u"%1org.telegram.desktop._%2.service"_q.arg(
 			targetPath,
 			md5Hash));
@@ -690,11 +702,11 @@ void start() {
 		}
 
 		if (!Core::UpdaterDisabled()) {
-			return u"org.telegram.desktop._%1"_q.arg(
+			return u"org.cloudveil.messenger._%1"_q.arg(
 				Core::Launcher::Instance().instanceHash().constData());
 		}
 
-		return u"org.telegram.desktop"_q;
+		return u"org.cloudveil.messenger"_q;
 	}());
 
 	LOG(("App ID: %1").arg(QGuiApplication::desktopFileName()));

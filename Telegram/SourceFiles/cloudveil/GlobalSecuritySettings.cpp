@@ -190,6 +190,7 @@ void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerDa
 	SettingsRequest::Row row;
 	row.isMegagroup = false;
 	row.isPublic = false;
+    row.migratedFromTelegramId = 0;
     
 	// peer->usernames() will internally handle the underlying user/channel/chat object.
 	std::vector<QString> userNames = peer->usernames();

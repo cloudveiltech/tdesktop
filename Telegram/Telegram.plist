@@ -16,6 +16,10 @@
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>@output_name@</string>
+	// CloudVeil start
+	<key>CFBundleDisplayName</key>
+	<string>CloudVeil Messenger</string>
+	// CloudVeil end
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

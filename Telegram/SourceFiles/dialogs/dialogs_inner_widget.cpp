@@ -61,6 +61,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwidget.h"
 #include "storage/storage_account.h"
 #include "apiwrap.h"
+// CloudVeil start
+#include "cloudveil/GlobalSecuritySettings.h"
+// CloudVeil end
 #include "main/main_session.h"
 #include "main/main_session_settings.h"
 #include "menu/menu_sponsored.h"
@@ -3425,11 +3428,18 @@ void InnerWidget::applySearchState(SearchState state) {
 			const auto append = [&](not_null<IndexedList*> list) {
 				const auto results = list->filtered(words);
 				auto top = filteredHeight();
-				auto i = _filterResults.insert(
-					end(_filterResults),
-					begin(results),
-					end(results));
-				for (const auto e = end(_filterResults); i != e; ++i) {
+				// CloudVeil start: disable search results for blocked chats
+				for (const auto &row : results) {
+					if (const auto history = row->history()) {
+						if (!GlobalSecuritySettings::getSettings()
+								.isDialogAllowed(history->peer)) {
+							continue;
+						}
+					}
+					auto i = _filterResults.insert(
+						end(_filterResults),
+						FilterResult(row));
+					// CloudVeil end
 					i->top = top;
 					i->row->recountHeight(_narrowRatio, _filterId);
 					top += i->row->height();
@@ -3812,7 +3822,11 @@ void InnerWidget::searchReceived(
 		: Key(_openedForum->history());
 	if (inject
 		&& (!_searchState.inChat
-			|| inject->history() == _searchState.inChat.history())) {
+			// CloudVeil start: disable search results for blocked chats
+			|| inject->history() == _searchState.inChat.history())
+		&& GlobalSecuritySettings::getSettings().isDialogAllowed(
+			inject->history()->peer)) {
+		// CloudVeil end
 		Assert(_searchResults.empty());
 		Assert(!toPreview);
 		const auto index = int(_searchResults.size());
@@ -3827,6 +3841,12 @@ void InnerWidget::searchReceived(
 	auto &results = toPreview ? _previewResults : _searchResults;
 	for (const auto &item : messages) {
 		const auto history = item->history();
+		// CloudVeil start: disable search results for blocked chats
+		if (!GlobalSecuritySettings::getSettings().isDialogAllowed(
+				history->peer)) {
+			continue;
+		}
+		// CloudVeil end
 		if (toPreview || !uniquePeers || !hasHistoryInResults(history)) {
 			const auto index = int(results.size());
 			const auto repaint = toPreview

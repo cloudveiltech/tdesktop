@@ -7,6 +7,9 @@
 
 DialogHelper::CheckDialogResult DialogHelper::checkAndShowDialogForbidden(PeerData* peerData, UserData* userData, Window::SessionController *controller) {
 	if (!GlobalSecuritySettings::getSettings().isDialogAllowed(peerData)) {
+		if (controller) {
+			controller->closeThirdSection();
+		}
         // Kenji: this line below makes the user lose the current view context
         // It usually opens the first chat or the saved chat, so I commented it out.
         // controller->showPeerHistory(userData->id);

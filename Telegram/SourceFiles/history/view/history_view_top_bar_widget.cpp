@@ -60,6 +60,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "support/support_helper.h"
 #include "apiwrap.h"
 #include "api/api_chat_participants.h"
+// CloudVeil start
+#include "cloudveil/GlobalSecuritySettings.h"
+// CloudVeil end
 #include "styles/style_window.h"
 #include "styles/style_dialogs.h"
 #include "styles/style_chat.h"
@@ -382,6 +385,12 @@ void TopBarWidget::toggleInfoSection() {
 			|| Core::App().settings().tabbedReplacedWithInfo())) {
 		_controller->closeThirdSection();
 	} else if (_activeChat.key.peer()) {
+		// CloudVeil start: disable side panel for blocked chats
+		if (!GlobalSecuritySettings::getSettings().isDialogAllowed(
+				_activeChat.key.peer())) {
+			return;
+		}
+		// CloudVeil end
 		if (_controller->canShowThirdSection()) {
 			Core::App().settings().setThirdSectionInfoEnabled(true);
 			Core::App().saveSettingsDelayed();
@@ -736,7 +745,14 @@ void TopBarWidget::infoClicked() {
 	const auto key = _activeChat.key;
 	if (!key) {
 		return;
-	} else if (const auto topic = key.topic()) {
+		// CloudVeil start: disable side panel for blocked chats
+	}
+	if (const auto peer = key.peer();
+		peer && !GlobalSecuritySettings::getSettings().isDialogAllowed(peer)) {
+		return;
+	}
+	if (const auto topic = key.topic()) {
+		// CloudVeil end
 		_controller->showSection(std::make_shared<Info::Memento>(topic));
 	} else if ([[maybe_unused]] const auto sublist = key.sublist()) {
 		_controller->showSection(std::make_shared<Info::Memento>(

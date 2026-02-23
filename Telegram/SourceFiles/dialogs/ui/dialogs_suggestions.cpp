@@ -55,6 +55,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/unread_badge_paint.h"
 #include "ui/ui_utility.h"
 #include "window/window_separate_id.h"
+// CloudVeil start
+#include "cloudveil/DialogHelper.h"
+#include "cloudveil/GlobalSecuritySettings.h"
+// CloudVeil end
 #include "window/window_session_controller.h"
 #include "window/window_peer_menu.h"
 #include "styles/style_chat.h"
@@ -955,7 +959,9 @@ void MyChannelsController::prepare() {
 	const auto add = [&](not_null<Dialogs::MainList*> list) {
 		for (const auto &row : list->indexed()->all()) {
 			if (const auto history = row->history()) {
-				if (history->peer->isBroadcast()) {
+				if (history->peer->isBroadcast()
+					&& GlobalSecuritySettings::getSettings().isDialogAllowed(
+						history->peer)) {
 					_channels.push_back(history);
 				}
 			}
@@ -984,13 +990,16 @@ void MyChannelsController::prepare() {
 		const auto list = owner->chatsList(folder);
 		for (const auto &row : list->indexed()->all()) {
 			if (const auto history = row->history()) {
-				if (history->peer->isBroadcast()) {
-					if (ranges::contains(_channels, not_null(history))) {
-						_channels.push_back(history);
-					}
+				// CloudVeil start: hide blocked channels in suggestion list
+				if (history->peer->isBroadcast()
+					&& !ranges::contains(_channels, not_null(history))
+					&& GlobalSecuritySettings::getSettings().isDialogAllowed(
+						history->peer)) {
+					_channels.push_back(history);
 				}
 			}
 		}
+		// CloudVeil end
 		const auto was = countCurrent();
 		const auto now = int(_channels.size());
 		if (was != now) {
@@ -1078,6 +1087,9 @@ void RecommendationsController::load() {
 void RecommendationsController::fill() {
 	const auto participants = &session().api().chatParticipants();
 	const auto &list = participants->recommendations().list;
+	// CloudVeil start: hide recommendations
+	return;
+	// CloudVeil end
 	if (list.empty()) {
 		return;
 	}
@@ -2054,7 +2066,9 @@ std::vector<Suggestions::Key> Suggestions::TabKeysFor(
 	auto result = std::vector<Key>{
 		{ Tab::Chats },
 		{ Tab::Channels },
-		{ Tab::Apps },
+		// CloudVeil start: hide Apps tab
+		//{ Tab::Apps },
+		// CloudVeil end
 		{ Tab::Media, MediaType::Photo },
 		{ Tab::Media, MediaType::Video },
 		{ Tab::Downloads },
@@ -2674,6 +2688,15 @@ object_ptr<Ui::BoxContent> StarsExamplesBox(
 			if (const auto user = peer->asUser()) {
 				if (const auto info = user->botInfo.get()) {
 					if (info->hasMainApp) {
+						// CloudVeil start: disable mini-app for blocked bots
+						if (DialogHelper::CheckDialogResult::APPROVED
+							!= DialogHelper::checkAndShowDialogForbidden(
+								user,
+								window->session().user(),
+								window)) {
+							return;
+						}
+						// CloudVeil end
 						window->session().attachWebView().open({
 							.bot = user,
 							.context = {

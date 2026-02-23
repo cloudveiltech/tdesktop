@@ -82,6 +82,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_stories.h"
 #include "info/downloads/info_downloads_widget.h"
 #include "info/info_memento.h"
+//CloudVeil start
+#include "cloudveil/DialogHelper.h"
+#include "cloudveil/GlobalSecuritySettings.h"
+//CloudVeil end
 #include "inline_bots/bot_attach_web_view.h"
 #include "styles/style_dialogs.h"
 #include "styles/style_chat.h"
@@ -1787,6 +1791,13 @@ void Widget::updateSuggestions(anim::type animated) {
 }
 
 void Widget::openBotMainApp(not_null<UserData*> bot) {
+	// CloudVeil start: disable mini-app for blocked bots
+	if (DialogHelper::CheckDialogResult::APPROVED
+		!= DialogHelper::checkAndShowDialogForbidden(
+			bot, session().user(), controller())) {
+		return;
+	}
+	// CloudVeil end
 	session().attachWebView().open({
 		.bot = bot,
 		.context = {
@@ -2994,7 +3005,11 @@ void Widget::searchReceived(
 			const auto peerId = PeerFromMessage(message);
 			const auto lastDate = DateFromMessage(message);
 			if (const auto peer = session().data().peerLoaded(peerId)) {
-				if (lastDate) {
+				// CloudVeil start: disable search results for blocked chats
+				if (lastDate
+					&& GlobalSecuritySettings::getSettings().isDialogAllowed(
+						peer)) {
+					// CloudVeil end
 					const auto item = session().data().addNewMessage(
 						message,
 						MessageFlags(),

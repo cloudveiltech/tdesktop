@@ -959,11 +959,13 @@ void MyChannelsController::prepare() {
 	const auto add = [&](not_null<Dialogs::MainList*> list) {
 		for (const auto &row : list->indexed()->all()) {
 			if (const auto history = row->history()) {
+                // CloudVeil start: hide blocked channels in suggestion list
 				if (history->peer->isBroadcast()
 					&& GlobalSecuritySettings::getSettings().isDialogAllowed(
 						history->peer)) {
 					_channels.push_back(history);
 				}
+                // CloudVeil end
 			}
 		}
 	};
@@ -997,9 +999,9 @@ void MyChannelsController::prepare() {
 						history->peer)) {
 					_channels.push_back(history);
 				}
+                // CloudVeil end
 			}
 		}
-		// CloudVeil end
 		const auto was = countCurrent();
 		const auto now = int(_channels.size());
 		if (was != now) {

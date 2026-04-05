@@ -23,6 +23,6 @@ constexpr auto AppNameOld = "CloudVeil Messenger Win (Unofficial)"_cs;
 constexpr auto AppName = "CloudVeil Messenger Desktop"_cs;
 constexpr auto AppFile = "Telegram"_cs;
 constexpr auto AppVersion = 5014003;
-constexpr auto AppVersionStr = "5.14.3";
+constexpr auto AppVersionStr = "5.14.4";
 constexpr auto AppBetaVersion = false;
 constexpr auto AppAlphaVersion = TDESKTOP_ALPHA_VERSION;

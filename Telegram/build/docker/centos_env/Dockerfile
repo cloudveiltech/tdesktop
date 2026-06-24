@@ -29,7 +29,8 @@ RUN dnf -y install epel-release \
 		glib2-devel at-spi2-core-devel gtk3-devel boost1.78-devel fmt-devel \
 	&& dnf clean all
 
-RUN python3 -m pip install meson ninja
+RUN python3.11 -m pip install meson ninja
+RUN alternatives --set python3 /usr/bin/python3.11 2>/dev/null || ln -sf /usr/bin/python3.11 /usr/local/bin/python3
 RUN sed -i '/Requires.private: valgrind/d' /usr/lib64/pkgconfig/libdrm.pc
 RUN echo set debuginfod enabled on > /opt/rh/{{ TOOLSET }}/root/etc/gdbinit.d/00-debuginfod.gdb
 RUN adduser user
@@ -285,7 +286,8 @@ RUN git clone -b master --depth=1 {{ GIT }}/desktop-app/rnnoise.git \
 FROM builder AS xcb-proto
 RUN git clone -b xcb-proto-1.16.0 --depth=1 {{ GIT_FREEDESKTOP }}/xcbproto.git \
 	&& cd xcbproto \
-	&& ./autogen.sh \
+	&& PYTHON=python3.11 ./autogen.sh \
+	&& PYTHON=python3.11 ./configure \
 	&& make -j$(nproc) \
 	&& make DESTDIR="{{ LibrariesPath }}/xcb-proto-cache" install \
 	&& cd .. \
@@ -623,7 +625,7 @@ RUN git clone -b 0.3.62 --depth=1 {{ GIT }}/PipeWire/pipewire.git \
 		--buildtype=plain \
 		-Dtests=disabled \
 		-Dexamples=disabled \
-		-Dsession-managers=media-session \
+		-Dsession-managers= \
 		-Dspa-plugins=disabled \
 	&& meson compile -C build \
 	&& DESTDIR="{{ LibrariesPath }}/pipewire-cache" meson install -C build \
@@ -695,7 +697,7 @@ COPY --link --from=glib {{ LibrariesPath }}/glib-cache /
 
 RUN git clone -b 1.78.1 --depth=1 {{ GIT }}/GNOME/gobject-introspection.git \
 	&& cd gobject-introspection \
-	&& meson build --buildtype=plain \
+	&& meson build --buildtype=plain -Dpython=python3.11 \
 	&& meson compile -C build \
 	&& DESTDIR="{{ LibrariesPath }}/gobject-introspection-cache" meson install -C build \
 	&& cd .. \

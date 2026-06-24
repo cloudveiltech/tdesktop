@@ -375,7 +375,9 @@ void MainWindow::createGlobalMenu() {
 			tr::lng_mac_menu_about_telegram(
 				tr::now,
 				lt_telegram,
-				u"Telegram"_q),
+				// CloudVeil start
+				AppName.utf16()),
+				// CloudVeil end
 			std::move(callback))
 		->setMenuRole(QAction::AboutQtRole);
 	}

@@ -109,7 +109,13 @@ void SimpleUpdater::processDownloadedResponse(QNetworkReply* networkReply) {
 				downloadedFile.close();
 			}
 			
+#ifdef Q_OS_WIN
 			QString path = QDir::tempPath() + "/cvm_update_package.exe";
+#elif defined(Q_OS_MAC)
+			QString path = QDir::tempPath() + "/cvm_update_package.dmg";
+#else
+			QString path = QDir::tempPath() + "/cvm_update_package";
+#endif
 			downloadedFile.setFileName(path);
 			if (QFile::exists(path)) {
 				downloadedFile.remove();

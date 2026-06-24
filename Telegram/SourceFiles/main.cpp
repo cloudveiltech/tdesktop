@@ -10,7 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 //CloudVeil end
 #include "core/launcher.h"
 //CloudVeil start
-#ifndef _DEBUG
+#if defined(DESKTOP_APP_USE_SENTRY) && !defined(_DEBUG)
 #include "cloudveil/sentry/include/sentry.h"
 #endif
 //CloudVeil end
@@ -18,7 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 int main(int argc, char *argv[]) {
 	//CloudVeil start
-#ifndef _DEBUG
+#if defined(DESKTOP_APP_USE_SENTRY) && !defined(_DEBUG)
 		sentry_options_t * options = sentry_options_new();
 #ifdef __APPLE__
 	sentry_options_set_dsn(options, "https://5c646a91dfb14b52a08d37dc6c72e045@o1077369.ingest.sentry.io/6130964");
@@ -31,9 +31,9 @@ int main(int argc, char *argv[]) {
 
 	const auto launcher = Core::Launcher::Create(argc, argv);
 	auto res = launcher ? launcher->exec() : 1;
-#ifndef _DEBUG
+#if defined(DESKTOP_APP_USE_SENTRY) && !defined(_DEBUG)
 	sentry_close();
-#endif // !DEBUG
+#endif
 
 	//CloudVeil end
 

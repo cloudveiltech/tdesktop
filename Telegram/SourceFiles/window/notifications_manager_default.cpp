@@ -233,7 +233,7 @@ void Manager::showNextFromQueue() {
 
 		subscribeToSession(&queued.history->session());
 		//CloudVeil start
-		if (!GlobalSecuritySettings::getSettings().isDialogAllowed(queued.peer)) {
+		if (GlobalSecuritySettings::getSettings().isDialogAllowed(queued.peer)) {
 			_notifications.push_back(std::make_unique<Notification>(
 				this,
 				queued.history,

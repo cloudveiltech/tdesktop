@@ -15,6 +15,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history.h"
 #include "history/history_item.h"
 #include "apiwrap.h"
+// CloudVeil start
+#include "cloudveil/GlobalSecuritySettings.h"
+// CloudVeil end
 
 namespace Api {
 namespace {
@@ -122,7 +125,11 @@ GlobalMediaResult ParseGlobalMediaResult(
 			message,
 			MessageFlags(),
 			addType);
-		if (item) {
+		// CloudVeil start: disable search results for blocked chats
+		if (item
+			&& GlobalSecuritySettings::getSettings().isDialogAllowed(
+				item->history()->peer)) {
+			// CloudVeil end
 			result.messageIds.push_back(item->position());
 		}
 	}

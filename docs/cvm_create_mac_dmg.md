@@ -21,3 +21,8 @@ create-dmg \
   "cvm_macos_4010009.dmg" \
   "CVM/"
 ```
+
+Note: if you get an error, try using terminal app.
+Make sure Grant Automation permission (most common cause on macOS 13+)
+
+Go to System Settings → Privacy & Security → Automation, find your terminal app (Terminal, iTerm2, etc.) and enable the Finder toggle. Then re-run the command.

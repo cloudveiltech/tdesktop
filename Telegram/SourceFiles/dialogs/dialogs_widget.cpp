@@ -2921,6 +2921,9 @@ void Widget::searchMore() {
 }
 
 void Widget::requestPublicPosts(bool fromStart) {
+	// CloudVeil start: public posts search is blocked entirely
+	return;
+	// CloudVeil end
 	if (!_postsProcess.lastId || !_postsProcess.lastPeer) {
 		fromStart = true;
 	}
@@ -3495,7 +3498,10 @@ bool Widget::applySearchState(SearchState state) {
 		state.fromPeer = nullptr;
 	}
 	if (state.tab == ChatSearchTab::PublicPosts
-		&& IsHashOrCashtagSearchQuery(state.query) == HashOrCashtag::None) {
+		// CloudVeil start: public posts search is blocked entirely
+		&& (true
+			|| IsHashOrCashtagSearchQuery(state.query) == HashOrCashtag::None)) {
+		// CloudVeil end
 		state.tab = (_openedForum && !state.inChat)
 			? ChatSearchTab::ThisPeer
 			: ChatSearchTab::MyMessages;

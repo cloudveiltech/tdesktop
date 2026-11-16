@@ -187,6 +187,11 @@ void GlobalSecuritySettings::checkStickerSetByDocumentAsync(DocumentData* sticke
 }
 
 void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerData *peer) {
+	// Monoforums are categorized through their parent channel.
+	peer = DialogHelper::policyPeer(peer);
+	if (!peer) {
+		return;
+	}
 	SettingsRequest::Row row;
 	row.isMegagroup = false;
 	row.isPublic = false;

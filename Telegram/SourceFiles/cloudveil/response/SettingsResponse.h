@@ -38,6 +38,7 @@ public:
 	bool disableEmojiStatus;
 	bool manageUsers;
 	bool disableStories;
+	bool disableStars = true; // matches Android DEFAULT_DISABLE_STARS
 	Organization orgranization;
 
 public:

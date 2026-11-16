@@ -1,3 +1,3 @@
 [D-BUS Service]
 Name=org.cloudveil.messenger
-Exec=@CMAKE_INSTALL_FULL_BINDIR@/telegram-desktop
+Exec=@CMAKE_INSTALL_FULL_BINDIR@/cloudveil-messenger

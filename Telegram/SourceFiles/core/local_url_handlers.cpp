@@ -81,6 +81,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 //CloudVeil start
 #include "boxes/abstract_box.h"
+#include "cloudveil/GlobalSecuritySettings.h"
 //CloudVeil end
 
 namespace Core {
@@ -1549,6 +1550,12 @@ bool ResolveTonSettings(
 	if (!controller) {
 		return false;
 	}
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableStars) {
+		Ui::show(Ui::MakeInformBox(tr::lng_blocked_for_protection(tr::now)));
+		return true;
+	}
+	//CloudVeil end
 	controller->showSettings(::Settings::CurrencyId());
 	controller->window().activate();
 	return true;

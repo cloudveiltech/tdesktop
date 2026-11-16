@@ -7,6 +7,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/media/history_view_premium_gift.h"
 
+//CloudVeil start
+#include "cloudveil/GlobalSecuritySettings.h"
+//CloudVeil end
+
 #include "apiwrap.h"
 #include "api/api_credits.h" // InputSavedStarGiftId
 #include "api/api_premium.h"
@@ -273,6 +277,11 @@ ClickHandlerPtr PremiumGift::createViewLink() {
 		return std::make_shared<LambdaClickHandler>([=](ClickContext context) {
 			const auto my = context.other.value<ClickHandlerContext>();
 			const auto weak = my.sessionWindow;
+			//CloudVeil start: TON balance is gated with stars
+			if (GlobalSecuritySettings::getSettings().disableStars) {
+				return;
+			}
+			//CloudVeil end
 			if (const auto window = weak.get()) {
 				window->session().credits().tonLoad();
 				*lifetime = window->session().credits().tonLoadedValue(

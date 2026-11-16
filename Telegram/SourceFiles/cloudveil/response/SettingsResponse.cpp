@@ -6,6 +6,7 @@
 #include "data/data_document.h"
 #include "history/history.h"
 #include "data/data_user.h"
+#include "data/data_channel.h"
 #include <QtCore/QJsonArray>
 #include <cloudveil/DialogHelper.h>
 
@@ -86,6 +87,10 @@ void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 	{
 		disableStories = jsonObject["disable_stories"].toBool();
 	}
+	if (jsonObject.contains("disable_stars") && jsonObject["disable_stars"].isBool())
+	{
+		disableStars = jsonObject["disable_stars"].toBool();
+	}
 	if (jsonObject.contains("disable_emoji_status") && jsonObject["disable_emoji_status"].isBool())
 	{
 		disableEmojiStatus = jsonObject["disable_emoji_status"].toBool();
@@ -149,6 +154,7 @@ void SettingsResponse::writeToJson(QJsonObject &json)
 	json["disable_profile_video_change"] = disableProfileVideoChange;
 	json["disable_stories"] = disableStories;
 	json["disable_emoji_status"] = disableEmojiStatus;
+	json["disable_stars"] = disableStars;
 
 	QJsonObject accessObject;
 
@@ -227,6 +233,12 @@ bool SettingsResponse::isDialogAllowed(History *history) {
 bool SettingsResponse::isDialogAllowed(PeerData *peer) {
 	if (peer == nullptr) {
 		return true;
+	}
+	if (peer->isChannel() && peer->asChannel()->isMonoforum()) {
+		// Channel direct messages follow the parent channel;
+		// blocked until the parent channel is known.
+		const auto parent = DialogHelper::policyPeer(peer);
+		return parent && isDialogAllowed(parent);
 	}
 
 	bool isInlineBot = peer->isUser() && peer->asUser()->botInfo != NULL && !peer->asUser()->botInfo->inlinePlaceholder.isEmpty() && peer->asUser()->botInfo->inlinePlaceholder.length() > 0;

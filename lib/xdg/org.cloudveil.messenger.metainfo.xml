@@ -106,7 +106,7 @@
     </content_rating>
     <launchable type="desktop-id">org.cloudveil.messenger.desktop</launchable>
     <provides>
-        <binary>telegram-desktop</binary>
+        <binary>cloudveil-messenger</binary>
         <dbus type="session">org.cloudveil.messenger</dbus>
         <mediatype>x-scheme-handler/tg</mediatype>
         <mediatype>x-scheme-handler/tonsite</mediatype>

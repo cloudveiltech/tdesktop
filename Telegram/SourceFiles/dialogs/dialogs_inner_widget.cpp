@@ -4330,9 +4330,9 @@ void InnerWidget::updateSearchIn() {
 		? Ui::MakeUserpicThumbnail(sublist->sublistPeer())
 		: nullptr;
 	const auto myIcon = Ui::MakeIconThumbnail(st::menuIconChats);
-	const auto publicIcon = (_searchHashOrCashtag != HashOrCashtag::None)
-		? Ui::MakeIconThumbnail(st::menuIconChannel)
-		: nullptr;
+	// CloudVeil start: public posts search is blocked entirely
+	const auto publicIcon = std::shared_ptr<Ui::DynamicImage>();
+	// CloudVeil end
 	const auto peerTabType = (peer && peer->isBroadcast())
 		? ChatSearchPeerTabType::Channel
 		: (peer && (peer->isChat() || peer->isMegagroup()))
@@ -4887,9 +4887,11 @@ bool InnerWidget::chooseRow(
 	if (chooseHashtag()) {
 		return true;
 	} else if (_selectedMorePosts) {
-		if (_searchHashOrCashtag != HashOrCashtag::None) {
-			_changeSearchTabRequests.fire(ChatSearchTab::PublicPosts);
-		}
+		// CloudVeil start: public posts search is blocked entirely
+		//if (_searchHashOrCashtag != HashOrCashtag::None) {
+		//	_changeSearchTabRequests.fire(ChatSearchTab::PublicPosts);
+		//}
+		// CloudVeil end
 		return true;
 	} else if (_selectedChatTypeFilter) {
 		_menu = base::make_unique_q<Ui::PopupMenu>(

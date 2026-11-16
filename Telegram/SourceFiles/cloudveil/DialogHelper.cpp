@@ -1,11 +1,23 @@
 #include "DialogHelper.h"
 #include "lang_auto.h"
 #include "data/data_user.h"
+#include "data/data_channel.h"
 #include "ui/boxes/confirm_box.h"
 #include "GlobalSecuritySettings.h"
 #include <QtGui/QDesktopServices>
 
+PeerData* DialogHelper::policyPeer(PeerData* peer) {
+	if (peer && peer->isChannel() && peer->asChannel()->isMonoforum()) {
+		return peer->asChannel()->monoforumLink();
+	}
+	return peer;
+}
+
 DialogHelper::CheckDialogResult DialogHelper::checkAndShowDialogForbidden(PeerData* peerData, UserData* userData, Window::SessionController *controller) {
+	// Report a monoforum's parent channel in the unblock request.
+	if (const auto parent = policyPeer(peerData)) {
+		peerData = parent;
+	}
 	if (!GlobalSecuritySettings::getSettings().isDialogAllowed(peerData)) {
 		if (controller) {
 			controller->closeThirdSection();

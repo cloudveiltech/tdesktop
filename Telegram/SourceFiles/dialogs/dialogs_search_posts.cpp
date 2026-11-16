@@ -160,6 +160,9 @@ void PostsSearch::applyQuery() {
 }
 
 void PostsSearch::requestSearch(const QString &query) {
+	// CloudVeil start: public posts search is blocked entirely
+	return;
+	// CloudVeil end
 	auto &entry = _entries[query];
 	if (entry.searchId || entry.loaded) {
 		return;

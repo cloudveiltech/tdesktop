@@ -764,7 +764,12 @@ void SetupPremium(
 				object_ptr<Ui::VerticalLayout>(container)));
 		wrap->toggleOn(
 			controller->session().credits().tonBalanceValue(
-			) | rpl::map([](CreditsAmount c) -> bool { return !c.empty(); }));
+			) | rpl::map([](CreditsAmount c) -> bool {
+				//CloudVeil start: hide TON balance when stars are disabled
+				return !c.empty()
+					&& !GlobalSecuritySettings::getSettings().disableStars;
+				//CloudVeil end
+			}));
 		wrap->finishAnimating();
 		controller->session().credits().tonLoad();
 		const auto button = AddButtonWithLabel(

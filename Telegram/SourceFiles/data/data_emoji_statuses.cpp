@@ -30,11 +30,6 @@ constexpr auto kMaxTimeout = 6 * 60 * 60 * crl::time(1000);
 
 [[nodiscard]] EmojiStatusCollectible ParseEmojiStatusCollectible(
 		const MTPDemojiStatusCollectible &data) {
-	//CloudVeil start
-	if (GlobalSecuritySettings::getSettings().disableEmojiStatus) {
-		return EmojiStatusCollectible();
-	}
-	//CloudVeil end
 	return EmojiStatusCollectible{
 		.id = data.vcollectible_id().v,
 		.documentId = data.vdocument_id().v,
@@ -125,6 +120,12 @@ EmojiStatusData EmojiStatuses::parse(const MTPEmojiStatus &status) {
 			.until = data.vuntil().value_or_empty(),
 		};
 	}, [&](const MTPDemojiStatusCollectible &data) {
+		//CloudVeil start: no collectible statuses when emoji statuses are
+		// disabled (an empty placeholder made custom emoji lookups fail).
+		if (GlobalSecuritySettings::getSettings().disableEmojiStatus) {
+			return EmojiStatusData();
+		}
+		//CloudVeil end
 		const auto collectibleId = data.vcollectible_id().v;
 		auto &collectible = _collectibleData[collectibleId];
 		if (!collectible) {

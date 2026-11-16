@@ -37,6 +37,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mtproto/mtproto_config.h"
 #include "core/application.h"
 #include "core/click_handler_types.h"
+#include "window/notifications_manager.h"
 #include "window/window_session_controller.h"
 #include "window/main_window.h" // Window::LogoNoMargin.
 #include "ui/image/image.h"
@@ -598,7 +599,7 @@ Data::FileOrigin PeerData::userpicOrigin() const {
 
 Data::FileOrigin PeerData::userpicPhotoOrigin() const {
 	return (isUser() && userpicPhotoId())
-		? Data::FileOriginUserPhoto(peerToUser(id).bare, userpicPhotoId())
+		? Data::FileOriginFullUser(peerToUser(id))
 		: Data::FileOrigin();
 }
 
@@ -1714,6 +1715,23 @@ bool PeerData::useSubsectionTabs() const {
 	return false;
 }
 
+bool PeerData::displayAsForum() const {
+	if (!isForum()) {
+		return false;
+	} else if (Data::IsBotCreatesTopics(this)) {
+		const auto forum = asBot()->botInfo->forum();
+		return forum && !forum->topicsList()->empty();
+	}
+	return true;
+}
+
+bool PeerData::displaySubsectionTabs() const {
+	if (asBot()) {
+		return displayAsForum();
+	}
+	return useSubsectionTabs();
+}
+
 bool PeerData::viewForumAsMessages() const {
 	if (const auto channel = asChannel()) {
 		return channel->viewForumAsMessages();
@@ -2092,6 +2110,7 @@ void PeerData::setIsBlocked(bool is) {
 			}
 		}
 		session().changes().peerUpdated(this, UpdateFlag::IsBlocked);
+		Core::App().notifications().checkDelayed();
 	}
 }
 
@@ -2249,6 +2268,13 @@ std::optional<uint8> ColorIndexFromColor(const MTPPeerColor *color) {
 bool IsBotUserCreatesTopics(not_null<PeerData*> peer) {
 	if (const auto user = peer->asUser()) {
 		return user->botInfo && user->botInfo->userCreatesTopics;
+	}
+	return false;
+}
+
+bool IsBotCreatesTopics(not_null<const PeerData*> peer) {
+	if (const auto user = peer->asUser()) {
+		return user->botInfo && !user->botInfo->userCreatesTopics;
 	}
 	return false;
 }

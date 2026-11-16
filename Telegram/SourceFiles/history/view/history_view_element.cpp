@@ -38,7 +38,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "chat_helpers/stickers_emoji_pack.h"
 #include "payments/payments_reaction_process.h" // TryAddingPaidReaction.
+#include "window/section_widget.h"
 #include "window/window_session_controller.h"
+#include "ui/chat/chat_style.h"
 #include "ui/effects/glare.h"
 #include "ui/effects/path_shift_gradient.h"
 #include "ui/effects/reaction_fly_animation.h"
@@ -66,6 +68,7 @@ namespace {
 
 // A new message from the same sender is attached to previous within 15 minutes.
 constexpr int kAttachMessageToPreviousSecondsDelta = 900;
+constexpr auto kMaxShownLine = 1024 * 1024;
 
 Element *HoveredElement/* = nullptr*/;
 Element *PressedElement/* = nullptr*/;
@@ -122,9 +125,6 @@ private:
 		HistoryMessageMarkupButton::Color color;
 
 		friend inline constexpr auto operator<=>(
-			CacheKey,
-			CacheKey) = default;
-		friend inline constexpr bool operator==(
 			CacheKey,
 			CacheKey) = default;
 	};
@@ -503,6 +503,16 @@ void DefaultElementDelegate::elementStartStickerLoop(
 void DefaultElementDelegate::elementShowPollResults(
 	not_null<PollData*> poll,
 	FullMsgId context) {
+}
+
+void DefaultElementDelegate::elementShowAddPollOption(
+	not_null<Element*> view,
+	not_null<PollData*> poll,
+	FullMsgId context,
+	QRect optionRect) {
+}
+
+void DefaultElementDelegate::elementSubmitAddPollOption(FullMsgId context) {
 }
 
 void DefaultElementDelegate::elementOpenPhoto(
@@ -1165,7 +1175,8 @@ Element::Element(
 		if (user
 			&& user->isBot()
 			&& !user->isRepliesChat()
-			&& !user->isVerifyCodes()) {
+			&& !user->isVerifyCodes()
+			&& !user->botManagerId()) {
 			AddComponents(FakeBotAboutTop::Bit());
 		}
 	}
@@ -1417,8 +1428,7 @@ void Element::overrideMedia(std::unique_ptr<Media> media) {
 	Expects(!history()->owner().groups().find(data()));
 
 	_text = Ui::Text::String(st::msgMinWidth);
-	_textWidth = -1;
-	_textHeight = 0;
+	invalidateTextSizeCache();
 
 	_media = std::move(media);
 	if (!pendingResize()) {
@@ -1585,6 +1595,23 @@ Ui::Text::OnlyCustomEmoji Element::onlyCustomEmoji() const {
 	return _text.toOnlyCustomEmoji();
 }
 
+void Element::skipInactiveTextAppearing() {
+	if (pendingResize()) {
+		// This message isn't displayed right now,
+		// so we can skip text animation.
+		if (const auto appearing = Get<TextAppearing>()) {
+			appearing->widthAnimation.stop();
+			appearing->heightAnimation.stop();
+			appearing->shownLine = kMaxShownLine;
+			appearing->shownWidth
+				= appearing->shownHeight
+				= appearing->revealedLineWidth
+				= 0;
+			appearing->geometryValid = false;
+		}
+	}
+}
+
 const Ui::Text::String &Element::text() const {
 	return _text;
 }
@@ -1603,11 +1630,17 @@ OnlyEmojiAndSpaces Element::isOnlyEmojiAndSpaces() const {
 	}
 }
 
-int Element::textHeightFor(int textWidth) {
-	validateText();
+int Element::textHeightFor(int textWidth) const {
+	constexpr auto kMaxWidth = (1 << 16) - 1;
+	if (textWidth <= 0 || textWidth > kMaxWidth) {
+		return 0;
+	}
+	const_cast<Element*>(this)->validateText();
 	if (_textWidth != textWidth) {
 		_textWidth = textWidth;
-		_textHeight = _text.countHeight(textWidth);
+		const auto result = _text.countSize(textWidth);
+		_textRealWidth = std::clamp(result.width(), 0, kMaxWidth);
+		_textHeight = result.height();
 	}
 	return _textHeight;
 }
@@ -1675,19 +1708,25 @@ auto Element::contextDependentServiceText() -> TextWithLinks {
 
 	if (info->closed) {
 		return {
-			tr::lng_action_topic_closed(
+			tr::lng_action_topic_closed_by(
 				tr::now,
+				lt_from,
+				fromLink(1),
 				lt_topic,
 				wrapParentTopic(),
 				tr::marked),
+			{ from->createOpenLink() },
 		};
 	} else if (info->reopened) {
 		return {
-			tr::lng_action_topic_reopened(
+			tr::lng_action_topic_reopened_by(
 				tr::now,
+				lt_from,
+				fromLink(1),
 				lt_topic,
 				wrapParentTopic(),
 				tr::marked),
+			{ from->createOpenLink() },
 		};
 	} else if (info->hidden) {
 		return {
@@ -1873,20 +1912,17 @@ void Element::setTextWithLinks(
 	if (const auto next = _text.nextFormattedDateUpdate()) {
 		history()->session().data().registerFormattedDateUpdate(next, this);
 	}
-	_textWidth = -1;
-	_textHeight = 0;
+	invalidateTextSizeCache();
 }
 
 void Element::validateTextSkipBlock(bool has, int width, int height) {
 	validateText();
 	if (!has) {
 		if (_text.removeSkipBlock()) {
-			_textWidth = -1;
-			_textHeight = 0;
+			invalidateTextSizeCache();
 		}
 	} else if (_text.updateSkipBlock(width, height)) {
-		_textWidth = -1;
-		_textHeight = 0;
+		invalidateTextSizeCache();
 	}
 }
 
@@ -1938,6 +1974,7 @@ bool Element::computeIsAttachToPrevious(not_null<Element*> previous) {
 		return !item->isService()
 			&& !item->isEmpty()
 			&& !item->isPostHidingAuthor()
+			&& !item->isGuestChatBotMessage()
 			&& (!item->history()->peer->isMegagroup()
 				|| !view->hasOutLayout()
 				|| !item->from()->isChannel());
@@ -1969,9 +2006,18 @@ bool Element::computeIsAttachToPrevious(not_null<Element*> previous) {
 					prevForwarded,
 					item,
 					forwarded);
-			} else {
-				return prev->from() == item->from();
+			} else if (prev->from() != item->from()) {
+			    return false;
+			} else if (!item->author()->isMegagroup()) {
+				return true;
 			}
+			const auto rank = [&](not_null<HistoryItem*> item) {
+			    const auto msgsigned = item->Get<HistoryMessageSigned>();
+				return (msgsigned && msgsigned->isAnonymousRank)
+					? msgsigned->author
+					: QString();
+			};
+			return rank(item) == rank(prev);
 		}
 	}
 	return false;
@@ -2430,6 +2476,9 @@ void Element::refreshReactions() {
 				}
 				const auto item = strong->data();
 				const auto controller = ExtractController(context);
+				const auto wasChosen = ranges::contains(
+					item->chosenReactions(),
+					id);
 				if (item->reactionsAreTags()) {
 					if (item->history()->session().premium()) {
 						const auto tag = Data::SearchTagToQuery(id);
@@ -2448,6 +2497,10 @@ void Element::refreshReactions() {
 						1,
 						std::nullopt,
 						controller->uiShow());
+					return;
+				} else if (!wasChosen
+					&& controller
+					&& Window::ShowReactPremiumError(controller, item, id)) {
 					return;
 				} else {
 					const auto source = HistoryReactionSource::Existing;
@@ -2519,17 +2572,22 @@ void Element::itemTextUpdated() {
 	_flags &= ~Flag::SummaryShown;
 	clearSpecialOnlyEmoji();
 	_text = Ui::Text::String(st::msgMinWidth);
-	_textWidth = -1;
-	_textHeight = 0;
+	invalidateTextSizeCache();
 	if (_media && !data()->media()) {
 		refreshMedia(nullptr);
 	}
 }
 
 void Element::blockquoteExpandChanged() {
-	_textWidth = -1;
-	_textHeight = 0;
+	invalidateTextSizeCache();
 	history()->owner().requestViewResize(this);
+}
+
+void Element::invalidateTextSizeCache() {
+	_textWidth = 0;
+	_textHeight = 0;
+	_textRealWidth = 0;
+	invalidateTextDependentCache();
 }
 
 void Element::unloadHeavyPart() {
@@ -2883,6 +2941,10 @@ QRect Element::effectIconGeometry() const {
 	return QRect();
 }
 
+QPoint Element::mediaTopLeft() const {
+	return innerGeometry().topLeft();
+}
+
 Element::~Element() {
 	setReactions(nullptr);
 
@@ -3056,6 +3118,127 @@ int FindViewTaskY(not_null<Element*> view, int taskId, int yfrom) {
 		}
 	}
 	return origin.y() + (yfrom + ytill) / 2;
+}
+
+int FindViewPollOptionY(
+		not_null<Element*> view,
+		const QByteArray &option,
+		int yfrom) {
+	auto request = HistoryView::StateRequest();
+	request.flags = Ui::Text::StateRequest::Flag::LookupLink;
+	const auto single = st::messageTextStyle.font->height;
+	const auto inner = view->innerGeometry();
+	const auto origin = inner.topLeft();
+	if (origin.y() < 0
+		|| origin.y() + inner.height() > view->height()
+		|| inner.height() <= 0) {
+		return yfrom;
+	}
+	const auto media = view->data()->media();
+	const auto poll = media ? media->poll() : nullptr;
+	if (!poll) {
+		return yfrom;
+	}
+	const auto &answers = poll->answers;
+	const auto indexOf = [&](const QByteArray &opt) -> int {
+		return int(ranges::find(
+			answers, opt, &PollAnswer::option) - begin(answers));
+	};
+	const auto index = indexOf(option);
+	const auto count = int(answers.size());
+	if (index == count) {
+		return yfrom;
+	}
+	yfrom = std::max(yfrom - origin.y(), 0);
+	auto ytill = inner.height() - 1;
+	const auto middle = (yfrom + ytill) / 2;
+	const auto fory = [&](int y) {
+		const auto state = view->textState(origin + QPoint(0, y), request);
+		const auto &link = state.link;
+		const auto opt = link
+			? link->property(kPollOptionProperty).toByteArray()
+			: QByteArray();
+		const auto idx = !opt.isEmpty() ? indexOf(opt) : count;
+		return (idx < count) ? idx : (y < middle) ? -1 : count;
+	};
+	auto indexfrom = fory(yfrom);
+	auto indextill = fory(ytill);
+	if ((yfrom >= ytill) || (indexfrom >= index)) {
+		return origin.y() + yfrom;
+	} else if (indextill <= index) {
+		return origin.y() + ytill;
+	}
+	while (ytill - yfrom >= 2 * single) {
+		const auto mid = (yfrom + ytill) / 2;
+		const auto found = fory(mid);
+		if (found == index
+			|| indexfrom > found
+			|| indextill < found) {
+			return origin.y() + mid;
+		} else if (found < index) {
+			yfrom = mid;
+			indexfrom = found;
+		} else {
+			ytill = mid;
+			indextill = found;
+		}
+	}
+	return origin.y() + (yfrom + ytill) / 2;
+}
+
+HighlightYRange FindHighlightYRange(
+		not_null<Element*> view,
+		const Ui::ChatPaintHighlight &highlight) {
+	const auto sel = highlight.range;
+	const auto single = st::messageTextStyle.font->height;
+	if (IsSubGroupSelection(sel)) {
+		const auto index = FirstGroupItemIndex(sel);
+		if (index < 0) {
+			return {};
+		}
+		const auto media = view->media();
+		if (!media) {
+			return {};
+		}
+		const auto rect = media->groupItemRect(index);
+		if (rect.isEmpty()) {
+			return {};
+		}
+		const auto inner = view->innerGeometry();
+		return {
+			inner.y() + rect.y() - 2 * single,
+			inner.y() + rect.y() + rect.height() + 2 * single,
+		};
+	}
+	if (highlight.todoItemId) {
+		const auto y = FindViewTaskY(view, highlight.todoItemId);
+		return { y - 4 * single, y + 4 * single };
+	}
+	if (!highlight.pollOption.isEmpty()) {
+		const auto y = FindViewPollOptionY(view, highlight.pollOption);
+		return { y - 4 * single, y + 4 * single };
+	}
+	if (!sel.empty()) {
+		const auto begin = FindViewY(view, sel.from) - single;
+		const auto end = FindViewY(view, sel.to, begin + single)
+			+ 2 * single;
+		return { begin, end };
+	}
+	return {};
+}
+
+int AdjustScrollForRange(
+		int viewTop,
+		int available,
+		HighlightYRange range) {
+	auto result = viewTop;
+	if (range.end > available) {
+		result = std::max(result, viewTop + range.end - available);
+	}
+	if (viewTop + range.begin < result) {
+		result = viewTop + range.begin;
+	}
+	return result;
 }
 
 Window::SessionController *ExtractController(const ClickContext &context) {

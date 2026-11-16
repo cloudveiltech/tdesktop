@@ -14,6 +14,7 @@ class Show;
 namespace Ui {
 struct PreparedList;
 struct PreparedFile;
+struct PreparedBundle;
 } // namespace Ui
 
 namespace Window {
@@ -65,6 +66,7 @@ enum class ChatRestriction {
 	PinMessages = (1 << 17),
 	CreateTopics = (1 << 18),
 	EditRank = (1 << 26),
+	SendReactions = (1 << 27),
 };
 inline constexpr bool is_flag_type(ChatRestriction) { return true; }
 using ChatRestrictions = base::flags<ChatRestriction>;
@@ -258,5 +260,17 @@ void ShowSendErrorToast(
 	std::shared_ptr<ChatHelpers::Show> show,
 	not_null<PeerData*> peer,
 	SendError error);
+
+bool ShowSendError(
+	std::shared_ptr<ChatHelpers::Show> show,
+	not_null<PeerData*> peer,
+	const Ui::PreparedList &list,
+	std::optional<bool> compress,
+	bool ignoreSlowmodeLeft = false);
+bool ShowSendError(
+	std::shared_ptr<ChatHelpers::Show> show,
+	not_null<PeerData*> peer,
+	const Ui::PreparedBundle &bundle,
+	bool ignoreSlowmodeLeft = false);
 
 } // namespace Data

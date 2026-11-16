@@ -25,24 +25,30 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_self_destruct.h"
 #include "api/api_sensitive_content.h"
 #include "api/api_global_privacy.h"
+#include "api/api_reactions_notify_settings.h"
 #include "api/api_updates.h"
 #include "api/api_user_privacy.h"
+#include "api/api_read_metrics.h"
 #include "api/api_views.h"
 #include "api/api_confirm_phone.h"
 #include "api/api_unread_things.h"
 #include "api/api_ringtones.h"
+#include "api/api_compose_with_ai.h"
 #include "api/api_transcribes.h"
 #include "api/api_premium.h"
 #include "api/api_user_names.h"
 #include "api/api_websites.h"
 #include "data/business/data_shortcut_messages.h"
+#include "data/components/credits.h"
 #include "data/components/scheduled_messages.h"
 #include "data/notify/data_notify_settings.h"
 #include "data/data_changes.h"
+#include "data/data_media_types.h"
 #include "data/data_web_page.h"
 #include "data/data_folder.h"
 #include "data/data_forum_topic.h"
 #include "data/data_forum.h"
+#include "data/data_message_reaction_id.h"
 #include "data/data_saved_messages.h"
 #include "data/data_saved_music.h"
 #include "data/data_saved_sublist.h"
@@ -70,6 +76,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session_settings.h"
 #include "main/main_account.h"
 #include "ui/boxes/confirm_box.h"
+#include "ui/boxes/emoji_stake_box.h"
+#include "ui/controls/ton_common.h"
 #include "boxes/sticker_set_box.h"
 #include "boxes/premium_limits_box.h"
 #include "window/notifications_manager.h"
@@ -177,10 +185,13 @@ ApiWrap::ApiWrap(not_null<Main::Session*> session)
 , _selfDestruct(std::make_unique<Api::SelfDestruct>(this))
 , _sensitiveContent(std::make_unique<Api::SensitiveContent>(this))
 , _globalPrivacy(std::make_unique<Api::GlobalPrivacy>(this))
+, _reactionsNotifySettings(
+	std::make_unique<Api::ReactionsNotifySettings>(this))
 , _userPrivacy(std::make_unique<Api::UserPrivacy>(this))
 , _inviteLinks(std::make_unique<Api::InviteLinks>(this))
 , _chatLinks(std::make_unique<Api::ChatLinks>(this))
 , _views(std::make_unique<Api::ViewsManager>(this))
+, _readMetrics(std::make_unique<Api::ReadMetrics>(this))
 , _confirmPhone(std::make_unique<Api::ConfirmPhone>(this))
 , _peerPhoto(std::make_unique<Api::PeerPhoto>(this))
 , _polls(std::make_unique<Api::Polls>(this))
@@ -188,6 +199,7 @@ ApiWrap::ApiWrap(not_null<Main::Session*> session)
 , _chatParticipants(std::make_unique<Api::ChatParticipants>(this))
 , _unreadThings(std::make_unique<Api::UnreadThings>(this))
 , _ringtones(std::make_unique<Api::Ringtones>(this))
+, _composeWithAi(std::make_unique<Api::ComposeWithAi>(this))
 , _transcribes(std::make_unique<Api::Transcribes>(this))
 , _premium(std::make_unique<Api::Premium>(this))
 , _usernames(std::make_unique<Api::Usernames>(this))
@@ -203,6 +215,7 @@ ApiWrap::ApiWrap(not_null<Main::Session*> session)
 			requestMoreDialogsIfNeeded();
 		}, _session->lifetime());
 
+		_reactionsNotifySettings->reload();
 		setupSupportMode();
 	});
 }
@@ -550,6 +563,30 @@ void ApiWrap::sendMessageFail(
 			}
 		}
 		peer->updateFull();
+	} else if (error == u"BALANCE_TOO_LOW"_q) {
+		const auto item = _session->data().message(itemId);
+		const auto stake = (item && item->media())
+			? item->media()->diceGameOutcome().stakeNanoTon
+			: int64(0);
+		if (stake > 0) {
+			const auto required = CreditsAmount(
+				stake / Ui::kNanosInOne,
+				stake % Ui::kNanosInOne,
+				CreditsType::Ton);
+			if (randomId) {
+				_session->data().unregisterMessageRandomId(randomId);
+			}
+			item->destroy();
+			if (show) {
+				show->show(Box(
+					Ui::InsufficientTonBox,
+					_session,
+					required));
+			}
+			return;
+		} else if (show) {
+			show->showToast(error);
+		}
 	} else if (show) {
 		show->showToast(error);
 	}
@@ -1411,6 +1448,43 @@ void ApiWrap::deleteAllFromParticipantSend(
 		} else if (const auto history = _session->data().historyLoaded(channel)) {
 			history->requestChatListMessage();
 		}
+	}).send();
+}
+
+void ApiWrap::deleteAllReactionsFromParticipant(
+		not_null<PeerData*> peer,
+		not_null<PeerData*> participant,
+		MsgId originMsgId,
+		const Data::ReactionId &originReaction) {
+	_session->data().removeReactionsFromParticipant(
+		peer,
+		0,
+		participant,
+		originReaction,
+		originMsgId);
+	request(MTPmessages_DeleteParticipantReactions(
+		peer->input(),
+		participant->input()
+	)).send();
+}
+
+void ApiWrap::deleteParticipantReaction(
+		not_null<PeerData*> peer,
+		MsgId msgId,
+		not_null<PeerData*> participant,
+		const Data::ReactionId &reaction) {
+	_session->data().removeReactionsFromParticipant(
+		peer,
+		msgId,
+		participant,
+		reaction,
+		0);
+	request(MTPmessages_DeleteParticipantReaction(
+		peer->input(),
+		MTP_int(msgId.bare),
+		participant->input()
+	)).done([=](const MTPUpdates &result) {
+		applyUpdates(result);
 	}).send();
 }
 
@@ -2576,7 +2650,15 @@ void ApiWrap::refreshFileReference(
 			fail();
 		}
 	}, [&](Data::FileOriginPeerPhoto data) {
-		fail();
+		const auto peer = _session->data().peer(data.peerId);
+		if (const auto channel = peer->asChannel()) {
+			request(MTPchannels_GetFullChannel(
+				channel->inputChannel()));
+		} else if (const auto chat = peer->asChat()) {
+			request(MTPmessages_GetFullChat(chat->inputChat()));
+		} else {
+			fail();
+		}
 	}, [&](Data::FileOriginStickerSet data) {
 		const auto isRecentAttached
 			= (data.setId == Data::Stickers::CloudRecentAttachedSetId);
@@ -3818,6 +3900,7 @@ void ApiWrap::editMedia(
 				.spoiler = false,
 				.album = nullptr,
 				.forceFile = false,
+				.sendLargePhotos = false,
 				.idOverride = 0,
 			})
 			: nullptr),
@@ -3827,6 +3910,7 @@ void ApiWrap::editMedia(
 		.spoiler = file.spoiler,
 		.album = nullptr,
 		.forceFile = forceFile,
+		.sendLargePhotos = file.sendLargePhotos,
 		.idOverride = 0,
 		.displayName = file.displayName,
 	}));
@@ -3835,32 +3919,8 @@ void ApiWrap::editMedia(
 void ApiWrap::sendFiles(
 		Ui::PreparedList &&list,
 		SendMediaType type,
-		TextWithTags &&caption,
 		std::shared_ptr<SendingAlbum> album,
 		const SendAction &action) {
-	const auto haveCaption = !caption.text.isEmpty();
-	const auto captionAttached = !haveCaption
-		? false
-		: (list.files.size() == 1)
-		? list.canAddCaption(
-			album != nullptr,
-			type == SendMediaType::Photo)
-		: Ui::CaptionWillBeAttached(
-			list,
-			[&] {
-				auto way = Ui::SendFilesWay();
-				way.setGroupFiles(album != nullptr);
-				way.setSendImagesAsPhotos(type == SendMediaType::Photo);
-				return way;
-			}(),
-			false);
-	if (haveCaption && !captionAttached) {
-		auto message = MessageToSend(action);
-		message.textWithTags = base::take(caption);
-		message.action.clearDraft = false;
-		sendMessage(std::move(message));
-	}
-
 	const auto to = FileLoadTaskOptions(action);
 	if (album) {
 		album->options = to.options;
@@ -3894,19 +3954,20 @@ void ApiWrap::sendFiles(
 					.spoiler = false,
 					.album = nullptr,
 					.forceFile = false,
+					.sendLargePhotos = false,
 					.idOverride = 0,
 				})
 				: nullptr),
 			.type = uploadWithType,
 			.to = to,
-			.caption = caption,
+			.caption = std::move(file.caption),
 			.spoiler = file.spoiler,
 			.album = album,
 			.forceFile = forceFile,
+			.sendLargePhotos = file.sendLargePhotos,
 			.idOverride = 0,
 			.displayName = file.displayName,
 		}));
-		caption = TextWithTags();
 	}
 	if (album) {
 		_sendingAlbums.emplace(album->groupId, album);
@@ -4462,7 +4523,8 @@ void ApiWrap::uploadAlbumMedia(
 					fields.vid(),
 					fields.vaccess_hash(),
 					fields.vfile_reference()),
-				MTP_int(data.vttl_seconds().value_or_empty()));
+				MTP_int(data.vttl_seconds().value_or_empty()),
+				MTPInputDocument()); // video
 			sendAlbumWithUploaded(item, groupId, media);
 		} break;
 
@@ -4984,6 +5046,10 @@ Api::GlobalPrivacy &ApiWrap::globalPrivacy() {
 	return *_globalPrivacy;
 }
 
+Api::ReactionsNotifySettings &ApiWrap::reactionsNotifySettings() {
+	return *_reactionsNotifySettings;
+}
+
 Api::UserPrivacy &ApiWrap::userPrivacy() {
 	return *_userPrivacy;
 }
@@ -4998,6 +5064,10 @@ Api::ChatLinks &ApiWrap::chatLinks() {
 
 Api::ViewsManager &ApiWrap::views() {
 	return *_views;
+}
+
+Api::ReadMetrics &ApiWrap::readMetrics() {
+	return *_readMetrics;
 }
 
 Api::ConfirmPhone &ApiWrap::confirmPhone() {
@@ -5026,6 +5096,10 @@ Api::UnreadThings &ApiWrap::unreadThings() {
 
 Api::Ringtones &ApiWrap::ringtones() {
 	return *_ringtones;
+}
+
+Api::ComposeWithAi &ApiWrap::composeWithAi() {
+	return *_composeWithAi;
 }
 
 Api::Transcribes &ApiWrap::transcribes() {

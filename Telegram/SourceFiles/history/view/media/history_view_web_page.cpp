@@ -16,7 +16,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/click_handler_types.h"
 #include "core/ui_integration.h"
 #include "data/components/sponsored_messages.h"
-#include "data/stickers/data_custom_emoji.h"
 #include "data/data_file_click_handler.h"
 #include "data/data_photo_media.h"
 #include "data/data_session.h"
@@ -233,10 +232,14 @@ constexpr auto kSponsoredUserpicLines = 2;
 		? tr::lng_view_button_emojipack(tr::now)
 		: (type == WebPageType::StickerSet)
 		? tr::lng_view_button_stickerset(tr::now)
+		: (type == WebPageType::ComposeAiTone)
+		? tr::lng_view_button_style(tr::now)
 		: (type == WebPageType::StoryAlbum)
 		? tr::lng_view_button_storyalbum(tr::now)
 		: (type == WebPageType::GiftCollection)
 		? tr::lng_view_button_collection(tr::now)
+		: (type == WebPageType::NewBot)
+		? tr::lng_view_button_newbot(tr::now)
 		: (type == WebPageType::Auction)
 		? ((page->auction
 			&& page->auction->endDate
@@ -284,7 +287,9 @@ constexpr auto kSponsoredUserpicLines = 2;
 		|| (type == WebPageType::StickerSet)
 		|| (type == WebPageType::StoryAlbum)
 		|| (type == WebPageType::GiftCollection)
-		|| (type == WebPageType::Auction);
+		|| (type == WebPageType::ComposeAiTone)
+		|| (type == WebPageType::Auction)
+		|| (type == WebPageType::NewBot);
 }
 
 } // namespace
@@ -376,9 +381,55 @@ void WebPage::setupAdditionalData() {
 			view->setWebpagePart();
 			view->initSize(single);
 		}
+	} else if (_data->type == WebPageType::ComposeAiTone
+			&& _data->composeToneEmojiId) {
+		if (const auto existing = stickerSetData()
+			; existing && !existing->views.empty()) {
+		} else {
+			_additionalData = std::make_unique<AdditionalData>(
+				StickerSetData());
+			const auto raw = stickerSetData();
+			const auto session = &_data->session();
+			const auto box = UnitedLineHeight() * kStickerSetLines;
+			const auto id = _data->composeToneEmojiId;
+			auto &manager = session->data().customEmojiManager();
+			const auto document = session->data().document(id).get();
+			if (document->sticker()) {
+				auto view = std::make_unique<Sticker>(
+					_parent,
+					document,
+					true);
+				view->setWebpagePart();
+				view->initSize(box);
+				raw->views.push_back(std::move(view));
+			} else {
+				manager.resolve(id, this);
+				_composeToneListening = 1;
+			}
+		}
 	} else if (_data->type == WebPageType::Factcheck) {
 		_additionalData = std::make_unique<AdditionalData>(FactcheckData());
 	}
+}
+
+void WebPage::customEmojiResolveDone(not_null<DocumentData*> document) {
+	if (!document->sticker()) {
+		return;
+	}
+	if (_data->composeToneEmojiId != document->id) {
+		return;
+	}
+	const auto raw = stickerSetData();
+	if (!raw) {
+		return;
+	}
+	const auto box = UnitedLineHeight() * kStickerSetLines;
+	auto view = std::make_unique<Sticker>(_parent, document, true);
+	view->setWebpagePart();
+	view->initSize(box);
+	raw->views.clear();
+	raw->views.push_back(std::move(view));
+	history()->owner().requestViewResize(_parent);
 }
 
 QSize WebPage::countOptimalSize() {
@@ -533,6 +584,7 @@ QSize WebPage::countOptimalSize() {
 					.paintBgFactory = [=] {
 						return UniqueGiftBg(_parent, _data->uniqueGift);
 					},
+					.expandCurrentWidth = true,
 				});
 	} else if (!_attach && _data->auction) {
 		const auto &gift = _data->auction->auctionGift;
@@ -556,6 +608,7 @@ QSize WebPage::countOptimalSize() {
 						_data->auction->auctionGift->auctionStartDate,
 						_data->auction->endDate);
 				},
+				.expandCurrentWidth = true,
 			});
 	} else if (!_attach && !_asArticle) {
 		_attach = CreateAttach(
@@ -1013,8 +1066,8 @@ void WebPage::draw(Painter &p, const PaintContext &context) const {
 		const auto viewsCount = stickerSet->views.size();
 		const auto box = _pixh;
 		const auto topLeft = QPoint(inner.left() + paintw - box, tshift);
-		const auto side = std::ceil(std::sqrt(viewsCount));
-		const auto single = box / side;
+		const auto side = int(std::ceil(std::sqrt(viewsCount)));
+		const auto single = side ? (box / side) : box;
 		for (auto i = 0; i < side; i++) {
 			for (auto j = 0; j < side; j++) {
 				const auto index = i * side + j;
@@ -1623,6 +1676,15 @@ bool WebPage::enforceBubbleWidth() const {
 		&& (_data->document->isWallPaper() || _data->document->isTheme());
 }
 
+bool WebPage::allowsNarrowBubble() const {
+	return (_attach != nullptr)
+		&& (_data->uniqueGift != nullptr || _data->auction != nullptr);
+}
+
+int WebPage::minBubbleWidthForNarrowBubble() const {
+	return allowsNarrowBubble() ? maxWidth() : 0;
+}
+
 void WebPage::playAnimation(bool autoplay) {
 	if (_attach) {
 		if (autoplay) {
@@ -1737,6 +1799,10 @@ int WebPage::bottomInfoPadding() const {
 
 WebPage::~WebPage() {
 	history()->owner().unregisterWebPageView(_data, _parent);
+	if (_composeToneListening) {
+		_data->session().data().customEmojiManager().unregisterListener(
+			this);
+	}
 	if (_photoMedia) {
 		history()->owner().keepAlive(base::take(_photoMedia));
 		_parent->checkHeavyPart();

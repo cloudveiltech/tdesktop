@@ -27,6 +27,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/sandbox.h"
 #include "core/local_url_handlers.h"
 #include "core/launcher.h"
+#include "core/proxy_rotation_manager.h"
 #include "core/ui_integration.h"
 #include "chat_helpers/emoji_keywords.h"
 #include "chat_helpers/stickers_emoji_image_loader.h"
@@ -73,6 +74,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/effects/spoiler_mess.h"
 #include "ui/cached_round_corners.h"
 #include "ui/power_saving.h"
+#include "ui/screen_reader_mode.h"
 #include "storage/storage_domain.h"
 #include "storage/storage_databases.h"
 #include "storage/localstorage.h"
@@ -88,7 +90,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "boxes/premium_limits_box.h"
 #include "ui/accessible/ui_accessible_factory.h"
 #include "ui/boxes/confirm_box.h"
-#include "ui/controls/location_picker.h"
+#include "core/cached_webview_availability.h"
 #include "styles/style_window.h"
 
 #include <QtCore/QStandardPaths>
@@ -145,6 +147,7 @@ struct Application::Private {
 	base::Timer quitTimer;
 	UiIntegration uiIntegration;
 	Settings settings;
+	std::unique_ptr<ProxyRotationManager> proxyRotation;
 };
 
 Application::Application()
@@ -172,6 +175,7 @@ Application::Application()
 , _setupEmailLock(false)
 , _autoLockTimer([=] { checkAutoLock(); }) {
 	Ui::Integration::Set(&_private->uiIntegration);
+	_private->proxyRotation = std::make_unique<ProxyRotationManager>();
 
 	_platformIntegration->init();
 
@@ -233,6 +237,7 @@ Application::~Application() {
 	// Domain::finish() and there is a violation on Ensures(started()).
 	closeAdditionalWindows();
 
+	_private->proxyRotation = nullptr;
 	_domain->finish();
 
 	Local::finish();
@@ -326,9 +331,8 @@ void Application::run() {
 	QMimeDatabase().mimeTypeForName(u"text/plain"_q);
 
 	// Check now to avoid re-entrance later.
-	[[maybe_unused]] const auto ivSupported = Iv::ShowButton();
-	[[maybe_unused]] const auto lpAvailable = Ui::LocationPicker::Available(
-		{});
+	[[maybe_unused]] const auto &webviewAvailability
+		= Core::CachedWebviewAvailability();
 
 	_windows.emplace(nullptr, std::make_unique<Window::Controller>());
 	setLastActiveWindow(_windows.front().second.get());
@@ -494,6 +498,8 @@ void Application::startSettingsAndBackground() {
 	Local::rewriteSettingsIfNeeded();
 	Window::Theme::Background()->start();
 	checkSystemDarkMode();
+	Ui::SetScreenReaderModeDisabled(
+		settings().readPref<bool>(kScreenReaderModeDisabledKey));
 }
 
 void Application::checkSystemDarkMode() {
@@ -652,6 +658,7 @@ bool Application::eventFilter(QObject *object, QEvent *e) {
 	switch (e->type()) {
 	case QEvent::KeyPress: {
 		updateNonIdle();
+		_inAppKeyPressed.fire({});
 		const auto event = static_cast<QKeyEvent*>(e);
 		if (base::Platform::GlobalShortcuts::IsToggleFullScreenKey(event)
 			&& toggleActiveWindowFullScreen()) {
@@ -732,6 +739,39 @@ bool Application::eventFilter(QObject *object, QEvent *e) {
 	} break;
 	}
 
+	switch (e->type()) {
+	case QEvent::TouchBegin:
+		Ui::Integration::Instance().touchCounterIncrement();
+		[[fallthrough]];
+	case QEvent::TouchUpdate:
+	case QEvent::TouchEnd: {
+		_lastTouchProcessed = object->isWidgetType();
+	} break;
+
+	case QEvent::MouseButtonPress:
+	case QEvent::MouseButtonRelease:
+	case QEvent::MouseButtonDblClick:
+	case QEvent::MouseMove: {
+		const auto ev = static_cast<QMouseEvent*>(e);
+		if (ev->source() == Qt::MouseEventSynthesizedBySystem) {
+			const auto widget = static_cast<QWidget*>(object);
+			if (_lastTouchProcessed
+				|| (object->isWidgetType()
+					&& widget->testAttribute(Qt::WA_AcceptTouchEvents))) {
+				_lastMouseIgnored = true;
+				return true;
+			}
+		}
+		_lastMouseIgnored = false;
+	} break;
+
+	case QEvent::ContextMenu: {
+		const auto ev = static_cast<QContextMenuEvent*>(e);
+		return (ev->reason() == QContextMenuEvent::Mouse)
+			&& _lastMouseIgnored;
+	} break;
+	}
+
 	return QObject::eventFilter(object, e);
 }
 
@@ -803,6 +843,17 @@ void Application::setCurrentProxy(
 	refreshGlobalProxy();
 	_proxyChanges.fire({ was, now });
 	my.connectionTypeChangesNotify();
+	proxyRotationSettingsChanged();
+}
+
+void Application::proxyRotationSettingsChanged() {
+	_private->proxyRotation->settingsChanged();
+}
+
+void Application::checkProxyRotation(
+		not_null<Main::Account*> account,
+		int32 state) {
+	_private->proxyRotation->handleConnectionStateChanged(account, state);
 }
 
 auto Application::proxyChanges() const -> rpl::producer<ProxyChange> {
@@ -1109,7 +1160,25 @@ void Application::checkStartUrls() {
 	if (!cRefStartUrls().isEmpty()
 		&& _lastActivePrimaryWindow
 		&& !_lastActivePrimaryWindow->locked()) {
-		_lastActivePrimaryWindow->widget()->sendPaths();
+		auto interprets = QStringList();
+		auto paths = QStringList();
+		cRefStartUrls() = ranges::views::all(
+			cRefStartUrls()
+		) | ranges::views::filter([&](const QUrl &url) {
+			if (url.scheme() == u"interpret"_q) {
+				interprets.append(url.path());
+				return false;
+			} else if (url.isLocalFile()) {
+				paths.append(url.toLocalFile());
+				return false;
+			}
+			return true;
+		}) | ranges::to<QList<QUrl>>;
+		if (!interprets.isEmpty() || !paths.isEmpty()) {
+			_lastActivePrimaryWindow->widget()->handleStartFiles(
+				std::move(interprets),
+				std::move(paths));
+		}
 	}
 }
 
@@ -1229,6 +1298,10 @@ crl::time Application::lastNonIdleTime() const {
 	return std::max(
 		base::Platform::LastUserInputTime().value_or(0),
 		_lastNonIdleTime);
+}
+
+rpl::producer<> Application::inAppKeyPressed() const {
+	return _inAppKeyPressed.events();
 }
 
 rpl::producer<bool> Application::passcodeLockChanges() const {

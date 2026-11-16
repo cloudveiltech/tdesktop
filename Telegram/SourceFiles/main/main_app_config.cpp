@@ -194,6 +194,18 @@ int AppConfig::pollOptionsLimit() const {
 	return get<int>(u"poll_answers_max"_q, 12);
 }
 
+int AppConfig::pollAnswerDeletePeriod() const {
+	return get<int>(u"poll_answer_delete_period"_q, 300);
+}
+
+int AppConfig::pollCountriesMax() const {
+	return get<int>(u"poll_countries_max"_q, 12);
+}
+
+QString AppConfig::phoneCountryIso2() const {
+	return get<QString>(u"phone_country_iso2"_q, QString());
+}
+
 int AppConfig::todoListItemsLimit() const {
 	return get<int>(
 		u"todo_items_max"_q,

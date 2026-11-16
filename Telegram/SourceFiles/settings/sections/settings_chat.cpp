@@ -98,6 +98,10 @@ using namespace Builder;
 const auto kSchemesList = Window::Theme::EmbeddedThemes();
 constexpr auto kCustomColorButtonParts = 7;
 
+[[nodiscard]] bool IsSystemAccentColorSupported() {
+	return Window::Theme::SystemAccentColor().has_value();
+}
+
 class ColorsPalette final {
 public:
 	using Type = Window::Theme::EmbeddedType;
@@ -277,8 +281,12 @@ void ColorsPalette::show(Type type) {
 		return;
 	}
 	list.insert(list.begin(), scheme->accentColor);
-	const auto color = Core::App().settings().themesAccentColors().get(type);
-	const auto current = color.value_or(scheme->accentColor);
+	const auto &settings = Core::App().settings();
+	const auto color = settings.themesAccentColors().get(type);
+	const auto current = (settings.systemAccentColorEnabled()
+		? Window::Theme::SystemAccentColor()
+		: std::optional<QColor>()).value_or(
+			color.value_or(scheme->accentColor));
 	const auto i = ranges::find(list, current);
 	if (i == end(list)) {
 		list.back() = current;
@@ -804,6 +812,22 @@ void BuildThemeOptionsSection(SectionBuilder &builder) {
 			.keywords = { u"accent"_q, u"color"_q, u"customize"_q },
 		};
 	});
+
+	if (IsSystemAccentColorSupported()) {
+		builder.add(nullptr, [] {
+			return SearchEntry{
+				.id = u"chat/themes-system-accent"_q,
+				.title = tr::lng_settings_theme_system_accent_color(tr::now),
+				.keywords = {
+					u"system"_q,
+					u"accent"_q,
+					u"color"_q,
+					u"theme"_q,
+					u"os"_q,
+				},
+			};
+		});
+	}
 }
 
 void BuildThemeSettingsSection(SectionBuilder &builder) {
@@ -2322,6 +2346,16 @@ void SetupDefaultThemes(
 	const auto palette = Ui::CreateChild<ColorsPalette>(
 		container.get(),
 		container.get());
+	const auto systemAccentWrap = container->add(
+		object_ptr<Ui::SlideWrap<Ui::Checkbox>>(
+			container,
+			object_ptr<Ui::Checkbox>(
+				container,
+				tr::lng_settings_theme_system_accent_color(tr::now),
+				Core::App().settings().systemAccentColorEnabled(),
+				st::settingsCheckbox)),
+		st::settingsCheckboxPadding);
+	systemAccentWrap->setDuration(0);
 
 	const auto chosen = [] {
 		const auto &object = Background()->themeObject();
@@ -2397,20 +2431,28 @@ void SetupDefaultThemes(
 			palette->show(type);
 		}
 
-		const auto &colors = Core::App().settings().themesAccentColors();
+		const auto &settings = Core::App().settings();
 		const auto i = checks.find(type);
 		const auto scheme = ranges::find(kSchemesList, type, &Scheme::type);
 		if (scheme == end(kSchemesList)) {
 			return;
 		}
+		const auto color = settings.systemAccentColorEnabled()
+			? Window::Theme::SystemAccentColor()
+			: settings.themesAccentColors().get(type);
 		if (i != end(checks)) {
-			if (const auto color = colors.get(type)) {
+			if (color) {
 				const auto colorizer = ColorizerFrom(*scheme, *color);
 				i->second->setColors(ColorsFromScheme(*scheme, colorizer));
 			} else {
 				i->second->setColors(ColorsFromScheme(*scheme));
 			}
 		}
+	};
+	const auto refreshSystemAccentVisibility = [=](Type type) {
+		systemAccentWrap->toggle(
+			IsSystemAccentColorSupported() && (type != Type(-1)),
+			anim::type::instant);
 	};
 	group->setChangedCallback([=](Type type) {
 		const auto scheme = ranges::find(
@@ -2426,6 +2468,22 @@ void SetupDefaultThemes(
 	for (const auto &scheme : kSchemesList) {
 		refreshColorizer(scheme.type);
 	}
+	refreshSystemAccentVisibility(chosen());
+	systemAccentWrap->entity()->checkedChanges(
+	) | rpl::on_next([=](bool checked) {
+		auto &settings = Core::App().settings();
+		if (settings.systemAccentColorEnabled() == checked) {
+			return;
+		}
+		settings.setSystemAccentColorEnabled(checked);
+		Local::writeSettings();
+
+		const auto type = chosen();
+		const auto scheme = ranges::find(kSchemesList, type, &Scheme::type);
+		if (scheme != end(kSchemesList)) {
+			apply(*scheme);
+		}
+	}, container->lifetime());
 
 	if (highlights) {
 		const auto add = st::roundRadiusSmall;
@@ -2436,6 +2494,12 @@ void SetupDefaultThemes(
 				.shape = HighlightShape::Ellipse,
 			},
 		} });
+		if (IsSystemAccentColorSupported()) {
+			highlights->push_back({ u"chat/themes-system-accent"_q, {
+				systemAccentWrap->entity(),
+				{ .radius = st::boxRadius }
+			} });
+		}
 	}
 
 	Background()->updates(
@@ -2445,6 +2509,7 @@ void SetupDefaultThemes(
 		return chosen();
 	}) | rpl::on_next([=](Type type) {
 		refreshColorizer(type);
+		refreshSystemAccentVisibility(type);
 		group->setValue(type);
 	}, container->lifetime());
 
@@ -2494,9 +2559,19 @@ void SetupDefaultThemes(
 		if (scheme == end(kSchemesList)) {
 			return;
 		}
-		auto &colors = Core::App().settings().themesAccentColors();
+		auto &settings = Core::App().settings();
+		auto changed = false;
+		if (settings.systemAccentColorEnabled()) {
+			settings.setSystemAccentColorEnabled(false);
+			systemAccentWrap->entity()->setChecked(false);
+			changed = true;
+		}
+		auto &colors = settings.themesAccentColors();
 		if (colors.get(type) != color) {
 			colors.set(type, color);
+			changed = true;
+		}
+		if (changed) {
 			Local::writeSettings();
 		}
 		apply(*scheme);

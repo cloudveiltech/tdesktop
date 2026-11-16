@@ -59,6 +59,7 @@ class SendActionManager;
 class Reactions;
 class EmojiStatuses;
 class ForumIcons;
+class AiComposeTones;
 class ChatFilters;
 class CloudThemes;
 class Streaming;
@@ -141,6 +142,18 @@ struct RecentJoinChat {
 	PeerId joinedPeerId = 0;
 };
 
+struct DrawToReplyRequest {
+	FullMsgId messageId;
+	uint64 photoId = 0;
+	uint64 documentId = 0;
+};
+
+struct ReactionsRemoved {
+	not_null<PeerData*> peer;
+	MsgId msgId = 0;
+	not_null<PeerData*> participant;
+};
+
 struct RequestViewRepaint {
 	not_null<const HistoryView::Element*> view;
 	QRect rect;
@@ -167,6 +180,9 @@ public:
 	}
 	[[nodiscard]] const Groups &groups() const {
 		return _groups;
+	}
+	[[nodiscard]] AiComposeTones &aiComposeTones() const {
+		return *_aiComposeTones;
 	}
 	[[nodiscard]] ChatFilters &chatsFilters() const {
 		return *_chatsFilters;
@@ -381,12 +397,20 @@ public:
 	[[nodiscard]] rpl::producer<GiftAuctionGot> giftAuctionGots() const;
 	void requestItemRepaint(not_null<const HistoryItem*> item, QRect r = QRect());
 	[[nodiscard]] rpl::producer<not_null<const HistoryItem*>> itemRepaintRequest() const;
+	void requestDrawToReply(DrawToReplyRequest request);
+	[[nodiscard]] rpl::producer<DrawToReplyRequest> drawToReplyRequests() const;
 	void requestViewRepaint(not_null<const ViewElement*> view, QRect r = QRect());
 	[[nodiscard]] rpl::producer<RequestViewRepaint> viewRepaintRequest() const;
 	void requestItemResize(not_null<const HistoryItem*> item);
 	[[nodiscard]] rpl::producer<not_null<const HistoryItem*>> itemResizeRequest() const;
 	void requestViewResize(not_null<ViewElement*> view);
 	[[nodiscard]] rpl::producer<not_null<ViewElement*>> viewResizeRequest() const;
+	struct ViewHeightAdjusted {
+		not_null<ViewElement*> view;
+		int delta = 0;
+	};
+	void notifyViewHeightAdjusted(not_null<ViewElement*> view, int delta);
+	[[nodiscard]] rpl::producer<ViewHeightAdjusted> viewHeightAdjusted() const;
 	void requestItemShowHighlight(not_null<HistoryItem*> item);
 	[[nodiscard]] rpl::producer<not_null<HistoryItem*>> itemShowHighlightRequest() const;
 	void requestItemViewRefresh(not_null<const HistoryItem*> item);
@@ -397,6 +421,8 @@ public:
 	[[nodiscard]] rpl::producer<not_null<const History*>> historyUnloaded() const;
 	void notifyItemDataChange(not_null<HistoryItem*> item);
 	[[nodiscard]] rpl::producer<not_null<HistoryItem*>> itemDataChanges() const;
+	void notifyReactionsRemoved(ReactionsRemoved update);
+	[[nodiscard]] rpl::producer<ReactionsRemoved> reactionsRemoved() const;
 
 	[[nodiscard]] rpl::producer<not_null<const HistoryItem*>> itemRemoved() const;
 	[[nodiscard]] rpl::producer<not_null<const HistoryItem*>> itemRemoved(
@@ -553,6 +579,13 @@ public:
 	void processMessagesDeleted(
 		PeerId peerId,
 		const QVector<MTPint> &data);
+
+	void removeReactionsFromParticipant(
+		not_null<PeerData*> peer,
+		MsgId msgId,
+		not_null<PeerData*> participant,
+		const ReactionId &reaction,
+		MsgId originMsgId);
 
 	[[nodiscard]] MsgId nextLocalMessageId();
 	[[nodiscard]] HistoryItem *message(
@@ -749,6 +782,9 @@ public:
 		const MTPBotApp &data);
 
 	[[nodiscard]] not_null<PollData*> poll(PollId id);
+	[[nodiscard]] HistoryItem *findItemForPoll(PollId id) const;
+	[[nodiscard]] std::vector<not_null<PeerData*>> pollRecentVoters(
+		PollId id) const;
 	not_null<PollData*> processPoll(const MTPPoll &data);
 	not_null<PollData*> processPoll(const MTPDmessageMediaPoll &data);
 
@@ -841,6 +877,7 @@ public:
 	[[nodiscard]] bool hasPendingWebPageGamePollTodoListNotification() const;
 	void sendWebPageGamePollTodoListNotifications();
 	[[nodiscard]] rpl::producer<not_null<WebPageData*>> webPageUpdates() const;
+	[[nodiscard]] rpl::producer<not_null<PollData*>> pollUpdates() const;
 
 	void channelDifferenceTooLong(not_null<ChannelData*> channel);
 	[[nodiscard]] rpl::producer<not_null<ChannelData*>> channelDifferenceTooLong() const;
@@ -1053,6 +1090,7 @@ private:
 		std::unique_ptr<WebPageStickerSet> stickerSet,
 		std::shared_ptr<UniqueGift> uniqueGift,
 		std::unique_ptr<WebPageAuction> auction,
+		DocumentId composeToneEmojiId,
 		int duration,
 		const QString &author,
 		bool hasLargeMedia,
@@ -1125,10 +1163,13 @@ private:
 	rpl::event_stream<RequestViewRepaint> _viewRepaintRequest;
 	rpl::event_stream<not_null<const HistoryItem*>> _itemResizeRequest;
 	rpl::event_stream<not_null<ViewElement*>> _viewResizeRequest;
+	rpl::event_stream<ViewHeightAdjusted> _viewHeightAdjusted;
 	rpl::event_stream<not_null<HistoryItem*>> _itemShowHighlightRequest;
 	rpl::event_stream<not_null<const HistoryItem*>> _itemViewRefreshRequest;
 	rpl::event_stream<not_null<HistoryItem*>> _itemTextRefreshRequest;
+	rpl::event_stream<DrawToReplyRequest> _drawToReplyRequests;
 	rpl::event_stream<not_null<HistoryItem*>> _itemDataChanges;
+	rpl::event_stream<ReactionsRemoved> _reactionsRemoved;
 	rpl::event_stream<not_null<const HistoryItem*>> _itemRemoved;
 	rpl::event_stream<not_null<const ViewElement*>> _viewRemoved;
 	rpl::event_stream<not_null<const ViewElement*>> _viewPaidReactionSent;
@@ -1234,6 +1275,7 @@ private:
 	base::flat_set<not_null<TodoListData*>> _todoListsUpdated;
 
 	rpl::event_stream<not_null<WebPageData*>> _webpageUpdates;
+	rpl::event_stream<not_null<PollData*>> _pollUpdates;
 	rpl::event_stream<not_null<ChannelData*>> _channelDifferenceTooLong;
 	rpl::event_stream<not_null<DocumentData*>> _documentLoadProgress;
 	base::flat_set<not_null<ChannelData*>> _suggestToGigagroup;
@@ -1304,6 +1346,7 @@ private:
 	mutable base::flat_map<PeerId, std::vector<FullMsgId>> _messagesWithPeer;
 
 	Groups _groups;
+	const std::unique_ptr<AiComposeTones> _aiComposeTones;
 	const std::unique_ptr<ChatFilters> _chatsFilters;
 	const std::unique_ptr<CloudThemes> _cloudThemes;
 	const std::unique_ptr<SendActionManager> _sendActionManager;

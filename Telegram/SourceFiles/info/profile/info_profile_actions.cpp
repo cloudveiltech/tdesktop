@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_blocked_peers.h"
 #include "api/api_chat_participants.h"
 #include "api/api_credits.h"
+#include "api/api_report.h"
 #include "api/api_statistics.h"
 #include "apiwrap.h"
 #include "base/call_delayed.h"
@@ -51,6 +52,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/history_item_components.h"
 #include "history/history_item_helpers.h"
 #include "history/view/history_view_item_preview.h"
+#include "history/view/reactions/history_view_reactions_list.h"
 #include "info/bot/earn/info_bot_earn_widget.h"
 #include "info/bot/starref/info_bot_starref_common.h"
 #include "info/channel_statistics/earn/earn_format.h"
@@ -79,6 +81,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/rect.h"
 #include "ui/ui_utility.h"
 #include "ui/text/format_values.h"
+#include "ui/text/text_utilities.h"
 #include "ui/text/text_variant.h"
 #include "ui/toast/toast.h"
 #include "ui/vertical_list.h"
@@ -95,6 +98,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_controller.h" // Window::Controller::show.
 #include "window/window_peer_menu.h"
 #include "window/window_session_controller.h"
+#include "styles/style_boxes.h"
 #include "styles/style_channel_earn.h" // st::channelEarnCurrencyCommonMargins
 #include "styles/style_info.h"
 #include "styles/style_layers.h"
@@ -395,6 +399,7 @@ base::options::toggle ShowChannelJoinedBelowAbout({
 			st::infoHoursOuter),
 		st::infoProfileLabeledPadding - st::infoHoursOuterMargin);
 	const auto button = result->entity();
+	button->setTextTransform(Ui::RoundButtonTextTransform::ToUpper);
 	const auto inner = Ui::CreateChild<Ui::VerticalLayout>(button);
 	button->widthValue() | rpl::on_next([=](int width) {
 		const auto margin = st::infoHoursOuterMargin;
@@ -631,7 +636,6 @@ base::options::toggle ShowChannelJoinedBelowAbout({
 		labelWrap,
 		std::move(linkText),
 		st::defaultTableSmallButton);
-	link->setTextTransform(Ui::RoundButton::TextTransform::NoTransform);
 	link->setClickedCallback([=] {
 		state->myTimezone = !state->myTimezone.current();
 		state->expanded = true;
@@ -884,6 +888,7 @@ void DeleteContactNote(
 		st::infoProfileLabeledPadding - st::infoHoursOuterMargin);
 	result->setDuration(st::infoSlideDuration);
 	const auto button = result->entity();
+	button->setTextTransform(Ui::RoundButtonTextTransform::ToUpper);
 
 	auto outer = Ui::CreateChild<Ui::SlideWrap<Ui::VerticalLayout>>(
 		button,
@@ -1218,7 +1223,7 @@ public:
 private:
 	object_ptr<Ui::RpWidget> setupPersonalChannel(not_null<UserData*> user);
 	object_ptr<Ui::RpWidget> setupInfo();
-	void setupMainApp();
+	void setupMainApp(bool suppressBottom = false);
 	void setupBotPermissions();
 	void addShowTopicsListButton(
 		Ui::MultiSlideTracker &tracker,
@@ -1230,6 +1235,10 @@ private:
 		Ui::MultiSlideTracker *buttonTracker);
 
 	void addReportReaction(
+		Ui::MultiSlideTracker &tracker,
+		Ui::MultiSlideTracker *buttonTracker);
+	void addDeleteReaction(
+		GroupReactionOrigin data,
 		Ui::MultiSlideTracker &tracker,
 		Ui::MultiSlideTracker *buttonTracker);
 	void addReportReaction(
@@ -1329,13 +1338,11 @@ void ReportReactionBox(
 					ChatRestrictionsInfo());
 			}
 		}
-		data.group->session().api().request(MTPmessages_ReportReaction(
-			data.group->input(),
-			MTP_int(data.messageId.bare),
-			participant->input()
-		)).done(crl::guard(controller, [=] {
-			controller->showToast(tr::lng_report_thanks(tr::now));
-		})).send();
+		Api::ReportReaction(
+			controller->uiShow(),
+			data.group,
+			data.messageId,
+			participant);
 		sent();
 		box->closeBox();
 	}, st::attentionBoxButton);
@@ -2124,7 +2131,7 @@ object_ptr<Ui::RpWidget> DetailsFiller::setupPersonalChannel(
 	return result;
 }
 
-void DetailsFiller::setupMainApp() {
+void DetailsFiller::setupMainApp(bool suppressBottom) {
 	const auto button = _wrap->add(
 		object_ptr<Ui::RoundButton>(
 			_wrap,
@@ -2132,7 +2139,6 @@ void DetailsFiller::setupMainApp() {
 			st::infoOpenApp),
 		st::infoOpenAppMargin,
 		style::al_justify);
-	button->setTextTransform(Ui::RoundButton::TextTransform::NoTransform);
 
 	const auto user = _peer->asUser();
 	const auto controller = _controller->parentController();
@@ -2148,6 +2154,9 @@ void DetailsFiller::setupMainApp() {
 	});
 
 	const auto url = tr::lng_mini_apps_tos_url(tr::now);
+	const auto parts = suppressBottom
+		? RectPart::Top
+		: (RectPart::Top | RectPart::Bottom);
 	const auto divider = Ui::AddDividerText(
 		_wrap,
 		rpl::combine(
@@ -2163,7 +2172,10 @@ void DetailsFiller::setupMainApp() {
 				text = text.append(u"\n\n"_q).append(verify->description);
 			}
 			return text;
-		}));
+		}),
+		st::defaultBoxDividerLabelPadding,
+		st::defaultDividerLabel,
+		parts);
 	divider->setClickHandlerFilter([=](const auto &...) {
 		UrlClickHandler::Open(url);
 		return false;
@@ -2203,25 +2215,62 @@ void DetailsFiller::addReportReaction(
 		Ui::MultiSlideTracker &tracker,
 		Ui::MultiSlideTracker *buttonTracker) {
 	v::match(_origin.data, [&](GroupReactionOrigin data) {
-		const auto user = _peer->asUser();
 		if (_peer->isSelf()) {
 			return;
-#if 0 // Only public groups allow reaction reports for now.
-		} else if (const auto chat = data.group->asChat()) {
-			const auto ban = chat->canBanMembers()
-				&& (!user || !chat->admins.contains(_peer))
-				&& (!user || chat->creator != user->id);
-			addReportReaction(data, ban, tracker);
-#endif
-		} else if (const auto channel = data.group->asMegagroup()) {
-			if (channel->isPublic()) {
-				const auto ban = channel->canBanMembers()
-					&& (!user || !channel->mgInfo->admins.contains(user->id))
-					&& (!user || channel->mgInfo->creator != user);
-				addReportReaction(data, ban, tracker, buttonTracker);
-			}
+		}
+		if (HistoryView::Reactions::CanModerateReactionByDeleteMessages(
+				data.group)) {
+			addDeleteReaction(data, tracker, buttonTracker);
+			return;
+		}
+		const auto capabilities = Api::GetReactionReportCapabilities(
+			data.group,
+			_peer);
+		if (capabilities.canReport) {
+			addReportReaction(
+				data,
+				capabilities.canBan,
+				tracker,
+				buttonTracker);
 		}
 	}, [](const auto &) {});
+}
+
+void DetailsFiller::addDeleteReaction(
+		GroupReactionOrigin data,
+		Ui::MultiSlideTracker &tracker,
+		Ui::MultiSlideTracker *buttonTracker) {
+	const auto peer = _peer;
+	if (!peer) {
+		return;
+	}
+	const auto controller = _controller->parentController();
+	const auto wrap = _wrap->add(
+		object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
+			_wrap.data(),
+			object_ptr<Ui::VerticalLayout>(_wrap.data())));
+	Ui::AddSkip(wrap->entity());
+	auto shown = rpl::single(true);
+	wrap->toggleOn(rpl::duplicate(shown));
+	rpl::duplicate(shown) | rpl::on_next([=](bool shown) {
+		if (shown) {
+			_dividerOverridden.force_assign(false);
+		}
+	}, wrap->lifetime());
+	AddMainButton(
+		_wrap,
+		tr::lng_context_delete_this_reaction(),
+		std::move(shown),
+		[=] {
+			HistoryView::Reactions::ShowModerateReactionBox(
+				controller,
+				data.group,
+				data.messageId,
+				peer);
+		},
+		tracker,
+		buttonTracker,
+		st::infoMainButtonAttention);
 }
 
 void DetailsFiller::addReportReaction(
@@ -2370,14 +2419,51 @@ object_ptr<Ui::RpWidget> DetailsFiller::fill() {
 		if (const auto info = user->botInfo.get()) {
 			if (info->hasMainApp) {
 				_dividerOverridden.force_assign(true);
-				setupMainApp();
+				const auto managedBotFollows = user->botManagerId()
+					&& !info->canManageEmojiStatus
+					&& user->owner().userLoaded(user->botManagerId());
+				setupMainApp(managedBotFollows);
 			}
 			if (info->canManageEmojiStatus) {
 				_dividerOverridden.force_assign(false);
 				setupBotPermissions();
 			}
+			if (user->botManagerId()) {
+				if (const auto managerUser = user->owner().userLoaded(
+						user->botManagerId())) {
+					if (!info->hasMainApp) {
+						_dividerOverridden.force_assign(true);
+					}
+					const auto botUsername = managerUser->username();
+					const auto linkText = botUsername.isEmpty()
+						? managerUser->name()
+						: (u"@"_q + botUsername);
+					const auto parts = (info->hasMainApp && !info->canManageEmojiStatus)
+						? RectPart::Bottom
+						: (RectPart::Top | RectPart::Bottom);
+					Ui::AddSkip(_wrap);
+					const auto divider = Ui::AddDividerText(
+						_wrap,
+						tr::lng_managed_bot_label(
+							lt_icon,
+							rpl::single(Ui::Text::IconEmoji(&st::managedBotIconEmoji)),
+							lt_bot,
+							rpl::single(tr::link(linkText)),
+							tr::marked),
+						st::defaultBoxDividerLabelPadding,
+						st::defaultDividerLabel,
+						parts);
+					const auto weak = base::make_weak(_controller);
+					divider->setClickHandlerFilter([=](const auto &...) {
+						if (const auto strong = weak.get()) {
+							strong->showPeerInfo(managerUser);
+						}
+						return false;
+					});
+				}
+			}
 		}
-		if (!user->isSelf() && !_sublist) {
+		if (!_sublist) {
 			addReportReaction(_mainTracker, &lastButtonTracker);
 		}
 	} else if (const auto channel = _peer->asChannel()) {
@@ -2462,7 +2548,7 @@ void ActionsFiller::addAffiliateProgram(not_null<UserData*> user) {
 		rpl::duplicate(commission),
 		recipients->open,
 		st::infoSharedMediaCountButton,
-		{ .icon = &st::menuIconSharing, .newBadge = true }));
+		{ .icon = &st::menuIconSharing }));
 	Ui::AddSkip(inner);
 	Ui::AddDividerText(
 		inner,
@@ -2647,7 +2733,10 @@ void ActionsFiller::addBotCommandActions(not_null<UserData*> user) {
 		tr::lng_profile_bot_help(),
 		u"help"_q,
 		&st::infoIconInformation);
-	addBotCommand(tr::lng_profile_bot_settings(), u"settings"_q);
+	addBotCommand(
+		tr::lng_profile_bot_settings(),
+		u"settings"_q,
+		&st::infoIconSettings);
 	//addBotCommand(tr::lng_profile_bot_privacy(), u"privacy"_q);
 	const auto openUrl = [=](const QString &url) {
 		Core::App().iv().openWithIvPreferred(
@@ -2794,11 +2883,7 @@ void ActionsFiller::fillUserActions(not_null<UserData*> user) {
 	if (!user->isSelf() && !user->isSupport() && !user->isVerifyCodes()) {
 		if (user->isBot()) {
 			addBotCommandActions(user);
-		}
-		_wrap->add(CreateSkipWidget(
-			_wrap,
-			st::infoBlockButtonSkip));
-		if (user->isBot()) {
+			_wrap->add(CreateSkipWidget(_wrap, st::infoBlockButtonSkip));
 			addReportAction();
 		}
 		addBlockAction(user);

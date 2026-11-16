@@ -1219,7 +1219,15 @@ void MainWidget::exportTopBarHeightUpdated() {
 }
 
 SendMenu::Details MainWidget::sendMenuDetails() const {
-	return _history->sendMenuDetails();
+	return _mainSection
+		? _mainSection->sendMenuDetails()
+		: _history->sendMenuDetails();
+}
+
+bool MainWidget::processChosenSticker(ChatHelpers::FileChosen &&chosen) {
+	return _mainSection
+		? _mainSection->processChosenSticker(std::move(chosen))
+		: _history->processChosenSticker(std::move(chosen));
 }
 
 void MainWidget::dialogsCancelled() {
@@ -1650,6 +1658,17 @@ void MainWidget::showHistory(
 	floatPlayerCheckVisibility();
 
 	controller()->dropSubsectionTabs();
+}
+
+bool MainWidget::handleDrawToReplyRequest(Data::DrawToReplyRequest request) {
+	if (_mainSection) {
+		using namespace HistoryView;
+		if (const auto с = dynamic_cast<ChatWidget*>(_mainSection.data())) {
+			return с->handleDrawToReplyRequest(std::move(request));
+		}
+		return false;
+	}
+	return _history->handleDrawToReplyRequest(std::move(request));
 }
 
 void MainWidget::showMessage(
@@ -2920,7 +2939,9 @@ void MainWidget::handleHistoryBack() {
 		? rootPeer->owner().historyLoaded(rootPeer)
 		: nullptr;
 	const auto rootFolder = rootHistory ? rootHistory->folder() : nullptr;
-	if (openedForum && (!rootPeer || rootPeer->forum() != openedForum)) {
+	if (openedForum
+		&& _stack.empty()
+		&& (!rootPeer || rootPeer->forum() != openedForum)) {
 		_controller->closeForum();
 	} else if (!openedFolder
 		|| (rootFolder == openedFolder)
@@ -3008,35 +3029,7 @@ void MainWidget::activate() {
 	if (_showAnimation) {
 		return;
 	}
-	const auto urls = base::take(cRefStartUrls());
-	const auto interprets = urls | ranges::views::filter([](const QUrl &url) {
-		return url.scheme() == u"interpret"_q;
-	}) | ranges::views::transform([](const QUrl &url) {
-		return url.path();
-	}) | ranges::to<QStringList>;
-	const auto paths = urls | ranges::views::filter(
-		&QUrl::isLocalFile
-	) | ranges::views::transform(
-		&QUrl::toLocalFile
-	) | ranges::to<QStringList>;
-	if (!interprets.isEmpty() || !paths.isEmpty()) {
-		if (!interprets.isEmpty()) {
-			for (const auto &interpret : interprets) {
-				const auto error = Support::InterpretSendPath(
-					_controller,
-					interpret);
-				if (!error.isEmpty()) {
-					_controller->show(Ui::MakeInformBox(error));
-				}
-			}
-		}
-		if (!paths.isEmpty()) {
-			const auto chosen = [=](not_null<Data::Thread*> thread) {
-				return sendPaths(thread, paths);
-			};
-			Window::ShowChooseRecipientBox(_controller, chosen);
-		}
-	} else if (_mainSection) {
+	if (_mainSection) {
 		_mainSection->setInnerFocus();
 	} else if (_hider) {
 		Assert(_dialogs != nullptr);
@@ -3050,6 +3043,25 @@ void MainWidget::activate() {
 		}
 	}
 	_controller->widget()->fixOrder();
+}
+
+void MainWidget::handleStartFiles(
+		QStringList interprets,
+		QStringList paths) {
+	for (const auto &interpret : interprets) {
+		const auto error = Support::InterpretSendPath(
+			_controller,
+			interpret);
+		if (!error.isEmpty()) {
+			_controller->show(Ui::MakeInformBox(error));
+		}
+	}
+	if (!paths.isEmpty()) {
+		const auto chosen = [=](not_null<Data::Thread*> thread) {
+			return sendPaths(thread, paths);
+		};
+		Window::ShowChooseRecipientBox(_controller, chosen);
+	}
 }
 
 bool MainWidget::animatingShow() const {

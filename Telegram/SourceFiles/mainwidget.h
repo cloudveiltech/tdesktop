@@ -100,6 +100,8 @@ namespace Core {
 class Changelogs;
 } // namespace Core
 
+extern const char kForceComposeSearchOneColumn[];
+
 class MainWidget final
 	: public Ui::RpWidget
 	, private Media::Player::FloatDelegate {
@@ -174,7 +176,8 @@ public:
 		const QString &text) const;
 	bool filesOrForwardDrop(
 		not_null<Data::Thread*> thread,
-		not_null<const QMimeData*> data);
+		not_null<const QMimeData*> data,
+		bool forumResolved = false);
 
 	void sendBotCommand(Bot::SendCommandRequest request);
 	void hideSingleUseKeyboard(FullMsgId replyToId);

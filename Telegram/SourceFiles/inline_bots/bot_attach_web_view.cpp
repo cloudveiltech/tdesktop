@@ -57,7 +57,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "mainwidget.h"
 #include "payments/payments_checkout_process.h"
 #include "payments/payments_non_panel_process.h"
-#include "settings/settings_premium.h"
+#include "settings/sections/settings_premium.h"
 #include "storage/storage_account.h"
 #include "storage/storage_domain.h"
 #include "ui/basic_click_handlers.h"
@@ -1486,6 +1486,10 @@ Webview::ThemeParams WebViewInstance::botThemeParams() {
 	return result;
 }
 
+Ui::Text::MarkedContext WebViewInstance::botTextContext() {
+	return Core::TextContext({ .session = _session });
+}
+
 auto WebViewInstance::botDownloads(bool forceCheck)
 -> const std::vector<Ui::BotWebView::DownloadsEntry> & {
 	return _session->attachWebView().downloads().list(_bot, forceCheck);
@@ -1499,7 +1503,7 @@ void WebViewInstance::botDownloadsAction(
 
 bool WebViewInstance::botHandleLocalUri(QString uri, bool keepOpen) {
 	const auto local = Core::TryConvertUrlToLocal(uri);
-	if (Core::InternalPassportLink(local)) {
+	if (Core::InternalPassportOrOAuthLink(local)) {
 		return true;
 	} else if (!local.startsWith(u"tg://"_q, Qt::CaseInsensitive)
 		&& !local.startsWith(u"tonsite://"_q, Qt::CaseInsensitive)
@@ -1957,7 +1961,7 @@ void WebViewInstance::botSendPreparedMessage(
 				if (!checked) {
 					return;
 				}
-				state->send = nullptr;
+				[[maybe_unused]] const auto ongoing = base::take(state->send);
 				send({ strong }, options);
 			};
 			state->send({});

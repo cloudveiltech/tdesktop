@@ -44,7 +44,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/core_settings.h"
 #include "webrtc/webrtc_audio_input_tester.h"
 #include "webrtc/webrtc_device_resolver.h"
-#include "settings/settings_calls.h"
+#include "settings/sections/settings_calls.h"
+#include "settings/settings_common.h"
 #include "settings/settings_credits_graphics.h"
 #include "main/main_session.h"
 #include "apiwrap.h"
@@ -197,7 +198,7 @@ object_ptr<ShareBox> ShareInviteLinkBox(
 			comment.text = link;
 		}
 		auto &api = peer->session().api();
-		for (const auto thread : result) {
+		for (const auto &thread : result) {
 			auto message = Api::MessageToSend(
 				Api::SendAction(thread, options));
 			message.textWithTags = comment;

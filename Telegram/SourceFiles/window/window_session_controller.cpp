@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "window/window_session_controller.h"
 
+#include "apiwrap.h"
+#include "api/api_cloud_password.h"
 #include "api/api_text_entities.h"
 #include "boxes/peers/add_bot_to_chat_box.h"
 #include "boxes/peers/edit_peer_info_box.h"
@@ -59,6 +61,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_peer_values.h"
 #include "data/data_premium_limits.h"
 #include "data/data_web_page.h"
+#include "data/data_search_calendar.h"
 #include "dialogs/ui/chat_search_in.h"
 #include "passport/passport_form_controller.h"
 #include "chat_helpers/tabbed_selector.h"
@@ -98,6 +101,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_chat_invite.h"
 #include "api/api_global_privacy.h"
 #include "api/api_blocked_peers.h"
+#include "api/api_premium.h"
+#include "boxes/star_gift_craft_box.h"
 #include "support/support_helper.h"
 #include "storage/file_upload.h"
 #include "storage/download_manager_mtproto.h"
@@ -105,9 +110,12 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/themes/window_theme.h"
 #include "window/window_peer_menu.h"
 #include "window/window_session_controller_link_info.h"
-#include "settings/settings_main.h"
-#include "settings/settings_premium.h"
-#include "settings/settings_privacy_security.h"
+#include "settings/cloud_password/settings_cloud_password_input.h"
+#include "settings/cloud_password/settings_cloud_password_start.h"
+#include "settings/cloud_password/settings_cloud_password_email_confirm.h"
+#include "settings/sections/settings_main.h"
+#include "settings/sections/settings_premium.h"
+#include "settings/sections/settings_privacy_security.h"
 #include "styles/style_window.h"
 #include "styles/style_boxes.h"
 #include "styles/style_dialogs.h"
@@ -347,9 +355,9 @@ void DateClickHandler::onClick(ClickContext context) const {
 	const auto my = context.other.value<ClickHandlerContext>();
 	if (const auto window = my.sessionWindow.get()) {
 		if (!_chat.topic()) {
-			window->showCalendar(_chat, _date);
+			window->showCalendar({ _chat, _date, true, true });
 		} else if (const auto strong = _weak.get()) {
-			window->showCalendar(strong, _date);
+			window->showCalendar({ strong, _date, true, true });
 		}
 	}
 }
@@ -1480,7 +1488,7 @@ void SessionNavigation::showSettings(
 }
 
 void SessionNavigation::showSettings(const SectionShow &params) {
-	showSettings(Settings::Main::Id(), params);
+	showSettings(Settings::MainId(), params);
 }
 
 void SessionNavigation::showPollResults(
@@ -1699,6 +1707,50 @@ SessionController::SessionController(
 		activateFirstChatsFilter();
 		setupPremiumToast();
 	});
+
+#if _DEBUG // TEST: Auto-open craft box on startup
+	constexpr auto kGiftsCount = 4;
+	crl::on_main(this, [=] {
+		if (rand() % 2 >= 0) {
+			return;
+		}
+		const auto user = session->user();
+		session->api().request(MTPpayments_GetSavedStarGifts(
+			MTP_flags(MTPpayments_GetSavedStarGifts::Flag::f_exclude_unlimited),
+			user->input(),
+			MTP_int(0),
+			MTP_string(QString()),
+			MTP_int(50)
+		)).done([=](const MTPpayments_SavedStarGifts &result) {
+			const auto &data = result.data();
+			session->data().processUsers(data.vusers());
+			session->data().processChats(data.vchats());
+
+			auto craftableGifts = std::vector<Ui::GiftForCraftEntry>();
+			craftableGifts.reserve(kGiftsCount);
+
+			for (const auto &gift : data.vgifts().v) {
+				if (auto parsed = Api::FromTL(user, gift)) {
+					const auto unique = parsed->info.unique;
+					if (unique
+						&& unique->craftChancePermille > 0
+						&& unique->canCraftAt <= base::unixtime::now()) {
+						craftableGifts.push_back({
+							unique,
+							parsed->manageId,
+						});
+						if (craftableGifts.size() >= kGiftsCount) {
+							break;
+						}
+					}
+				}
+			}
+			if (!craftableGifts.empty()) {
+				Ui::ShowTestGiftCraftBox(this, std::move(craftableGifts));
+			}
+		}).send();
+	});
+#endif
 }
 
 bool SessionController::skipNonPremiumLimitToast(bool download) const {
@@ -1754,7 +1806,7 @@ void SessionController::suggestArchiveAndMute() {
 			tr::lng_suggest_hide_new_about(tr::rich),
 			st::boxLabel));
 		box->addButton(tr::lng_suggest_hide_new_to_settings(), [=] {
-			showSettings(Settings::PrivacySecurity::Id());
+			showSettings(Settings::PrivacySecurityId());
 		});
 		box->setCloseByOutsideClick(false);
 		box->boxClosing(
@@ -2654,7 +2706,9 @@ void SessionController::startOrJoinGroupCall(
 	Core::App().calls().startOrJoinGroupCall(uiShow(), peer, args);
 }
 
-void SessionController::showCalendar(Dialogs::Key chat, QDate requestedDate) {
+void SessionController::showCalendar(ShowCalendarDescriptor &&descriptor) {
+	const auto chat = descriptor.chat;
+	const auto requestedDate = descriptor.date;
 	const auto topic = chat.topic();
 	const auto history = chat.owningHistory();
 	if (!history) {
@@ -2787,9 +2841,50 @@ void SessionController::showCalendar(Dialogs::Key chat, QDate requestedDate) {
 			button->setPointerCursor(false);
 		}
 	};
+	struct SearchCalendarResult {
+		Fn<void(QDate, Ui::CalendarImageSetter)> factory;
+		Fn<void(const QDate &, Fn<void()>)> customJump;
+	};
+	const auto searchCalendarResult = [&]() -> SearchCalendarResult {
+		using Factory = Fn<void(QDate, Ui::CalendarImageSetter)>;
+		using CustomJump = Fn<void(const QDate &, Fn<void()>)>;
+		if (!descriptor.mediaPhoto && !descriptor.mediaVideo) {
+			return {};
+		}
+		const auto search = std::make_shared<Api::SearchCalendarController>(
+			&session(),
+			history->peer->id,
+			(descriptor.mediaPhoto && descriptor.mediaVideo)
+				? Storage::SharedMediaType::PhotoVideo
+				: descriptor.mediaPhoto
+				? Storage::SharedMediaType::Photo
+				: Storage::SharedMediaType::Video);
+		const auto factory = [=](QDate date, Ui::CalendarImageSetter set) {
+			search->monthThumbnails(
+				base::unixtime::serialize(QDateTime(date, QTime())),
+				[=](const std::vector<Api::DayThumbnail> &thumbnails) {
+					for (const auto &thumb : thumbnails) {
+						set(
+							base::unixtime::parse(thumb.date).date(),
+							thumb.image);
+					}
+				});
+		};
+		auto customJump = CustomJump(nullptr);
+		if (const auto performJump = descriptor.customJump) {
+			customJump = [=](const QDate &d, Fn<void()> close) {
+				const auto date = base::unixtime::serialize(
+					QDateTime(d, QTime()));
+				if (const auto msgId = search->resolveMsgIdByDate(date)) {
+					performJump(*msgId, close);
+				}
+			};
+		}
+		return { Factory(factory), std::move(customJump) };
+	}();
 	const auto weak = base::make_weak(this);
 	const auto weakTopic = base::make_weak(topic);
-	const auto jump = [=](const QDate &date) {
+	const auto jump = [=](const QDate &date, Fn<void()> close) {
 		const auto open = [=](not_null<PeerData*> peer, MsgId id) {
 			if (const auto strong = weak.get()) {
 				if (!topic) {
@@ -2810,14 +2905,19 @@ void SessionController::showCalendar(Dialogs::Key chat, QDate requestedDate) {
 			session().api().resolveJumpToDate(chat, date, open);
 		}
 	};
+	const auto requireImage = !!searchCalendarResult.customJump;
 	show(Box<Ui::CalendarBox>(Ui::CalendarBoxArgs{
 		.month = highlighted,
 		.highlighted = highlighted,
-		.callback = [=](const QDate &date) { jump(date); },
+		.callback = searchCalendarResult.customJump
+			? std::move(searchCalendarResult.customJump)
+			: jump,
 		.minDate = minPeerDate,
 		.maxDate = maxPeerDate,
 		.allowsSelection = history->peer->isUser(),
 		.selectionChanged = selectionChanged,
+		.dynamicImageForDate = std::move(searchCalendarResult.factory),
+		.requireImage = requireImage,
 	}));
 }
 
@@ -3708,6 +3808,65 @@ void SessionController::showStarGiftAuction(uint64 giftId) {
 		giftId,
 		[] {},
 		[=] { _starGiftAuctionLifetime.destroy(); });
+}
+
+void SessionController::showCloudPassword(const QString &highlight) {
+	if (!highlight.isEmpty()) {
+		setHighlightControlId(highlight);
+	}
+	session().api().cloudPassword().reload();
+
+	enum class PasswordState {
+		Loading,
+		On,
+		Off,
+		Unconfirmed,
+	};
+	_showCloudPasswordLifetime = rpl::single(
+		PasswordState::Loading
+	) | rpl::then(session().api().cloudPassword().state(
+	) | rpl::map([](const Core::CloudPasswordState &state) {
+		return (!state.unconfirmedPattern.isEmpty())
+			? PasswordState::Unconfirmed
+			: state.hasPassword
+			? PasswordState::On
+			: PasswordState::Off;
+	})) | rpl::distinct_until_changed() | rpl::filter(
+		rpl::mappers::_1 != PasswordState::Loading
+	) | rpl::take(1) | rpl::on_next([=](PasswordState state) {
+		if (state == PasswordState::On) {
+			showSettings(Settings::CloudPasswordInputId());
+		} else if (state == PasswordState::Off) {
+			showSettings(Settings::CloudPasswordStartId());
+		} else if (state == PasswordState::Unconfirmed) {
+			showSettings(Settings::CloudPasswordEmailConfirmId());
+		}
+	});
+}
+
+void SessionController::setHighlightControlId(const QString &id) {
+	_window->setHighlightControlId(id);
+}
+
+QString SessionController::highlightControlId() const {
+	return _window->highlightControlId();
+}
+
+bool SessionController::takeHighlightControlId(const QString &id) {
+	return _window->takeHighlightControlId(id);
+}
+
+void SessionController::checkHighlightControl(
+		const QString &id,
+		QWidget *widget,
+		Settings::HighlightArgs &&args) {
+	_window->checkHighlightControl(id, widget, std::move(args));
+}
+
+void SessionController::checkHighlightControl(
+		const QString &id,
+		QWidget *widget) {
+	_window->checkHighlightControl(id, widget);
 }
 
 SessionController::~SessionController() {

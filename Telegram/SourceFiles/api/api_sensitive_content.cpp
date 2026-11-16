@@ -42,7 +42,9 @@ void SensitiveContent::reload(bool force) {
 		_loadRequestId = 0;
 		const auto &data = result.data();
 		const auto enabled = data.is_sensitive_enabled();
-		const auto canChange = data.is_sensitive_can_change();
+		//CloudVeil start: sensitive (18+) content can never be enabled here
+		const auto canChange = false && data.is_sensitive_can_change();
+		//CloudVeil end
 		const auto changed = (_enabled.current() != enabled)
 			|| (_canChange.current() != canChange);
 		if (changed) {

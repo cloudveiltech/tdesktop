@@ -493,8 +493,14 @@ public:
 	[[nodiscard]] rpl::producer<bool> cornerReactionValue() const {
 		return _cornerReaction.value();
 	}
-	[[nodiscard]] rpl::producer<bool> cornerReactionChanges() const {
-		return _cornerReaction.changes();
+	void setCornerReply(bool value) {
+		_cornerReply = value;
+	}
+	[[nodiscard]] bool cornerReply() const {
+		return _cornerReply.current();
+	}
+	[[nodiscard]] rpl::producer<bool> cornerReplyValue() const {
+		return _cornerReply.value();
 	}
 
 	void setSpellcheckerEnabled(bool value) {
@@ -903,6 +909,13 @@ public:
 		_ivPosition = position;
 	}
 
+	[[nodiscard]] const WindowPosition &callPanelPosition() const {
+		return _callPanelPosition;
+	}
+	void setCallPanelPosition(const WindowPosition &position) {
+		_callPanelPosition = position;
+	}
+
 	[[nodiscard]] QString customFontFamily() const {
 		return _customFontFamily;
 	}
@@ -1027,6 +1040,7 @@ private:
 	bool _suggestEmoji = true;
 	bool _suggestStickersByEmoji = true;
 	bool _suggestAnimatedEmoji = true;
+	rpl::variable<bool> _cornerReply = true;
 	rpl::variable<bool> _cornerReaction = true;
 	rpl::variable<bool> _spellcheckerEnabled = true;
 	PlaybackSpeed _videoPlaybackSpeed;
@@ -1085,6 +1099,7 @@ private:
 	rpl::variable<bool> _storiesClickTooltipHidden = false;
 	rpl::variable<bool> _ttlVoiceClickTooltipHidden = false;
 	WindowPosition _ivPosition;
+	WindowPosition _callPanelPosition;
 	QString _customFontFamily;
 	bool _systemUnlockEnabled = false;
 	std::optional<bool> _weatherInCelsius;

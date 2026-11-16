@@ -372,7 +372,7 @@ public:
 
 	template <typename PeerDataRange>
 	void peerListAddSelectedPeers(PeerDataRange &&range) {
-		for (const auto peer : range) {
+		for (const auto &peer : range) {
 			peerListAddSelectedPeerInBunch(peer);
 		}
 		peerListFinishSelectedRowsBunch();
@@ -486,8 +486,8 @@ public:
 
 	virtual void prepare() = 0;
 
-	virtual void showFinished() {
-	}
+	virtual void showFinished();
+	void setShowFinishedCallback(Fn<void()> callback);
 
 	virtual void rowClicked(not_null<PeerListRow*> row) = 0;
 	virtual void rowMiddleClicked(not_null<PeerListRow*> row) {
@@ -620,6 +620,8 @@ private:
 
 	const style::PeerList *_listSt = nullptr;
 	const style::MultiSelect *_selectSt = nullptr;
+
+	Fn<void()> _showFinished;
 
 	rpl::lifetime _lifetime;
 

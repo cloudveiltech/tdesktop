@@ -737,7 +737,9 @@ void SetupPremium(
 		controller->setPremiumRef("settings");
 		showOther(PremiumId());
 	});
-	{
+	//CloudVeil start: Stars gated on disable_stars
+	if (!GlobalSecuritySettings::getSettings().disableStars) {
+	//CloudVeil end
 		controller->session().credits().load();
 		AddPremiumStar(
 			AddButtonWithLabel(

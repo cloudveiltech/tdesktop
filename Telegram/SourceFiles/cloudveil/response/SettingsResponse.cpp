@@ -91,6 +91,19 @@ void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 	{
 		disableStars = jsonObject["disable_stars"].toBool();
 	}
+	if (jsonObject.contains("disable_mini_apps") && jsonObject["disable_mini_apps"].isBool())
+	{
+		disableMiniApps = jsonObject["disable_mini_apps"].toBool();
+	}
+	if (jsonObject.contains("nonblockable_bots") && jsonObject["nonblockable_bots"].isArray())
+	{
+		nonblockableBots.clear();
+		for (const auto &value : jsonObject["nonblockable_bots"].toArray()) {
+			if (value.isDouble() || value.isString()) {
+				nonblockableBots.append(value.toVariant().toLongLong());
+			}
+		}
+	}
 	if (jsonObject.contains("disable_emoji_status") && jsonObject["disable_emoji_status"].isBool())
 	{
 		disableEmojiStatus = jsonObject["disable_emoji_status"].toBool();
@@ -155,6 +168,14 @@ void SettingsResponse::writeToJson(QJsonObject &json)
 	json["disable_stories"] = disableStories;
 	json["disable_emoji_status"] = disableEmojiStatus;
 	json["disable_stars"] = disableStars;
+	json["disable_mini_apps"] = disableMiniApps;
+	{
+		QJsonArray bots;
+		for (const auto id : nonblockableBots) {
+			bots.append(id);
+		}
+		json["nonblockable_bots"] = bots;
+	}
 
 	QJsonObject accessObject;
 
@@ -273,6 +294,13 @@ bool SettingsResponse::isDialogAllowed(PeerData *peer) {
 		}
 	}
 	return false;
+}
+
+bool SettingsResponse::isBotNonblockable(PeerData *peer) {
+	if (!peer || !peer->isUser() || !peer->asUser()->isBot()) {
+		return false;
+	}
+	return nonblockableBots.contains(qint64(DialogHelper::getDialogId(peer)));
 }
 
 bool SettingsResponse::isDialogSecured(PeerData *peer) {

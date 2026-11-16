@@ -1442,6 +1442,12 @@ bool ResolveTopUp(
 	if (!controller) {
 		return false;
 	}
+	//CloudVeil start: Stars gated on disable_stars
+	if (GlobalSecuritySettings::getSettings().disableStars) {
+		Ui::show(Ui::MakeInformBox(tr::lng_blocked_for_protection(tr::now)));
+		return true;
+	}
+	//CloudVeil end
 	const auto params = url_parse_params(
 		match->captured(1),
 		qthelp::UrlParamNameTransform::ToLower);

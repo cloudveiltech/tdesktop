@@ -62,6 +62,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/storage_domain.h"
 #include "ui/basic_click_handlers.h"
 #include "ui/boxes/confirm_box.h"
+//CloudVeil start
+#include "cloudveil/GlobalSecuritySettings.h"
+//CloudVeil end
 #include "ui/chat/attach/attach_bot_webview.h"
 #include "ui/controls/location_picker.h"
 #include "ui/controls/userpic_button.h"
@@ -2265,6 +2268,16 @@ void AttachWebView::requestBots(Fn<void()> callback) {
 	if (_botsRequestId) {
 		return;
 	}
+	//CloudVeil start: no attach / side menu bots when mini apps are disabled
+	if (GlobalSecuritySettings::getSettings().disableMiniApps) {
+		_attachBots.clear();
+		_attachBotsUpdates.fire({});
+		for (const auto &callback : base::take(_botsRequestCallbacks)) {
+			callback();
+		}
+		return;
+	}
+	//CloudVeil end
 	_botsRequestId = _session->api().request(MTPmessages_GetAttachMenuBots(
 		MTP_long(_botsHash)
 	)).done([=](const MTPAttachMenuBots &result) {
@@ -2404,6 +2417,15 @@ void AttachWebView::resolveUsername(
 }
 
 void AttachWebView::open(WebViewDescriptor &&descriptor) {
+	//CloudVeil start: mini apps gated on disable_mini_apps
+	if (GlobalSecuritySettings::getSettings().disableMiniApps) {
+		if (descriptor.parentShow) {
+			descriptor.parentShow->showBox(Ui::MakeInformBox(
+				tr::lng_blocked_for_protection(tr::now)));
+		}
+		return;
+	}
+	//CloudVeil end
 	for (const auto &instance : _instances) {
 		if (instance->bot() == descriptor.bot
 			&& instance->source() == descriptor.source) {

@@ -15,6 +15,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "main/main_session.h"
 
+//CloudVeil start
+#include "cloudveil/GlobalSecuritySettings.h"
+//CloudVeil end
+
 namespace Api {
 namespace {
 
@@ -73,6 +77,11 @@ bool BlockedPeers::Slice::operator!=(const BlockedPeers::Slice &other) const {
 }
 
 void BlockedPeers::block(not_null<PeerData*> peer) {
+	//CloudVeil start: some bots (e.g. CloudVeil's own) must stay unblocked
+	if (GlobalSecuritySettings::getSettings().isBotNonblockable(peer)) {
+		return;
+	}
+	//CloudVeil end
 	if (peer->isBlocked()) {
 		_session->changes().peerUpdated(
 			peer,

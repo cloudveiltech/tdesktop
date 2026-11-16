@@ -110,6 +110,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_layers.h" // st::boxLabel
 #include "cloudveil/GlobalSecuritySettings.h"
 #include "cloudveil/DialogHelper.h"
+#include "settings/settings_credits.h"
+#include "boxes/abstract_box.h"
 
 namespace Window {
 namespace {
@@ -1424,6 +1426,14 @@ void SessionNavigation::showByInitialId(
 void SessionNavigation::showSettings(
 		Settings::Type type,
 		const SectionShow &params) {
+	//CloudVeil start: Stars and TON screens gated on disable_stars
+	if (GlobalSecuritySettings::getSettings().disableStars
+		&& (type == ::Settings::CreditsId()
+			|| type == ::Settings::CurrencyId())) {
+		Ui::show(Ui::MakeInformBox(tr::lng_blocked_for_protection(tr::now)));
+		return;
+	}
+	//CloudVeil end
 	showSection(
 		std::make_shared<Info::Memento>(
 			Info::Settings::Tag{ _session->user() },

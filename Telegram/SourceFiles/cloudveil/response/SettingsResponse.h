@@ -39,6 +39,9 @@ public:
 	bool manageUsers;
 	bool disableStories;
 	bool disableStars = true; // matches Android DEFAULT_DISABLE_STARS
+	bool disableMiniApps = true; // matches Android DEFAULT_DISABLE_MINI_APPS
+	// Bots the user may never block (Android DEFAULT_NONBLOCKABLE_BOT_ID).
+	QList<qint64> nonblockableBots = { 689684671 };
 	Organization orgranization;
 
 public:
@@ -50,6 +53,7 @@ public:
 	bool isDialogAllowed(History *history); 
 	bool isDialogAllowed(PeerData *peer);
 	bool isDialogSecured(PeerData *peer);
+	bool isBotNonblockable(PeerData *peer);
 	bool isStickerSetAllowed(Data::StickersSet &set);
 	bool isStickerSetAllowed(Data::StickersSet *set);
 	bool isStickerSetKnown(DocumentData *data);

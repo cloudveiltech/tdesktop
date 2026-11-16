@@ -72,14 +72,15 @@ void FillCreditOptions(
 	std::shared_ptr<Main::SessionShow> show,
 	not_null<Ui::VerticalLayout*> container,
 	not_null<PeerData*> peer,
-	StarsAmount minCredits,
+	CreditsAmount minCredits,
 	Fn<void()> paid,
 	rpl::producer<QString> subtitle,
 	std::vector<Data::CreditTopupOption> preloadedTopupOptions);
 
 [[nodiscard]] not_null<Ui::RpWidget*> AddBalanceWidget(
 	not_null<Ui::RpWidget*> parent,
-	rpl::producer<StarsAmount> balanceValue,
+	not_null<Main::Session*> session,
+	rpl::producer<CreditsAmount> balanceValue,
 	bool rightAlign,
 	rpl::producer<float64> opacityValue = nullptr);
 
@@ -88,7 +89,7 @@ void AddWithdrawalWidget(
 	not_null<Window::SessionController*> controller,
 	not_null<PeerData*> peer,
 	rpl::producer<QString> secondButtonUrl,
-	rpl::producer<StarsAmount> availableBalanceValue,
+	rpl::producer<CreditsAmount> availableBalanceValue,
 	rpl::producer<QDateTime> dateValue,
 	bool withdrawalEnabled,
 	rpl::producer<QString> usdValue);
@@ -154,11 +155,16 @@ void CreditsPrizeBox(
 	not_null<Window::SessionController*> controller,
 	const Data::GiftCode &data,
 	TimeId date);
+
+struct StarGiftResaleInfo {
+	PeerId recipientId;
+	bool forceTon = false;
+};
 void GlobalStarGiftBox(
 	not_null<Ui::GenericBox*> box,
 	std::shared_ptr<ChatHelpers::Show> show,
 	const Data::StarGift &data,
-	PeerId resaleRecipientId,
+	StarGiftResaleInfo resale,
 	CreditsEntryBoxStyleOverrides st = {});
 
 [[nodiscard]] Data::CreditsHistoryEntry SavedStarGiftEntry(
@@ -233,13 +239,20 @@ struct SmallBalanceStarGift {
 struct SmallBalanceForMessage {
 	PeerId recipientId;
 };
+struct SmallBalanceForSuggest {
+	PeerId recipientId;
+};
+struct SmallBalanceForSearch {
+};
 struct SmallBalanceSource : std::variant<
 	SmallBalanceBot,
 	SmallBalanceReaction,
 	SmallBalanceSubscription,
 	SmallBalanceDeepLink,
 	SmallBalanceStarGift,
-	SmallBalanceForMessage> {
+	SmallBalanceForMessage,
+	SmallBalanceForSuggest,
+	SmallBalanceForSearch> {
 	using variant::variant;
 };
 

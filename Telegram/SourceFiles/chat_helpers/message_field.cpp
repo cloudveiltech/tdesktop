@@ -203,7 +203,7 @@ void EditLinkBox(
 			url->showError();
 			return;
 		}
-		const auto weak = Ui::MakeWeak(box);
+		const auto weak = base::make_weak(box);
 		callback(linkText, linkUrl);
 		if (weak) {
 			box->closeBox();
@@ -305,9 +305,9 @@ void EditCodeLanguageBox(
 		const auto name = field->getLastText().trimmed();
 		const auto check = QRegularExpression("^[a-zA-Z0-9\\+\\-]*$");
 		if (check.match(name).hasMatch()) {
-			auto weak = Ui::MakeWeak(box);
+			auto weak = base::make_weak(box);
 			save(name);
-			if (const auto strong = weak.data()) {
+			if (const auto strong = weak.get()) {
 				strong->closeBox();
 			}
 		} else {
@@ -402,7 +402,7 @@ Fn<bool(
 		std::shared_ptr<Main::SessionShow> show,
 		not_null<Ui::InputField*> field,
 		const style::InputField *fieldStyle) {
-	const auto weak = Ui::MakeWeak(field);
+	const auto weak = base::make_weak(field);
 	return [=](
 			EditLinkSelection selection,
 			TextWithTags text,
@@ -413,7 +413,7 @@ Fn<bool(
 				&& !TextUtilities::IsMentionLink(link);
 		}
 		auto callback = [=](const TextWithTags &text, const QString &link) {
-			if (const auto strong = weak.data()) {
+			if (const auto strong = weak.get()) {
 				strong->commitMarkdownLinkEdit(selection, text, link);
 			}
 		};
@@ -485,7 +485,7 @@ void InitMessageFieldHandlers(MessageFieldHandlersArgs &&args) {
 	EditLinkAction action)> FactcheckEditLinkCallback(
 		std::shared_ptr<Main::SessionShow> show,
 		not_null<Ui::InputField*> field) {
-	const auto weak = Ui::MakeWeak(field);
+	const auto weak = base::make_weak(field);
 	return [=](
 			EditLinkSelection selection,
 			TextWithTags text,
@@ -504,7 +504,7 @@ void InitMessageFieldHandlers(MessageFieldHandlersArgs &&args) {
 			return IsGoodFactcheckUrl(link);
 		}
 		auto callback = [=](const TextWithTags &text, const QString &link) {
-			if (const auto strong = weak.data()) {
+			if (const auto strong = weak.get()) {
 				strong->commitMarkdownLinkEdit(selection, text, link);
 			}
 		};
@@ -697,9 +697,9 @@ void InitMessageFieldFade(
 		bottomFade->move(
 			0,
 			size.height() - st::historyComposeFieldFadeHeight);
-	}, [t = Ui::MakeWeak(topFade), b = Ui::MakeWeak(bottomFade)] {
-		Ui::DestroyChild(t.data());
-		Ui::DestroyChild(b.data());
+	}, [t = base::make_weak(topFade), b = base::make_weak(bottomFade)] {
+		Ui::DestroyChild(t.get());
+		Ui::DestroyChild(b.get());
 	}, topFade->lifetime());
 
 	const auto descent = field->st().style.font->descent;

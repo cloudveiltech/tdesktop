@@ -18,6 +18,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "dialogs/dialogs_search_tags.h"
 #include "dialogs/dialogs_quick_action.h"
 #include "history/view/history_view_context_menu.h"
+#include "history/view/history_view_subsection_tabs.h"
 #include "history/history.h"
 #include "history/history_item.h"
 #include "core/application.h"
@@ -30,6 +31,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/text_utilities.h"
 #include "ui/text/text_options.h"
 #include "ui/dynamic_thumbnails.h"
+#include "ui/vertical_list.h"
 #include "ui/painter.h"
 #include "ui/rect.h"
 #include "ui/ui_utility.h"
@@ -57,8 +59,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/options.h"
 #include "lang/lang_keys.h"
 #include "lottie/lottie_icon.h"
-#include "mainwindow.h"
-#include "mainwidget.h"
+#include "settings/settings_common.h"
 #include "storage/storage_account.h"
 #include "apiwrap.h"
 // CloudVeil start
@@ -82,6 +83,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_chat_filters.h"
 #include "base/qt/qt_common_adapters.h"
 #include "styles/style_dialogs.h"
+#include "styles/style_boxes.h"
 #include "styles/style_chat.h" // popupMenuExpandedSeparator
 #include "styles/style_chat_helpers.h"
 #include "styles/style_color_indices.h"
@@ -369,7 +371,9 @@ InnerWidget::InnerWidget(
 
 	rpl::merge(
 		session().settings().archiveCollapsedChanges() | rpl::map_to(false),
-		session().data().chatsFilters().changed() | rpl::map_to(true)
+		session().data().chatsFilters().changed() | rpl::map_to(true),
+		session().data().chatsFilters().tagsEnabledChanges(
+		) | rpl::map_to(true)
 	) | rpl::start_with_next([=](bool refreshHeight) {
 		if (refreshHeight) {
 			_chatsFilterTags.clear();
@@ -382,11 +386,8 @@ InnerWidget::InnerWidget(
 	}, lifetime());
 
 	session().data().chatsFilters().tagsEnabledValue(
-	) | rpl::distinct_until_changed() | rpl::start_with_next([=](bool tags) {
+	) | rpl::start_with_next([=](bool tags) {
 		_handleChatListEntryTagRefreshesLifetime.destroy();
-		if (_shownList->updateHeights(_narrowRatio)) {
-			refresh();
-		}
 		if (!tags) {
 			return;
 		}
@@ -530,7 +531,13 @@ InnerWidget::InnerWidget(
 			RowDescriptor previous,
 			RowDescriptor next) {
 		updateDialogRow(previous);
+		if (const auto sublist = previous.key.sublist()) {
+			updateDialogRow({ { sublist->owningHistory() }, {} });
+		}
 		updateDialogRow(next);
+		if (const auto sublist = next.key.sublist()) {
+			updateDialogRow({ { sublist->owningHistory() }, {} });
+		}
 	}, lifetime());
 
 	_controller->activeChatsFilter(
@@ -788,7 +795,7 @@ void InnerWidget::showSavedSublists() {
 	Expects(!_geometryInited);
 	Expects(!_savedSublists);
 
-	_savedSublists = true;
+	_savedSublists = &session().data().savedMessages();
 
 	stopReorderPinned();
 	clearSelection();
@@ -851,10 +858,11 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 		const auto active = mayBeActive && isRowActive(row, activeEntry);
 		const auto history = key.history();
 		const auto forum = history && history->isForum();
-		if (forum && !_topicJumpCache) {
+		const auto monoforum = history && history->amMonoforumAdmin();
+		if ((forum || monoforum) && !_topicJumpCache) {
 			_topicJumpCache = std::make_unique<Ui::TopicJumpCache>();
 		}
-		const auto expanding = forum
+		const auto expanding = (forum || monoforum)
 			&& (history->peer->id == childListShown.peerId);
 		context.rightButton = maybeCacheRightButton(row);
 		if (history) {
@@ -880,14 +888,14 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 			}
 		}
 
-		context.st = (forum ? &st::forumDialogRow : _st.get());
+		context.st = (forum || monoforum) ? &st::forumDialogRow : _st.get();
 
 		auto chatsFilterTags = std::vector<QImage*>();
 		if (context.narrow) {
 			context.chatsFilterTags = nullptr;
 		} else if (row->entry()->hasChatsFilterTags(context.filter)) {
 			const auto a = active;
-			context.st = forum
+			context.st = (forum || monoforum)
 				? &st::taggedForumDialogRow
 				: &st::taggedDialogRow;
 			auto availableWidth = context.width
@@ -1271,6 +1279,10 @@ void InnerWidget::paintEvent(QPaintEvent *e) {
 		if (!_searchResults.empty()) {
 			const auto text = showUnreadInSearchResults
 				? u"Search results"_q
+				: (_searchState.tab == ChatSearchTab::PublicPosts && !_searchIn)
+				? (_searchState.query.isEmpty()
+					? tr::lng_posts_subtitle_empty(tr::now)
+					: tr::lng_posts_subtitle(tr::now))
 				: tr::lng_search_found_results(
 					tr::now,
 					lt_count,
@@ -1457,8 +1469,18 @@ bool InnerWidget::isRowActive(
 		not_null<Row*> row,
 		const RowDescriptor &entry) const {
 	const auto key = row->key();
-	return (entry.key == key)
-		|| (entry.key.sublist() && key.peer() && key.peer()->isSelf());
+	if (entry.key == key) {
+		return true;
+	} else if (const auto topic = entry.key.topic()) {
+		if (const auto history = key.history()) {
+			return (history->peer == topic->channel())
+				&& HistoryView::SubsectionTabs::UsedFor(history);
+		}
+		return false;
+	} else if (const auto sublist = entry.key.sublist()) {
+		return key.history() && key.history() == sublist->owningHistory();
+	}
+	return false;
 }
 
 bool InnerWidget::isSearchResultActive(
@@ -1550,6 +1572,11 @@ void InnerWidget::paintPeerSearchResult(
 			: context.selected
 			? &st::dialogsScamFgOver
 			: &st::dialogsScamFg),
+		.direct = (context.active
+			? &st::dialogsDraftFgActive
+			: context.selected
+			? &st::windowSubTextFgOver
+			: &st::windowSubTextFg),
 		.premiumFg = (context.active
 			? &st::dialogsVerifiedIconBgActive
 			: context.selected
@@ -1893,8 +1920,13 @@ RowDescriptor InnerWidget::computeChatPreviewRow() const {
 	if (const auto peer = result.key.peer()) {
 		const auto topicId = _pressedTopicJump
 			? _pressedTopicJumpRootId
-			: 0;
-		if (const auto topic = peer->forumTopicFor(topicId)) {
+			: MsgId();
+		const auto sublistPeerId = _pressedTopicJump
+			? _pressedSublistJumpPeerId
+			: PeerId();
+		if (const auto sublist = peer->monoforumSublistFor(sublistPeerId)) {
+			return { sublist, FullMsgId() };
+		} else if (const auto topic = peer->forumTopicFor(topicId)) {
 			return { topic, FullMsgId() };
 		}
 	}
@@ -1941,9 +1973,9 @@ void InnerWidget::mousePressEvent(QMouseEvent *e) {
 		});
 	} else if (_pressed) {
 		auto row = _pressed;
-		const auto weak = Ui::MakeWeak(this);
+		const auto weak = base::make_weak(this);
 		const auto updateCallback = [weak, row] {
-			const auto strong = weak.data();
+			const auto strong = weak.get();
 			if (!strong || !strong->_pinnedShiftAnimation.animating()) {
 				row->entry()->updateChatListEntry();
 			}
@@ -2118,7 +2150,7 @@ bool InnerWidget::addQuickActionRipple(
 const std::vector<Key> &InnerWidget::pinnedChatsOrder() const {
 	const auto owner = &session().data();
 	return _savedSublists
-		? owner->pinnedChatsOrder(&owner->savedMessages())
+		? owner->pinnedChatsOrder(_savedSublists)
 		: _openedForum
 		? owner->pinnedChatsOrder(_openedForum)
 		: _filterId
@@ -2182,6 +2214,9 @@ int InnerWidget::countPinnedIndex(Row *ofRow) {
 }
 
 void InnerWidget::savePinnedOrder() {
+	if (_savedSublists && _savedSublists->parentChat()) {
+		return;
+	}
 	const auto &newOrder = pinnedChatsOrder();
 	if (newOrder.size() != _pinnedOnDragStart.size()) {
 		return; // Something has changed in the set of pinned chats.
@@ -2319,8 +2354,11 @@ bool InnerWidget::updateReorderPinned(QPoint localPosition) {
 	const auto delta = [&] {
 		if (localPosition.y() < _visibleTop) {
 			return localPosition.y() - _visibleTop;
-		} else if ((_savedSublists || _openedFolder || _openedForum || _filterId)
-			&& localPosition.y() > _visibleBottom) {
+		} else if ((localPosition.y() > _visibleBottom)
+			&& (_savedSublists
+				|| _openedFolder
+				|| _openedForum
+				|| _filterId)) {
 			return localPosition.y() - _visibleBottom;
 		}
 		return 0;
@@ -2399,6 +2437,7 @@ void InnerWidget::mousePressReleased(
 	auto collapsedPressed = _collapsedPressed;
 	setCollapsedPressed(-1);
 	const auto pressedTopicRootId = _pressedTopicJumpRootId;
+	const auto pressedSublistPeerId = _pressedSublistJumpPeerId;
 	const auto pressedTopicJump = _pressedTopicJump;
 	const auto pressedRightButton = _pressedRightButton;
 	auto pressed = _pressed;
@@ -2482,7 +2521,10 @@ void InnerWidget::mousePressReleased(
 			} else if (pressedRightButton && peerSearchPressed >= 0) {
 				showSponsoredMenu(peerSearchPressed, globalPosition);
 			} else {
-				chooseRow(modifiers, pressedTopicRootId);
+				chooseRow(
+					modifiers,
+					pressedTopicRootId,
+					pressedSublistPeerId);
 			}
 		}
 	}
@@ -2534,6 +2576,9 @@ void InnerWidget::setPressed(
 				: nullptr;
 			const auto item = history ? history->chatListMessage() : nullptr;
 			_pressedTopicJumpRootId = item ? item->topicRootId() : MsgId();
+			_pressedSublistJumpPeerId = item
+				? item->sublistPeerId()
+				: PeerId();
 		}
 	}
 }
@@ -2580,6 +2625,9 @@ void InnerWidget::setFilteredPressed(
 				: nullptr;
 			const auto item = history ? history->chatListMessage() : nullptr;
 			_pressedTopicJumpRootId = item ? item->topicRootId() : MsgId();
+			_pressedSublistJumpPeerId = item
+				? item->sublistPeerId()
+				: PeerId();
 		}
 	}
 }
@@ -2688,8 +2736,8 @@ void InnerWidget::handleChatListEntryRefreshes() {
 			return false;
 		} else if (const auto topic = event.key.topic()) {
 			return (topic->forum() == _openedForum);
-		} else if (event.key.sublist()) {
-			return _savedSublists;
+		} else if (const auto sublist = event.key.sublist()) {
+			return sublist->parent() == _savedSublists;
 		} else {
 			return !_openedForum;
 		}
@@ -2707,7 +2755,7 @@ void InnerWidget::handleChatListEntryRefreshes() {
 			&& (key.topic()
 				? (key.topic()->forum() == _openedForum)
 				: key.sublist()
-				? _savedSublists
+				? (key.sublist()->parent() == _savedSublists)
 				: (entry->folder() == _openedFolder))) {
 			_dialogMoved.fire({ from, to });
 		}
@@ -2912,7 +2960,8 @@ void InnerWidget::enterEventHook(QEnterEvent *e) {
 Row *InnerWidget::shownRowByKey(Key key) {
 	const auto entry = key.entry();
 	if (_savedSublists) {
-		if (!entry->asSublist()) {
+		const auto sublist = entry->asSublist();
+		if (!sublist || sublist->parent() != _savedSublists) {
 			return nullptr;
 		}
 	} else if (_openedForum) {
@@ -2981,7 +3030,7 @@ void InnerWidget::updateSelectedRow(Key key) {
 
 void InnerWidget::refreshShownList() {
 	const auto list = _savedSublists
-		? session().data().savedMessages().chatsList()->indexed()
+		? _savedSublists->chatsList()->indexed()
 		: _openedForum
 		? _openedForum->topicsList()->indexed()
 		: _filterId
@@ -3028,6 +3077,11 @@ void InnerWidget::clearSelection() {
 }
 
 void InnerWidget::fillSupportSearchMenu(not_null<Ui::PopupMenu*> menu) {
+	const auto globalSearch = (_searchState.tab == ChatSearchTab::MyMessages)
+		|| (_searchState.tab == ChatSearchTab::PublicPosts);
+	if (!globalSearch && _searchState.inChat) {
+		return;
+	}
 	const auto all = session().settings().supportAllSearchResults();
 	const auto text = all ? "Only one from chat" : "Show all messages";
 	menu->addAction(text, [=] {
@@ -3038,9 +3092,12 @@ void InnerWidget::fillSupportSearchMenu(not_null<Ui::PopupMenu*> menu) {
 
 void InnerWidget::fillArchiveSearchMenu(not_null<Ui::PopupMenu*> menu) {
 	const auto folder = session().data().folderLoaded(Data::Folder::kId);
+	const auto globalSearch = (_searchState.tab == ChatSearchTab::MyMessages)
+		|| (_searchState.tab == ChatSearchTab::PublicPosts);
 	if (!folder
 		|| !folder->chatsList()->fullSize().current()
-		|| _searchState.inChat) {
+		|| (!globalSearch && _searchState.inChat)
+		|| (_searchState.tab == ChatSearchTab::PublicPosts)) {
 		return;
 	}
 	const auto skip = session().settings().skipArchiveInSearch();
@@ -3210,16 +3267,13 @@ void InnerWidget::showSponsoredMenu(int peerSearchIndex, QPoint globalPos) {
 		refresh();
 	});
 	Menu::FillSponsored(
-		this,
 		Ui::Menu::CreateAddActionCallback(_menu),
 		_controller->uiShow(),
 		Menu::SponsoredPhrases::Search,
 		session().sponsoredMessages().lookupDetails(entry->sponsored->data),
 		session().sponsoredMessages().createReportCallback(
 			entry->sponsored->data.randomId,
-			remove),
-		false,
-		false);
+			remove));
 	QObject::connect(_menu.get(), &QObject::destroyed, [=] {
 		if (_peerSearchMenu >= 0
 			&& _peerSearchMenu < _peerSearchResults.size()) {
@@ -3385,6 +3439,9 @@ void InnerWidget::applySearchState(SearchState state) {
 		) | rpl::start_with_next([=] {
 			refresh();
 			moveSearchIn();
+			if (_loadingAnimation) {
+				_loadingAnimation->move(0, searchedOffset());
+			}
 		}, _searchTags->lifetime());
 	} else {
 		_searchTags = nullptr;
@@ -3393,7 +3450,7 @@ void InnerWidget::applySearchState(SearchState state) {
 	_searchFromShown = ignoreInChat
 		? nullptr
 		: sublist
-		? sublist->peer().get()
+		? sublist->sublistPeer().get()
 		: state.fromPeer;
 	if (state.inChat) {
 		onHashtagFilterUpdate(QStringView());
@@ -3419,7 +3476,8 @@ void InnerWidget::applySearchState(SearchState state) {
 		_filter = newFilter;
 		if (_filter.isEmpty()
 			&& !_searchState.fromPeer
-			&& _searchState.tags.empty()) {
+			&& _searchState.tags.empty()
+			&& _searchState.tab != ChatSearchTab::PublicPosts) {
 			clearFilter();
 		} else {
 			setState(WidgetState::Filtered);
@@ -3447,8 +3505,7 @@ void InnerWidget::applySearchState(SearchState state) {
 			};
 			if (_searchState.filterChatsList() && !words.isEmpty()) {
 				if (_savedSublists) {
-					const auto owner = &session().data();
-					append(owner->savedMessages().chatsList()->indexed());
+					append(_savedSublists->chatsList()->indexed());
 				} else if (_openedForum) {
 					append(_openedForum->topicsList()->indexed());
 				} else {
@@ -3763,7 +3820,7 @@ void InnerWidget::itemRemoved(not_null<const HistoryItem*> item) {
 }
 
 bool InnerWidget::uniqueSearchResults() const {
-	return _controller->uniqueChatsInSearchResults();
+	return _controller->uniqueChatsInSearchResults(_searchState);
 }
 
 bool InnerWidget::hasHistoryInResults(not_null<History*> history) const {
@@ -3821,9 +3878,10 @@ void InnerWidget::searchReceived(
 		? _searchState.inChat
 		: Key(_openedForum->history());
 	if (inject
-		&& (!_searchState.inChat
-			// CloudVeil start: disable search results for blocked chats
+		&& (globalSearch
+			|| !_searchState.inChat
 			|| inject->history() == _searchState.inChat.history())
+		// CloudVeil start: disable search results for blocked chats
 		&& GlobalSecuritySettings::getSettings().isDialogAllowed(
 			inject->history()->peer)) {
 		// CloudVeil end
@@ -4032,7 +4090,7 @@ void InnerWidget::refreshEmpty() {
 	const auto state = !_shownList->empty()
 		? EmptyState::None
 		: _savedSublists
-		? (data->savedMessages().chatsList()->loaded()
+		? (_savedSublists->chatsList()->loaded()
 			? EmptyState::EmptySavedSublists
 			: EmptyState::Loading)
 		: _openedForum
@@ -4047,9 +4105,18 @@ void InnerWidget::refreshEmpty() {
 	if (state == EmptyState::None) {
 		_emptyState = state;
 		_empty.destroy();
+		_emptyList.destroy();
+		_emptyButton.destroy();
 		return;
 	} else if (_emptyState == state) {
 		_empty->setVisible(_state == WidgetState::Default);
+		if (_emptyList) {
+			_emptyList->setVisible(_state == WidgetState::Default);
+			_empty->setVisible(false);
+		}
+		if (_emptyButton) {
+			_emptyButton->setVisible(_state == WidgetState::Default);
+		}
 		return;
 	}
 	_emptyState = state;
@@ -4080,7 +4147,6 @@ void InnerWidget::refreshEmpty() {
 		return result;
 	});
 	_empty.create(this, std::move(full), st::dialogsEmptyLabel);
-	resizeEmpty();
 	_empty->overrideLinkClickHandler([=] {
 		if (_emptyState == EmptyState::NoContacts) {
 			_controller->showAddContact();
@@ -4092,6 +4158,58 @@ void InnerWidget::refreshEmpty() {
 		}
 	});
 	_empty->setVisible(_state == WidgetState::Default);
+
+	if (state == EmptyState::NoContacts) {
+		const auto isListVisible = _state == WidgetState::Default;
+		_emptyList.create(this);
+		_emptyList->setVisible(isListVisible);
+
+		auto icon = ::Settings::CreateLottieIcon(
+			_emptyList,
+			{
+				.name = u"no_chats"_q,
+				.sizeOverride = Size(st::changePhoneIconSize),
+			});
+		_emptyList->add(
+			object_ptr<Ui::CenterWrap<>>(_emptyList, std::move(icon.widget)));
+		Ui::AddSkip(_emptyList);
+		_emptyList->add(
+			object_ptr<Ui::FlatLabel>(
+				_emptyList,
+				tr::lng_no_conversations(),
+				st::dialogEmptyButtonLabel));
+		if (_state == WidgetState::Default) {
+			icon.animate(anim::repeat::once);
+		}
+		_emptyButton.create(
+			this,
+			tr::lng_no_conversations_button(),
+			st::dialogEmptyButton);
+		_emptyButton->setTextTransform(
+			Ui::RoundButton::TextTransform::NoTransform);
+		_emptyButton->setVisible(isListVisible);
+		_emptyButton->setClickedCallback([=, window = _controller] {
+			window->show(PrepareContactsBox(window));
+		});
+		geometryValue() | rpl::start_with_next([=](const QRect &r) {
+			const auto top = r.height()
+				- _emptyButton->height()
+				- st::dialogEmptyButtonSkip;
+			_emptyButton->moveToLeft(st::dialogEmptyButtonSkip, top);
+		}, _emptyButton->lifetime());
+		geometryValue() | rpl::start_with_next([=](const QRect &r) {
+			const auto bottom = _emptyButton
+				? (_emptyButton->height() + st::dialogEmptyButtonSkip)
+				: 0;
+			_emptyList->moveToLeft(
+				0,
+				((r.height() - bottom) - _emptyList->height()) / 2);
+		}, _emptyList->lifetime());
+
+		_empty->setVisible(!_emptyList->isVisible());
+	}
+
+	resizeEmpty();
 }
 
 void InnerWidget::resizeEmpty() {
@@ -4099,6 +4217,13 @@ void InnerWidget::resizeEmpty() {
 		const auto skip = st::dialogsEmptySkip;
 		_empty->resizeToWidth(width() - 2 * skip);
 		_empty->move(skip, (st::dialogsEmptyHeight - _empty->height()) / 2);
+	}
+	if (_emptyList) {
+		_emptyList->resizeToWidth(width());
+	}
+	if (_emptyButton) {
+		const auto skip = st::dialogEmptyButtonSkip;
+		_emptyButton->resizeToWidth(width() - 2 * skip);
 	}
 	if (_searchEmpty) {
 		_searchEmpty->resizeToWidth(width());
@@ -4173,12 +4298,20 @@ void InnerWidget::updateSearchIn() {
 		: _openedForum
 		? _openedForum->channel().get()
 		: nullptr;
+	const auto paused = [window = _controller] {
+		return window->isGifPausedAtLeastFor(Window::GifPauseReason::Any);
+	};
+	const auto textFg = [] {
+		return st::windowSubTextFg->c;
+	};
 	const auto topicIcon = !topic
 		? nullptr
 		: topic->iconId()
 		? Ui::MakeEmojiThumbnail(
 			&topic->owner(),
-			Data::SerializeCustomEmojiId(topic->iconId()))
+			Data::SerializeCustomEmojiId(topic->iconId()),
+			paused,
+			textFg)
 		: Ui::MakeEmojiThumbnail(
 			&topic->owner(),
 			Data::TopicIconEmojiEntity({
@@ -4188,11 +4321,13 @@ void InnerWidget::updateSearchIn() {
 				.colorId = (topic->isGeneral()
 					? Data::ForumGeneralIconColor(st::windowSubTextFg->c)
 					: topic->colorId()),
-			}));
+			}),
+			paused,
+			textFg);
 	const auto peerIcon = peer
 		? Ui::MakeUserpicThumbnail(peer)
 		: sublist
-		? Ui::MakeUserpicThumbnail(sublist->peer())
+		? Ui::MakeUserpicThumbnail(sublist->sublistPeer())
 		: nullptr;
 	const auto myIcon = Ui::MakeIconThumbnail(st::menuIconChats);
 	const auto publicIcon = (_searchHashOrCashtag != HashOrCashtag::None)
@@ -4747,7 +4882,8 @@ bool InnerWidget::isUserpicPressOnWide() const {
 
 bool InnerWidget::chooseRow(
 		Qt::KeyboardModifiers modifiers,
-		MsgId pressedTopicRootId) {
+		MsgId pressedTopicRootId,
+		PeerId pressedSublistPeerId) {
 	if (chooseHashtag()) {
 		return true;
 	} else if (_selectedMorePosts) {
@@ -4789,12 +4925,9 @@ bool InnerWidget::chooseRow(
 		if (!chosen.message.fullId) {
 			if (const auto history = chosen.key.history()) {
 				if (history->peer->forum()) {
-					if (pressedTopicRootId) {
-						chosen.message.fullId = {
-							history->peer->id,
-							pressedTopicRootId,
-						};
-					}
+					chosen.topicJumpRootId = pressedTopicRootId;
+				} else if (history->peer->amMonoforumAdmin()) {
+					chosen.sublistJumpPeerId = pressedSublistPeerId;
 				}
 			}
 		}

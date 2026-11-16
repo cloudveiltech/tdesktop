@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 
 #include "data/data_abstract_structure.h"
+#include "data/data_channel.h"
 #include "data/data_forum.h"
 #include "data/data_message_reactions.h"
 #include "data/data_session.h"
@@ -907,7 +908,7 @@ void Application::forceLogOut(
 	box->setCloseByEscape(false);
 	box->setCloseByOutsideClick(false);
 	const auto weak = base::make_weak(account);
-	connect(box, &QObject::destroyed, [=] {
+	connect(box.get(), &QObject::destroyed, [=] {
 		crl::on_main(weak, [=] {
 			account->forcedLogOut();
 		});
@@ -1383,8 +1384,9 @@ Window::Controller *Application::windowForShowingHistory(
 
 Window::Controller *Application::windowForShowingForum(
 		not_null<Data::Forum*> forum) const {
+	const auto tabs = forum->channel()->useSubsectionTabs();
 	const auto id = Window::SeparateId(
-		Window::SeparateType::Forum,
+		tabs ? Window::SeparateType::Chat : Window::SeparateType::Forum,
 		forum->history());
 	if (const auto separate = separateWindowFor(id)) {
 		return separate;
@@ -1392,9 +1394,15 @@ Window::Controller *Application::windowForShowingForum(
 	auto result = (Window::Controller*)nullptr;
 	enumerateWindows([&](not_null<Window::Controller*> window) {
 		if (const auto controller = window->sessionController()) {
-			const auto current = controller->shownForum().current();
-			if (forum == current) {
-				result = window;
+			if (tabs) {
+				if (controller->windowId() == id) {
+					result = window;
+				}
+			} else {
+				const auto current = controller->shownForum().current();
+				if (forum == current) {
+					result = window;
+				}
 			}
 		}
 	});
@@ -1667,7 +1675,7 @@ void Application::registerLeaveSubscription(not_null<QWidget*> widget) {
 				if (e->type() == QEvent::Leave) {
 					if (const auto taken = _leaveFilters.take(window)) {
 						for (const auto &weak : taken->registered) {
-							if (const auto widget = weak.data()) {
+							if (const auto widget = weak.get()) {
 								QEvent ev(QEvent::Leave);
 								QCoreApplication::sendEvent(widget, &ev);
 							}

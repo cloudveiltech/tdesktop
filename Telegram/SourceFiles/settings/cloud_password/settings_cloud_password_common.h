@@ -34,6 +34,7 @@ struct StepData {
 	QString email;
 	int unconfirmedEmailLengthCode;
 	bool setOnlyRecoveryEmail = false;
+	bool suggestionValidate = false;
 
 	struct ProcessRecover {
 		bool setNewPassword = false;
@@ -81,7 +82,7 @@ void AddSkipInsteadOfField(not_null<Ui::VerticalLayout*> content);
 void AddSkipInsteadOfError(not_null<Ui::VerticalLayout*> content);
 
 struct BottomButton {
-	QPointer<Ui::RpWidget> content;
+	base::weak_qptr<Ui::RpWidget> content;
 	rpl::producer<bool> isBottomFillerShown;
 };
 

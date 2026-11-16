@@ -57,7 +57,7 @@ void ConfirmDontWarnBox(
 		std::move(check),
 		false,
 		st::defaultBoxCheckbox);
-	const auto weak = Ui::MakeWeak(checkbox.data());
+	const auto weak = base::make_weak(checkbox.data());
 	auto confirmed = crl::guard(weak, [=, callback = std::move(callback)] {
 		const auto checked = weak->checked();
 		box->closeBox();
@@ -187,7 +187,8 @@ void ResolveDocument(
 		Window::SessionController *controller,
 		not_null<DocumentData*> document,
 		HistoryItem *item,
-		MsgId topicRootId) {
+		MsgId topicRootId,
+		PeerId monoforumPeerId) {
 	if (document->isNull()) {
 		return;
 	}
@@ -202,7 +203,7 @@ void ResolveDocument(
 			controller->openDocument(
 				document,
 				true,
-				{ msgId, topicRootId });
+				{ msgId, topicRootId, monoforumPeerId });
 		}
 	};
 

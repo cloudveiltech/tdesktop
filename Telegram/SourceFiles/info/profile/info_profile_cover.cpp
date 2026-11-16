@@ -30,17 +30,20 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/media/history_view_sticker_player.h"
 #include "lang/lang_keys.h"
 #include "ui/boxes/show_or_premium_box.h"
+#include "ui/controls/stars_rating.h"
 #include "ui/controls/userpic_button.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/popup_menu.h"
 #include "ui/text/text_utilities.h"
+#include "ui/basic_click_handlers.h"
 #include "ui/ui_utility.h"
 #include "ui/painter.h"
 #include "base/event_filter.h"
 #include "base/unixtime.h"
 #include "window/window_controller.h"
 #include "window/window_session_controller.h"
+#include "main/main_app_config.h"
 #include "main/main_session.h"
 #include "settings/settings_premium.h"
 #include "chat_helpers/stickers_lottie.h"
@@ -591,7 +594,7 @@ Cover::Cover(
 , _botVerify(
 	std::make_unique<Badge>(
 		this,
-		st::infoPeerBadge,
+		st::infoBotVerifyBadge,
 		&peer->session(),
 		BotVerifyBadgeForPeer(peer),
 		nullptr,
@@ -629,10 +632,11 @@ Cover::Cover(
 	: object_ptr<Ui::UserpicButton>(
 		this,
 		controller,
-		_peer,
+		_peer->userpicPaintingPeer(),
 		Ui::UserpicButton::Role::OpenPhoto,
 		Ui::UserpicButton::Source::PeerPhoto,
-		_st.photo))
+		_st.photo,
+		_peer->userpicShape()))
 , _changePersonal((role == Role::Info
 	|| topic
 	|| !_peer->isUser()
@@ -644,16 +648,36 @@ Cover::Cover(
 	? object_ptr<TopicIconButton>(this, controller, topic)
 	: nullptr)
 , _name(this, _st.name)
+, _starsRating(_peer->isUser()
+	? std::make_unique<Ui::StarsRating>(
+		this,
+		_controller->uiShow(),
+		_peer->isSelf() ? QString() : _peer->shortName(),
+		Data::StarsRatingValue(_peer),
+		(_peer->isSelf()
+			? [=] { return _peer->owner().pendingStarsRating(); }
+			: Fn<Data::StarsRatingPending()>()))
+	: nullptr)
 , _status(this, _st.status)
 , _showLastSeen(this, tr::lng_status_lastseen_when(), _st.showLastSeen)
 , _refreshStatusTimer([this] { refreshStatusText(); }) {
 	_peer->updateFull();
+	if (const auto broadcast = _peer->monoforumBroadcast()) {
+		broadcast->updateFull();
+	}
 
 	_name->setSelectable(true);
 	_name->setContextCopyText(tr::lng_profile_copy_fullname(tr::now));
 
 	if (!_peer->isMegagroup()) {
 		_status->setAttribute(Qt::WA_TransparentForMouseEvents);
+		if (const auto rating = _starsRating.get()) {
+			_statusShift = rating->widthValue();
+			_statusShift.changes() | rpl::start_with_next([=] {
+				refreshStatusGeometry(width());
+			}, _status->lifetime());
+			rating->raise();
+		}
 	}
 
 	setupShowLastSeen();
@@ -827,7 +851,8 @@ void Cover::refreshUploadPhotoOverlay() {
 		if (const auto chat = _peer->asChat()) {
 			return chat->canEditInformation();
 		} else if (const auto channel = _peer->asChannel()) {
-			return channel->canEditInformation();
+			return channel->canEditInformation()
+				&& !channel->isMonoforum();
 		} else if (const auto user = _peer->asUser()) {
             //CloudVeil start
 			return (user->isSelf()
@@ -983,6 +1008,12 @@ void Cover::refreshStatusText() {
 				chat->count,
 				int(chat->participants.size()));
 			return { .text = ChatStatusText(fullCount, onlineCount, true) };
+		} else if (auto broadcast = _peer->monoforumBroadcast()) {
+			auto result = ChatStatusText(
+				qMax(broadcast->membersCount(), 1),
+				0,
+				false);
+			return TextWithEntities{ .text = result };
 		} else if (auto channel = _peer->asChannel()) {
 			const auto onlineCount = _onlineCount.current();
 			const auto fullCount = qMax(channel->membersCount(), 1);
@@ -1046,10 +1077,14 @@ void Cover::refreshNameGeometry(int newWidth) {
 }
 
 void Cover::refreshStatusGeometry(int newWidth) {
-	auto statusWidth = newWidth - _st.statusLeft - _st.rightSkip;
-	_status->resizeToWidth(statusWidth);
-	_status->moveToLeft(_st.statusLeft, _st.statusTop, newWidth);
-	const auto left = _st.statusLeft + _status->textMaxWidth();
+	if (const auto rating = _starsRating.get()) {
+		rating->moveTo(_st.starsRatingLeft, _st.starsRatingTop);
+	}
+	const auto statusLeft = _st.statusLeft + _statusShift.current();
+	auto statusWidth = newWidth - statusLeft - _st.rightSkip;
+	_status->resizeToNaturalWidth(statusWidth);
+	_status->moveToLeft(statusLeft, _st.statusTop, newWidth);
+	const auto left = statusLeft + _status->textMaxWidth();
 	_showLastSeen->moveToLeft(
 		left + _st.showLastSeenPosition.x(),
 		_st.showLastSeenPosition.y(),

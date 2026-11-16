@@ -264,7 +264,7 @@ void SectionWidget::setGeometryWithTopMoved(
 	_topDelta = topDelta;
 	bool willBeResized = (size() != newGeometry.size());
 	if (geometry() != newGeometry) {
-		auto weak = Ui::MakeWeak(this);
+		auto weak = base::make_weak(this);
 		setGeometry(newGeometry);
 		if (!weak) {
 			return;
@@ -279,6 +279,7 @@ void SectionWidget::setGeometryWithTopMoved(
 void SectionWidget::showAnimated(
 		SlideDirection direction,
 		const SectionSlideParams &params) {
+	validateSubsectionTabs();
 	if (_showAnimation) {
 		return;
 	}
@@ -309,6 +310,7 @@ std::shared_ptr<SectionMemento> SectionWidget::createMemento() {
 }
 
 void SectionWidget::showFast() {
+	validateSubsectionTabs();
 	show();
 	showFinished();
 }

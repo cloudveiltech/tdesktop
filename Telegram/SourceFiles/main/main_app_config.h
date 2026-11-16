@@ -31,6 +31,8 @@ public:
 			return getDouble(key, fallback);
 		} else if constexpr (std::is_same_v<Type, int>) {
 			return int(base::SafeRound(getDouble(key, double(fallback))));
+		} else if constexpr (std::is_same_v<Type, int64>) {
+			return int64(base::SafeRound(getDouble(key, double(fallback))));
 		} else if constexpr (std::is_same_v<Type, QString>) {
 			return getString(key, fallback);
 		} else if constexpr (std::is_same_v<Type, std::vector<QString>>) {
@@ -67,20 +69,51 @@ public:
 	[[nodiscard]] int starrefCommissionMin() const;
 	[[nodiscard]] int starrefCommissionMax() const;
 
+	[[nodiscard]] int starsWithdrawMax() const;
 	[[nodiscard]] float64 starsWithdrawRate() const;
+	[[nodiscard]] float64 currencyWithdrawRate() const;
 	[[nodiscard]] bool paidMessagesAvailable() const;
 	[[nodiscard]] int paidMessageStarsMax() const;
 	[[nodiscard]] int paidMessageCommission() const;
+	[[nodiscard]] int paidMessageChannelStarsDefault() const;
 
 	[[nodiscard]] int pinnedGiftsLimit() const;
+	[[nodiscard]] int giftCollectionsLimit() const;
+	[[nodiscard]] int giftCollectionGiftsLimit() const;
 
 	[[nodiscard]] bool callsDisabledForSession() const;
 	[[nodiscard]] int confcallSizeLimit() const;
 	[[nodiscard]] bool confcallPrioritizeVP8() const;
 
-	[[nodiscard]] int giftResalePriceMax() const;
-	[[nodiscard]] int giftResalePriceMin() const;
-	[[nodiscard]] int giftResaleReceiveThousandths() const;
+	[[nodiscard]] int giftResaleStarsMin() const;
+	[[nodiscard]] int giftResaleStarsMax() const;
+	[[nodiscard]] int giftResaleStarsThousandths() const;
+	[[nodiscard]] int64 giftResaleNanoTonMin() const;
+	[[nodiscard]] int64 giftResaleNanoTonMax() const;
+	[[nodiscard]] int giftResaleNanoTonThousandths() const;
+
+	[[nodiscard]] int pollOptionsLimit() const;
+	[[nodiscard]] int todoListItemsLimit() const;
+	[[nodiscard]] int todoListTitleLimit() const;
+	[[nodiscard]] int todoListItemTextLimit() const;
+
+	[[nodiscard]] int suggestedPostCommissionStars() const;
+	[[nodiscard]] int suggestedPostCommissionTon() const;
+	[[nodiscard]] int suggestedPostStarsMin() const;
+	[[nodiscard]] int suggestedPostStarsMax() const;
+	[[nodiscard]] int64 suggestedPostNanoTonMin() const;
+	[[nodiscard]] int64 suggestedPostNanoTonMax() const;
+	[[nodiscard]] int suggestedPostDelayMin() const;
+	[[nodiscard]] int suggestedPostDelayMax() const;
+	[[nodiscard]] TimeId suggestedPostAgeMin() const;
+
+	[[nodiscard]] bool ageVerifyNeeded() const;
+	[[nodiscard]] QString ageVerifyCountry() const;
+	[[nodiscard]] int ageVerifyMinAge() const;
+	[[nodiscard]] QString ageVerifyBotUsername() const;
+
+	[[nodiscard]] int storiesAlbumsLimit() const;
+	[[nodiscard]] int storiesAlbumLimit() const;
 
 	void refresh(bool force = false);
 

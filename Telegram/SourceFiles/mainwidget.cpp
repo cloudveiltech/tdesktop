@@ -491,11 +491,16 @@ MainWidget::MainWidget(
 
 //CloudVeil start
 void MainWidget::onSettingsUpdate() {
-	_dialogs->refreshOnUpdate();
+	// Separate (single chat) windows have no chats list.
+	if (_dialogs) {
+		_dialogs->refreshOnUpdate();
+	}
 	_history->onSettingsUpdate();
 	_controller->tabbedSelector()->refreshOnSettingsUpdate();
 
-	showOrganizationChangeRequired();
+	if (isPrimary()) {
+		showOrganizationChangeRequired();
+	}
 }
 
 void MainWidget::simpleUpdateReceived(UpdateResponse* response) {

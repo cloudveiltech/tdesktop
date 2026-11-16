@@ -19,14 +19,28 @@ DialogHelper::CheckDialogResult DialogHelper::checkAndShowDialogForbidden(PeerDa
 		peerData = parent;
 	}
 	if (!GlobalSecuritySettings::getSettings().isDialogAllowed(peerData)) {
-		if (controller) {
-			controller->closeThirdSection();
+		if (!controller) {
+			return DialogHelper::CheckDialogResult::BLOCKED;
 		}
+		controller->closeThirdSection();
         // Kenji: this line below makes the user lose the current view context
         // It usually opens the first chat or the saved chat, so I commented it out.
         // controller->showPeerHistory(userData->id);
+		// Name the kind of chat that is blocked.
+		auto text = [&] {
+			if (const auto user = peerData->asUser()) {
+				return user->isBot()
+					? tr::lng_dialog_forbidden_bot()
+					: tr::lng_dialog_forbidden_user();
+			} else if (peerData->isChat() || peerData->isMegagroup()) {
+				return tr::lng_dialog_forbidden_group();
+			} else if (peerData->isChannel()) {
+				return tr::lng_dialog_forbidden_channel();
+			}
+			return tr::lng_dialog_forbidden();
+		}();
 		controller->show(Ui::MakeConfirmBox({
-					.text = tr::lng_dialog_forbidden(),
+					.text = std::move(text),
 					.confirmed = [=](Fn<void()>&& close) {
                         const auto dialogId = getDialogId(peerData);
                         // Channels and basic groups are reported to the web

@@ -1,4 +1,5 @@
 #pragma once
+#include "core/version.h" // AppVersion, AppVersionStr
 class SettingsRequest
 {
 public:

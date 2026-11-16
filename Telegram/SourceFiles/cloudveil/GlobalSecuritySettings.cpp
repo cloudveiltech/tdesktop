@@ -14,6 +14,7 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QStack>
 #include "main/main_session.h"
+#include "data/components/recent_inline_bots.h"
 #include "storage/storage_account.h"
 #include "core/application.h"
 #include "./DialogHelper.h"
@@ -126,11 +127,9 @@ void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 		addChatListToRequest(request, chats, lists);
 	}
 
-	if (cRecentInlineBots().isEmpty()) {
-		session.local().readRecentHashtagsAndBots();
-	}
-
-	for (const auto user : cRecentInlineBots()) {
+	// Recent inline bots are a per-session component since 7.x and are
+	// loaded from local storage by the session itself.
+	for (const auto &user : session.recentInlineBots().list()) {
 		addDialogToRequest(request, user);
 	}
 

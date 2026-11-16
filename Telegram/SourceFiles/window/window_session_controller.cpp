@@ -1563,10 +1563,16 @@ void SessionNavigation::showPeerInfo(
 	//	Core::App().settings().setThirdSectionInfoEnabled(true);
 	//	Core::App().saveSettingsDelayed();
 	//}
-	//CloudVeil start
-	if (GlobalSecuritySettings::getInstance()->getSettings().isDialogAllowed(peer)) {
-		showSection(std::make_shared<Info::Memento>(peer), params);
+	//CloudVeil start: blocked profiles show the block dialog (7.x opens
+	// profiles when a username is clicked).
+	if (DialogHelper::CheckDialogResult::BLOCKED
+		== DialogHelper::checkAndShowDialogForbidden(
+			peer,
+			session().user(),
+			parentController())) {
+		return;
 	}
+	showSection(std::make_shared<Info::Memento>(peer), params);
 	//CloudVeil end
 }
 
@@ -1574,6 +1580,15 @@ void SessionNavigation::showPeerInfo(
 		not_null<Data::Thread*> thread,
 		const SectionShow &params) {
 	if (const auto topic = thread->asTopic()) {
+		//CloudVeil start
+		if (DialogHelper::CheckDialogResult::BLOCKED
+			== DialogHelper::checkAndShowDialogForbidden(
+				topic->peer(),
+				session().user(),
+				parentController())) {
+			return;
+		}
+		//CloudVeil end
 		showSection(std::make_shared<Info::Memento>(topic), params);
 	} else if (const auto sublist = thread->asSublist()
 		; sublist && sublist->parentChat()) {
@@ -3317,6 +3332,23 @@ void SessionController::clearChooseReportMessages() const {
 void SessionController::showInNewWindow(
 		SeparateId id,
 		MsgId msgId) {
+	//CloudVeil start: no separate window for blocked or uncategorized chats
+	if (id.thread) {
+		auto peers = std::vector<PeerData*>{ id.thread->peer().get() };
+		if (const auto sublist = id.sublist()) {
+			peers.push_back(sublist->sublistPeer().get());
+		}
+		for (const auto peer : peers) {
+			if (DialogHelper::CheckDialogResult::APPROVED
+				!= DialogHelper::checkAndShowDialogForbidden(
+					peer,
+					session().user(),
+					this)) {
+				return;
+			}
+		}
+	}
+	//CloudVeil end
 	if (!CanShowSeparateWindow(id)) {
 		Assert(id.thread != nullptr);
 		showThread(id.thread, msgId, SectionShow::Way::ClearStack);

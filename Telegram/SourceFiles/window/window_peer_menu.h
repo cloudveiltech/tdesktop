@@ -54,6 +54,10 @@ enum class PeerType : uint8;
 using PeerTypes = base::flags<PeerType>;
 } // namespace InlineBots
 
+namespace Main {
+class SessionShow;
+} // namespace Main
+
 namespace Window {
 
 class Controller;
@@ -94,6 +98,10 @@ void MenuAddMarkAsReadChatListAction(
 void PeerMenuExportChat(
 	not_null<Window::SessionController*> controller,
 	not_null<PeerData*> peer);
+void PeerMenuExportTopic(
+	not_null<Window::SessionNavigation*> navigation,
+	not_null<PeerData*> peer,
+	MsgId topicRootId);
 void PeerMenuDeleteContact(
 	not_null<Window::SessionController*> controller,
 	not_null<UserData*> user);
@@ -107,7 +115,7 @@ void PeerMenuCreatePoll(
 	not_null<Window::SessionController*> controller,
 	not_null<PeerData*> peer,
 	FullReplyTo replyTo = FullReplyTo(),
-	SuggestPostOptions suggest = SuggestPostOptions(),
+	SuggestOptions suggest = SuggestOptions(),
 	PollData::Flags chosen = PollData::Flags(),
 	PollData::Flags disabled = PollData::Flags(),
 	Api::SendType sendType = Api::SendType::Normal,
@@ -122,7 +130,7 @@ void PeerMenuCreateTodoList(
 	not_null<Window::SessionController*> controller,
 	not_null<PeerData*> peer,
 	FullReplyTo replyTo = FullReplyTo(),
-	SuggestPostOptions suggest = SuggestPostOptions(),
+	SuggestOptions suggest = SuggestOptions(),
 	Api::SendType sendType = Api::SendType::Normal,
 	SendMenu::Details sendMenuDetails = SendMenu::Details());
 void PeerMenuEditTodoList(
@@ -259,5 +267,9 @@ void PeerMenuConfirmToggleFee(
 	not_null<PeerData*> peer,
 	not_null<UserData*> user,
 	bool removeFee);
+
+void ForwardToSelf(
+	std::shared_ptr<Main::SessionShow> show,
+	const Data::ForwardDraft &draft);
 
 } // namespace Window

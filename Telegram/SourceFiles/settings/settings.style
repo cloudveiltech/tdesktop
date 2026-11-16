@@ -104,6 +104,7 @@ settingsPremiumIconPrivacy: icon {{ "settings/premium/privacy", settingsIconFg }
 settingsPremiumIconBusiness: icon {{ "settings/premium/market", settingsIconFg }};
 settingsPremiumIconEffects: icon {{ "settings/premium/effects", settingsIconFg }};
 settingsPremiumIconChecklist: icon {{ "settings/premium/checklist", settingsIconFg }};
+settingsPremiumIconPeerColors: icon {{ "settings/premium/peer_colors-24x24", settingsIconFg }};
 
 settingsStoriesIconOrder: icon {{ "settings/premium/stories_order", premiumButtonBg1 }};
 settingsStoriesIconStealth: icon {{ "menu/stealth", premiumButtonBg1 }};
@@ -141,7 +142,6 @@ settingsPremiumNewBadge: FlatLabel(defaultFlatLabel) {
 }
 settingsPremiumNewBadgePosition: point(4px, 1px);
 settingsPremiumNewBadgePadding: margins(4px, 1px, 4px, 1px);
-badgeEmojiMargin: margins(0px, 2px, 0px, 0px);
 
 settingsTTLChatsOff: icon {{ "settings/ttl/autodelete_off", windowSubTextFg }};
 settingsTTLChatsOn: icon {{ "settings/ttl/autodelete_on", windowActiveTextFg }};
@@ -287,6 +287,7 @@ chatThemeEntryMargin: margins(16px, 10px, 16px, 8px);
 chatThemeEmptyPreviewTop: 16px;
 chatThemeEmojiBottom: 12px;
 chatThemeButtonMargin: margins(10px, 0px, 10px, 8px);
+chatThemeGiftTaken: icon {{ "mediaview/mini_repost", msgFileInBg }};
 
 autoDownloadLimitButton: SettingsButton(settingsButtonNoIcon) {
 	padding: margins(22px, 10px, 22px, 0px);
@@ -303,13 +304,15 @@ settingsAccentColorSkip: 4px;
 settingsAccentColorLine: 3px;
 
 settingsFilterDividerLabel: FlatLabel(boxDividerLabel) {
-	minWidth: 258px;
+	minWidth: 200px;
 	maxHeight: 0px;
 	align: align(top);
 }
 settingsFilterDividerLabelPadding: margins(0px, 16px, 0px, 22px);
 settingsFilterIconSize: 74px;
 settingsFilterIconPadding: margins(0px, 17px, 0px, 5px);
+
+settingsFilterTagPreviewSkip: 14px;
 
 settingsDeviceName: InputField(defaultInputField) {
 	textBg: transparent;
@@ -587,6 +590,8 @@ filterLinkChatsList: PeerList(peerListBox) {
 	padding: margins(0px, 0px, 0px, membersMarginBottom);
 }
 
+settingsColorSampleCutout: 3px;
+settingsColorProfileSampleShift: 5px;
 settingsColorSampleSize: 20px;
 settingsColorSampleCenter: 6px;
 settingsColorSampleCenterRadius: 2px;
@@ -598,8 +603,11 @@ settingsColorButton: SettingsButton(settingsButton) {
 settingsColorRadioMargin: 17px;
 settingsColorRadioSkip: 13px;
 settingsColorRadioStroke: 2px;
-settingsLevelBadgeLock: icon {{ "chat/mini_lock", premiumButtonFg }};
-settingsLevelBadgeLockSkip: 4px;
+settingsLevelBadgeLock: IconEmoji{
+	icon: icon {{ "chat/mini_lock", premiumButtonFg }};
+	padding: margins(0px, 4px, 0px, 0px);
+	useIconColor: true;
+}
 
 messagePrivacyTopSkip: 8px;
 messagePrivacyRadioSkip: 6px;
@@ -706,6 +714,11 @@ settingsCreditsButton: SettingsButton(settingsButton) {
 }
 settingsButtonIconGift: icon {{ "settings/gift", menuIconColor }};
 settingsButtonIconEarn: icon {{ "settings/earn", menuIconColor }};
+
+settingsIconPasskeys: icon {{ "menu/permissions", windowBgActive }};
+settingsIconPasskeysAboutIcon1: icon {{ "menu/permissions", boxTextFg }};
+settingsIconPasskeysAboutIcon2: icon {{ "menu/passcode_winhello", boxTextFg }};
+settingsIconPasskeysAboutIcon3: icon {{ "menu/lock", boxTextFg }};
 
 settingsAgeVerifyBox: Box(filterInviteBox) {
 	buttonPadding: margins(24px, 24px, 24px, 24px);

@@ -133,11 +133,37 @@ struct GiveawayResults {
 	bool all = false;
 };
 
+struct DiceGameOptions {
+	QByteArray seedHash;
+	int64 previousSteakNanoTon = 0;
+	std::array<int, 6> milliRewards;
+	int jackpotMilliReward = 0;
+	int currentStreak = 0;
+	int playsLeft = 0;
+
+	explicit operator bool() const {
+		return !seedHash.isEmpty();
+	}
+};
+
+struct DiceGameOutcome {
+	int64 nanoTon = 0;
+	int64 stakeNanoTon = 0;
+	QByteArray seed;
+
+	explicit operator bool() const {
+		return stakeNanoTon != 0;
+	}
+};
+
 enum class GiftType : uchar {
-	Premium, // count - months
+	Premium, // count - days
 	Credits, // count - credits
 	Ton, // count - nano tons
 	StarGift, // count - stars
+	ChatTheme,
+	BirthdaySuggest,
+	GiftOffer,
 };
 
 struct GiftCode {
@@ -147,20 +173,28 @@ struct GiftCode {
 	PeerData *stargiftReleasedBy = nullptr;
 	std::shared_ptr<UniqueGift> unique;
 	TextWithEntities message;
+	PeerData *auctionTo = nullptr;
 	ChannelData *channel = nullptr;
 	PeerData *channelFrom = nullptr;
 	uint64 channelSavedId = 0;
+	QString giftPrepayUpgradeHash;
+	QString giftTitle;
 	MsgId giveawayMsgId = 0;
-	MsgId upgradeMsgId = 0;
+	MsgId realGiftMsgId = 0;
 	int starsConverted = 0;
 	int starsToUpgrade = 0;
 	int starsUpgradedBySender = 0;
+	int starsForDetailsRemove = 0;
+	int starsBid = 0;
+	int giftNum = 0;
 	int limitedCount = 0;
 	int limitedLeft = 0;
 	int64 count = 0;
 	GiftType type = GiftType::Premium;
 	bool viaGiveaway : 1 = false;
 	bool transferred : 1 = false;
+	bool upgradeSeparate : 1 = false;
+	bool upgradeGifted : 1 = false;
 	bool upgradable : 1 = false;
 	bool unclaimed : 1 = false;
 	bool anonymous : 1 = false;
@@ -203,9 +237,11 @@ public:
 	virtual bool paperForBoth() const;
 	virtual FullStoryId storyId() const;
 	virtual bool storyExpired(bool revalidate = false);
+	virtual bool storyUnsupported() const;
 	virtual bool storyMention() const;
 	virtual const GiveawayStart *giveawayStart() const;
 	virtual const GiveawayResults *giveawayResults() const;
+	virtual DiceGameOutcome diceGameOutcome() const;
 
 	virtual bool uploading() const;
 	virtual Storage::SharedMediaTypesMask sharedMediaTypes() const;
@@ -643,7 +679,11 @@ private:
 
 class MediaDice final : public Media {
 public:
-	MediaDice(not_null<HistoryItem*> parent, QString emoji, int value);
+	MediaDice(
+		not_null<HistoryItem*> parent,
+		DiceGameOutcome outcome,
+		QString emoji,
+		int value);
 
 	std::unique_ptr<Media> clone(not_null<HistoryItem*> parent) override;
 
@@ -655,6 +695,7 @@ public:
 	QString pinnedTextSubstring() const override;
 	TextForMimeData clipboardText() const override;
 	bool forceForwardedInfo() const override;
+	DiceGameOutcome diceGameOutcome() const override;
 
 	bool updateInlineResultMedia(const MTPMessageMedia &media) override;
 	bool updateSentMedia(const MTPMessageMedia &media) override;
@@ -669,6 +710,7 @@ public:
 		const QString &emoji);
 
 private:
+	DiceGameOutcome _outcome;
 	QString _emoji;
 	int _value = 0;
 
@@ -750,6 +792,7 @@ public:
 
 	FullStoryId storyId() const override;
 	bool storyExpired(bool revalidate = false) override;
+	bool storyUnsupported() const override;
 	bool storyMention() const override;
 
 	TextWithEntities notificationText() const override;
@@ -771,6 +814,7 @@ private:
 	const FullStoryId _storyId;
 	const bool _mention = false;
 	bool _viewMayExist = false;
+	bool _unsupported = false;
 	bool _expired = false;
 
 };

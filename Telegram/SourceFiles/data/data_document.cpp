@@ -1117,9 +1117,10 @@ void DocumentData::save(
 		if (!toFile.isEmpty()) {
 			if (!media->bytes().isEmpty()) {
 				QFile f(toFile);
-				f.open(QIODevice::WriteOnly);
-				f.write(media->bytes());
-				f.close();
+				if (f.open(QIODevice::WriteOnly)) {
+					f.write(media->bytes());
+					f.close();
+				}
 
 				setLocation(Core::FileLocation(toFile));
 				session().local().writeFileLocation(
@@ -1216,7 +1217,7 @@ void DocumentData::save(
 
 void DocumentData::handleLoaderUpdates() {
 	_loader->updates(
-	) | rpl::start_with_next_error_done([=] {
+	) | rpl::on_next_error_done([=] {
 		_owner->documentLoadProgress(this);
 	}, [=](FileLoader::Error error) {
 		using FailureReason = FileLoader::FailureReason;
@@ -1712,6 +1713,10 @@ void DocumentData::forceIsStreamedAnimation() {
 	setMaybeSupportsStreaming(true);
 }
 
+bool DocumentData::isMusicForProfile() const {
+	return isSong();
+}
+
 bool DocumentData::isVoiceMessage() const {
 	return (type == VoiceDocument);
 }
@@ -1740,6 +1745,7 @@ bool DocumentData::isTheme() const {
 		|| _filename.endsWith(u".tdesktop-palette"_q, Qt::CaseInsensitive)
 		|| (hasMimeType(u"application/x-tgtheme-tdesktop"_q)
 			&& (_filename.isEmpty()
+				|| !_filename.contains('.')
 				|| _nameType == Core::NameType::ThemeFile));
 }
 

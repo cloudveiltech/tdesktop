@@ -51,10 +51,7 @@ namespace {
 
 [[nodiscard]] QPoint notificationStartPosition() {
 	const auto corner = Core::App().settings().notificationsCorner();
-	const auto window = Core::App().activePrimaryWindow();
-	const auto r = window
-		? window->widget()->desktopRect()
-		: QGuiApplication::primaryScreen()->availableGeometry();
+	const auto r = NotificationDisplayRect(Core::App().activePrimaryWindow());
 	const auto isLeft = Core::Settings::IsLeftCorner(corner);
 	const auto isTop = Core::Settings::IsTopCorner(corner);
 	const auto x = (isLeft == rtl())
@@ -79,7 +76,7 @@ Manager::Manager(System *system)
 : Notifications::Manager(system)
 , _inputCheckTimer([=] { checkLastInput(); }) {
 	system->settingsChanged(
-	) | rpl::start_with_next([=](ChangeType change) {
+	) | rpl::on_next([=](ChangeType change) {
 		settingsChanged(change);
 	}, _lifetime);
 }
@@ -263,14 +260,14 @@ void Manager::subscribeToSession(not_null<Main::Session*> session) {
 	if (i == _subscriptions.end()) {
 		i = _subscriptions.emplace(session).first;
 		session->account().sessionChanges(
-		) | rpl::start_with_next([=] {
+		) | rpl::on_next([=] {
 			_subscriptions.remove(session);
 		}, i->second.lifetime);
 	} else if (i->second.subscription) {
 		return;
 	}
 	session->downloaderTaskFinished(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		auto found = false;
 		for (const auto &notification : _notifications) {
 			if (const auto history = notification->maybeHistory()) {
@@ -625,7 +622,7 @@ QPoint Widget::computePosition(int height) const {
 	return QPoint(_startPosition.x(), _startPosition.y() + realShift);
 }
 
-Background::Background(QWidget *parent) : TWidget(parent) {
+Background::Background(QWidget *parent) : RpWidget(parent) {
 	setAttribute(Qt::WA_OpaquePaintEvent);
 }
 
@@ -669,13 +666,13 @@ Notification::Notification(
 , _close(this, st::notifyClose)
 , _reply(this, tr::lng_notification_reply(), st::defaultBoxButton) {
 	Lang::Updated(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		refreshLang();
 	}, lifetime());
 
 	if (_topic) {
 		_topic->destroyed(
-		) | rpl::start_with_next([=] {
+		) | rpl::on_next([=] {
 			unlinkHistory();
 		}, lifetime());
 	}
@@ -706,7 +703,7 @@ Notification::Notification(
 	prepareActionsCache();
 
 	style::PaletteChanged(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		updateNotifyDisplay();
 		if (!_buttonsCache.isNull()) {
 			prepareActionsCache();
@@ -1010,7 +1007,7 @@ void Notification::updateNotifyDisplay() {
 		auto title = options.hideNameAndPhoto
 			? TextWithEntities{ u"Telegram Desktop"_q }
 			: reminder
-			? tr::lng_notification_reminder(tr::now, Ui::Text::WithEntities)
+			? tr::lng_notification_reminder(tr::now, tr::marked)
 			: topicWithChat();
 		const auto fullTitle = manager()->addTargetAccountName(
 			std::move(title),
@@ -1130,13 +1127,13 @@ void Notification::showReplyField() {
 	// Catch mouse press event to activate the window.
 	QCoreApplication::instance()->installEventFilter(this);
 	_replyArea->heightChanges(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		replyResized();
 	}, _replyArea->lifetime());
 	_replyArea->submits(
-	) | rpl::start_with_next([=] { sendReply(); }, _replyArea->lifetime());
+	) | rpl::on_next([=] { sendReply(); }, _replyArea->lifetime());
 	_replyArea->cancelled(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		replyCancel();
 	}, _replyArea->lifetime());
 
@@ -1269,7 +1266,7 @@ HideAllButton::HideAllButton(
 	updateGeometry(position.x(), position.y(), st::notifyWidth, st::notifyHideAllHeight);
 
 	style::PaletteChanged(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		update();
 	}, lifetime());
 

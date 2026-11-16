@@ -41,7 +41,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 #include "styles/style_chat.h"
 #include "styles/style_chat_helpers.h"
-#include "styles/style_credits.h" // giftBoxByStarsStyle
 
 namespace Data {
 namespace {
@@ -99,10 +98,6 @@ private:
 	return sizeOverride
 		? (sizeOverride * style::DevicePixelRatio())
 		: FrameSizeFromTag(tag);
-}
-
-[[nodiscard]] QString InternalPrefix() {
-	return u"internal:"_q;
 }
 
 [[nodiscard]] QString UserpicEmojiPrefix() {
@@ -264,7 +259,7 @@ void CustomEmojiLoader::load(Fn<void(LoadResult)> loaded) {
 				check();
 			} else {
 				load->document->session().downloaderTaskFinished(
-				) | rpl::start_with_next([=] {
+				) | rpl::on_next([=] {
 					check();
 				}, load->process->lifetime);
 			}
@@ -468,7 +463,7 @@ CustomEmojiManager::CustomEmojiManager(not_null<Session*> owner)
 	appConfig->value(
 	) | rpl::take_while([=] {
 		return !_coloredSetId;
-	}) | rpl::start_with_next([=] {
+	}) | rpl::on_next([=] {
 		const auto setId = appConfig->get<QString>(
 			"default_emoji_statuses_stickerset_id",
 			QString()).toULongLong();
@@ -570,8 +565,6 @@ std::unique_ptr<Ui::Text::CustomEmoji> CustomEmojiManager::create(
 		const auto original = data.mid(ForceStaticPrefix().size());
 		return std::make_unique<Ui::Text::FirstFrameEmoji>(
 			create(original, std::move(update), tag, sizeOverride));
-	} else if (data.startsWith(InternalPrefix())) {
-		return internal(data);
 	} else if (data.startsWith(UserpicEmojiPrefix())) {
 		const auto ratio = style::DevicePixelRatio();
 		const auto size = EmojiSizeFromTag(tag) / ratio;
@@ -617,26 +610,6 @@ std::unique_ptr<Ui::Text::CustomEmoji> CustomEmojiManager::create(
 	return create(document->id, std::move(update), tag, sizeOverride, [&] {
 		return createLoaderWithSetId(document, tag, sizeOverride);
 	});
-}
-
-std::unique_ptr<Ui::Text::CustomEmoji> CustomEmojiManager::internal(
-		QStringView data) {
-	const auto v = data.mid(InternalPrefix().size()).split(',');
-	if (v.size() != 5 && v.size() != 1) {
-		return nullptr;
-	}
-	const auto index = v[0].toInt();
-	Assert(index >= 0 && index < _internalEmoji.size());
-
-	auto &info = _internalEmoji[index];
-	const auto padding = (v.size() == 5)
-		? QMargins(v[1].toInt(), v[2].toInt(), v[3].toInt(), v[4].toInt())
-		: QMargins();
-	return std::make_unique<Ui::CustomEmoji::Internal>(
-		data.toString(),
-		info.image,
-		padding,
-		info.textColor);
 }
 
 std::unique_ptr<Ui::Text::CustomEmoji> CustomEmojiManager::userpic(
@@ -906,15 +879,15 @@ void CustomEmojiManager::repaintLater(
 		not_null<Ui::CustomEmoji::Instance*> instance,
 		Ui::CustomEmoji::RepaintRequest request) {
 	auto &bunch = _repaints[request.duration];
-	if (bunch.when < request.when) {
-		if (bunch.when > 0) {
-			for (const auto &already : bunch.instances) {
-				if (already.get() == instance) {
-					// Still waiting for full bunch repaint, don't bump.
-					return;
-				}
+	if (bunch.when > 0) {
+		for (const auto &already : bunch.instances) {
+			if (already.get() == instance) {
+				// Still waiting for full bunch repaint, don't bump.
+				return;
 			}
 		}
+	}
+	if (bunch.when < request.when) {
 		bunch.when = request.when;
 #if 0 // inject-to-on_main
 		_repaintsLastAdded = request.when;
@@ -944,7 +917,7 @@ void CustomEmojiManager::scheduleRepaintTimer() {
 #if 0 // inject-to-on_main
 	if (!_repaintsLifetime) {
 		crl::on_main_update_requests(
-		) | rpl::start_with_next([=] {
+		) | rpl::on_next([=] {
 			invokeRepaints();
 		}, _repaintsLifetime);
 	}
@@ -1019,65 +992,6 @@ Session &CustomEmojiManager::owner() const {
 
 uint64 CustomEmojiManager::coloredSetId() const {
 	return _coloredSetId;
-}
-
-TextWithEntities CustomEmojiManager::creditsEmoji(QMargins padding) {
-	return Ui::Text::SingleCustomEmoji(registerInternalEmoji(
-		u"builtin:credits_emoji"_q,
-		Ui::GenerateStars(st::normalFont->height, 1),
-		padding,
-		false));
-}
-
-TextWithEntities CustomEmojiManager::ministarEmoji(QMargins padding) {
-	return Ui::Text::SingleCustomEmoji(registerInternalEmoji(
-		u"builtin:ministar_emoji"_q,
-		Ui::GenerateStars(st::giftBoxByStarsStyle.font->height, 1),
-		padding,
-		false));
-}
-
-QString CustomEmojiManager::registerInternalEmoji(
-		const QString &key,
-		QImage emoji,
-		QMargins padding,
-		bool textColor) {
-	auto i = _imageEmoji.find(key);
-	if (i == end(_imageEmoji)) {
-		i = _imageEmoji.emplace(
-			key,
-			registerImageEmoji(std::move(emoji), textColor)).first;
-	}
-	return i->second + InternalPadding(padding);
-}
-
-QString CustomEmojiManager::registerImageEmoji(
-		QImage emoji,
-		bool textColor) {
-	_internalEmoji.push_back({ std::move(emoji), textColor });
-	return InternalPrefix() + QString::number(_internalEmoji.size() - 1);
-}
-
-QString CustomEmojiManager::registerInternalEmoji(
-		const style::icon &icon,
-		QMargins padding,
-		bool textColor) {
-	const auto i = _iconEmoji.find(&icon);
-	if (i != end(_iconEmoji)) {
-		return i->second + InternalPadding(padding);
-	}
-	auto image = QImage(
-		icon.size() * style::DevicePixelRatio(),
-		QImage::Format_ARGB32_Premultiplied);
-	image.fill(Qt::transparent);
-	image.setDevicePixelRatio(style::DevicePixelRatio());
-	auto p = QPainter(&image);
-	icon.paint(p, 0, 0, icon.width());
-	p.end();
-
-	const auto result = registerImageEmoji(std::move(image), textColor);
-	_iconEmoji.emplace(&icon, result);
-	return result + InternalPadding(padding);
 }
 
 [[nodiscard]] QString CustomEmojiManager::peerUserpicEmojiData(

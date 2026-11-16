@@ -79,7 +79,7 @@ void SetSearchButtonLabel(
 	rpl::combine(
 		button->sizeValue(),
 		std::move(text)
-	) | rpl::start_with_next([=](QSize size, const auto &) {
+	) | rpl::on_next([=](QSize size, const auto &) {
 		icons->setGeometry(QRect(QPoint(), size));
 		const auto available = size.width() - leftSkip - rightSkip;
 		if (available <= 0) {
@@ -93,7 +93,7 @@ void SetSearchButtonLabel(
 		label->moveToLeft(x + leftSkip, y, size.width());
 	}, icons->lifetime());
 
-	icons->paintRequest() | rpl::start_with_next([=] {
+	icons->paintRequest() | rpl::on_next([=] {
 		auto p = QPainter(icons);
 		left->paint(
 			p,
@@ -170,34 +170,41 @@ void PostsSearchIntro::setup() {
 			_content.get(),
 			std::move(title),
 			st::postsSearchIntroTitle),
-		st::postsSearchIntroTitleMargin);
+		st::postsSearchIntroTitleMargin,
+		style::al_top);
 	_title->setTryMakeSimilarLines(true);
 	_subtitle = _content->add(
 		object_ptr<Ui::FlatLabel>(
 			_content.get(),
 			std::move(subtitle),
 			st::postsSearchIntroSubtitle),
-		st::postsSearchIntroSubtitleMargin);
+		st::postsSearchIntroSubtitleMargin,
+		style::al_top);
 	_subtitle->setTryMakeSimilarLines(true);
 	_button = _content->add(
-		object_ptr<Ui::CenterWrap<Ui::RoundButton>>(
+		object_ptr<Ui::RoundButton>(
 			_content.get(),
-			object_ptr<Ui::RoundButton>(
-				_content.get(),
-				rpl::single(QString()),
-				st::postsSearchIntroButton))
-	)->entity();
+			rpl::single(QString()),
+			st::postsSearchIntroButton),
+		style::al_top);
 	_button->setTextTransform(Ui::RoundButton::TextTransform::NoTransform);
 	_footer = _content->add(
 		object_ptr<Ui::FlatLabel>(
 			_content.get(),
 			std::move(footer),
 			st::postsSearchIntroFooter),
-		st::postsSearchIntroFooterMargin);
+		st::postsSearchIntroFooterMargin,
+		style::al_top);
 	_footer->setTryMakeSimilarLines(true);
 
 	_state.value(
-	) | rpl::start_with_next([=](const PostsSearchIntroState &state) {
+	) | rpl::on_next([=](const PostsSearchIntroState &state) {
+		if (state.query.trimmed().isEmpty() && !state.needsPremium) {
+			_button->resize(_button->width(), 0);
+			_content->resizeToWidth(width());
+			return;
+		}
+
 		auto copy = _button->children();
 		for (const auto child : copy) {
 			delete child;
@@ -210,7 +217,7 @@ void PostsSearchIntro::setup() {
 			SetSearchButtonLabel(_button, tr::lng_posts_search_button(
 				lt_query,
 				rpl::single(Ui::Text::Colorized(state.query.trimmed())),
-				Ui::Text::WithEntities));
+				tr::marked));
 		} else {
 			_button->setText(rpl::single(QString()));
 
@@ -222,16 +229,17 @@ void PostsSearchIntro::setup() {
 						&st::starIconEmoji
 					).append(
 						Lang::FormatCountDecimal(state.starsPerPaidSearch))),
-					Ui::Text::WithEntities),
+					tr::marked),
 				tr::lng_posts_limit_unlocks(
 					lt_duration,
 					FormatCountdownTill(
 						state.nextFreeSearchTime
-					) | Ui::Text::ToWithEntities(),
-					Ui::Text::WithEntities),
+					) | rpl::map(tr::marked),
+					tr::marked),
 				st::resaleButtonTitle,
 				st::resaleButtonSubtitle);
 		}
+		_button->resize(_button->width(), st::postsSearchIntroButton.height);
 		_content->resizeToWidth(width());
 	}, _button->lifetime());
 }

@@ -87,7 +87,7 @@ void LoginEmailConfirm::setupContent() {
 		return;
 	}
 	cloudPassword().state(
-	) | rpl::start_with_next([=](const Core::CloudPasswordState &state) {
+	) | rpl::on_next([=](const Core::CloudPasswordState &state) {
 		if (state.loginEmailPattern.isEmpty()) {
 			setStepData(StepData());
 			showBack();
@@ -106,11 +106,9 @@ void LoginEmailConfirm::setupContent() {
 
 	Ui::AddSkip(content, st::settingLocalPasscodeDescriptionBottomSkip);
 
-	const auto wrap = content->add(
-		object_ptr<Ui::CenterWrap<Ui::CodeInput>>(
-			content,
-			object_ptr<Ui::CodeInput>(content)));
-	const auto newInput = wrap->entity();
+	const auto newInput = content->add(
+		object_ptr<Ui::CodeInput>(content),
+		style::al_top);
 	newInput->setDigitsCountMax(currentStepDataCodeLength);
 
 	Ui::AddSkip(content);
@@ -161,7 +159,7 @@ void LoginEmailConfirm::setupContent() {
 	};
 
 	newInput->codeCollected(
-	) | rpl::start_with_next([=](const QString &code) {
+	) | rpl::on_next([=](const QString &code) {
 		_collectedCode = code;
 		error->hide();
 		submit();

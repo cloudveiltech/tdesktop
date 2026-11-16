@@ -2,7 +2,7 @@
 Name=CloudVeil Messenger
 Comment=Secure messaging with CloudVeil
 TryExec=cloudveil-messenger
-Exec=cloudveil-messenger -- %u
+Exec=cloudveil-messenger -- %U
 Icon=org.cloudveil.messenger
 Terminal=false
 StartupWMClass=TelegramDesktop

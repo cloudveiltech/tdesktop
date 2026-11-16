@@ -8,19 +8,21 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/controls/stars_rating.h"
 
 #include "base/unixtime.h"
-#include "info/profile/info_profile_icon.h"
 #include "lang/lang_keys.h"
+#include "ui/controls/feature_list.h"
 #include "ui/effects/premium_bubble.h"
 #include "ui/effects/premium_graphics.h"
 #include "ui/layers/generic_box.h"
 #include "ui/layers/show.h"
 #include "ui/text/custom_emoji_helper.h"
+#include "ui/text/custom_emoji_text_badge.h"
 #include "ui/text/text_utilities.h"
 #include "ui/toast/toast.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/labels.h"
 #include "ui/widgets/tooltip.h"
 #include "ui/painter.h"
+#include "ui/rect.h"
 #include "ui/rp_widget.h"
 #include "ui/ui_utility.h"
 #include "styles/style_chat.h" // textMoreIconEmoji
@@ -38,89 +40,6 @@ namespace {
 constexpr auto kAutoCollapseTimeout = 4 * crl::time(1000);
 
 using Counters = Data::StarsRating;
-
-struct Feature {
-	const style::icon &icon;
-	QString title;
-	TextWithEntities about;
-};
-
-[[nodiscard]] object_ptr<Ui::RpWidget> MakeFeature(
-		QWidget *parent,
-		Feature feature,
-		const Text::MarkedContext &context) {
-	auto result = object_ptr<Ui::PaddingWrap<>>(
-		parent,
-		object_ptr<Ui::RpWidget>(parent),
-		st::infoStarsFeatureMargin);
-	const auto widget = result->entity();
-	const auto icon = Ui::CreateChild<Info::Profile::FloatingIcon>(
-		widget,
-		feature.icon,
-		st::infoStarsFeatureIconPosition);
-	const auto title = Ui::CreateChild<Ui::FlatLabel>(
-		widget,
-		feature.title,
-		st::infoStarsFeatureTitle);
-	const auto about = Ui::CreateChild<Ui::FlatLabel>(
-		widget,
-		rpl::single(feature.about),
-		st::infoStarsFeatureAbout,
-		st::defaultPopupMenu,
-		context);
-	icon->show();
-	title->show();
-	about->show();
-	widget->widthValue(
-	) | rpl::start_with_next([=](int width) {
-		const auto left = st::infoStarsFeatureLabelLeft;
-		const auto available = width - left;
-		title->resizeToWidth(available);
-		about->resizeToWidth(available);
-		auto top = 0;
-		title->move(left, top);
-		top += title->height() + st::infoStarsFeatureSkip;
-		about->move(left, top);
-		top += about->height();
-		widget->resize(width, top);
-	}, widget->lifetime());
-	return result;
-}
-
-[[nodiscard]] Fn<QImage()> CustomEmojiBadgeFactory(
-		const QString &text,
-		const style::color &bg,
-		const style::color &fg) {
-	return [=] {
-		auto string = Ui::Text::String(
-			st::settingsPremiumNewBadge.style,
-			text.toUpper());
-		const auto size = QSize(string.maxWidth(), string.minHeight());
-		const auto padding = st::settingsPremiumNewBadgePadding;
-		const auto full = size.grownBy(padding);
-		const auto ratio = style::DevicePixelRatio();
-
-		auto result = QImage(
-			full * ratio,
-			QImage::Format_ARGB32_Premultiplied);
-		result.setDevicePixelRatio(ratio);
-		result.fill(Qt::transparent);
-
-		auto p = QPainter(&result);
-		auto hq = PainterHighQualityEnabler(p);
-		p.setPen(Qt::NoPen);
-		p.setBrush(bg);
-
-		const auto r = padding.left();
-		p.drawRoundedRect(0, 0, full.width(), full.height(), r, r);
-
-		p.setPen(fg);
-		string.draw(p, { .position = { padding.left(), padding.top() } });
-
-		p.end();
-		return result;
-	};
-}
 
 [[nodiscard]] Counters AdjustByReached(Counters data) {
 	if (data.stars < 0) {
@@ -144,13 +63,23 @@ struct Feature {
 	return data;
 }
 
-[[nodiscard]] Fn<QString(int)> BubbleTextFactory(int countForScale) {
+[[nodiscard]] Fn<Premium::BubbleText(int)> BubbleTextFactory(
+		int countForScale,
+		int nextLevelCounter) {
 	return [=](int count) {
-		return (countForScale < 10'000)
-			? QString::number(count)
-			: (countForScale < 10'000'000)
-			? (QString::number((count / 100) / 10.) + 'K')
-			: (QString::number((count / 100'000) / 10.) + 'M');
+		const auto counter = [&](int count) {
+			return (countForScale < 10'000)
+				? Lang::FormatCountDecimal(count)
+				: (countForScale < 10'000'000)
+				? (Lang::FormatCountDecimal((count / 100) / 10.) + 'K')
+				: (Lang::FormatCountDecimal((count / 100'000) / 10.) + 'M');
+		};
+		return Premium::BubbleText{
+			.counter = counter(count),
+			.additional = (nextLevelCounter
+				? (u"/"_q + counter(nextLevelCounter))
+				: QString()),
+		};
 	};
 }
 
@@ -161,9 +90,10 @@ void FillRatingLimit(
 		Premium::BubbleType type,
 		style::margins limitLinePadding,
 		int starsForScale,
+		int nextLevelStars,
 		bool hideCount) {
 	const auto addSkip = [&](int skip) {
-		container->add(object_ptr<Ui::FixedHeightWidget>(container, skip));
+		container->add(object_ptr<FixedHeightWidget>(container, skip));
 	};
 
 	const auto negative = (type == Premium::BubbleType::NegativeRating);
@@ -220,13 +150,13 @@ void FillRatingLimit(
 	});
 	Premium::AddBubbleRow(
 		container,
-		(hideCount ? st::iconOnlyPremiumBubble : st::boostBubble),
+		(hideCount ? st::iconOnlyPremiumBubble : st::starRatingBubble),
 		std::move(showFinished),
 		rpl::duplicate(bubbleRowState),
 		type,
 		(hideCount
-			? [](int) { return QString(); }
-			: BubbleTextFactory(starsForScale)),
+			? [](int) { return Premium::BubbleText(); }
+			: BubbleTextFactory(starsForScale, nextLevelStars)),
 		negative ? &st::levelNegativeBubble : &st::infoStarsCrown,
 		limitLinePadding);
 	addSkip(st::premiumLineTextSkip);
@@ -295,6 +225,7 @@ void AboutRatingBox(
 			: Premium::BubbleType::StarRating),
 		st::boxRowPadding,
 		data.stars,
+		data.nextLevelStars,
 		(data.level < 0 && !data.stars));
 
 	box->setMaxHeight(st::boostBoxMaxHeight);
@@ -308,33 +239,35 @@ void AboutRatingBox(
 		? tr::lng_stars_rating_about(
 			lt_name,
 			rpl::single(TextWithEntities{ name }),
-			Ui::Text::RichLangValue) | rpl::type_erased()
+			tr::rich) | rpl::type_erased
 		: tr::lng_stars_rating_about_your(
-			Ui::Text::RichLangValue) | rpl::type_erased();
+			tr::rich) | rpl::type_erased;
 
 	if (data.level < 0) {
 		auto text = (data.stars < 0)
 			? tr::lng_stars_rating_negative_your(
 				lt_count_decimal,
 				rpl::single(-data.stars * 1.),
-				Ui::Text::RichLangValue)
+				tr::rich)
 			: tr::lng_stars_rating_negative(
 				lt_name,
 				rpl::single(TextWithEntities{ name }),
-				Ui::Text::RichLangValue);
-		const auto aboutNegative = box->addRow(
-			object_ptr<Ui::FlatLabel>(
+				tr::rich);
+		box->addRow(
+			object_ptr<FlatLabel>(
 				box,
 				std::move(text),
 				st::boostTextNegative),
 			(st::boxRowPadding
-				+ QMargins(0, st::boostTextSkip, 0, st::boostBottomSkip)));
-		aboutNegative->setTryMakeSimilarLines(true);
+				+ QMargins(0, st::boostTextSkip, 0, st::boostBottomSkip)),
+			style::al_top
+		)->setTryMakeSimilarLines(true);
 	}
 
 	box->addRow(
-		object_ptr<Ui::FlatLabel>(box, std::move(title), st::infoStarsTitle),
-		st::boxRowPadding + QMargins(0, st::boostTitleSkip / 2, 0, 0));
+		object_ptr<FlatLabel>(box, std::move(title), st::infoStarsTitle),
+		st::boxRowPadding + QMargins(0, st::boostTitleSkip / 2, 0, 0),
+		style::al_top);
 
 	if (pending) {
 		const auto now = base::unixtime::now();
@@ -350,22 +283,23 @@ void AboutRatingBox(
 					tr::lng_stars_rating_updates(tr::now, lt_count, days),
 				},
 				lt_link,
-				Ui::Text::Link((value
+				Text::Link((value
 					? tr::lng_stars_rating_pending_back
 					: tr::lng_stars_rating_pending_preview)(
 						tr::now,
 						lt_arrow,
-						Ui::Text::IconEmoji(&st::textMoreIconEmoji),
-						Ui::Text::WithEntities)),
-				Ui::Text::RichLangValue);
+						Text::IconEmoji(&st::textMoreIconEmoji),
+						tr::marked)),
+				tr::rich);
 		});
 		const auto aboutPending = box->addRow(
-			object_ptr<Ui::FlatLabel>(
+			object_ptr<FlatLabel>(
 				box,
 				std::move(text),
 				st::boostTextPending),
 			(st::boxRowPadding
-				+ QMargins(0, st::boostTextSkip, 0, st::boostBottomSkip)));
+				+ QMargins(0, st::boostTextSkip, 0, st::boostBottomSkip)),
+			style::al_top);
 		aboutPending->setTryMakeSimilarLines(true);
 		aboutPending->setClickHandlerFilter([=](const auto &...) {
 			state->pending = !state->pending.current();
@@ -377,31 +311,30 @@ void AboutRatingBox(
 		});
 	}
 
-	const auto aboutLabel = box->addRow(
-		object_ptr<Ui::FlatLabel>(
+	box->addRow(
+		object_ptr<FlatLabel>(
 			box,
 			std::move(text),
 			st::boostText),
 		(st::boxRowPadding
-			+ QMargins(0, st::boostTextSkip, 0, st::boostBottomSkip)));
-	aboutLabel->setTryMakeSimilarLines(true);
+			+ QMargins(0, st::boostTextSkip, 0, st::boostBottomSkip)),
+		style::al_top
+	)->setTryMakeSimilarLines(true);
 
-	auto helper = Ui::Text::CustomEmojiHelper();
+	auto helper = Text::CustomEmojiHelper();
 	const auto makeBadge = [&](
 			const QString &text,
-			const style::color &bg,
-			const style::color &fg) {
+			const style::RoundButton &st) {
 		return helper.paletteDependent(
-			CustomEmojiBadgeFactory(text, bg, fg),
-			st::badgeEmojiMargin);
+			Text::CustomEmojiTextBadge(text.toUpper(), st));
 	};
 	const auto makeActive = [&](const QString &text) {
-		return makeBadge(text, st::windowBgActive, st::windowFgActive);
+		return makeBadge(text, st::customEmojiTextBadge);
 	};
 	const auto makeInactive = [&](const QString &text) {
-		return makeBadge(text, st::windowSubTextFg, st::windowFgActive);
+		return makeBadge(text, st::infoRatingDeductedBadge);
 	};
-	const auto features = std::vector<Feature>{
+	const auto features = std::vector<FeatureListEntry>{
 		{
 			st::menuIconRatingGifts,
 			tr::lng_stars_title_gifts_telegram(tr::now),
@@ -409,7 +342,7 @@ void AboutRatingBox(
 				tr::now,
 				lt_emoji,
 				makeActive(tr::lng_stars_rating_added(tr::now)),
-				Ui::Text::RichLangValue),
+				tr::rich),
 		},
 		{
 			st::menuIconRatingUsers,
@@ -418,7 +351,7 @@ void AboutRatingBox(
 				tr::now,
 				lt_emoji,
 				makeActive(tr::lng_stars_rating_added(tr::now)),
-				Ui::Text::RichLangValue),
+				tr::rich),
 		},
 		{
 			st::menuIconRatingRefund,
@@ -427,16 +360,16 @@ void AboutRatingBox(
 				tr::now,
 				lt_emoji,
 				makeInactive(tr::lng_stars_rating_deducted(tr::now)),
-				Ui::Text::RichLangValue),
+				tr::rich),
 		},
 	};
 	const auto context = helper.context();
 	for (const auto &feature : features) {
-		box->addRow(MakeFeature(box, feature, context));
+		box->addRow(MakeFeatureListEntry(box, feature, context));
 	}
 	box->addButton(rpl::single(QString()), [=] {
 		box->closeBox();
-	})->setText(rpl::single(Ui::Text::IconEmoji(
+	})->setText(rpl::single(Text::IconEmoji(
 		&st::infoStarsUnderstood
 	).append(' ').append(tr::lng_stars_rating_understood(tr::now))));
 }
@@ -481,11 +414,11 @@ void AboutRatingBox(
 
 StarsRating::StarsRating(
 	QWidget *parent,
-	std::shared_ptr<Ui::Show> show,
+	std::shared_ptr<Show> show,
 	const QString &name,
 	rpl::producer<Counters> value,
 	Fn<Data::StarsRatingPending()> pending)
-: _widget(std::make_unique<Ui::AbstractButton>(parent))
+: _widget(std::make_unique<AbstractButton>(parent))
 , _show(std::move(show))
 , _name(name)
 , _value(std::move(value))
@@ -498,7 +431,7 @@ StarsRating::~StarsRating() = default;
 void StarsRating::init() {
 	_widget->setPointerCursor(true);
 
-	_widget->paintRequest() | rpl::start_with_next([=] {
+	_widget->paintRequest() | rpl::on_next([=] {
 		auto p = QPainter(_widget.get());
 		paint(p);
 	}, lifetime());
@@ -514,7 +447,7 @@ void StarsRating::init() {
 
 	_widget->resize(_widget->width(), st::level1.icon.height());
 
-	_value.value() | rpl::start_with_next([=](Counters rating) {
+	_value.value() | rpl::on_next([=](Counters rating) {
 		updateData(rating);
 	}, lifetime());
 }
@@ -523,14 +456,15 @@ void StarsRating::updateData(Data::StarsRating rating) {
 	if (!rating) {
 		_shape = nullptr;
 		_widthValue = 0;
+		_currentLevel = 0;
 	} else {
 		_shape = SelectShape(rating.level);
-		_collapsedText.setText(
-			st::levelStyle,
-			(rating.level < 0
-				? QString()
-				: Lang::FormatCountDecimal(rating.level)));
-		_widthValue = _shape->icon.width() - st::levelMargin.left();
+		_collapsedText = (rating.level < 0
+			? QString()
+			: Lang::FormatCountDecimal(rating.level));
+		const auto &margin = st::levelMargin;
+		_widthValue = _shape->icon.width() + margin.right() - margin.left();
+		_currentLevel = rating.level;
 	}
 	updateWidth();
 }
@@ -553,22 +487,64 @@ void StarsRating::moveTo(int x, int y) {
 	_widget->move(x - st::levelMargin.left(), y - st::levelMargin.top());
 }
 
+void StarsRating::setOpacity(float64 opacity) {
+	_opacity = opacity;
+	_widget->update();
+}
+
+void StarsRating::setCustomColors(
+		std::optional<QColor> textColor,
+		std::optional<QColor> shapeColor) {
+	_customTextColor = textColor;
+	_customShapeColor = shapeColor;
+	_cachedLevel = std::numeric_limits<int>::min();
+	_widget->update();
+}
+
 void StarsRating::paint(QPainter &p) {
+	p.setOpacity(_opacity);
 	if (!_shape) {
 		return;
 	}
-	_shape->icon.paint(p, 0, 0, _widget->width());
 
-	const auto x = (_widget->width() - _collapsedText.maxWidth()) / 2;
-	p.setPen(st::levelTextFg);
-	_collapsedText.draw(p, {
-		.position = QPoint(x, 0) + _shape->position,
-		.availableWidth = _collapsedText.maxWidth(),
-	});
+	if (_cachedLevel != _currentLevel) {
+		const auto ratio = style::DevicePixelRatio();
+		const auto size = _widget->size() * ratio;
+		_cache = QImage(size, QImage::Format_ARGB32_Premultiplied);
+		_cache.setDevicePixelRatio(ratio);
+		_cache.fill(Qt::transparent);
+
+		auto q = QPainter(&_cache);
+		if (_customShapeColor) {
+			_shape->icon.paint(q, 0, 0, _widget->width(), *_customShapeColor);
+		} else {
+			_shape->icon.paint(q, 0, 0, _widget->width());
+		}
+
+		if (!_collapsedText.isEmpty()) {
+			q.setPen(_customTextColor
+				? *_customTextColor
+				: st::levelTextFg->c);
+			q.setFont(st::levelStyle.font);
+			q.drawText(
+				Rect(_shape->icon.size()),
+				Qt::AlignCenter,
+				_collapsedText);
+		}
+
+		_cachedLevel = _currentLevel;
+	}
+
+	p.setOpacity(_opacity);
+	p.drawImage(0, 0, _cache);
 }
 
 rpl::producer<int> StarsRating::widthValue() const {
 	return _widthValue.value();
+}
+
+int StarsRating::width() const {
+	return _widthValue.current();
 }
 
 rpl::lifetime &StarsRating::lifetime() {

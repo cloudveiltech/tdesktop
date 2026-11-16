@@ -112,45 +112,29 @@ void InfoBox(
 	});
 
 	const auto userpic = box->addRow(
-		object_ptr<Ui::CenterWrap<Ui::UserpicButton>>(
+		object_ptr<Ui::UserpicButton>(
 			box,
-			object_ptr<Ui::UserpicButton>(
-				box,
-				data.bot,
-				st::websiteBigUserpic)),
-		st::sessionBigCoverPadding)->entity();
+			data.bot,
+			st::websiteBigUserpic),
+		st::sessionBigCoverPadding,
+		style::al_top);
 	userpic->overrideShape(Ui::PeerUserpicShape::Forum);
 	userpic->setAttribute(Qt::WA_TransparentForMouseEvents);
 
-	const auto nameWrap = box->addRow(
-		object_ptr<Ui::FixedHeightWidget>(
+	box->addRow(
+		object_ptr<Ui::FlatLabel>(
 			box,
-			st::sessionBigName.maxHeight));
-	const auto name = Ui::CreateChild<Ui::FlatLabel>(
-		nameWrap,
-		rpl::single(data.bot->name()),
-		st::sessionBigName);
-	nameWrap->widthValue(
-	) | rpl::start_with_next([=](int width) {
-		name->resizeToWidth(width);
-		name->move((width - name->width()) / 2, 0);
-	}, name->lifetime());
+			rpl::single(data.bot->name()),
+			st::sessionBigName),
+		style::al_top);
 
-	const auto domainWrap = box->addRow(
-		object_ptr<Ui::FixedHeightWidget>(
+	box->addRow(
+		object_ptr<Ui::FlatLabel>(
 			box,
-			st::sessionDateLabel.style.font->height),
-		style::margins(0, 0, 0, st::sessionDateSkip));
-	const auto domain = Ui::CreateChild<Ui::FlatLabel>(
-		domainWrap,
-		rpl::single(data.domain),
-		st::sessionDateLabel);
-	rpl::combine(
-		domainWrap->widthValue(),
-		domain->widthValue()
-	) | rpl::start_with_next([=](int outer, int inner) {
-		domain->move((outer - inner) / 2, 0);
-	}, domain->lifetime());
+			rpl::single(data.domain),
+			st::sessionDateLabel),
+		style::margins(0, 0, 0, st::sessionDateSkip),
+		style::al_top);
 
 	using namespace Settings;
 	const auto container = box->verticalLayout();
@@ -405,12 +389,12 @@ Content::Content(
 void Content::setupContent() {
 	_inner->heightValue(
 	) | rpl::distinct_until_changed(
-	) | rpl::start_with_next([=](int height) {
+	) | rpl::on_next([=](int height) {
 		resize(width(), height);
 	}, _inner->lifetime());
 
 	_inner->showRequests(
-	) | rpl::start_with_next([=](const EntryData &data) {
+	) | rpl::on_next([=](const EntryData &data) {
 		_controller->show(Box(
 			InfoBox,
 			data,
@@ -418,22 +402,22 @@ void Content::setupContent() {
 	}, lifetime());
 
 	_inner->terminateOne(
-	) | rpl::start_with_next([=](uint64 hash) {
+	) | rpl::on_next([=](uint64 hash) {
 		terminateOne(hash);
 	}, lifetime());
 
 	_inner->terminateAll(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		terminateAll();
 	}, lifetime());
 
 	_loading.changes(
-	) | rpl::start_with_next([=](bool value) {
+	) | rpl::on_next([=](bool value) {
 		_inner->setVisible(!value);
 	}, lifetime());
 
 	_websites->listValue(
-	) | rpl::start_with_next([=](const Api::Websites::List &list) {
+	) | rpl::on_next([=](const Api::Websites::List &list) {
 		parse(list);
 	}, lifetime());
 

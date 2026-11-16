@@ -21,6 +21,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_info.h"
 #include "styles/style_layers.h"
 
+#include <QtWidgets/QApplication>
+#include <QtWidgets/QScrollBar>
+
 namespace Info::Stories {
 
 int ArchiveId() {
@@ -59,26 +62,76 @@ Widget::Widget(
 	QWidget *parent,
 	not_null<Controller*> controller)
 : ContentWidget(parent, controller)
-, _albumId(controller->key().storiesAlbumId()) {
-	_inner = setInnerWidget(object_ptr<InnerWidget>(
-		this,
-		controller,
-		_albumId.value(),
-		controller->key().storiesAddToAlbumId()));
-	_inner->albumIdChanges() | rpl::start_with_next([=](int id) {
+, _albumId(controller->key().storiesAlbumId())
+, _inner(
+	setupFlexibleInnerWidget(
+		object_ptr<InnerWidget>(
+			this,
+			controller,
+			_albumId.value(),
+			controller->key().storiesAddToAlbumId()),
+		_flexibleScroll))
+, _pinnedToTop(_inner->createPinnedToTop(this)) {
+	_emptyAlbumShown = _inner->albumEmptyValue();
+	_inner->albumIdChanges() | rpl::on_next([=](int id) {
 		controller->showSection(
 			Make(controller->storiesPeer(), id),
 			Window::SectionShow::Way::Backward);
 	}, _inner->lifetime());
 	_inner->setScrollHeightValue(scrollHeightValue());
 	_inner->scrollToRequests(
-	) | rpl::start_with_next([this](Ui::ScrollToRequest request) {
-		scrollTo(request);
-	}, _inner->lifetime());
+	) | rpl::on_next([this](Ui::ScrollToRequest request) {
+		if (request.ymin < 0) {
+			scrollTopRestore(
+				qMin(scrollTopSave(), request.ymax));
+		} else {
+			scrollTo(request);
+		}
+	}, lifetime());
 
-	_albumId.value() | rpl::start_with_next([=] {
+	if (_pinnedToTop) {
+		_inner->widthValue(
+		) | rpl::on_next([=](int w) {
+			_pinnedToTop->resizeToWidth(w);
+			setScrollTopSkip(_pinnedToTop->height());
+		}, _pinnedToTop->lifetime());
+
+		_pinnedToTop->heightValue(
+		) | rpl::on_next([=](int h) {
+			setScrollTopSkip(h);
+		}, _pinnedToTop->lifetime());
+	}
+
+	if (_pinnedToTop
+		&& _pinnedToTop->minimumHeight()
+		&& _inner->hasFlexibleTopBar()) {
+		_flexibleScrollHelper = std::make_unique<FlexibleScrollHelper>(
+			scroll(),
+			_inner,
+			_pinnedToTop.get(),
+			[=](QMargins margins) {
+				ContentWidget::setPaintPadding(std::move(margins));
+			},
+			[=](rpl::producer<not_null<QEvent*>> &&events) {
+				ContentWidget::setViewport(std::move(events));
+			},
+			_flexibleScroll);
+	}
+
+	rpl::combine(
+		_albumId.value(),
+		_emptyAlbumShown.value()
+	) | rpl::on_next([=] {
 		refreshBottom();
 	}, _inner->lifetime());
+
+	_inner->backRequest() | rpl::on_next([=] {
+		checkBeforeClose([=] { controller->showBackFromStack(); });
+	}, _inner->lifetime());
+}
+
+void Widget::setInnerFocus() {
+	_inner->setFocus();
 }
 
 void Widget::setIsStackBottom(bool isStackBottom) {
@@ -131,21 +184,40 @@ void Widget::restoreState(not_null<Memento*> memento) {
 
 void Widget::refreshBottom() {
 	const auto albumId = _albumId.current();
-	const auto withButton = albumId
-		&& controller()->storiesPeer()->canEditStories();
+	const auto withButton = (albumId != Data::kStoriesAlbumIdSaved)
+		&& (albumId != Data::kStoriesAlbumIdArchive)
+		&& controller()->storiesPeer()->canEditStories()
+		&& !_emptyAlbumShown.current();
 	const auto wasBottom = _pinnedToBottom ? _pinnedToBottom->height() : 0;
 	delete _pinnedToBottom.data();
 	if (!withButton) {
 		setScrollBottomSkip(0);
 		_hasPinnedToBottom = false;
 	} else {
-		setupBottomButton(wasBottom, _inner->albumEmptyValue());
+		setupBottomButton(wasBottom);
+	}
+
+	if (_pinnedToBottom) {
+		const auto processHeight = [=] {
+			setScrollBottomSkip(_pinnedToBottom->height());
+			_pinnedToBottom->moveToLeft(
+				_pinnedToBottom->x(),
+				height() - _pinnedToBottom->height());
+		};
+
+		_inner->sizeValue(
+		) | rpl::on_next([=](const QSize &s) {
+			_pinnedToBottom->resizeToWidth(s.width());
+		}, _pinnedToBottom->lifetime());
+
+		rpl::combine(
+			_pinnedToBottom->heightValue(),
+			heightValue()
+		) | rpl::on_next(processHeight, _pinnedToBottom->lifetime());
 	}
 }
 
-void Widget::setupBottomButton(
-		int wasBottomHeight,
-		rpl::producer<bool> hidden) {
+void Widget::setupBottomButton(int wasBottomHeight) {
 	_pinnedToBottom = Ui::CreateChild<Ui::SlideWrap<Ui::RpWidget>>(
 		this,
 		object_ptr<Ui::RpWidget>(this));
@@ -165,10 +237,7 @@ void Widget::setupBottomButton(
 		return Ui::Text::IconEmoji(&st::collectionAddIcon).append(text);
 	}));
 	button->show();
-	std::move(hidden) | rpl::start_with_next([=](bool hidden) {
-		button->setVisible(!hidden);
-		_hasPinnedToBottom = !hidden;
-	}, button->lifetime());
+	_hasPinnedToBottom = true;
 
 	button->setClickedCallback([=] {
 		if (const auto id = _albumId.current()) {
@@ -179,32 +248,16 @@ void Widget::setupBottomButton(
 	});
 
 	const auto buttonTop = st::boxRadius;
-	bottom->widthValue() | rpl::start_with_next([=](int width) {
+	bottom->widthValue() | rpl::on_next([=](int width) {
 		const auto normal = width - 2 * buttonTop;
 		button->resizeToWidth(normal);
 		const auto buttonLeft = (width - normal) / 2;
 		button->moveToLeft(buttonLeft, buttonTop);
 	}, button->lifetime());
 
-	button->heightValue() | rpl::start_with_next([=](int height) {
+	button->heightValue() | rpl::on_next([=](int height) {
 		bottom->resize(bottom->width(), st::boxRadius + height);
 	}, button->lifetime());
-
-	const auto processHeight = [=] {
-		setScrollBottomSkip(wrap->height());
-		wrap->moveToLeft(wrap->x(), height() - wrap->height());
-	};
-
-	_inner->sizeValue(
-	) | rpl::start_with_next([=](const QSize &s) {
-		wrap->resizeToWidth(s.width());
-		crl::on_main(wrap, processHeight);
-	}, wrap->lifetime());
-
-	rpl::combine(
-		wrap->heightValue(),
-		heightValue()
-	) | rpl::start_with_next(processHeight, wrap->lifetime());
 
 	if (_shown) {
 		wrap->toggle(
@@ -218,6 +271,7 @@ void Widget::showFinished() {
 	if (const auto bottom = _pinnedToBottom.data()) {
 		bottom->toggle(true, anim::type::normal);
 	}
+	_inner->showFinished();
 }
 
 rpl::producer<SelectedItems> Widget::selectedListValue() const {

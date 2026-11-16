@@ -49,6 +49,9 @@ Key::Key(Downloads::Tag downloads) : _value(downloads) {
 Key::Key(Stories::Tag stories) : _value(stories) {
 }
 
+Key::Key(Saved::MusicTag music) : _value(music) {
+}
+
 Key::Key(Statistics::Tag statistics) : _value(statistics) {
 }
 
@@ -76,7 +79,7 @@ PeerData *Key::peer() const {
 	if (const auto peer = std::get_if<not_null<PeerData*>>(&_value)) {
 		return *peer;
 	} else if (const auto topic = this->topic()) {
-		return topic->channel();
+		return topic->peer();
 	} else if (const auto sublist = this->sublist()) {
 		return sublist->owningHistory()->peer;
 	}
@@ -133,6 +136,13 @@ int Key::storiesAddToAlbumId() const {
 		return tag->addingToAlbumId;
 	}
 	return 0;
+}
+
+PeerData *Key::musicPeer() const {
+	if (const auto tag = std::get_if<Saved::MusicTag>(&_value)) {
+		return tag->peer;
+	}
+	return nullptr;
 }
 
 PeerData *Key::giftsPeer() const {
@@ -340,7 +350,7 @@ void Controller::setupMigrationViewer() {
 		Data::PeerUpdate::Flag::Migration
 	) | rpl::filter([=] {
 		return peer->migrateTo() || (peer->migrateFrom() != _migrated);
-	}) | rpl::start_with_next([=] {
+	}) | rpl::on_next([=] {
 		replaceWith(std::make_shared<Memento>(peer, _section));
 	}, lifetime());
 }
@@ -361,7 +371,7 @@ void Controller::replaceWith(std::shared_ptr<Memento> memento) {
 
 void Controller::setupTopicViewer() {
 	session().data().itemIdChanged(
-	) | rpl::start_with_next([=](const Data::Session::IdChange &change) {
+	) | rpl::on_next([=](const Data::Session::IdChange &change) {
 		if (const auto topic = _key.topic()) {
 			if (topic->rootId() == change.oldId
 				|| (topic->peer()->id == change.newId.peer
@@ -392,6 +402,7 @@ bool Controller::validateMementoPeer(
 		&& memento->migratedPeerId() == migratedPeerId()
 		&& memento->settingsSelf() == settingsSelf()
 		&& memento->storiesPeer() == storiesPeer()
+		&& memento->musicPeer() == musicPeer()
 		&& memento->statisticsTag().peer == statisticsTag().peer
 		&& memento->starrefPeer() == starrefPeer()
 		&& memento->starrefType() == starrefType();
@@ -442,7 +453,7 @@ void Controller::updateSearchControllers(
 				searchQuery);
 		if (_searchController) {
 			_searchFieldController->queryValue(
-			) | rpl::start_with_next([=](QString &&query) {
+			) | rpl::on_next([=](QString &&query) {
 				_searchController->setQuery(
 					produceSearchQuery(std::move(query)));
 			}, _searchFieldController->lifetime());

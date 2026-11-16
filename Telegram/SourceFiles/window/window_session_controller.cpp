@@ -8,12 +8,14 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_session_controller.h"
 
 #include "api/api_text_entities.h"
-#include "boxes/add_contact_box.h"
 #include "boxes/peers/add_bot_to_chat_box.h"
 #include "boxes/peers/edit_peer_info_box.h"
 #include "boxes/peers/replace_boost_box.h"
+#include "boxes/add_contact_box.h"
 #include "boxes/delete_messages_box.h"
+#include "boxes/star_gift_auction_box.h"
 #include "window/window_chat_preview.h"
+#include "window/window_chat_switch_process.h"
 #include "window/window_controller.h"
 #include "window/window_filters_menu.h"
 #include "window/window_separate_id.h"
@@ -32,6 +34,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_subsection_tabs.h"
 #include "media/player/media_player_instance.h"
 #include "media/view/media_view_open_common.h"
+#include "data/components/gift_auctions.h"
+#include "data/components/recent_peers.h"
 #include "data/stickers/data_custom_emoji.h"
 #include "data/data_document_resolver.h"
 #include "data/data_download_manager.h"
@@ -180,21 +184,6 @@ private:
 		}
 	}
 	return false;
-}
-
-[[nodiscard]] Ui::CollectibleDetails PrepareCollectibleDetails(
-		not_null<Main::Session*> session) {
-	return {
-		.tonEmoji = Ui::Text::SingleCustomEmoji(
-			session->data().customEmojiManager().registerInternalEmoji(
-				u"collectible_ton_icon"_q,
-				Ui::Earn::IconCurrencyColored(
-					st::collectibleInfo.style.font,
-					st::collectibleInfo.textFg->c),
-				st::collectibleInfoTonMargins,
-				true)),
-		.tonEmojiContext = Core::TextContext({ .session = session }),
-	};
 }
 
 [[nodiscard]] Ui::CollectibleInfo Parse(
@@ -365,6 +354,33 @@ void DateClickHandler::onClick(ClickContext context) const {
 	}
 }
 
+ForumThreadClickHandler::ForumThreadClickHandler(not_null<HistoryItem*> item)
+: _thread(resolveThread(item)) {
+}
+
+void ForumThreadClickHandler::update(not_null<HistoryItem*> item) {
+	_thread = resolveThread(item);
+}
+
+void ForumThreadClickHandler::onClick(ClickContext context) const {
+	const auto my = context.other.value<ClickHandlerContext>();
+	if (const auto window = my.sessionWindow.get()) {
+		if (const auto strong = _thread.get()) {
+			window->showThread(strong, 0, SectionShow::Way::ClearStack);
+		}
+	}
+}
+
+base::weak_ptr<Data::Thread> ForumThreadClickHandler::resolveThread(
+		not_null<HistoryItem*> item) const {
+	if (const auto sublist = item->savedSublist()) {
+		return sublist;
+	} else if (const auto topic = item->topic()) {
+		return topic;
+	}
+	return nullptr;
+}
+
 MessageHighlightId SearchHighlightId(const QString &query) {
 	auto result = MessageHighlightId{ .quote = { query } };
 	if (!result.quote.empty()) {
@@ -419,6 +435,16 @@ void SessionNavigation::showPeerByLink(const PeerByLinkInfo &info) {
 			showPeerByLinkResolved(channel, info);
 		});
 	}
+}
+
+void SessionNavigation::fullInfoLoadedHook(not_null<PeerData*> peer) {
+	if (!_waitingDirectChannel || _waitingDirectChannel != peer) {
+		return;
+	}
+	_waitingDirectChannel = nullptr;
+	const auto monoforum = peer->broadcastMonoforum();
+	const auto open = monoforum ? monoforum : peer.get();
+	showPeerHistory(open, SectionShow::Way::Forward, ShowAtUnreadMsgId);
 }
 
 void SessionNavigation::resolvePhone(
@@ -603,7 +629,7 @@ void SessionNavigation::showPeerByLinkResolved(
 			if (controller->windowId().hasChatsList()
 				&& !controller->adaptive().isOneColumn()
 				&& controller->shownForum().current() != forum
-				&& !forum->channel()->useSubsectionTabs()) {
+				&& !forum->peer()->useSubsectionTabs()) {
 				controller->showForum(forum);
 			}
 		}
@@ -641,19 +667,18 @@ void SessionNavigation::showPeerByLinkResolved(
 				info.messageId,
 				callback);
 		}
-	} else if (info.storyId) {
-		const auto storyId = FullStoryId{ peer->id, info.storyId };
+	} else if (info.storyParam == u"live"_q) {
+		parentController()->openPeerStories(peer->id, std::nullopt, true);
+	} else if (const auto storyId = info.storyParam.toInt()) {
+		const auto id = FullStoryId{ peer->id, storyId };
 		const auto context = (info.storyAlbumId > 0)
 			? Data::StoriesContext{ Data::StoriesContextAlbum{
 				info.storyAlbumId,
 			} }
 			: Data::StoriesContext{ Data::StoriesContextSingle() };
-		peer->owner().stories().resolve(storyId, crl::guard(this, [=] {
-			if (peer->owner().stories().lookup(storyId)) {
-				parentController()->openPeerStory(
-					peer,
-					storyId.story,
-					context);
+		peer->owner().stories().resolve(id, crl::guard(this, [=] {
+			if (peer->owner().stories().lookup(id)) {
+				parentController()->openPeerStory(peer, id.story, context);
 			} else {
 				showToast(tr::lng_stories_link_invalid(tr::now));
 			}
@@ -724,6 +749,13 @@ void SessionNavigation::showPeerByLinkResolved(
 		}
 	} else if (resolveType == ResolveType::Boost && peer->isChannel()) {
 		resolveBoostState(peer->asChannel());
+	} else if (resolveType == ResolveType::ChannelDirect
+		&& !peer->isFullLoaded()) {
+		_waitingDirectChannel = peer;
+		peer->updateFull();
+	} else if (const auto monoforum = peer->broadcastMonoforum()
+		; monoforum && resolveType == ResolveType::ChannelDirect) {
+		showPeerHistory(monoforum, params, ShowAtUnreadMsgId);
 	} else {
 		// Show specific posts only in channels / supergroups.
 		const auto msgId = peer->isChannel()
@@ -828,7 +860,7 @@ void SessionNavigation::resolveBoostState(
 	}
 	_boostStateResolving = channel;
 	_api.request(MTPpremium_GetBoostsStatus(
-		channel->input
+		channel->input()
 	)).done([=](const MTPpremium_BoostsStatus &result) {
 		if (base::take(_boostStateResolving) != channel) {
 			return;
@@ -851,7 +883,7 @@ void SessionNavigation::resolveBoostState(
 			.group = channel->isMegagroup(),
 		}, submit));
 		if (lifting) {
-			box->boxClosing() | rpl::start_with_next([=] {
+			box->boxClosing() | rpl::on_next([=] {
 				if (*boosted) {
 					channel->updateFullForced();
 				}
@@ -881,8 +913,7 @@ void SessionNavigation::resolveCollectible(
 		_collectibleRequestId = 0;
 		uiShow()->show(Box(
 			Ui::CollectibleInfoBox,
-			Parse(entity, _session->data().peer(ownerId), result),
-			PrepareCollectibleDetails(_session)));
+			Parse(entity, _session->data().peer(ownerId), result)));
 	}).fail([=](const MTP::Error &error) {
 		_collectibleEntity = QString();
 		_collectibleRequestId = 0;
@@ -964,6 +995,13 @@ void SessionNavigation::resolveConferenceCall(
 				if (call->fullCount() >= conferenceLimit) {
 					showToast(tr::lng_confcall_participants_limit(tr::now));
 				} else {
+					//parentController()->window().openInMediaView(
+					//	Media::View::OpenRequest(
+					//		parentController(),
+					//		call,
+					//		slug,
+					//		inviteMsgId));
+					//AssertIsDebug();
 					Core::App().calls().startOrJoinConferenceCall({
 						.call = call,
 						.linkSlug = slug,
@@ -1116,10 +1154,10 @@ void SessionNavigation::applyBoostsChecked(
 	_api.request(MTPpremium_ApplyBoost(
 		MTP_flags(MTPpremium_ApplyBoost::Flag::f_slots),
 		std::move(mtp),
-		channel->input
+		channel->input()
 	)).done([=](const MTPpremium_MyBoosts &result) {
 		_api.request(MTPpremium_GetBoostsStatus(
-			channel->input
+			channel->input()
 		)).done([=](const MTPpremium_BoostsStatus &result) {
 			channel->updateLevelHint(result.data().vlevel().v);
 			done(ParseBoostCounters(result));
@@ -1144,7 +1182,7 @@ void SessionNavigation::joinVoiceChatFromLink(
 	const auto hash = *info.voicechatHash;
 	_api.request(base::take(_resolveRequestId)).cancel();
 	_resolveRequestId = _api.request(
-		MTPchannels_GetFullChannel(peer->asChannel()->inputChannel)
+		MTPchannels_GetFullChannel(peer->asChannel()->inputChannel())
 	).done([=](const MTPmessages_ChatFull &result) {
 		_session->api().processFullPeer(peer, result);
 		const auto call = peer->groupCall();
@@ -1214,7 +1252,7 @@ void SessionNavigation::showRepliesForMessage(
 	_showingRepliesRootId = rootId;
 	_showingRepliesRequestId = _api.request(
 		MTPmessages_GetDiscussionMessage(
-			history->peer->input,
+			history->peer->input(),
 			MTP_int(rootId))
 	).done([=](const MTPmessages_DiscussionMessage &result) {
 		_showingRepliesRequestId = 0;
@@ -1501,6 +1539,8 @@ struct SessionController::CachedThemeKey {
 struct SessionController::CachedTheme {
 	std::weak_ptr<Ui::ChatTheme> theme;
 	std::shared_ptr<Data::DocumentMedia> media;
+	std::unique_ptr<Ui::Text::CustomEmoji> giftSymbol;
+	uint64 giftId = 0;
 	Data::WallPaper paper;
 	bool basedOnDark = false;
 	bool caching = false;
@@ -1536,14 +1576,14 @@ SessionController::SessionController(
 
 	pushDefaultChatBackground();
 	Theme::Background()->updates(
-	) | rpl::start_with_next([=](const Theme::BackgroundUpdate &update) {
+	) | rpl::on_next([=](const Theme::BackgroundUpdate &update) {
 		if (update.type == Theme::BackgroundUpdate::Type::New
 			|| update.type == Theme::BackgroundUpdate::Type::Changed) {
 			pushDefaultChatBackground();
 		}
 	}, _lifetime);
 	style::PaletteChanged(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		for (auto &[key, value] : _customChatThemes) {
 			if (!key.theme.id) {
 				value.theme.reset();
@@ -1566,9 +1606,15 @@ SessionController::SessionController(
 				}
 			}
 		}
+		if (update.flags & Data::PeerUpdate::Flag::FullInfo) {
+			if (update.peer->isSelf()) {
+				Support::Helper::CheckIfLost(this);
+			}
+			fullInfoLoadedHook(update.peer);
+		}
 		return (update.flags & Data::PeerUpdate::Flag::FullInfo)
 			&& (update.peer == _showEditPeer);
-	}) | rpl::start_with_next([=] {
+	}) | rpl::on_next([=] {
 		show(Box<EditPeerInfoBox>(this, base::take(_showEditPeer)));
 	}, lifetime());
 
@@ -1578,7 +1624,7 @@ SessionController::SessionController(
 			&& (folder == _openedFolder.current())
 			&& folder->chatsList()->indexed()->empty()
 			&& !folder->storiesCount();
-	}) | rpl::start_with_next([=](Data::Folder *folder) {
+	}) | rpl::on_next([=](Data::Folder *folder) {
 		folder->updateChatListSortPosition();
 		closeFolder();
 	}, lifetime());
@@ -1599,7 +1645,7 @@ SessionController::SessionController(
 		enoughSpaceForFiltersValue() | rpl::skip(1) | rpl::to_empty,
 		Core::App().settings().chatFiltersHorizontalChanges() | rpl::to_empty,
 		session->data().chatsFilters().changed()
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		if (!_filtersActivated) {
 			processFiltersMenu();
 		}
@@ -1608,7 +1654,7 @@ SessionController::SessionController(
 	}, lifetime());
 
 	session->data().itemIdChanged(
-	) | rpl::start_with_next([=](Data::Session::IdChange change) {
+	) | rpl::on_next([=](Data::Session::IdChange change) {
 		const auto current = _activeChatEntry.current();
 		if (const auto topic = current.key.topic()) {
 			if (topic->rootId() == change.oldId) {
@@ -1629,7 +1675,7 @@ SessionController::SessionController(
 	}, lifetime());
 
 	session->api().globalPrivacy().suggestArchiveAndMute(
-	) | rpl::take(1) | rpl::start_with_next([=] {
+	) | rpl::take(1) | rpl::on_next([=] {
 		session->api().globalPrivacy().reload(crl::guard(this, [=] {
 			if (!session->api().globalPrivacy().archiveAndMuteCurrent()) {
 				suggestArchiveAndMute();
@@ -1638,12 +1684,12 @@ SessionController::SessionController(
 	}, _lifetime);
 
 	session->downloader().nonPremiumDelays(
-	) | rpl::start_with_next([=](DocumentId id) {
+	) | rpl::on_next([=](DocumentId id) {
 		checkNonPremiumLimitToastDownload(id);
 	}, _lifetime);
 
 	session->uploader().nonPremiumDelays(
-	) | rpl::start_with_next([=](FullMsgId id) {
+	) | rpl::on_next([=](FullMsgId id) {
 		checkNonPremiumLimitToastUpload(id);
 	}, _lifetime);
 
@@ -1705,14 +1751,14 @@ void SessionController::suggestArchiveAndMute() {
 		box->setTitle(tr::lng_suggest_hide_new_title());
 		box->addRow(object_ptr<Ui::FlatLabel>(
 			box,
-			tr::lng_suggest_hide_new_about(Ui::Text::RichLangValue),
+			tr::lng_suggest_hide_new_about(tr::rich),
 			st::boxLabel));
 		box->addButton(tr::lng_suggest_hide_new_to_settings(), [=] {
 			showSettings(Settings::PrivacySecurity::Id());
 		});
 		box->setCloseByOutsideClick(false);
 		box->boxClosing(
-		) | rpl::start_with_next([=] {
+		) | rpl::on_next([=] {
 			crl::on_main(weak, [=] {
 				auto &privacy = session().api().globalPrivacy();
 				privacy.dismissArchiveAndMuteSuggestion();
@@ -1776,18 +1822,56 @@ void SessionController::init() {
 }
 
 void SessionController::setupShortcuts() {
-	Shortcuts::Requests(
+	using namespace Shortcuts;
+
+	ChatSwitchRequests(
+	) | rpl::filter([=](const ChatSwitchRequest &request) {
+		return !window().locked()
+			&& (_chatSwitchProcess
+				|| (request.started
+					&& (Core::App().activeWindow() == &window())));
+	}) | rpl::on_next([=](const ChatSwitchRequest &request) {
+		if (!_chatSwitchProcess) {
+			_chatSwitchProcess = std::make_unique<ChatSwitchProcess>(
+				widget()->bodyWidget(),
+				&session(),
+				activeChatCurrent().thread());
+			const auto close = [this, raw = _chatSwitchProcess.get()] {
+				if (_chatSwitchProcess.get() == raw) {
+					base::take(_chatSwitchProcess);
+				}
+			};
+
+			_chatSwitchProcess->chosen(
+			) | rpl::on_next([=](not_null<Data::Thread*> thread) {
+				close();
+
+				const auto id = SeparateId(thread);
+				if (const auto window = Core::App().separateWindowFor(id)) {
+					window->activate();
+					return;
+				}
+				jumpToChatListEntry({ Dialogs::Key(thread), FullMsgId() });
+			}, _chatSwitchProcess->lifetime());
+
+			_chatSwitchProcess->closeRequests(
+			) | rpl::on_next(close, _chatSwitchProcess->lifetime());
+		}
+		_chatSwitchProcess->process(request);
+	}, _lifetime);
+
+	Requests(
 	) | rpl::filter([=] {
 		return (Core::App().activeWindow() == &window())
 			&& !isLayerShown()
 			&& !window().locked();
-	}) | rpl::start_with_next([=](not_null<Shortcuts::Request*> request) {
-		using C = Shortcuts::Command;
+	}) | rpl::on_next([=](not_null<Request*> request) {
+		using C = Command;
 
 		const auto app = &Core::App();
 		const auto accountsCount = int(app->domain().accounts().size());
 		auto &&accounts = ranges::views::zip(
-			Shortcuts::kShowAccount,
+			kShowAccount,
 			ranges::views::ints(0, accountsCount));
 		for (const auto &[command, index] : accounts) {
 			request->check(command) && request->handle([=] {
@@ -1945,11 +2029,11 @@ void SessionController::showForum(
 	const auto forced = params.forceTopicsList;
 	if (showForumInDifferentWindow(forum, params)) {
 		return;
-	} else if (!forced && forum->channel()->useSubsectionTabs()) {
+	} else if (!forced && forum->peer()->useSubsectionTabs()) {
 		if (const auto active = forum->activeSubsectionThread()) {
 			showThread(active, ShowAtUnreadMsgId, params);
 		} else {
-			showPeerHistory(forum->channel(), params);
+			showPeerHistory(forum->peer(), params);
 		}
 		return;
 	}
@@ -1987,19 +2071,21 @@ void SessionController::showForum(
 	}
 
 	forum->destroyed(
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		closeAndShowHistory(false);
 	}, _shownForumLifetime);
 	if (!forced) {
 		using FlagChange = Data::Flags<ChannelDataFlags>::Change;
-		forum->channel()->flagsValue(
-		) | rpl::start_with_next([=](FlagChange change) {
-			if (change.diff & ChannelDataFlag::ForumTabs) {
-				if (HistoryView::SubsectionTabs::UsedFor(history)) {
-					closeAndShowHistory(true);
+		if (const auto channel = forum->channel()) {
+			channel->flagsValue(
+			) | rpl::on_next([=](FlagChange change) {
+				if (change.diff & ChannelDataFlag::ForumTabs) {
+					if (HistoryView::SubsectionTabs::UsedFor(history)) {
+						closeAndShowHistory(true);
+					}
 				}
-			}
-		}, _shownForumLifetime);
+			}, _shownForumLifetime);
+		}
 	}
 }
 
@@ -2035,7 +2121,7 @@ void SessionController::setupPremiumToast() {
 	) | rpl::filter([=](bool premium) {
 		session().mtp().requestConfig();
 		return premium;
-	}) | rpl::start_with_next([=] {
+	}) | rpl::on_next([=] {
 		MainWindowShow(this).showToast({
 			.text = { tr::lng_premium_success(tr::now) },
 			.adaptive = true,
@@ -2055,30 +2141,37 @@ void SessionController::setActiveChatEntry(Dialogs::RowDescriptor row) {
 	if (windowId().type == SeparateType::SharedMedia) {
 		return;
 	}
-	const auto was = _activeChatEntry.current().key.history();
-	const auto now = row.key.history();
-	if (was && was != now) {
+	const auto was = _activeChatEntry.current();
+	if (was.key && was.key != row.key) {
+		session().api().saveCurrentDraftToCloud();
+	}
+	const auto wasHistory = was.key.history();
+	const auto nowHistory = row.key.history();
+	if (wasHistory && wasHistory != nowHistory) {
 		_activeHistoryLifetime.destroy();
-		was->setFakeUnreadWhileOpened(false);
+		wasHistory->setFakeUnreadWhileOpened(false);
 		_invitePeekTimer.cancel();
 	}
 	_activeChatEntry = row;
-	if (now) {
-		now->setFakeUnreadWhileOpened(true);
-		if (const auto channel = now->peer->asChannel()
+	if (nowHistory) {
+		nowHistory->setFakeUnreadWhileOpened(true);
+		if (const auto channel = nowHistory->peer->asChannel()
 			; channel && !channel->isForum()) {
 			Data::PeerFlagValue(
 				channel,
 				ChannelData::Flag::Forum
 			) | rpl::filter([=](bool forum) {
 				return forum && !channel->useSubsectionTabs();
-			}) | rpl::start_with_next([=] {
+			}) | rpl::on_next([=] {
 				clearSectionStack(
 					{ anim::type::normal, anim::activation::background });
 				showForum(channel->forum(),
 					{ anim::type::normal, anim::activation::background });
 			}, _activeHistoryLifetime);
 		}
+	}
+	if (const auto thread = row.key.thread()) {
+		session().recentPeers().chatOpenPush(thread);
 	}
 	if (session().supportMode()) {
 		pushToChatEntryHistory(row);
@@ -2181,7 +2274,7 @@ bool SessionController::switchInlineQuery(
 		to.currentReplyTo.messageId.msg = MsgId();
 	}
 	if (!history->suggestDraftAllowed()) {
-		to.currentSuggest = SuggestPostOptions();
+		to.currentSuggest = SuggestOptions();
 	}
 	auto draft = std::make_unique<Data::Draft>(
 		textWithTags,
@@ -3205,11 +3298,11 @@ void SessionController::clearCachedChatThemes() {
 void SessionController::overridePeerTheme(
 		not_null<PeerData*> peer,
 		std::shared_ptr<Ui::ChatTheme> theme,
-		EmojiPtr emoji) {
+		QString token) {
 	_peerThemeOverride = PeerThemeOverride{
 		peer,
 		theme ? theme : _defaultChatTheme,
-		emoji,
+		token,
 	};
 }
 
@@ -3251,11 +3344,33 @@ void SessionController::cacheChatTheme(
 	const auto &use = !paper.isNull() ? paper : *i->second.paper;
 	const auto document = use.document();
 	const auto media = document ? document->createMediaView() : nullptr;
+	const auto findGiftSymbols = (data.unique != nullptr);
+	const auto reportSymbolLoaded = [weak = base::make_weak(this)] {
+		// We must notify async here, because we destroy emoji in
+		// the handler and we can't destroy emoji in repaint callback.
+		crl::on_main([weak] {
+			if (const auto strong = weak.get()) {
+				strong->_giftSymbolLoaded.fire({});
+			}
+		});
+	};
+	auto giftSymbol = findGiftSymbols
+		? session().data().customEmojiManager().create(
+			data.unique->pattern.document,
+			reportSymbolLoaded,
+			Data::CustomEmojiSizeTag::Large)
+		: nullptr;
+	const auto giftId = findGiftSymbols
+		? data.unique->model.document->id
+		: uint64();
+	const auto giftSymbolReady = !giftSymbol || giftSymbol->ready();
 	use.loadDocument();
 	auto &theme = [&]() -> CachedTheme& {
 		const auto i = _customChatThemes.find(key);
 		if (i != end(_customChatThemes)) {
 			i->second.media = media;
+			i->second.giftSymbol = std::move(giftSymbol);
+			i->second.giftId = giftId;
 			i->second.paper = use;
 			i->second.basedOnDark = dark;
 			i->second.caching = true;
@@ -3265,6 +3380,8 @@ void SessionController::cacheChatTheme(
 			key,
 			CachedTheme{
 				.media = media,
+				.giftSymbol = std::move(giftSymbol),
+				.giftId = giftId,
 				.paper = use,
 				.basedOnDark = dark,
 				.caching = true,
@@ -3294,6 +3411,9 @@ void SessionController::cacheChatTheme(
 	});
 	if (media && media->loaded(true)) {
 		theme.media = nullptr;
+		if (giftSymbolReady) {
+			theme.giftSymbol = nullptr;
+		}
 	}
 }
 
@@ -3311,16 +3431,26 @@ void SessionController::cacheChatThemeDone(
 	}
 	i->second.caching = false;
 	i->second.theme = result;
-	if (i->second.media) {
-		if (i->second.media->loaded(true)) {
+	const auto media = i->second.media.get();
+	const auto giftSymbol = i->second.giftSymbol.get();
+	if (media || giftSymbol) {
+		if ((!media || media->loaded(true))
+			&& (!giftSymbol || giftSymbol->ready())) {
 			updateCustomThemeBackground(i->second);
 		} else {
-			session().downloaderTaskFinished(
+			rpl::merge(
+				session().downloaderTaskFinished(),
+				((giftSymbol && !giftSymbol->ready())
+					? (_giftSymbolLoaded.events() | rpl::type_erased)
+					: rpl::never<rpl::empty_value>())
 			) | rpl::filter([=] {
 				const auto i = _customChatThemes.find(key);
 				Assert(i != end(_customChatThemes));
-				return !i->second.media || i->second.media->loaded(true);
-			}) | rpl::start_with_next([=] {
+				const auto media = i->second.media.get();
+				const auto giftSymbol = i->second.giftSymbol.get();
+				return (!media || media->loaded(true))
+					&& (!giftSymbol || giftSymbol->ready());
+			}) | rpl::on_next([=] {
 				const auto i = _customChatThemes.find(key);
 				Assert(i != end(_customChatThemes));
 				updateCustomThemeBackground(i->second);
@@ -3334,9 +3464,15 @@ void SessionController::updateCustomThemeBackground(CachedTheme &theme) {
 	const auto guard = gsl::finally([&] {
 		theme.lifetime.destroy();
 		theme.media = nullptr;
+		theme.giftSymbol = nullptr;
 	});
 	const auto strong = theme.theme.lock();
-	if (!theme.media || !strong || !theme.media->loaded(true)) {
+	const auto media = theme.media.get();
+	const auto giftSymbol = theme.giftSymbol.get();
+	if (!strong
+		|| (!media && !giftSymbol)
+		|| (media && !media->loaded(true))
+		|| (giftSymbol && !giftSymbol->ready())) {
 		return;
 	}
 	const auto key = strong->key();
@@ -3377,6 +3513,8 @@ Ui::ChatThemeBackgroundData SessionController::backgroundData(
 		.key = paper.key(),
 		.path = paperPath,
 		.bytes = paperBytes,
+		.giftSymbolFrame = Ui::PrepareGiftSymbol(theme.giftSymbol),
+		.giftId = theme.giftId,
 		.gzipSvg = gzipSvg,
 		.colors = colors,
 		.isPattern = isPattern,
@@ -3411,7 +3549,9 @@ void SessionController::openPeerStory(
 
 void SessionController::openPeerStories(
 		PeerId peerId,
-		std::optional<Data::StorySourcesList> list) {
+		std::optional<Data::StorySourcesList> list,
+		bool onlyLive,
+		bool afterReload) {
 	using namespace Media::View;
 	using namespace Data;
 
@@ -3419,16 +3559,26 @@ void SessionController::openPeerStories(
 	auto &stories = session().data().stories();
 	if (const auto source = stories.source(peerId)) {
 		if (const auto idDates = source->toOpen()) {
+			if (onlyLive && !idDates.videoStream) {
+				showToast(tr::lng_stories_live_finished(tr::now));
+				return;
+			}
 			openPeerStory(
 				source->peer,
 				idDates.id,
 				(list
 					? StoriesContext{ *list }
 					: StoriesContext{ StoriesContextPeer() }));
+		} else if (onlyLive) {
+			showToast(tr::lng_stories_live_finished(tr::now));
+		}
+	} else if (afterReload) {
+		if (onlyLive) {
+			showToast(tr::lng_stories_live_finished(tr::now));
 		}
 	} else if (const auto peer = session().data().peerLoaded(peerId)) {
 		const auto done = crl::guard(&_storyOpenGuard, [=] {
-			openPeerStories(peerId, list);
+			openPeerStories(peerId, list, onlyLive, true);
 		});
 		stories.requestPeerStories(peer, done);
 	}
@@ -3438,6 +3588,11 @@ HistoryView::PaintContext SessionController::preparePaintContext(
 		Ui::ChatPaintContextArgs &&args) {
 	const auto visibleAreaTopLocal = content()->mapFromGlobal(
 		args.visibleAreaPositionGlobal).y();
+	const auto area = QRect(
+		0,
+		args.visibleAreaTop,
+		args.visibleAreaWidth,
+		args.visibleAreaHeight);
 	const auto viewport = QRect(
 		0,
 		args.visibleAreaTop - visibleAreaTopLocal,
@@ -3446,6 +3601,7 @@ HistoryView::PaintContext SessionController::preparePaintContext(
 	return args.theme->preparePaintContext(
 		_chatStyle.get(),
 		viewport,
+		area,
 		args.clip,
 		isGifPausedAtLeastFor(GifPauseReason::Any));
 }
@@ -3502,7 +3658,7 @@ void SessionController::saveSubsectionTabs(
 	_savedSubsectionTabsLifetime.destroy();
 	_savedSubsectionTabs = std::move(tabs);
 	_savedSubsectionTabs->extractToParent(widget());
-	_savedSubsectionTabs->removeRequests() | rpl::start_with_next([=] {
+	_savedSubsectionTabs->removeRequests() | rpl::on_next([=] {
 		_savedSubsectionTabs = nullptr;
 	}, _savedSubsectionTabsLifetime);
 }
@@ -3523,6 +3679,35 @@ auto SessionController::restoreSubsectionTabsFor(
 void SessionController::dropSubsectionTabs() {
 	_savedSubsectionTabsLifetime.destroy();
 	base::take(_savedSubsectionTabs);
+}
+
+void SessionController::showStarGiftAuction(const QString &slug) {
+	_starGiftAuctionLifetime.destroy();
+
+	const auto requesting = _starGiftAuctionLifetime.make_state<
+		base::has_weak_ptr
+	>();
+	const auto guard = base::make_weak(requesting);
+	const auto weak = base::make_weak(this);
+	session().giftAuctions().resolveSlug(slug, [=](uint64 giftId) {
+		if (!guard || !weak) {
+			return;
+		}
+		_starGiftAuctionLifetime.destroy();
+		if (giftId) {
+			showStarGiftAuction(giftId);
+		}
+	});
+}
+
+void SessionController::showStarGiftAuction(uint64 giftId) {
+	_starGiftAuctionLifetime.destroy();
+	_starGiftAuctionLifetime = Ui::ShowStarGiftAuction(
+		this,
+		nullptr,
+		giftId,
+		[] {},
+		[=] { _starGiftAuctionLifetime.destroy(); });
 }
 
 SessionController::~SessionController() {

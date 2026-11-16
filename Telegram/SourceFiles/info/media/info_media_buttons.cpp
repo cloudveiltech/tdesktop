@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/ui_integration.h"
 #include "data/components/recent_shared_media_gifts.h"
 #include "data/data_channel.h"
+#include "data/data_document.h"
 #include "data/data_saved_messages.h"
 #include "data/data_saved_sublist.h"
 #include "data/data_session.h"
@@ -25,6 +26,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/info_memento.h"
 #include "info/peer_gifts/info_peer_gifts_widget.h"
 #include "info/profile/info_profile_values.h"
+#include "info/saved/info_saved_music_widget.h"
 #include "info/stories/info_stories_widget.h"
 #include "main/main_session.h"
 #include "ui/text/text_utilities.h"
@@ -367,14 +369,16 @@ not_null<Ui::SettingsButton*> AddPeerGiftsButton(
 
 	rpl::duplicate(forked) | rpl::filter(
 		rpl::mappers::_1 > 0
-	) | rpl::start_with_next([=] {
+	) | rpl::on_next([=] {
 		state->appearedLifetime.destroy();
 		const auto requestDone = crl::guard(wrap, [=](
-				std::vector<DocumentId> ids) {
+				std::vector<Data::SavedStarGift> gifts) {
 			state->emojiList.clear();
-			for (const auto &id : ids) {
+			for (const auto &gift : gifts) {
 				state->emojiList.push_back(
-					peer->owner().customEmojiManager().create(id, refresh));
+					peer->owner().customEmojiManager().create(
+						gift.info.document->id,
+						refresh));
 			}
 			state->textRefreshed.fire({});
 		});

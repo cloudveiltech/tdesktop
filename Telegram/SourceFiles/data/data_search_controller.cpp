@@ -86,7 +86,7 @@ std::optional<GlobalMediaRequest> PrepareGlobalMediaRequest(
 		MTP_int(maxDate),
 		MTP_int(offsetRate),
 		(offsetPosition.fullId.peer
-			? session->data().peer(PeerId(offsetPosition.fullId.peer))->input
+			? session->data().peer(PeerId(offsetPosition.fullId.peer))->input()
 			: MTP_inputPeerEmpty()),
 		MTP_int(offsetPosition.fullId.msg),
 		MTP_int(limit));
@@ -178,11 +178,11 @@ std::optional<SearchRequest> PrepareSearchRequest(
 	return MTPmessages_Search(
 		MTP_flags((topicRootId ? Flag::f_top_msg_id : Flag(0))
 			| (monoforumPeerId ? Flag::f_saved_peer_id : Flag(0))),
-		peer->input,
+		peer->input(),
 		MTP_string(query),
 		MTP_inputPeerEmpty(),
 		(monoforumPeerId
-			? peer->owner().peer(monoforumPeerId)->input
+			? peer->owner().peer(monoforumPeerId)->input()
 			: MTPInputPeer()),
 		MTPVector<MTPReaction>(), // saved_reaction
 		MTP_int(topicRootId),
@@ -212,6 +212,7 @@ SearchResult ParseSearchResult(
 			auto &d = data.c_messages_messages();
 			peer->owner().processUsers(d.vusers());
 			peer->owner().processChats(d.vchats());
+			peer->processTopics(d.vtopics());
 			result.fullCount = d.vmessages().v.size();
 			return &d.vmessages().v;
 		} break;
@@ -220,21 +221,22 @@ SearchResult ParseSearchResult(
 			auto &d = data.c_messages_messagesSlice();
 			peer->owner().processUsers(d.vusers());
 			peer->owner().processChats(d.vchats());
+			peer->processTopics(d.vtopics());
 			result.fullCount = d.vcount().v;
 			return &d.vmessages().v;
 		} break;
 
 		case mtpc_messages_channelMessages: {
 			const auto &d = data.c_messages_channelMessages();
+			peer->owner().processUsers(d.vusers());
+			peer->owner().processChats(d.vchats());
 			if (const auto channel = peer->asChannel()) {
 				channel->ptsReceived(d.vpts().v);
-				channel->processTopics(d.vtopics());
 			} else {
 				LOG(("API Error: received messages.channelMessages when "
 					"no channel was passed! (ParseSearchResult)"));
 			}
-			peer->owner().processUsers(d.vusers());
-			peer->owner().processChats(d.vchats());
+			peer->processTopics(d.vtopics());
 			result.fullCount = d.vcount().v;
 			return &d.vmessages().v;
 		} break;
@@ -316,7 +318,7 @@ HistoryRequest PrepareHistoryRequest(
 		int64(0),
 		int64(0x3FFFFFFF)));
 	return MTPmessages_GetHistory(
-		peer->input,
+		peer->input(),
 		MTP_int(mtpOffsetId),
 		MTP_int(offsetDate),
 		MTP_int(addOffset),
@@ -439,7 +441,7 @@ rpl::producer<SparseIdsSlice> SearchController::simpleIdsSlice(
 			limitBefore,
 			limitAfter);
 		builder->insufficientAround(
-		) | rpl::start_with_next([=](
+		) | rpl::on_next([=](
 				const SparseIdsSliceBuilder::AroundData &data) {
 			requestMore(data, query, listData);
 		}, lifetime);
@@ -451,7 +453,7 @@ rpl::producer<SparseIdsSlice> SearchController::simpleIdsSlice(
 		listData->list.sliceUpdated(
 		) | rpl::filter([=](const SliceUpdate &update) {
 			return builder->applyUpdate(update);
-		}) | rpl::start_with_next(pushNextSnapshot, lifetime);
+		}) | rpl::on_next(pushNextSnapshot, lifetime);
 
 		_session->data().itemRemoved(
 		) | rpl::filter([=](not_null<const HistoryItem*> item) {
@@ -461,14 +463,14 @@ rpl::producer<SparseIdsSlice> SearchController::simpleIdsSlice(
 					|| item->sublistPeerId() == monoforumPeerId);
 		}) | rpl::filter([=](not_null<const HistoryItem*> item) {
 			return builder->removeOne(item->id);
-		}) | rpl::start_with_next(pushNextSnapshot, lifetime);
+		}) | rpl::on_next(pushNextSnapshot, lifetime);
 
 		_session->data().historyCleared(
 		) | rpl::filter([=](not_null<const History*> history) {
 			return (history->peer->id == peerId);
 		}) | rpl::filter([=] {
 			return builder->removeAll();
-		}) | rpl::start_with_next(pushNextSnapshot, lifetime);
+		}) | rpl::on_next(pushNextSnapshot, lifetime);
 
 		using Result = Storage::SparseIdsListResult;
 		listData->list.query(Storage::SparseIdsListQuery(
@@ -477,7 +479,7 @@ rpl::producer<SparseIdsSlice> SearchController::simpleIdsSlice(
 			limitAfter
 		)) | rpl::filter([=](const Result &result) {
 			return builder->applyInitial(result);
-		}) | rpl::start_with_next_done(
+		}) | rpl::on_next_done(
 			pushNextSnapshot,
 			[=] { builder->checkInsufficient(); },
 			lifetime);

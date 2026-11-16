@@ -20,6 +20,12 @@ namespace {
 constexpr auto kQueryDelay = crl::time(500);
 constexpr auto kPerPage = 50;
 
+[[nodiscard]] const QRegularExpression &SearchSplitter() {
+	static const auto result = QRegularExpression(QString::fromLatin1(""
+		"[\\s\\-\\+\\(\\)\\[\\]\\{\\}\\<\\>\\,\\.\\!\\_\\;\\\"\\'\\x0]"));
+	return result;
+}
+
 } // namespace
 
 PostsSearch::PostsSearch(not_null<Main::Session*> session)
@@ -27,7 +33,7 @@ PostsSearch::PostsSearch(not_null<Main::Session*> session)
 , _api(&_session->api().instance())
 , _timer([=] { applyQuery(); })
 , _recheckTimer([=] { recheck(); }) {
-	Data::AmPremiumValue(_session) | rpl::start_with_next([=] {
+	Data::AmPremiumValue(_session) | rpl::on_next([=] {
 		maybePushPremiumUpdate();
 	}, _lifetime);
 }
@@ -58,7 +64,9 @@ void PostsSearch::requestMore() {
 }
 
 void PostsSearch::setQuery(const QString &query) {
-	const auto words = TextUtilities::PrepareSearchWords(query);
+	const auto words = TextUtilities::PrepareSearchWords(
+		query,
+		&SearchSplitter());
 	const auto prepared = words.isEmpty() ? QString() : words.join(' ');
 	if (_queryExact == query) {
 		return;
@@ -109,7 +117,9 @@ void PostsSearch::pushStateUpdate(const Entry &entry) {
 		}
 		return;
 	}
-	if (!entry.pages.empty() || entry.loaded) {
+	const auto empty = entry.pages.empty()
+		|| (entry.pages.size() == 1 && entry.pages.front().empty());
+	if (!empty || (entry.loaded && !_query->isEmpty())) {
 		if (!entry.pages.empty()) {
 			++entry.pagesPushed;
 		}
@@ -178,7 +188,7 @@ void PostsSearch::requestSearch(const QString &query) {
 		MTP_string(), // hashtag
 		MTP_string(query),
 		MTP_int(entry.offsetRate),
-		(entry.offsetPeer ? entry.offsetPeer->input : MTP_inputPeerEmpty()),
+		(entry.offsetPeer ? entry.offsetPeer->input() : MTP_inputPeerEmpty()),
 		MTP_int(entry.offsetId),
 		MTP_int(kPerPage),
 		MTP_long(useStars)

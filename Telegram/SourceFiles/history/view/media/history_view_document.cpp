@@ -25,6 +25,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/media/history_view_media_common.h"
 #include "ui/text/format_values.h"
 #include "ui/text/format_song_document_name.h"
+#include "ui/text/text_lottie_custom_emoji.h"
 #include "ui/text/text_utilities.h"
 #include "ui/chat/chat_style.h"
 #include "ui/painter.h"
@@ -311,7 +312,7 @@ Document::Document(
 		const auto fullId = _realParent->fullId();
 		if (_parent->delegate()->elementContext() == Context::TTLViewer) {
 			auto lifetime = std::make_shared<rpl::lifetime>();
-			TTLVoiceStops(fullId) | rpl::start_with_next([=]() mutable {
+			TTLVoiceStops(fullId) | rpl::on_next([=]() mutable {
 				if (lifetime) {
 					base::take(lifetime)->destroy();
 				}
@@ -324,7 +325,7 @@ Document::Document(
 				_openl = nullptr;
 
 				auto lifetime = std::make_shared<rpl::lifetime>();
-				TTLVoiceStops(fullId) | rpl::start_with_next([=]() mutable {
+				TTLVoiceStops(fullId) | rpl::on_next([=]() mutable {
 					if (lifetime) {
 						base::take(lifetime)->destroy();
 					}
@@ -438,17 +439,26 @@ QSize Document::countOptimalSize() {
 			const auto &entry = transcribes->entry(_realParent);
 			const auto update = [=] { repaint(); };
 			voice->transcribe->setLoading(
-				entry.shown && (entry.requestId || entry.pending),
-				update);
+				entry.shown && (entry.requestId || entry.pending));
+			const auto pending = entry.pending;
+			auto descriptor = pending
+				? Lottie::IconDescriptor{
+					.name = u"transcribe_loading"_q,
+					.color = &st::attentionButtonFg, // Any contrast.
+					.sizeOverride = Size(st::historyTranscribeLoadingSize),
+					.colorizeUsingAlpha = true,
+				}
+				: Lottie::IconDescriptor();
 			auto text = (entry.requestId || !entry.shown)
 				? TextWithEntities()
 				: entry.toolong
-				? Ui::Text::Italic(tr::lng_audio_transcribe_long(tr::now))
+				? tr::italic(tr::lng_audio_transcribe_long(tr::now))
 				: entry.failed
-				? Ui::Text::Italic(tr::lng_attach_failed(tr::now))
-				: TextWithEntities{
-					entry.result + (entry.pending ? " [...]" : ""),
-				};
+				? tr::italic(tr::lng_attach_failed(tr::now))
+				: TextWithEntities{ entry.result }.append(
+					pending
+						? Ui::Text::LottieEmoji(descriptor)
+						: TextWithEntities());
 			voice->transcribe->setOpened(
 				!text.empty(),
 				creating ? Fn<void()>() : update);
@@ -461,7 +471,11 @@ QSize Document::countOptimalSize() {
 				voice->transcribeText = Ui::Text::String(minResizeWidth);
 				voice->transcribeText.setMarkedText(
 					st::messageTextStyle,
-					text);
+					text,
+					kMarkupTextOptions,
+					pending
+						? Ui::Text::LottieEmojiContext(std::move(descriptor))
+						: Ui::Text::MarkedContext());
 				hasTranscribe = true;
 				if (const auto skipBlockWidth = _parent->hasVisibleText()
 					? 0
@@ -939,13 +953,16 @@ void Document::draw(
 	if (const auto captioned = Get<HistoryDocumentCaptioned>()) {
 		p.setPen(stm->historyTextFg);
 		_parent->prepareCustomEmojiPaint(p, context, captioned->caption);
+
 		auto highlightRequest = context.computeHighlightCache();
 		captioned->caption.draw(p, {
 			.position = { st::msgPadding.left(), captiontop },
 			.availableWidth = captionw,
 			.palette = &stm->textPalette,
 			.pre = stm->preCache.get(),
-			.blockquote = context.quoteCache(parent()->contentColorIndex()),
+			.blockquote = context.quoteCache(
+				parent()->contentColorCollectible(),
+				parent()->contentColorIndex()),
 			.colors = context.st->highlightColors(),
 			.spoiler = Ui::Text::DefaultSpoilerCache(),
 			.now = context.now,

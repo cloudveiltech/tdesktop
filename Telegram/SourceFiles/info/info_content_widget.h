@@ -7,6 +7,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #pragma once
 
+#include "info/info_flexible_scroll.h"
 #include "info/info_wrap_widget.h"
 #include "info/statistics/info_statistics_tag.h"
 #include "ui/controls/swipe_handler_data.h"
@@ -68,10 +69,15 @@ namespace Info::Stories {
 struct Tag;
 } // namespace Info::Stories
 
+namespace Info::Saved {
+struct MusicTag;
+} // namespace Info::Saved
+
 namespace Info {
 
 class ContentMemento;
 class Controller;
+struct FlexibleScrollData;
 
 class ContentWidget : public Ui::RpWidget {
 public:
@@ -150,6 +156,20 @@ protected:
 			doSetInnerWidget(std::move(inner)));
 	}
 
+	template <typename Widget>
+	Widget *setupFlexibleInnerWidget(
+			object_ptr<Widget> inner,
+			FlexibleScrollData &flexibleScroll,
+			Fn<void(Ui::RpWidget*)> customSetup = nullptr) {
+		if (!inner->hasFlexibleTopBar()) {
+			return setInnerWidget(std::move(inner));
+		}
+		return static_cast<Widget*>(doSetupFlexibleInnerWidget(
+			std::move(inner),
+			flexibleScroll,
+			std::move(customSetup)));
+	}
+
 	[[nodiscard]] not_null<Controller*> controller() const {
 		return _controller;
 	}
@@ -173,7 +193,12 @@ protected:
 	void setViewport(rpl::producer<not_null<QEvent*>> &&events) const;
 
 private:
-	RpWidget *doSetInnerWidget(object_ptr<RpWidget> inner);
+	Ui::RpWidget *doSetInnerWidget(object_ptr<Ui::RpWidget> inner);
+	Ui::RpWidget *doSetupFlexibleInnerWidget(
+		object_ptr<Ui::RpWidget> inner,
+		FlexibleScrollData &flexibleScroll,
+		Fn<void(Ui::RpWidget*)> customSetup);
+
 	void updateControlsGeometry();
 	void refreshSearchField(bool shown);
 	void setupSwipeHandler(not_null<Ui::RpWidget*> widget);
@@ -219,6 +244,7 @@ public:
 	explicit ContentMemento(Settings::Tag settings);
 	explicit ContentMemento(Downloads::Tag downloads);
 	explicit ContentMemento(Stories::Tag stories);
+	explicit ContentMemento(Saved::MusicTag music);
 	explicit ContentMemento(Statistics::Tag statistics);
 	explicit ContentMemento(BotStarRef::Tag starref);
 	explicit ContentMemento(GlobalMedia::Tag global);
@@ -260,6 +286,9 @@ public:
 	}
 	[[nodiscard]] int storiesAddToAlbumId() const {
 		return _storiesAddToAlbumId;
+	}
+	[[nodiscard]] PeerData *musicPeer() const {
+		return _musicPeer;
 	}
 	[[nodiscard]] PeerData *giftsPeer() const {
 		return _giftsPeer;
@@ -333,6 +362,7 @@ private:
 	PeerData * const _storiesPeer = nullptr;
 	int _storiesAlbumId = 0;
 	int _storiesAddToAlbumId = 0;
+	PeerData * const _musicPeer = nullptr;
 	PeerData * const _giftsPeer = nullptr;
 	int _giftsCollectionId = 0;
 	Statistics::Tag _statisticsTag;

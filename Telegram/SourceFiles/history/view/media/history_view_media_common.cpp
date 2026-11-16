@@ -583,6 +583,18 @@ ClickHandlerPtr MakeSensitiveMediaLink(
 	session->api().sensitiveContent().preload();
 
 	return std::make_shared<LambdaClickHandler>([=](ClickContext context) {
+		//CloudVeil start: sensitive media is never revealed
+		if (true) {
+			const auto my = context.other.value<ClickHandlerContext>();
+			const auto controller = my.sessionWindow.get();
+			const auto show = controller ? controller->uiShow() : my.show;
+			if (show) {
+				show->showBox(Ui::MakeInformBox(
+					tr::lng_blocked_for_protection(tr::now)));
+			}
+			return;
+		}
+		//CloudVeil end
 		const auto plain = [reveal, context] {
 			if (const auto raw = reveal.get()) {
 				raw->onClick(context);

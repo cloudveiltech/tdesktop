@@ -122,7 +122,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "styles/style_layers.h" // st::boxLabel
 #include "cloudveil/GlobalSecuritySettings.h"
 #include "cloudveil/DialogHelper.h"
-#include "settings/settings_credits.h"
+#include "settings/sections/settings_credits.h"
 #include "boxes/abstract_box.h"
 
 namespace Window {

@@ -145,7 +145,7 @@ void PhoneWidget::setupSmsHint() {
 		sizeValue(),
 		uiHint->widthValue(),
 		uiHint->heightValue()
-	) | rpl::start_with_next([=](QSize size, int uiHintWidth, int uiHintHeight) {
+	) | rpl::on_next([=](QSize size, int uiHintWidth, int uiHintHeight) {
 		uiHint->moveToLeft(
 			(size.width() - uiHintWidth) / 2,
 			contentTop() + st::introQrLoginLinkTop + 2*uiHintHeight);

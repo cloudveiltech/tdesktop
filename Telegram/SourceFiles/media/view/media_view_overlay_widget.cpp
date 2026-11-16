@@ -41,6 +41,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/cached_round_corners.h"
 #include "ui/gl/gl_window.h"
 #include "ui/boxes/confirm_box.h"
+//CloudVeil start
+#include "boxes/abstract_box.h"
+//CloudVeil end
 #include "ui/ui_utility.h"
 #include "info/info_memento.h"
 #include "info/info_controller.h"
@@ -3675,6 +3678,12 @@ void OverlayWidget::show(OpenRequest request) {
 	const auto contextItem = request.item();
 	const auto contextPeer = request.peer();
 	const auto contextTopicRootId = request.topicRootId();
+	//CloudVeil start: sensitive media is never shown
+	if (contextItem && contextItem->isMediaSensitive()) {
+		Ui::show(Ui::MakeInformBox(tr::lng_blocked_for_protection(tr::now)));
+		return;
+	}
+	//CloudVeil end
 	if (!request.continueStreaming() && !request.startTime() && !_reShow) {
 		if (_message && (_message == contextItem)) {
 			return close();
@@ -6192,6 +6201,17 @@ bool OverlayWidget::moveToNext(int delta) {
 		return false;
 	}
 	auto newIndex = *_index + delta;
+	//CloudVeil start: skip over sensitive media while navigating
+	if (delta) {
+		for (auto i = 0; i < 100; ++i) {
+			const auto entity = entityByIndex(newIndex);
+			if (!entity.item || !entity.item->isMediaSensitive()) {
+				break;
+			}
+			newIndex += delta;
+		}
+	}
+	//CloudVeil end
 	return moveToEntity(entityByIndex(newIndex), delta);
 }
 
@@ -6199,6 +6219,11 @@ bool OverlayWidget::moveToEntity(const Entity &entity, int preloadDelta) {
 	if (v::is_null(entity.data) && !entity.item) {
 		return false;
 	}
+	//CloudVeil start: sensitive media is never shown
+	if (entity.item && entity.item->isMediaSensitive()) {
+		return false;
+	}
+	//CloudVeil end
 	if (const auto item = entity.item) {
 		setContext(ItemContext{ item, entity.topicRootId });
 	} else if (_peer) {

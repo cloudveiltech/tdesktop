@@ -64,7 +64,11 @@ using UpdateFlag = Data::PeerUpdate::Flag;
 
 [[nodiscard]] const std::vector<QString> &IgnoredReasons(
 		not_null<Main::Session*> session) {
-	return session->appConfig().ignoredRestrictionReasons();
+	//CloudVeil start: never honour per-account restriction opt-outs
+	// (e.g. "sensitive" when 18+ content was enabled elsewhere).
+	static const auto kNone = std::vector<QString>();
+	return kNone;
+	//CloudVeil end
 }
 
 [[nodiscard]] int ParseRegistrationDate(const QString &text) {

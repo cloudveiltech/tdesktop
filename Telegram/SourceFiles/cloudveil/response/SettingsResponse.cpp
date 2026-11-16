@@ -277,15 +277,18 @@ bool SettingsResponse::isDialogAllowed(PeerData *peer) {
 	}
 	else if (peer->isUser()) {
 		if (peer->asUser()->botInfo == NULL) {
-			if (manageUsers) {
-				if (peer->asUser()->isSelf()) {
-					return true;
-				}
-				return users.contains(dialogId) && users[dialogId];
-			}
-			else {
+			if (peer->asUser()->isSelf()) {
 				return true;
 			}
+			// CloudVeil: an explicit allow/block for a user always applies,
+			// even without manage_users (matches Android isUserAllowed).
+			if (users.contains(dialogId)) {
+				return users[dialogId];
+			}
+			// Unknown users: blocked when users are managed. (With
+			// manage_users, unknown users don't reach here: they are
+			// "not secured" and go through the pending server check.)
+			return !manageUsers;
 		} else {
             if (peer->username() == "cloudveilbot") {
 				return true;

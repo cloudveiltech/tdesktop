@@ -968,7 +968,9 @@ bool MediaPhoto::allowsEditMedia() const {
 }
 
 bool MediaPhoto::hasSpoiler() const {
-	return _spoiler;
+	//CloudVeil start: sensitive media is always spoilered (blurs previews)
+	return _spoiler || parent()->isMediaSensitive();
+	//CloudVeil end
 }
 
 bool MediaPhoto::updateInlineResultMedia(const MTPMessageMedia &media) {
@@ -1346,7 +1348,9 @@ bool MediaFile::dropForwardedInfo() const {
 }
 
 bool MediaFile::hasSpoiler() const {
-	return _spoiler;
+	//CloudVeil start: sensitive media is always spoilered (blurs previews)
+	return _spoiler || parent()->isMediaSensitive();
+	//CloudVeil end
 }
 
 crl::time MediaFile::ttlSeconds() const {

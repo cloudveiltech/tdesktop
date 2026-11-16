@@ -3768,9 +3768,28 @@ void HistoryWidget::showHistory(
 
 //CloudVeil start
 void HistoryWidget::onSettingsUpdate() {
-	if (_peer) {
+	// Settings syncs happen often (e.g. whenever the chats list changes);
+	// only react when the open chat's CloudVeil status matters. Re-showing
+	// the chat on every sync reset its scroll position.
+	if (!_peer) {
+		return;
+	}
+	refreshTabbedPanel();
+	auto &settings = GlobalSecuritySettings::getSettings();
+	if (!settings.isDialogAllowed(_peer)) {
+		// Blocked while open: show the block dialog and close the chat.
+		DialogHelper::checkAndShowDialogForbidden(
+			_peer,
+			session().user(),
+			controller());
+		controller()->showPeerHistory(
+			PeerId(),
+			Window::SectionShow::Way::ClearStack);
+	} else if (_list
+		&& _list->isHidden()
+		&& settings.isDialogSecured(_peer)) {
+		// Messages were hidden until the server checked this chat.
 		showHistory(_peer->id, _showAtMsgId);
-		refreshTabbedPanel();
 	}
 }
 //CloudVeil end

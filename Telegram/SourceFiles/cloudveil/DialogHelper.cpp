@@ -17,8 +17,14 @@ DialogHelper::CheckDialogResult DialogHelper::checkAndShowDialogForbidden(PeerDa
 					.text = tr::lng_dialog_forbidden(),
 					.confirmed = [=](Fn<void()>&& close) {
                         const auto dialogId = getDialogId(peerData);
+                        // Channels and basic groups are reported to the web
+                        // endpoint with a negative sign; users and bots stay positive.
+                        const auto signedDialogId = (peerData->isChat()
+                                || peerData->isChannel())
+                            ? -qint64(dialogId)
+                            : qint64(dialogId);
 						QString url = QString("https://messenger.cloudveil.org/unblock/%1/%2")
-							.arg(QString::number(userData->id.value), QString::number(dialogId));
+							.arg(QString::number(userData->id.value), QString::number(signedDialogId));
 
 						QDesktopServices::openUrl(QUrl(url, QUrl::TolerantMode));
 					},

@@ -61,6 +61,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/admin_log/history_admin_log_section.h"
 #include "history/view/media/history_view_media.h"
 #include "history/view/history_view_chat_section.h"
+//CloudVeil start
+#include "cloudveil/DialogHelper.h"
+//CloudVeil end
 #include "history/view/history_view_pinned_section.h"
 #include "history/view/history_view_scheduled_section.h"
 #include "history/view/history_view_service_message.h"
@@ -128,7 +131,10 @@ base::options::toggle OptionUseNewChatView({
 	.id = kOptionUseNewChatView,
 	.name = "New chat view",
 	.description = "Open chats through the new section.",
-	.defaultValue = true,
+	//CloudVeil start: CVM's chat checks (blocked chats, chats not yet
+	// categorized by the server) live in the classic HistoryWidget path.
+	.defaultValue = false,
+	//CloudVeil end
 });
 
 } // namespace
@@ -1543,6 +1549,16 @@ void MainWidget::showHistory(
 		PeerId peerId,
 		const SectionShow &params,
 		MsgId showAtMsgId) {
+	//CloudVeil start: every way of opening a chat passes here first
+	if (peerId
+		&& DialogHelper::CheckDialogResult::BLOCKED
+			== DialogHelper::checkAndShowDialogForbidden(
+				session().data().peer(peerId),
+				session().user(),
+				_controller)) {
+		return;
+	}
+	//CloudVeil end
 	if (peerId && _controller->window().locked()) {
 		if (params.activation != anim::activation::background) {
 			_controller->window().activate();
@@ -1975,6 +1991,27 @@ bool MainWidget::saveSectionInStack(
 void MainWidget::showSection(
 		std::shared_ptr<Window::SectionMemento> memento,
 		const SectionShow &params) {
+	//CloudVeil start: chat sections (topics, sublists, channel direct
+	// messages, the new chat view) must not open blocked chats; chats the
+	// server has not categorized yet are refused until it has.
+	if (const auto chat = dynamic_cast<HistoryView::ChatMemento*>(
+			memento.get())) {
+		const auto id = chat->id();
+		auto peers = std::vector<PeerData*>{ id.history->peer.get() };
+		if (id.sublist) {
+			peers.push_back(id.sublist->sublistPeer().get());
+		}
+		for (const auto peer : peers) {
+			if (DialogHelper::CheckDialogResult::APPROVED
+				!= DialogHelper::checkAndShowDialogForbidden(
+					peer,
+					session().user(),
+					_controller)) {
+				return;
+			}
+		}
+	}
+	//CloudVeil end
 	if (_mainSection && _mainSection->showInternal(
 			memento.get(),
 			params)) {

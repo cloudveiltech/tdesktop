@@ -20,6 +20,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/popup_menu.h"
 #include "window/window_peer_menu.h"
 #include "window/window_session_controller.h"
+//CloudVeil start
+#include "cloudveil/GlobalSecuritySettings.h"
+#include "data/data_saved_sublist.h"
+//CloudVeil end
 
 namespace Window {
 namespace {
@@ -40,12 +44,41 @@ ChatPreviewManager::ChatPreviewManager(
 , _timer([=] { showScheduled(); }) {
 }
 
+
+//CloudVeil start
+namespace {
+
+// Previews show messages without opening the chat, so they are only
+// offered for chats the server has categorized and allowed.
+[[nodiscard]] bool CloudVeilPreviewAllowed(const Dialogs::RowDescriptor &row) {
+	auto &settings = GlobalSecuritySettings::getSettings();
+	const auto check = [&](PeerData *peer) {
+		return !peer
+			|| (settings.isDialogSecured(peer)
+				&& settings.isDialogAllowed(peer));
+	};
+	if (const auto sublist = row.key.sublist()) {
+		if (!check(sublist->sublistPeer())) {
+			return false;
+		}
+	}
+	return check(row.key.peer());
+}
+
+} // namespace
+//CloudVeil end
+
 bool ChatPreviewManager::show(
 		Dialogs::RowDescriptor row,
 		Fn<void(bool shown)> callback,
 		QPointer<QWidget> parentOverride,
 		std::optional<QPoint> positionOverride) {
 	cancelScheduled();
+	//CloudVeil start
+	if (!CloudVeilPreviewAllowed(row)) {
+		return false;
+	}
+	//CloudVeil end
 	_menu = nullptr;
 	_topicLifetime.destroy();
 	if (const auto topic = row.key.topic()) {
@@ -124,6 +157,11 @@ bool ChatPreviewManager::schedule(
 		QPointer<QWidget> parentOverride,
 		std::optional<QPoint> positionOverride) {
 	cancelScheduled();
+	//CloudVeil start
+	if (!CloudVeilPreviewAllowed(row)) {
+		return false;
+	}
+	//CloudVeil end
 	_topicLifetime.destroy();
 	if (const auto topic = row.key.topic()) {
 		_topicLifetime = topic->destroyed() | rpl::on_next([=] {

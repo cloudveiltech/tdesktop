@@ -445,7 +445,7 @@ void SetupExperimental(
 				Dialogs::kOptionForumHideChatsList,
 				Dialogs::kOptionDialogsUnreadOnTop,
 				Dialogs::Ui::kOptionDialogsMuteIcon,
-				kOptionUseNewChatView,
+				//kOptionUseNewChatView, // CloudVeil: kept off (see mainwidget)
 				kOptionAutoScrollInactiveChat,
 				kModerateCommonGroups,
 				Info::kClassicProfileScroll,

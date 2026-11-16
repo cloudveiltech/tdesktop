@@ -53,6 +53,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "apiwrap.h"
 #include "dialogs/dialogs_widget.h"
 #include "history/history_widget.h"
+#include "history/history_drag_area.h"
 #include "history/history_item_helpers.h" // GetErrorForSending.
 #include "history/view/media/history_view_media.h"
 #include "history/view/history_view_chat_section.h"
@@ -75,6 +76,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/update_checker.h"
 #include "core/shortcuts.h"
 #include "core/application.h"
+#include "core/click_handler_types.h"
 #include "core/changelogs.h"
 #include "core/mime_type.h"
 #include "calls/calls_call.h"
@@ -454,6 +456,15 @@ MainWidget::MainWidget(
 	simpleUpdater->startUpdateChecking(AppVersion);
 	//CloudVeil end
 	session().data().stickers().notifySavedGifsUpdated();
+
+	const auto weak = base::make_weak(controller);
+	DragArea::SetupProxyDropArea(this, [=](const QString &localUrl) {
+		Core::App().openLocalUrl(
+			localUrl,
+			QVariant::fromValue(ClickHandlerContext{
+				.sessionWindow = weak,
+			}));
+	});
 }
 
 
@@ -883,7 +894,10 @@ void MainWidget::searchMessages(
 		return;
 	}
 	auto tags = Data::SearchTagsFromQuery(query);
+	const auto archiveWindow = (_controller->windowId().type
+		== Window::SeparateType::Archive);
 	if (_dialogs
+		&& !archiveWindow
 		&& (!ForceComposeSearchOneColumn.value() || !isOneColumn())) {
 		auto state = Dialogs::SearchState{
 			.inChat = ((tags.empty() || inChat.sublist())
@@ -2899,6 +2913,7 @@ bool MainWidget::eventFilter(QObject *o, QEvent *e) {
 			const auto event = static_cast<QMouseEvent*>(e);
 			if (event->button() == Qt::BackButton) {
 				if (!Core::App().hideMediaView()
+					&& !_controller->window().closeLayerByBackButton()
 					&& (!_dialogs || !_dialogs->cancelSearchByMouseBack())) {
 					handleHistoryBack();
 				}
@@ -2926,6 +2941,9 @@ void MainWidget::handleAdaptiveLayoutUpdate() {
 }
 
 void MainWidget::handleHistoryBack() {
+	if (_mainSection && _mainSection->showBackInternal()) {
+		return;
+	}
 	const auto openedFolder = _controller->openedFolder().current();
 	const auto openedForum = _controller->shownForum().current();
 	const auto rootPeer = !_stack.empty()

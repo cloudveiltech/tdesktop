@@ -404,7 +404,8 @@ Fn<bool(
 	EditLinkAction action)> DefaultEditLinkCallback(
 		std::shared_ptr<Main::SessionShow> show,
 		not_null<Ui::InputField*> field,
-		const style::InputField *fieldStyle) {
+		const style::InputField *fieldStyle,
+		Fn<QString(QString)> linkValidator) {
 	const auto weak = base::make_weak(field);
 	return [=](
 			EditLinkSelection selection,
@@ -414,7 +415,8 @@ Fn<bool(
 		if (action == EditLinkAction::Check) {
 			return (Ui::InputField::IsValidMarkdownLink(link)
 					&& !TextUtilities::IsMentionLink(link))
-				|| Ui::InputField::IsCustomDateLink(link);
+				|| Ui::InputField::IsCustomDateLink(link)
+				|| (linkValidator && !linkValidator(link).isEmpty());
 		}
 		if (Ui::InputField::IsCustomDateLink(link)) {
 			const auto dateStr = link.mid(
@@ -480,6 +482,9 @@ Fn<bool(
 				strong->commitMarkdownLinkEdit(selection, text, link);
 			}
 		};
+		const auto validateLink = linkValidator
+			? linkValidator
+			: Fn<QString(QString)>(qthelp::validate_url);
 		show->showBox(Box(
 			EditLinkBox,
 			show,
@@ -487,7 +492,7 @@ Fn<bool(
 			link,
 			std::move(callback),
 			fieldStyle,
-			qthelp::validate_url));
+			validateLink));
 		return true;
 	};
 }
@@ -524,7 +529,11 @@ auto InitMessageFieldHandlers(MessageFieldHandlersArgs &&args)
 	}));
 	if (const auto &show = args.show) {
 		field->setEditLinkCallback(
-			DefaultEditLinkCallback(show, field, args.fieldStyle));
+			DefaultEditLinkCallback(
+				show,
+				field,
+				args.fieldStyle,
+				args.linkValidator));
 		field->setEditLanguageCallback(DefaultEditLanguageCallback(show));
 		InitSpellchecker(show, field, args.fieldStyle != nullptr);
 	}
@@ -915,10 +924,10 @@ AutocompleteQuery ParseMentionHashtagBotCommandQuery(
 				if (!features.autocompleteMentions) {
 					return {};
 				}
-				if ((position - fragmentPosition - i < 1 || text[i].isLetter()) && (i < 2 || !(text[i - 2].isLetterOrNumber() || text[i - 2] == '_'))) {
+				if ((position - fragmentPosition - i < 1 || text[i].isLetterOrNumber()) && (i < 2 || !(text[i - 2].isLetterOrNumber() || text[i - 2] == '_'))) {
 					result.fromStart = (i == 1) && (fragmentPosition == 0);
 					result.query = text.mid(i - 1, position - fragmentPosition - i + 1);
-				} else if ((position - fragmentPosition - i < 1 || text[i].isLetter()) && i > 2 && (text[i - 2].isLetterOrNumber() || text[i - 2] == '_') && !mentionInCommand) {
+				} else if ((position - fragmentPosition - i < 1 || text[i].isLetterOrNumber()) && i > 2 && (text[i - 2].isLetterOrNumber() || text[i - 2] == '_') && !mentionInCommand) {
 					mentionInCommand = true;
 					--i;
 					continue;

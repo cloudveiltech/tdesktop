@@ -482,7 +482,10 @@ void InstallLauncher() {
 		"DESKTOPINTEGRATION");
 
 	// don't update desktop file for alpha version or if updater is disabled
-	if (cAlphaVersion() || Core::UpdaterDisabled() || DisabledByEnv) {
+	if (cAlphaVersion()
+			|| Core::UpdaterDisabled()
+			|| KSandbox::isInside()
+			|| DisabledByEnv) {
 		return;
 	}
 

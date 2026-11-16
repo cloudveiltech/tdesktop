@@ -8860,7 +8860,12 @@ void HistoryWidget::updateHistoryGeometry(
 		}
 	}
 	const auto toY = std::clamp(newScrollTop, 0, _scroll->scrollTopMax());
-	if (_list->isHidden()) {
+	//CloudVeil start: messages of chats the server has not checked yet
+	// stay hidden until it has (see showHistory / onSettingsUpdate).
+	const auto cvmChecked = !_peer
+		|| GlobalSecuritySettings::getSettings().isDialogSecured(_peer);
+	if (_list->isHidden() && cvmChecked) {
+	//CloudVeil end
 		if (const auto hold = _listRevealHold.get()) {
 			hold->timer.cancel();
 			hold->lifetime.destroy();

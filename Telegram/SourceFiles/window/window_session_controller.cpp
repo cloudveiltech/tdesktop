@@ -2438,8 +2438,15 @@ void SessionController::showForum(
 		const SectionShow &params,
 		MsgId showAtMsgId) {
 	//CloudVeil start
-	if (DialogHelper::CheckDialogResult::APPROVED != DialogHelper::checkAndShowDialogForbidden(forum->history()->peer, session().user(), _window->sessionController())) {		
-		return;
+	{
+		const auto channel = forum->channel();
+		if (!content()->cvmCheckBeforeOpen({ channel }, [=] {
+			if (const auto forum = channel->forum()) {
+				showForum(forum, params, showAtMsgId);
+			}
+		})) {
+			return;
+		}
 	}
 	//CloudVeil end
 	const auto forced = params.forceTopicsList;
@@ -3334,18 +3341,17 @@ void SessionController::showInNewWindow(
 		MsgId msgId) {
 	//CloudVeil start: no separate window for blocked or uncategorized chats
 	if (id.thread) {
-		auto peers = std::vector<PeerData*>{ id.thread->peer().get() };
+		auto peers = std::vector<not_null<PeerData*>>{ id.thread->peer() };
 		if (const auto sublist = id.sublist()) {
-			peers.push_back(sublist->sublistPeer().get());
+			peers.push_back(sublist->sublistPeer());
 		}
-		for (const auto peer : peers) {
-			if (DialogHelper::CheckDialogResult::APPROVED
-				!= DialogHelper::checkAndShowDialogForbidden(
-					peer,
-					session().user(),
-					this)) {
-				return;
+		const auto weak = base::make_weak(id.thread);
+		if (!content()->cvmCheckBeforeOpen(std::move(peers), [=] {
+			if (weak) {
+				showInNewWindow(id, msgId);
 			}
+		})) {
+			return;
 		}
 	}
 	//CloudVeil end

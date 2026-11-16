@@ -50,6 +50,9 @@ private:
 	static GlobalSecuritySettings *instance;
 	// Account whose rules are in lastResponse (shared by all instances).
 	static qint64 loadedUserId;
+	// One instance per window (MainWidget); replies notify all of them.
+	static std::vector<GlobalSecuritySettings*> instances;
+	static void notifySettingsReady();
 
 	base::weak_ptr<Main::Session> _session;
 	qint64 _pendingUserId = 0;

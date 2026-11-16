@@ -63,6 +63,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "history/view/history_view_chat_section.h"
 //CloudVeil start
 #include "cloudveil/DialogHelper.h"
+#include "base/call_delayed.h"
 //CloudVeil end
 #include "history/view/history_view_pinned_section.h"
 #include "history/view/history_view_scheduled_section.h"
@@ -280,6 +281,10 @@ MainWidget::SettingBackground::SettingBackground(
 : data(data) {
 }
 
+//CloudVeil start
+constexpr auto kCvmCheckTimeout = crl::time(10000);
+//CloudVeil end
+
 MainWidget::MainWidget(
 	QWidget *parent,
 	not_null<Window::SessionController*> controller)
@@ -490,7 +495,79 @@ MainWidget::MainWidget(
 
 
 //CloudVeil start
+bool MainWidget::cvmCheckBeforeOpen(
+		std::vector<not_null<PeerData*>> peers,
+		Fn<void()> open) {
+	auto unchecked = false;
+	for (const auto peer : peers) {
+		const auto result = DialogHelper::checkAndShowDialogForbidden(
+			peer,
+			session().user(),
+			_controller);
+		if (result == DialogHelper::CheckDialogResult::BLOCKED) {
+			_cvmPendingOpen = std::nullopt;
+			return false;
+		} else if (result == DialogHelper::CheckDialogResult::UNKNOWN) {
+			unchecked = true;
+		}
+	}
+	if (!unchecked) {
+		_cvmPendingOpen = std::nullopt;
+		return true;
+	}
+	const auto serial = ++_cvmPendingSerial;
+	auto ids = std::vector<PeerId>();
+	for (const auto peer : peers) {
+		ids.push_back(peer->id);
+	}
+	_cvmPendingOpen = CvmPendingOpen{
+		.peers = std::move(ids),
+		.open = std::move(open),
+		.serial = serial,
+	};
+	_controller->showToast(tr::lng_cvm_checking_chat(tr::now));
+	base::call_delayed(kCvmCheckTimeout, this, [=] {
+		if (_cvmPendingOpen && _cvmPendingOpen->serial == serial) {
+			cvmResolvePendingOpen(true);
+		}
+	});
+	return false;
+}
+
+void MainWidget::cvmResolvePendingOpen(bool timedOut) {
+	if (!_cvmPendingOpen) {
+		return;
+	}
+	auto &settings = GlobalSecuritySettings::getSettings();
+	PeerData *unchecked = nullptr;
+	auto missing = false;
+	for (const auto id : _cvmPendingOpen->peers) {
+		const auto peer = session().data().peerLoaded(id);
+		if (!peer) {
+			missing = true;
+		} else if (!unchecked && !settings.isDialogSecured(peer)) {
+			unchecked = peer;
+		}
+	}
+	if (!missing && !unchecked) {
+		// Checked: open it again the usual way (it may now be blocked).
+		const auto pending = *base::take(_cvmPendingOpen);
+		pending.open();
+	} else if (timedOut || missing || _cvmPendingOpen->retried) {
+		_cvmPendingOpen = std::nullopt;
+		_controller->showToast(tr::lng_cvm_check_failed(tr::now));
+	} else {
+		// The server answered without this chat (it may still be looking
+		// it up); ask once more, then give up.
+		_cvmPendingOpen->retried = true;
+		GlobalSecuritySettings::getInstance()->addAdditionalDataToRequest(
+			unchecked);
+		GlobalSecuritySettings::getInstance()->updateFromServer();
+	}
+}
+
 void MainWidget::onSettingsUpdate() {
+	cvmResolvePendingOpen(false);
 	// Separate (single chat) windows have no chats list.
 	if (_dialogs) {
 		_dialogs->refreshOnUpdate();
@@ -1554,13 +1631,12 @@ void MainWidget::showHistory(
 		PeerId peerId,
 		const SectionShow &params,
 		MsgId showAtMsgId) {
-	//CloudVeil start: every way of opening a chat passes here first
-	if (peerId
-		&& DialogHelper::CheckDialogResult::BLOCKED
-			== DialogHelper::checkAndShowDialogForbidden(
-				session().data().peer(peerId),
-				session().user(),
-				_controller)) {
+	//CloudVeil start: every way of opening a chat passes here first.
+	// Chats the server has not checked yet are opened only after it has,
+	// so no part of them (messages, join bar, pinned message...) shows.
+	if (peerId && !cvmCheckBeforeOpen(
+			{ session().data().peer(peerId) },
+			[=] { showHistory(peerId, params, showAtMsgId); })) {
 		return;
 	}
 	//CloudVeil end
@@ -2002,18 +2078,14 @@ void MainWidget::showSection(
 	if (const auto chat = dynamic_cast<HistoryView::ChatMemento*>(
 			memento.get())) {
 		const auto id = chat->id();
-		auto peers = std::vector<PeerData*>{ id.history->peer.get() };
+		auto peers = std::vector<not_null<PeerData*>>{ id.history->peer };
 		if (id.sublist) {
-			peers.push_back(id.sublist->sublistPeer().get());
+			peers.push_back(id.sublist->sublistPeer());
 		}
-		for (const auto peer : peers) {
-			if (DialogHelper::CheckDialogResult::APPROVED
-				!= DialogHelper::checkAndShowDialogForbidden(
-					peer,
-					session().user(),
-					_controller)) {
-				return;
-			}
+		if (!cvmCheckBeforeOpen(
+				std::move(peers),
+				[=] { showSection(memento, params); })) {
+			return;
 		}
 	}
 	//CloudVeil end

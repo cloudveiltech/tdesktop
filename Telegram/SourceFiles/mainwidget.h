@@ -125,6 +125,14 @@ public:
 	//CloudVeil start
 	void onSettingsUpdate();
 	void showOrganizationChangeRequired();
+
+	// Checks the chats about to be shown. Returns true if opening may go
+	// ahead now. A blocked chat shows the block dialog (false). A chat the
+	// server has not checked yet shows "Checking server policy..." and
+	// `open` runs again once the server has answered (false).
+	bool cvmCheckBeforeOpen(
+		std::vector<not_null<PeerData*>> peers,
+		Fn<void()> open);
 	//CloudVeil end
 
 	[[nodiscard]] Main::Session &session() const;
@@ -414,5 +422,15 @@ private:
 	object_ptr<GlobalSecuritySettings> globalSettings;
 	object_ptr<SimpleUpdater> simpleUpdater;
 	qint64 lastOrganizationPopupShownTime;
+	// Something waiting for its chats' first server check before opening.
+	struct CvmPendingOpen {
+		std::vector<PeerId> peers;
+		Fn<void()> open;
+		uint64 serial = 0;
+		bool retried = false;
+	};
+	std::optional<CvmPendingOpen> _cvmPendingOpen;
+	uint64 _cvmPendingSerial = 0;
+	void cvmResolvePendingOpen(bool timedOut);
 	//CloudVeil end
 };

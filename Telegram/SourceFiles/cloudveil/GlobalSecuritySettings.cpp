@@ -26,11 +26,20 @@ GlobalSecuritySettings* GlobalSecuritySettings::instance;
 
 bool GlobalSecuritySettings::loaded = false;
 qint64 GlobalSecuritySettings::loadedUserId = 0;
+std::vector<GlobalSecuritySettings*> GlobalSecuritySettings::instances;
+
+void GlobalSecuritySettings::notifySettingsReady() {
+	const auto copy = instances;
+	for (const auto instance : copy) {
+		instance->settingsReady();
+	}
+}
 
 
 GlobalSecuritySettings::GlobalSecuritySettings(QObject *parent) : QObject(parent), manager(this), timer(this) {
 	// Rules are loaded per account in setActiveSession().
 	instance = this;
+	instances.push_back(this);
 	connect(&timer, SIGNAL(timeout()), SLOT(doServerRequest()));
 	connect(&manager, SIGNAL(finished(QNetworkReply*)), this, SLOT(requestFinished(QNetworkReply*)));
 
@@ -39,8 +48,11 @@ GlobalSecuritySettings::GlobalSecuritySettings(QObject *parent) : QObject(parent
 }
 
 GlobalSecuritySettings::~GlobalSecuritySettings() {
+	instances.erase(
+		std::remove(instances.begin(), instances.end(), this),
+		instances.end());
 	if (instance == this) {
-		instance = nullptr;
+		instance = instances.empty() ? nullptr : instances.back();
 	}
 }
 
@@ -59,7 +71,7 @@ void GlobalSecuritySettings::setActiveSession(
 		loadedUserId = userId;
 		lastResponse = SettingsResponse::loadFromCache(userId);
 		lastRequest = SettingsRequest();
-		settingsReady();
+		notifySettingsReady();
 	}
 	updateFromServer();
 }
@@ -79,7 +91,7 @@ void GlobalSecuritySettings::doServerRequest() {
 		auto now = QDateTime::currentDateTime().toMSecsSinceEpoch();
 		if (now - lastRequestTime < MAX_REQUEST_INTERVAL_MS) {
 			qDebug() << "Sync Request the same, skipping it";
-			this->settingsReady();
+			notifySettingsReady();
 			return;
 		}
 		else {
@@ -383,7 +395,7 @@ void GlobalSecuritySettings::requestFinished(QNetworkReply *networkReply)
 				settingsResponse.saveToCache(loadedUserId);
 				lastResponse = settingsResponse;
 
-				this->settingsReady();
+				notifySettingsReady();
 			}
 		}
 		else if (httpStatusCode >= 400 && httpStatusCode < 500) // 400 Error

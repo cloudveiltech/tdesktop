@@ -10,8 +10,8 @@ class SettingsResponse
 public: 
 	struct Organization {
 		QString name;
-		int id;
-		bool needChange;
+		int id = 0;
+		bool needChange = false;
 		QString aboutUrl;
 		QString policyUrl;
 
@@ -26,20 +26,23 @@ public:
 	QMap<qint64, bool> stickers;
 	QMap<qint64, bool> users;
 
-	bool disableBio;
-	bool disableBioChange;
-	bool disableProfilePhoto;
-	bool disableProfilePhotoChange;
-	bool disableStickers;
+	// Defaults apply until the first server response for an account and
+	// match Android's CloudVeilSecuritySettings DEFAULT_* values.
+	bool disableBio = true;
+	bool disableBioChange = true;
+	bool disableProfilePhoto = true;
+	bool disableProfilePhotoChange = true;
+	bool disableStickers = false;
 	bool disableGifs = true;
-	int profilePhotoLimit;
-	bool disableProfileVideo;
-	bool disableProfileVideoChange;
-	bool disableEmojiStatus;
-	bool manageUsers;
-	bool disableStories;
-	bool disableStars = true; // matches Android DEFAULT_DISABLE_STARS
-	bool disableMiniApps = true; // matches Android DEFAULT_DISABLE_MINI_APPS
+	int profilePhotoLimit = 1;
+	bool disableProfileVideo = false;
+	bool disableProfileVideoChange = false;
+	bool disableEmojiStatus = true;
+	bool manageUsers = false;
+	bool disableStories = true;
+	bool disableStars = true;
+	bool disableMiniApps = true;
+	bool disableAiCompose = true;
 	// Bots the user may never block (Android DEFAULT_NONBLOCKABLE_BOT_ID).
 	QList<qint64> nonblockableBots = { 689684671 };
 	Organization orgranization;
@@ -47,8 +50,8 @@ public:
 public:
 	void readFromJson(QJsonObject &jsonObject);
 
-	void saveToCache();
-	static SettingsResponse loadFromCache();
+	void saveToCache(qint64 userId);
+	static SettingsResponse loadFromCache(qint64 userId);
 
 	bool isDialogAllowed(History *history); 
 	bool isDialogAllowed(PeerData *peer);

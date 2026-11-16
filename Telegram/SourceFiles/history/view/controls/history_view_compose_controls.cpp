@@ -7,6 +7,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/view/controls/history_view_compose_controls.h"
 
+//CloudVeil start
+#include "cloudveil/GlobalSecuritySettings.h"
+//CloudVeil end
+
 #include "history/view/controls/history_view_bot_menu_button.h"
 
 #include "base/call_delayed.h"
@@ -5311,6 +5315,7 @@ void ComposeControls::updateControlsVisibility() {
 
 void ComposeControls::updateAiButtonVisibility() {
 	const auto hidden = !hasEnoughLinesForAi()
+		|| GlobalSecuritySettings::getSettings().disableAiCompose // CloudVeil
 		|| !_wrap->isVisible()
 		|| _recording.current()
 		|| !_field->isVisible();

@@ -24,13 +24,14 @@ SettingsResponse GlobalSecuritySettings::lastResponse;
 GlobalSecuritySettings* GlobalSecuritySettings::instance;
 
 bool GlobalSecuritySettings::loaded = false;
+qint64 GlobalSecuritySettings::loadedUserId = 0;
 
 
 GlobalSecuritySettings::GlobalSecuritySettings(QObject *parent) : QObject(parent), manager(this), timer(this) {
-	lastResponse = SettingsResponse::loadFromCache();
-
+	// Rules are loaded per account in setActiveSession().
 	instance = this;
 	connect(&timer, SIGNAL(timeout()), SLOT(doServerRequest()));
+	connect(&manager, SIGNAL(finished(QNetworkReply*)), this, SLOT(requestFinished(QNetworkReply*)));
 
 	loaded = true;
 	additionalItem = nullptr;
@@ -40,6 +41,26 @@ GlobalSecuritySettings::~GlobalSecuritySettings() {
 	if (instance == this) {
 		instance = nullptr;
 	}
+}
+
+Main::Session *GlobalSecuritySettings::activeSession() const {
+	if (const auto session = _session.get()) {
+		return session;
+	}
+	return Core::App().maybePrimarySession();
+}
+
+void GlobalSecuritySettings::setActiveSession(
+		not_null<Main::Session*> session) {
+	_session = session.get();
+	const auto userId = qint64(session->userId().bare);
+	if (userId != loadedUserId) {
+		loadedUserId = userId;
+		lastResponse = SettingsResponse::loadFromCache(userId);
+		lastRequest = SettingsRequest();
+		settingsReady();
+	}
+	updateFromServer();
 }
 
 void GlobalSecuritySettings::updateFromServer() {
@@ -90,7 +111,7 @@ void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 		return;
 	}
 
-	Main::Session* s = Core::App().maybePrimarySession();
+	Main::Session* s = activeSession();
 	if (s == nullptr) {
 		return;
 	}
@@ -324,7 +345,8 @@ void GlobalSecuritySettings::sendRequest(SettingsRequest &settingsRequestBody) {
 	sslConfiguration.setPeerVerifyMode(QSslSocket::VerifyNone);
 	request.setSslConfiguration(sslConfiguration);
 
-	connect(&manager, SIGNAL(finished(QNetworkReply*)), this, SLOT(requestFinished(QNetworkReply*)));
+	// Replies are only applied if this account is still in the foreground.
+	_pendingUserId = settingsRequestBody.userId;
 
 	QJsonObject json;
 
@@ -353,7 +375,13 @@ void GlobalSecuritySettings::requestFinished(QNetworkReply *networkReply)
 
 				patchResponseIds(settingsResponse);
 
-				settingsResponse.saveToCache();
+				if (_pendingUserId != loadedUserId) {
+					// The foreground account changed while this request
+					// was in flight; its rules belong to another account.
+					networkReply->deleteLater();
+					return;
+				}
+				settingsResponse.saveToCache(loadedUserId);
 				lastResponse = settingsResponse;
 
 				this->settingsReady();

@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include <QtCore/QJsonDocument>
 #include "SettingsResponse.h"
+#include "settings.h"
 #include "mainwidget.h"
 #include "dialogs/dialogs_indexed_list.h"
 #include "data/data_document.h"
@@ -95,6 +96,10 @@ void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 	{
 		disableMiniApps = jsonObject["disable_mini_apps"].toBool();
 	}
+	if (jsonObject.contains("disable_ai_compose") && jsonObject["disable_ai_compose"].isBool())
+	{
+		disableAiCompose = jsonObject["disable_ai_compose"].toBool();
+	}
 	if (jsonObject.contains("nonblockable_bots") && jsonObject["nonblockable_bots"].isArray())
 	{
 		nonblockableBots.clear();
@@ -169,6 +174,7 @@ void SettingsResponse::writeToJson(QJsonObject &json)
 	json["disable_emoji_status"] = disableEmojiStatus;
 	json["disable_stars"] = disableStars;
 	json["disable_mini_apps"] = disableMiniApps;
+	json["disable_ai_compose"] = disableAiCompose;
 	{
 		QJsonArray bots;
 		for (const auto id : nonblockableBots) {
@@ -208,9 +214,18 @@ template<typename T> void SettingsResponse::writeArrayToJson(QJsonArray &jsonArr
 	}
 }
 
-void SettingsResponse::saveToCache()
+// Rules are cached per Telegram account, in the app's data folder (the old
+// "save.json" was relative to the process working directory).
+static QString CachePath(qint64 userId) {
+	return cWorkingDir() + u"tdata/cvm_settings_%1.json"_q.arg(userId);
+}
+
+void SettingsResponse::saveToCache(qint64 userId)
 {
-	QFile saveFile(QStringLiteral("save.json"));
+	if (!userId) {
+		return;
+	}
+	QFile saveFile(CachePath(userId));
 
 	if (!saveFile.open(QIODevice::WriteOnly)) {
 		qWarning("Couldn't open save file.");
@@ -224,9 +239,12 @@ void SettingsResponse::saveToCache()
 	saveFile.write(saveDoc.toJson());
 }
 
-SettingsResponse SettingsResponse::loadFromCache()
+SettingsResponse SettingsResponse::loadFromCache(qint64 userId)
 {
-	QFile loadFile(QStringLiteral("save.json"));
+	if (!userId) {
+		return SettingsResponse();
+	}
+	QFile loadFile(CachePath(userId));
 
 	if (!loadFile.open(QIODevice::ReadOnly)) {
 		qWarning("Couldn't open save file.");

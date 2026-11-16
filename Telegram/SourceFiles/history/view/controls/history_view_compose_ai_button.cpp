@@ -11,7 +11,18 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/painter.h"
 #include "styles/style_chat_helpers.h"
 
+//CloudVeil start
+#include "cloudveil/GlobalSecuritySettings.h"
+//CloudVeil end
+
 namespace HistoryView::Controls {
+
+//CloudVeil start
+void ComposeAiButton::setVisibleHook(bool visible) {
+	Ui::RippleButton::setVisibleHook(visible
+		&& !GlobalSecuritySettings::getSettings().disableAiCompose);
+}
+//CloudVeil end
 namespace {
 
 constexpr auto kAnimationDuration = crl::time(640);

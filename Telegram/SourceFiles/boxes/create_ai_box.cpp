@@ -6,6 +6,9 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "boxes/create_ai_box.h"
+//CloudVeil start
+#include "cloudveil/GlobalSecuritySettings.h"
+//CloudVeil end
 
 #include "base/object_ptr.h"
 #include "base/weak_ptr.h"
@@ -658,6 +661,11 @@ void CreateAiBox(not_null<Ui::GenericBox*> box, CreateAiBoxArgs &&args) {
 void ShowCreateAiBox(
 		std::shared_ptr<ChatHelpers::Show> show,
 		CreateAiBoxArgs &&args) {
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableAiCompose) {
+		return;
+	}
+	//CloudVeil end
 	show->show(Box(CreateAiBox, std::move(args)));
 }
 

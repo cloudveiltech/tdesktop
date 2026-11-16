@@ -3,6 +3,11 @@
 #include "./response/SettingsResponse.h"
 #include "FileDownloader.h"
 #include <QtCore/QTimer>
+#include "base/weak_ptr.h"
+
+namespace Main {
+class Session;
+} // namespace Main
 #define CLOUDVEIL_CHANNEL_USERNAME "CloudVeilMessenger"
 #define PREMIUM_BOT_ID 5314653481
 
@@ -20,6 +25,10 @@ public:
 	void checkStickerSetByDocumentAsync(DocumentData* sticker);
 
 	void updateFromServer();
+
+	// The foreground account. Rules are per Telegram account: switching
+	// loads that account's cached rules and syncs it with the server.
+	void setActiveSession(not_null<Main::Session*> session);
 
 	explicit GlobalSecuritySettings(QObject *parent);
 
@@ -39,6 +48,13 @@ private:
 	static bool loaded;
 	static SettingsResponse lastResponse;	
 	static GlobalSecuritySettings *instance;
+	// Account whose rules are in lastResponse (shared by all instances).
+	static qint64 loadedUserId;
+
+	base::weak_ptr<Main::Session> _session;
+	qint64 _pendingUserId = 0;
+
+	[[nodiscard]] Main::Session *activeSession() const;
 
 	QMap<qint64, QString> sessionUids;
 

@@ -86,6 +86,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 //CloudVeil start
 #include "boxes/abstract_box.h"
 #include "cloudveil/GlobalSecuritySettings.h"
+#include "cloudveil/DialogHelper.h"
 //CloudVeil end
 
 namespace Core {
@@ -317,6 +318,12 @@ bool ShowAiStyle(
 	if (!controller) {
 		return false;
 	}
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableAiCompose) {
+		Ui::show(Ui::MakeInformBox(tr::lng_blocked_for_protection(tr::now)));
+		return true;
+	}
+	//CloudVeil end
 	const auto slug = match->captured(1);
 	Core::App().hideMediaView();
 	const auto weak = base::make_weak(controller);
@@ -1211,6 +1218,12 @@ bool ShowEditPersonalChannel(
 	} else if (controller->showFrozenError()) {
 		return true;
 	}
+	//CloudVeil start: the profile channel is part of the bio
+	if (GlobalSecuritySettings::getSettings().disableBioChange) {
+		Ui::show(Ui::MakeInformBox(tr::lng_blocked_for_protection(tr::now)));
+		return true;
+	}
+	//CloudVeil end
 	const auto maybePeerId = match->captured(1);
 	const auto maybeRemove = match->captured(2);
 
@@ -1385,6 +1398,15 @@ bool EditPeer(
 	}
 	const auto peerId = PeerId(match->captured(1).toULongLong());
 	if (const auto peer = controller->session().data().peerLoaded(peerId)) {
+		//CloudVeil start: no admin editing for blocked chats
+		if (DialogHelper::CheckDialogResult::APPROVED
+			!= DialogHelper::checkAndShowDialogForbidden(
+				peer,
+				controller->session().user(),
+				controller)) {
+			return true;
+		}
+		//CloudVeil end
 		controller->showEditPeerBox(peer);
 	}
 	return true;

@@ -20,6 +20,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/text/text_utilities.h"
 #include "styles/style_dialogs.h"
 
+//CloudVeil start
+#include "cloudveil/GlobalSecuritySettings.h"
+//CloudVeil end
+
 namespace Data {
 namespace {
 
@@ -359,6 +363,12 @@ void CommunityInfo::oneUnreadStateChanged() {
 void CommunityInfo::recountChatsListDate() {
 	auto result = TimeId(0);
 	for (const auto &history : _histories) {
+		//CloudVeil start
+		if (!GlobalSecuritySettings::getSettings().isDialogAllowed(
+				history->peer)) {
+			continue;
+		}
+		//CloudVeil end
 		result = std::max(result, history->chatListTimeId());
 	}
 	_chatsListDate = result;
@@ -376,6 +386,12 @@ void CommunityInfo::reorderLastHistories() {
 	_lastHistories.reserve(
 		std::min(int(_histories.size()), kShowChatNamesCount));
 	for (const auto &history : _histories) {
+		//CloudVeil start: blocked chats are not named in the community row
+		if (!GlobalSecuritySettings::getSettings().isDialogAllowed(
+				history->peer)) {
+			continue;
+		}
+		//CloudVeil end
 		const auto i = ranges::upper_bound(_lastHistories, history, pred);
 		if (int(_lastHistories.size()) < kShowChatNamesCount
 			|| i != end(_lastHistories)) {

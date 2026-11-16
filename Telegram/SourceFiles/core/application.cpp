@@ -403,7 +403,10 @@ void Application::run() {
 		showAccount(account);
 		//CloudVeil start
 		auto securityInstance = GlobalSecuritySettings::getInstance();
-		if (securityInstance != nullptr) {
+		if (securityInstance != nullptr && account->sessionExists()) {
+			// Swap to this account's rules and sync them.
+			securityInstance->setActiveSession(&account->session());
+		} else if (securityInstance != nullptr) {
 			securityInstance->updateFromServer();
 		}
 		//CloudVeil end

@@ -7,6 +7,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "history/history_widget.h"
 
+//CloudVeil start
+#include "cloudveil/GlobalSecuritySettings.h"
+//CloudVeil end
+
 #include "api/api_compose_with_ai.h"
 #include "api/api_editing.h"
 #include "api/api_bot.h"
@@ -7559,6 +7563,7 @@ bool HistoryWidget::textExceedsMaxSize() const {
 
 void HistoryWidget::updateAiButtonVisibility() {
 	const auto hidden = !hasEnoughLinesForAi()
+		|| GlobalSecuritySettings::getSettings().disableAiCompose // CloudVeil
 		|| !_send->isVisible()
 		|| !_field->isVisible();
 	if (_aiButton->isHidden() == hidden) {

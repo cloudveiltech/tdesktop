@@ -305,6 +305,11 @@ MainWidget::MainWidget(
 	connect(simpleUpdater, &SimpleUpdater::updateReceived, this, &MainWidget::simpleUpdateReceived);
 	connect(simpleUpdater, &SimpleUpdater::downloadFinished, this, &MainWidget::simpleUpdateDownloaded);
 	connect(globalSettings, &GlobalSecuritySettings::settingsReady, this, &MainWidget::onSettingsUpdate);
+	// Rules follow the account shown in this window (applied once the
+	// widget is fully constructed).
+	crl::on_main(this, [=] {
+		globalSettings->setActiveSession(&_controller->session());
+	});
 	//CloudVeil end
 
 	_history->cancelRequests(

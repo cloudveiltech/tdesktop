@@ -10,6 +10,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_compose_with_ai.h"
 #include "apiwrap.h"
 #include "boxes/create_ai_tone_box.h"
+//CloudVeil start
+#include "cloudveil/GlobalSecuritySettings.h"
+//CloudVeil end
 #include "core/shortcuts.h"
 #include "menu/menu_check_item.h"
 #include "settings/sections/settings_shortcuts.h"
@@ -2609,6 +2612,11 @@ void ComposeAiBox(not_null<Ui::GenericBox*> box, ComposeAiBoxArgs &&args) {
 void ShowComposeAiBox(
 		std::shared_ptr<Ui::Show> show,
 		ComposeAiBoxArgs &&args) {
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableAiCompose) {
+		return;
+	}
+	//CloudVeil end
 	show->show(Box(ComposeAiBox, std::move(args)));
 }
 

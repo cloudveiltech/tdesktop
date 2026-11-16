@@ -26,6 +26,9 @@ public:
 	void setPremiumStar(QImage image, QPoint position, int outline);
 
 protected:
+	//CloudVeil start: hidden whenever AI compose is disabled
+	void setVisibleHook(bool visible) override;
+	//CloudVeil end
 	void paintEvent(QPaintEvent *e) override;
 	void onStateChanged(State was, StateChangeSource source) override;
 

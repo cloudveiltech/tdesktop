@@ -17,6 +17,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/shadow.h"
 #include "ui/widgets/tooltip.h"
+#include "ui/effects/layer_backdrop.h"
 #include "ui/emoji_config.h"
 #include "ui/ui_utility.h"
 #include "lang/lang_cloud_manager.h"
@@ -38,6 +39,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_updates.h"
 #include "settings/settings_intro.h"
 #include "base/options.h"
+#include "wallet/wallet_panel.h"
 #include "window/notifications_manager.h"
 #include "window/themes/window_theme.h"
 #include "window/themes/window_theme_warning.h"
@@ -46,8 +48,6 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "window/window_session_controller.h"
 #include "window/window_setup_email.h"
 #include "window/window_media_preview.h"
-#include "styles/style_dialogs.h"
-#include "styles/style_layers.h"
 #include "styles/style_window.h"
 
 #include <QtGui/QWindow>
@@ -118,7 +118,7 @@ void MainWindow::applyInitialWorkMode() {
 	workmodeUpdated(workMode);
 
 	if (controller().isPrimary()) {
-		if (Core::App().settings().windowPosition().maximized) {
+		if (positionMaximized()) {
 			DEBUG_LOG(("Window Pos: First show, setting maximized."));
 			setWindowState(Qt::WindowMaximized);
 		}
@@ -228,6 +228,7 @@ void MainWindow::setupSetupEmailLock() {
 	}
 	if (const auto sessionController = controller().sessionController()) {
 		sessionController->session().attachWebView().closeAll();
+		Wallet::CloseWallet(&sessionController->session());
 	}
 }
 
@@ -250,7 +251,6 @@ void MainWindow::clearSetupEmailLock() {
 		_main->show();
 		updateControlsGeometry();
 		_main->showAnimated(std::move(oldContentCache), true);
-		Core::App().checkStartUrls();
 	}
 }
 
@@ -281,6 +281,7 @@ void MainWindow::clearPasscodeLock() {
 
 void MainWindow::setupIntro(
 		Intro::EnterPoint point,
+		Main::Account *accountBeforeIntro,
 		QPixmap oldContentCache) {
 	auto animated = (_main || _passcodeLock || _setupEmailLock);
 
@@ -289,7 +290,8 @@ void MainWindow::setupIntro(
 		bodyWidget(),
 		&controller(),
 		&account(),
-		point);
+		point,
+		accountBeforeIntro);
 	created->showSettingsRequested(
 	) | rpl::on_next([=] {
 		showSettings();
@@ -368,6 +370,7 @@ void MainWindow::showSettings() {
 	if (const auto session = sessionController()) {
 		session->showSettings();
 	} else {
+		controller().hideLayer(anim::type::instant);
 		showSpecialLayer(
 			Box<Settings::LayerWidget>(&controller()),
 			anim::type::normal);
@@ -416,6 +419,7 @@ void MainWindow::ensureLayerCreated() {
 	_layer = base::make_unique_q<Ui::LayerStackWidget>(
 		bodyWidget(),
 		crl::guard(this, [=] { return controller().uiShow(); }));
+	_layerShown = true;
 
 	_layer->hideFinishEvents(
 	) | rpl::filter([=] {
@@ -441,6 +445,7 @@ void MainWindow::destroyLayer() {
 
 	auto layer = base::take(_layer);
 	_boxShown = false;
+	_layerShown = false;
 	const auto resetFocus = Ui::InFocusChain(layer);
 	if (resetFocus) {
 		setFocus();
@@ -508,6 +513,10 @@ bool MainWindow::ui_isLayerShown() const {
 	return _layer != nullptr;
 }
 
+rpl::producer<bool> MainWindow::ui_layerShownValue() const {
+	return _layerShown.value();
+}
+
 rpl::producer<bool> MainWindow::ui_boxShownValue() const {
 	return _boxShown.value();
 }
@@ -530,7 +539,7 @@ bool MainWindow::showMediaPreview(
 		updateControlsGeometry();
 	}
 	if (_mediaPreview->isHidden()) {
-		fixOrder();
+		raiseMediaPreview();
 	}
 	_mediaPreview->showPreview(origin, document);
 	return true;
@@ -544,7 +553,7 @@ bool MainWindow::showMediaPreview(
 		updateControlsGeometry();
 	}
 	if (_mediaPreview->isHidden()) {
-		fixOrder();
+		raiseMediaPreview();
 	}
 	_mediaPreview->showPreview(origin, photo);
 	return true;
@@ -613,7 +622,9 @@ void MainWindow::checkActivation() {
 
 bool MainWindow::contentOverlapped(const QRect &globalRect) {
 	return (_main && _main->contentOverlapped(globalRect))
-		|| (_layer && _layer->contentOverlapped(globalRect));
+		|| (_layer
+			&& !Ui::CapturingUnderLayer()
+			&& _layer->contentOverlapped(globalRect));
 }
 
 void MainWindow::setInnerFocus() {
@@ -695,7 +706,7 @@ bool MainWindow::eventFilter(QObject *object, QEvent *e) {
 	case QEvent::Move:
 	case QEvent::Resize: {
 		if (object == this) {
-			positionUpdated();
+			positionUpdated(e->spontaneous());
 		}
 	} break;
 	}
@@ -711,6 +722,10 @@ void MainWindow::fixOrder() {
 	if (_setupEmailLock) _setupEmailLock->raise();
 	if (_passcodeLock) _passcodeLock->raise();
 	if (_layer) _layer->raise();
+	raiseMediaPreview();
+}
+
+void MainWindow::raiseMediaPreview() {
 	if (_mediaPreview) _mediaPreview->raise();
 	if (_testingThemeWarning) _testingThemeWarning->raise();
 }
@@ -770,18 +785,14 @@ void MainWindow::updateControlsGeometry() {
 	if (_main) _main->checkMainSectionToLayer();
 }
 
-void MainWindow::handleStartFiles(
-		QStringList interprets,
-		QStringList paths) {
+void MainWindow::handleStartFiles(QStringList paths) {
 	if (controller().locked()) {
 		return;
 	}
 	Core::App().hideMediaView();
 	ui_hideSettingsAndLayer(anim::type::instant);
 	if (_main) {
-		_main->handleStartFiles(
-			std::move(interprets),
-			std::move(paths));
+		_main->handleStartFiles(std::move(paths));
 	}
 }
 

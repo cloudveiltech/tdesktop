@@ -46,7 +46,10 @@ enum class ActionType : uchar {
 	CaptionDown,
 	PhotoQualityOn,
 	PhotoQualityOff,
+	EditCover,
+	RemoveCover,
 	ChangePrice,
+	ReplyToForward,
 };
 struct Action {
 	using Type = ActionType;

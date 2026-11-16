@@ -6,12 +6,9 @@ For license and copyright information please follow this link:
 https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "ui/chat/chat_style_radius.h"
-#include "ui/chat/chat_style.h"
 #include "base/options.h"
+#include "ui/chat/message_bubble.h"
 
-#include "ui/chat/chat_theme.h"
-#include "ui/painter.h"
-#include "ui/ui_utility.h"
 #include "styles/style_chat.h"
 
 namespace Ui {
@@ -41,6 +38,16 @@ int BubbleRadiusLarge() {
 		}
 	}();
 	return result;
+}
+
+int BubbleCornerRadius(BubbleCornerRounding corner) {
+	switch (corner) {
+	case BubbleCornerRounding::None:
+	case BubbleCornerRounding::Tail: return 0;
+	case BubbleCornerRounding::Small: return BubbleRadiusSmall();
+	case BubbleCornerRounding::Large: return BubbleRadiusLarge();
+	}
+	Unexpected("Corner in BubbleCornerRadius.");
 }
 
 int MsgFileThumbRadiusSmall() {

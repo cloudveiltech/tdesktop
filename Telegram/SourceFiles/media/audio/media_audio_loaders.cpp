@@ -340,7 +340,10 @@ void Loaders::loadData(AudioMsgId audio, crl::time positionMs) {
 		return;
 	}
 
-	alSourcef(track->stream.source, AL_GAIN, ComputeVolume(type));
+	alSourcef(
+		track->stream.source,
+		AL_GAIN,
+		ComputeVolume(type) * track->volume);
 	if (!internal::audioCheckError()) {
 		setStoppedState(track, State::StoppedAtError);
 		emitError(type);
@@ -351,7 +354,9 @@ void Loaders::loadData(AudioMsgId audio, crl::time positionMs) {
 		alSourcei(
 			track->stream.source,
 			AL_SAMPLE_OFFSET,
-			qMax(track->withSpeed.position - track->withSpeed.bufferedPosition, 0LL));
+			std::max(
+				track->withSpeed.position - track->withSpeed.bufferedPosition,
+				0LL));
 		if (!internal::audioCheckError()) {
 			setStoppedState(track, State::StoppedAtError);
 			emitError(type);
@@ -366,6 +371,21 @@ void Loaders::loadData(AudioMsgId audio, crl::time positionMs) {
 	}
 
 	needToCheck();
+}
+
+int64 Loaders::freshSpeedDependentPosition(Mixer::Track *track) {
+	if (!track->isStreamCreated()) {
+		return track->withSpeed.fineTunedPosition;
+	}
+	ALint sampleOffset = 0;
+	ALint state = AL_INITIAL;
+	alGetSourcei(track->stream.source, AL_SAMPLE_OFFSET, &sampleOffset);
+	alGetSourcei(track->stream.source, AL_SOURCE_STATE, &state);
+	if (alGetError() != AL_NO_ERROR
+		|| (state != AL_PLAYING && state != AL_PAUSED)) {
+		return track->withSpeed.fineTunedPosition;
+	}
+	return track->withSpeed.bufferedPosition + sampleOffset;
 }
 
 Loaders::SetupLoaderResult Loaders::setupLoader(
@@ -384,7 +404,7 @@ Loaders::SetupLoaderResult Loaders::setupLoader(
 	}
 
 	bool isGoodId = false;
-	AudioPlayerLoader *l = nullptr;
+	auto l = (AudioPlayerLoader*)nullptr;
 	switch (audio.type()) {
 	case AudioMsgId::Type::Voice: l = _audioLoader.get(); isGoodId = (_audio == audio); break;
 	case AudioMsgId::Type::Song: l = _songLoader.get(); isGoodId = (_song == audio); break;
@@ -398,7 +418,7 @@ Loaders::SetupLoaderResult Loaders::setupLoader(
 
 	auto SpeedDependentPosition = Mixer::Track::SpeedDependentPosition;
 	if (!l) {
-		std::unique_ptr<AudioPlayerLoader> *loader = nullptr;
+		auto loader = (std::unique_ptr<AudioPlayerLoader>*)nullptr;
 		switch (audio.type()) {
 		case AudioMsgId::Type::Voice: _audio = audio; loader = &_audioLoader; break;
 		case AudioMsgId::Type::Song: _song = audio; loader = &_songLoader; break;
@@ -445,7 +465,7 @@ Loaders::SetupLoaderResult Loaders::setupLoader(
 			.oldSpeed = track->speed,
 			.newSpeed = track->nextSpeed,
 			.fadeStartPosition = track->withSpeed.fadeStartPosition,
-			.position = track->withSpeed.fineTunedPosition,
+			.position = freshSpeedDependentPosition(track),
 			.normalLength = track->state.length,
 			.frequency = track->state.frequency,
 		};
@@ -545,7 +565,7 @@ Mixer::Track *Loaders::checkLoader(AudioMsgId::Type type) {
 
 	auto track = mixer()->trackForType(type);
 	auto isGoodId = false;
-	AudioPlayerLoader *l = nullptr;
+	auto l = (AudioPlayerLoader*)nullptr;
 	switch (type) {
 	case AudioMsgId::Type::Voice: l = _audioLoader.get(); isGoodId = (track->state.id == _audio); break;
 	case AudioMsgId::Type::Song: l = _songLoader.get(); isGoodId = (track->state.id == _song); break;

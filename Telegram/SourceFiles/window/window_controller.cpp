@@ -19,18 +19,23 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session_settings.h"
 #include "main/main_app_config.h"
 #include "media/view/media_view_open_common.h"
+#include "lang/lang_hardcoded.h"
 #include "lang/lang_keys.h"
 #include "intro/intro_widget.h"
 #include "mtproto/mtproto_config.h"
+#include "storage/storage_account.h"
 #include "ui/toast/toast.h"
 #include "ui/emoji_config.h"
 #include "chat_helpers/emoji_sets_manager.h"
+#include "window/window_columns.h"
 #include "window/window_session_controller.h"
 #include "window/themes/window_theme_editor.h"
 #include "ui/boxes/confirm_box.h"
 #include "data/components/promo_suggestions.h"
 #include "data/data_thread.h"
 #include "settings/settings_common.h"
+#include "wallet/wallet_panel.h"
+#include "wallet/wallet_session.h"
 #include "apiwrap.h" // ApiWrap::acceptTerms.
 #include "styles/style_layers.h"
 
@@ -109,7 +114,8 @@ Controller::Controller(CreateArgs &&args)
 : _id(args.id)
 , _isActiveTimer([=] { updateIsActive(); })
 , _widget(this)
-, _adaptive(std::make_unique<Adaptive>()) {
+, _adaptive(std::make_unique<Adaptive>())
+, _columns(std::make_unique<Columns>(this)) {
 	_widget.init();
 }
 
@@ -145,27 +151,25 @@ void Controller::showAccount(
 		MsgId singlePeerShowAtMsgId) {
 	Expects(isPrimary() || _id.account == account);
 
+	const auto prevAccount = _id.account;
 	const auto prevSession = maybeSession();
 	const auto prevSessionUniqueId = prevSession
 		? prevSession->uniqueId()
 		: 0;
+	// Weak: the account can be destroyed by removeRedundantAccounts()
+	// before this subscription fires again.
+	const auto accountBeforeIntro = (prevAccount
+		&& prevAccount != account
+		&& prevAccount->sessionExists())
+		? base::make_weak(prevAccount)
+		: base::weak_ptr<Main::Account>();
 	_accountLifetime.destroy();
 	_id.account = account;
 	Core::App().checkWindowId(this);
 
-	const auto updateOnlineOfPrevSesssion = crl::guard(account, [=] {
-		if (!prevSessionUniqueId) {
-			return;
-		}
-		for (auto &[index, account] : _id.account->domain().accounts()) {
-			if (const auto anotherSession = account->maybeSession()) {
-				if (anotherSession->uniqueId() == prevSessionUniqueId) {
-					anotherSession->updates().updateOnline(crl::now());
-					return;
-				}
-			}
-		}
-	});
+	if (!prevAccount && Core::App().isWindowInSettings(this)) {
+		_columns->seedFirstWindow();
+	}
 
 	if (!isPrimary()) {
 		_id.account->sessionChanges(
@@ -217,11 +221,25 @@ void Controller::showAccount(
 			session->updates().updateOnline(crl::now());
 		} else {
 			sideBarChanged();
-			setupIntro(std::move(oldContentCache));
+			setupIntro(
+				accountBeforeIntro.get(),
+				std::move(oldContentCache));
 			_widget.updateGlobalMenu();
 		}
 
-		crl::on_main(updateOnlineOfPrevSesssion);
+		crl::on_main(this, [=] {
+			if (!prevSessionUniqueId) {
+				return;
+			}
+			for (auto &[index, account] : _id.account->domain().accounts()) {
+				if (const auto anotherSession = account->maybeSession()) {
+					if (anotherSession->uniqueId() == prevSessionUniqueId) {
+						anotherSession->updates().updateOnline(crl::now());
+						return;
+					}
+				}
+			}
+		});
 	}, _accountLifetime);
 }
 
@@ -256,6 +274,7 @@ void Controller::checkLockByTerms() {
 		return;
 	}
 	hideSettingsAndLayer(anim::type::instant);
+	Wallet::CloseWallet(&account().session());
 	const auto box = show(Box<TermsBox>(
 		*data,
 		tr::lng_terms_agree(),
@@ -347,11 +366,6 @@ auto Controller::sessionControllerValue() const
 	return _sessionControllerValue.value();
 }
 
-auto Controller::sessionControllerChanges() const
--> rpl::producer<SessionController*> {
-	return _sessionControllerValue.changes();
-}
-
 bool Controller::locked() const {
 	if (Core::App().passcodeLocked()/* || Core::App().setupEmailLocked()*/) {
 		return true;
@@ -394,11 +408,13 @@ void Controller::clearSetupEmailLock() {
 	_widget.clearSetupEmailLock();
 }
 
-void Controller::setupIntro(QPixmap oldContentCache) {
+void Controller::setupIntro(
+		Main::Account *accountBeforeIntro,
+		QPixmap oldContentCache) {
 	const auto point = Core::App().domain().maybeLastOrSomeAuthedAccount()
 		? Intro::EnterPoint::Qr
 		: Intro::EnterPoint::Start;
-	_widget.setupIntro(point, std::move(oldContentCache));
+	_widget.setupIntro(point, accountBeforeIntro, std::move(oldContentCache));
 }
 
 void Controller::setupMain(
@@ -471,6 +487,10 @@ bool Controller::isLayerShown() const {
 	return _widget.ui_isLayerShown();
 }
 
+rpl::producer<bool> Controller::layerShownValue() const {
+	return _widget.ui_layerShownValue();
+}
+
 rpl::producer<bool> Controller::boxShownValue() const {
 	return _widget.ui_boxShownValue();
 }
@@ -481,6 +501,7 @@ void Controller::sideBarChanged() {
 
 void Controller::activate() {
 	_widget.activate();
+	Core::App().registerWindowActivation(&_widget);
 }
 
 void Controller::updateIsActiveFocus() {
@@ -545,9 +566,38 @@ void Controller::invokeForSessionController(
 }
 
 QPoint Controller::getPointForCallPanelCenter() const {
-	return _widget.isActive()
-		? _widget.geometry().center()
-		: _widget.screen()->geometry().center();
+	if (_widget.isActive()) {
+		return _widget.geometry().center();
+	}
+	// When the last monitor is removed QGuiApplication has no screens at
+	// all, so screen() is nullptr.
+	const auto screen = _widget.screen();
+	return screen
+		? screen->geometry().center()
+		: _widget.geometry().center();
+}
+
+QString LogoutConfirmationText(Main::Account *account) {
+	auto result = tr::lng_sure_logout(tr::now);
+	const auto append = [&](const QString &line) {
+		if (!line.isEmpty()) {
+			result += u"\n\n"_q + line;
+		}
+	};
+	const auto &domain = Core::App().domain();
+	if (account) {
+		append(Wallet::WalletLossWarning(
+			Wallet::WalletLossOnLogout(account)));
+	} else if (!domain.started()) {
+		append(tr::lng_sure_logout_wallet_unknown(tr::now));
+	} else {
+		auto loss = Wallet::WalletLoss();
+		for (const auto &[index, one] : domain.accounts()) {
+			loss.add(Wallet::WalletLossOnLogout(one.get()));
+		}
+		append(Wallet::WalletLossWarning(loss));
+	}
+	return result;
 }
 
 void Controller::showLogoutConfirmation() {
@@ -566,15 +616,36 @@ void Controller::showLogoutConfirmation() {
 		}
 	};
 	show(Ui::MakeConfirmBox({
-		.text = tr::lng_sure_logout(),
+		.text = LogoutConfirmationText(account),
 		.confirmed = callback,
 		.confirmText = tr::lng_settings_logout(),
 		.confirmStyle = &st::attentionBoxButton,
 	}));
 }
 
+void Controller::showPasscodeClearFailed(Fn<bool()> retry) {
+	if (_passcodeClearFailedBox) {
+		return;
+	}
+	_passcodeClearFailedBox = show(Ui::MakeConfirmBox({
+		.text = Lang::Hard::SecureSaveError(),
+		.confirmed = [=](Fn<void()> close) {
+			if (retry && retry()) {
+				close();
+			}
+		},
+		.confirmText = tr::lng_bot_download_retry(),
+		.cancelText = tr::lng_close(),
+		.title = tr::lng_passcode_remove(),
+	}));
+}
+
 Window::Adaptive &Controller::adaptive() const {
 	return *_adaptive;
+}
+
+Window::Columns &Controller::columns() const {
+	return *_columns;
 }
 
 void Controller::openInMediaView(Media::View::OpenRequest &&request) {

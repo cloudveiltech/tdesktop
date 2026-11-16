@@ -150,10 +150,6 @@ rpl::producer<> EmojiStatuses::defaultUpdates() const {
 	return _defaultUpdated.events();
 }
 
-rpl::producer<> EmojiStatuses::channelDefaultUpdates() const {
-	return _channelDefaultUpdated.events();
-}
-
 rpl::producer<> EmojiStatuses::collectiblesUpdates() const {
 	return _collectiblesUpdated.events();
 }
@@ -180,6 +176,11 @@ void EmojiStatuses::registerAutomaticClear(
 			}
 		}
 	}
+}
+
+TimeId EmojiStatuses::automaticClearAt(not_null<PeerData*> peer) const {
+	const auto i = _clearing.find(peer);
+	return (i != end(_clearing)) ? i->second : TimeId();
 }
 
 auto EmojiStatuses::emojiGroupsValue() const -> rpl::producer<Groups> {
@@ -477,7 +478,6 @@ void EmojiStatuses::updateChannelDefault(
 		const MTPDaccount_emojiStatuses &data) {
 	_channelDefaultHash = data.vhash().v;
 	_channelDefault = parse(data);
-	_channelDefaultUpdated.fire({});
 }
 
 void EmojiStatuses::updateChannelColored(

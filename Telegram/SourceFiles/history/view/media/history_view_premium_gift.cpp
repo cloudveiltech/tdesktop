@@ -433,11 +433,6 @@ void PremiumGift::unloadHeavyPart() {
 	}
 }
 
-bool PremiumGift::incomingGift() const {
-	const auto out = _parent->data()->out();
-	return gift() && !_data.auctionTo && (starGiftUpgrade() ? out : !out);
-}
-
 bool PremiumGift::outgoingGift() const {
 	const auto out = _parent->data()->out();
 	return gift() && (_data.auctionTo || (starGiftUpgrade() ? !out : out));
@@ -482,7 +477,7 @@ void PremiumGift::ensureStickerCreated() const {
 		return;
 	} else if (tonGift()) {
 		const auto &session = _parent->history()->session();
-		auto &packs = session.giftBoxStickersPacks();
+		const auto &packs = session.giftBoxStickersPacks();
 		const auto count = _data.count / Ui::kNanosInOne;
 		if (const auto document = packs.tonLookup(count)) {
 			if (document->sticker()) {
@@ -503,7 +498,7 @@ void PremiumGift::ensureStickerCreated() const {
 		return;
 	}
 	const auto &session = _parent->history()->session();
-	auto &packs = session.giftBoxStickersPacks();
+	const auto &packs = session.giftBoxStickersPacks();
 	const auto count = credits();
 	const auto months = count
 		? packs.monthsForStars(count)

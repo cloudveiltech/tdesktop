@@ -41,20 +41,28 @@ DisableProgramGroupPage=no
 WizardStyle=modern
 SignTool=sha256
 
+#ifndef MyOutputBaseFilename
+  #if MyBuildTarget == "winarm"
+    #define MyOutputBaseFilename "cloudveil_messenger_setup-arm64." + MyAppVersionFull
+  #elif MyBuildTarget == "win64"
+    #define MyOutputBaseFilename "cloudveil_messenger_setup-x64." + MyAppVersionFull
+  #else
+    #define MyOutputBaseFilename "cloudveil_messenger_setup." + MyAppVersionFull
+  #endif
+#endif
+OutputBaseFilename={#MyOutputBaseFilename}
+
 #if MyBuildTarget == "winarm"
   ArchitecturesAllowed="arm64"
-  OutputBaseFilename=cloudveil_messenger_setup-arm64.{#MyAppVersionFull}
   #define ArchModulesFolder "arm64"
   AppVerName={#MyAppName} {#MyAppVersion} arm64
 #elif MyBuildTarget == "win64"
   ArchitecturesAllowed="x64compatible"
   ArchitecturesInstallIn64BitMode="x64compatible"
-  OutputBaseFilename=cloudveil_messenger_setup-x64.{#MyAppVersionFull}
   #define ArchModulesFolder "x64"
   AppVerName={#MyAppName} {#MyAppVersion} 64bit
 #else
-   OutputBaseFilename=cloudveil_messenger_setup.{#MyAppVersionFull}
-#define ArchModulesFolder "x86"
+  #define ArchModulesFolder "x86"
   AppVerName={#MyAppName} {#MyAppVersion} 32bit
 #endif
 
@@ -117,7 +125,7 @@ var ResultCode: Integer;
 begin
   if CurUninstallStep = usUninstall then
   begin
-    ShellExec('', ExpandConstant('{app}\{#MyAppExeName}'), '-cleanup', '', SW_SHOW, ewWaitUntilTerminated, ResultCode);
+    Exec(ExpandConstant('{app}\{#MyAppExeName}'), '-cleanup', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end;
 end;
 

@@ -44,6 +44,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "info/profile/info_profile_icon.h"
 #include "settings/sections/settings_calls.h"
 #include "settings/settings_common.h"
+#include "styles/style_edit_peer_members.h"
 #include "styles/style_info.h" // infoTopBarMenu
 #include "styles/style_layers.h" // st::boxLabel.
 #include "styles/style_calls.h"
@@ -827,13 +828,27 @@ void ClearCallsBox(
 void ShowCallsBox(
 		not_null<::Window::SessionController*> window,
 		bool highlightStartCall) {
+	class CallsDelegate final : public PeerListContentDelegateSimple {
+	public:
+		void showDescriptionIn(not_null<PeerListContent*> content) {
+			_content = content;
+		}
+		void peerListSetDescription(
+				object_ptr<Ui::FlatLabel> description) override {
+			_content->setDescription(std::move(description));
+		}
+
+	private:
+		PeerListContent *_content = nullptr;
+
+	};
 	struct State {
 		State(not_null<::Window::SessionController*> window)
 		: callsController(window)
 		, groupCallsController(window) {
 		}
 		Calls::BoxController callsController;
-		PeerListContentDelegateSimple callsDelegate;
+		CallsDelegate callsDelegate;
 
 		Calls::GroupCalls::ListController groupCallsController;
 		PeerListContentDelegateSimple groupCallsDelegate;
@@ -877,6 +892,7 @@ void ShowCallsBox(
 			object_ptr<PeerListContent>(box, &state->callsController),
 			style::margins());
 		state->callsDelegate.setContent(content);
+		state->callsDelegate.showDescriptionIn(content);
 		state->callsController.setDelegate(&state->callsDelegate);
 
 		box->setWidth(state->callsController.contentWidth());

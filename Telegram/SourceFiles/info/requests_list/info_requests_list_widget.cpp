@@ -116,7 +116,7 @@ rpl::producer<Ui::ScrollToRequest> InnerWidget::scrollToRequests() const {
 int InnerWidget::desiredHeight() const {
 	auto desired = 0;
 	desired += _list->fullRowsCount() * st::infoMembersList.item.height;
-	return qMax(height(), desired);
+	return std::max(height(), desired);
 }
 
 object_ptr<InnerWidget::ListWidget> InnerWidget::setupList(
@@ -180,7 +180,7 @@ void InnerWidget::peerListFinishSelectedRowsBunch() {
 
 void InnerWidget::peerListSetDescription(
 		object_ptr<Ui::FlatLabel> description) {
-	description.destroy();
+	_list->setDescription(std::move(description));
 }
 
 std::shared_ptr<Main::SessionShow> InnerWidget::peerListUiShow() {

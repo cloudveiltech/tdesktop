@@ -82,6 +82,13 @@ public:
 	[[nodiscard]] QRect desktopRect() const;
 	[[nodiscard]] Core::WindowPosition withScreenInPosition(
 		Core::WindowPosition position) const;
+	[[nodiscard]] Core::WindowPosition countPositionForSave();
+	void applySavedPosition(const Core::WindowPosition &position);
+	void savePosition(Qt::WindowState state = Qt::WindowActive);
+	void savePositionToSettings();
+	[[nodiscard]] bool positionMaximized() const {
+		return _ownPosition.maximized != 0;
+	}
 
 	void init();
 
@@ -98,7 +105,7 @@ public:
 	bool positionInited() const {
 		return _positionInited;
 	}
-	void positionUpdated();
+	void positionUpdated(bool spontaneous = true);
 
 	void showRightColumn(object_ptr<Ui::RpWidget> widget);
 	int maximalExtendBy() const;
@@ -122,7 +129,6 @@ public:
 		Fn<void()> &&callback,
 		QPixmap pixmap = QPixmap());
 
-	[[nodiscard]] rpl::producer<> leaveEvents() const;
 	[[nodiscard]] rpl::producer<> imeCompositionStarts() const;
 
 	virtual void updateWindowIcon() = 0;
@@ -145,9 +151,6 @@ public:
 	}
 
 protected:
-	void leaveEventHook(QEvent *e) override;
-
-	void savePosition(Qt::WindowState state = Qt::WindowActive);
 	void handleStateChanged(Qt::WindowState state);
 	void handleActiveChanged(bool active);
 	void handleVisibleChanged(bool visible);
@@ -193,6 +196,8 @@ protected:
 
 private:
 	void refreshTitleWidget();
+	void setupCanaryTitleLabel();
+	[[nodiscard]] QString nativeTitleSuffix() const;
 	void updateMinimumSize();
 	void updatePalette();
 
@@ -200,6 +205,10 @@ private:
 	[[nodiscard]] Core::WindowPosition nextInitialChildPosition(
 		SeparateId childId);
 	[[nodiscard]] QRect countInitialGeometry(Core::WindowPosition position);
+	void rememberOwnGeometry(QRect geometry);
+	void rememberOwnBodyMargins(QRect inner);
+	void rememberOwnRequestedGeometry();
+	void recoverOwnGeometry();
 
 	bool computeIsActive() const;
 
@@ -216,10 +225,12 @@ private:
 
 	bool _isActive = false;
 
-	rpl::event_stream<> _leaveEvents;
 	rpl::event_stream<> _imeCompositionStartReceived;
 
 	bool _maximizedBeforeHide = false;
+	Core::WindowPosition _ownPosition;
+	QMargins _ownBodyMargins;
+	QRect _ownRequestedGeometry;
 
 	QPoint _lastMyChildCreatePosition;
 	int _lastChildIndex = 0;

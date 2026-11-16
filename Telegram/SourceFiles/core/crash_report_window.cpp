@@ -12,6 +12,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/sandbox.h"
 #include "core/update_checker.h"
 #include "core/ui_integration.h"
+#include "core/version.h"
 #include "window/main_window.h"
 #include "platform/platform_specific.h"
 #include "base/zlib_help.h"
@@ -33,7 +34,7 @@ constexpr auto kDefaultProxyPort = 80;
 
 } // namespace
 
-PreLaunchWindow *PreLaunchWindowInstance = nullptr;
+auto PreLaunchWindowInstance = (PreLaunchWindow*)nullptr;
 
 PreLaunchWindow::PreLaunchWindow(QString title) {
 	setWindowIcon(Window::CreateIcon());
@@ -352,7 +353,10 @@ LastCrashedWindow::LastCrashedWindow(
 				QString name = list.at(i).fileName();
 				if (name.endsWith(qstr(".dmp"))) {
 					QDateTime modified = list.at(i).lastModified();
-					if (maxDump.isEmpty() || qAbs(workingModified.secsTo(modified)) < qAbs(workingModified.secsTo(maxDumpModified))) {
+					if (maxDump.isEmpty()
+						|| std::abs(workingModified.secsTo(modified))
+							< std::abs(
+								workingModified.secsTo(maxDumpModified))) {
 						maxDump = name;
 						maxDumpModified = modified;
 						maxDumpFull = list.at(i).absoluteFilePath();
@@ -360,7 +364,8 @@ LastCrashedWindow::LastCrashedWindow(
 					}
 				}
 			}
-			if (!maxDump.isEmpty() && qAbs(workingModified.secsTo(maxDumpModified)) < 10) {
+			if (!maxDump.isEmpty()
+				&& std::abs(workingModified.secsTo(maxDumpModified)) < 10) {
 				_minidumpName = maxDump;
 				_minidumpFull = maxDumpFull;
 			}

@@ -13,6 +13,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/application.h"
 #include "core/core_settings.h"
 #include "base/unixtime.h"
+#include "test/test_l10n_seams.h"
 
 namespace MTP {
 namespace details {
@@ -237,12 +238,13 @@ void Session::restart() {
 }
 
 void Session::refreshOptions() {
-	auto &settings = Core::App().settings().proxy();
+	const auto &settings = Core::App().settings().proxy();
 	const auto &proxy = settings.selected();
 	const auto isEnabled = settings.isEnabled();
 	const auto proxyType = (isEnabled ? proxy.type : ProxyData::Type::None);
 	const auto useTcp = (proxyType != ProxyData::Type::Http);
-	const auto useHttp = (proxyType != ProxyData::Type::Mtproto);
+	const auto useHttp = (proxyType != ProxyData::Type::Mtproto)
+		&& (proxyType != ProxyData::Type::Web);
 	const auto useIPv4 = true;
 	const auto useIPv6 = settings.tryIPv6();
 	_data->setOptions(SessionOptions(
@@ -422,6 +424,9 @@ QString Session::transport() const {
 void Session::sendPrepared(
 		const SerializedRequest &request,
 		crl::time msCanWait) {
+	if (Test::HoldRequest(_instance, request)) {
+		return;
+	}
 	DEBUG_LOG(("MTP Info: adding request to toSendMap, msCanWait %1"
 		).arg(msCanWait));
 	{

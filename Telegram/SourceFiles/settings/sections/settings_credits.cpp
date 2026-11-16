@@ -11,6 +11,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "api/api_earn.h"
 #include "api/api_statistics.h"
 #include "base/call_delayed.h"
+#include "base/invoke_queued.h"
 #include "boxes/gift_credits_box.h"
 #include "boxes/gift_premium_box.h"
 #include "boxes/star_gift_box.h"
@@ -34,14 +35,13 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "lang/lang_keys.h"
 #include "main/main_session.h"
 #include "settings/sections/settings_main.h"
+#include "settings/sections/settings_premium_common.h"
 #include "settings/settings_builder.h"
 #include "settings/settings_common.h"
 #include "settings/settings_common_session.h"
 #include "settings/settings_credits_graphics.h"
 #include "statistics/widgets/chart_header_widget.h"
 #include "ui/boxes/boost_box.h"
-#include "ui/controls/swipe_handler.h"
-#include "ui/controls/swipe_handler_data.h"
 #include "ui/effects/animation_value_f.h"
 #include "ui/effects/credits_graphics.h"
 #include "ui/effects/premium_graphics.h"
@@ -56,19 +56,18 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/vertical_list.h"
 #include "ui/widgets/buttons.h"
 #include "ui/widgets/slider_natural_width.h"
+#include "ui/widgets/sliding_tabs.h"
 #include "ui/wrap/fade_wrap.h"
 #include "ui/wrap/slide_wrap.h"
 #include "ui/wrap/vertical_layout.h"
 #include "window/window_session_controller.h"
 #include "styles/style_chat.h"
-#include "styles/style_chat_helpers.h"
 #include "styles/style_credits.h"
 #include "styles/style_giveaway.h"
 #include "styles/style_info.h"
 #include "styles/style_layers.h"
 #include "styles/style_premium.h"
 #include "styles/style_settings.h"
-#include "styles/style_statistics.h"
 #include "styles/style_menu_icons.h"
 #include "styles/style_channel_earn.h"
 
@@ -119,7 +118,6 @@ public:
 
 private:
 	void setupContent();
-	void setupSwipeBack();
 	void setupHistory(not_null<Ui::VerticalLayout*> container);
 	void setupSubscriptions(not_null<Ui::VerticalLayout*> container);
 
@@ -158,13 +156,13 @@ Credits::Credits(
 , _creditsType(type)
 , _star(Ui::GenerateStars(st::creditsTopupButton.height, 1))
 , _balanceStar((_creditsType == CreditsType::Ton)
-		? Ui::Earn::IconCurrencyColored(
+		? Ui::Earn::IconCurrencyTwoTone(
 			st::tonFieldIconSize,
 			st::currencyFg->c)
 		: Ui::GenerateStars(st::creditsBalanceStarHeight, 1)) {
 	controller->session().giftBoxStickersPacks().tonLoad();
 	setupContent();
-	setupSwipeBack();
+	SetupSectionSwipeBack(this, &_showBack);
 
 	controller->session().premiumPossibleValue(
 	) | rpl::on_next([=](bool premiumPossible) {
@@ -282,8 +280,9 @@ void Credits::setupHistory(not_null<Ui::VerticalLayout*> container) {
 
 	Ui::AddSkip(content, st::lineWidth * 6);
 
+	const auto currency = (_creditsType == CreditsType::Ton);
+
 	const auto fill = [=](
-			not_null<PeerData*> premiumBot,
 			const Data::CreditsStatusSlice &fullSlice,
 			const Data::CreditsStatusSlice &inSlice,
 			const Data::CreditsStatusSlice &outSlice) {
@@ -333,12 +332,15 @@ void Credits::setupHistory(not_null<Ui::VerticalLayout*> container) {
 			}, shadow->lifetime());
 		}
 
+		auto tabBySection = std::vector<int>{ 0 };
 		slider->entity()->addSection(fullTabText);
 		if (hasIn) {
 			slider->entity()->addSection(inTabText);
+			tabBySection.push_back(1);
 		}
 		if (hasOut) {
 			slider->entity()->addSection(outTabText);
+			tabBySection.push_back(2);
 		}
 
 		{
@@ -350,35 +352,15 @@ void Credits::setupHistory(not_null<Ui::VerticalLayout*> container) {
 				+ rect::m::sum::h(st::creditsHistoryTabsSliderPadding));
 		}
 
-		const auto fullWrap = inner->add(
-			object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
-				inner,
-				object_ptr<Ui::VerticalLayout>(inner)));
-		const auto inWrap = inner->add(
-			object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
-				inner,
-				object_ptr<Ui::VerticalLayout>(inner)));
-		const auto outWrap = inner->add(
-			object_ptr<Ui::SlideWrap<Ui::VerticalLayout>>(
-				inner,
-				object_ptr<Ui::VerticalLayout>(inner)));
+		const auto tabs = inner->add(
+			object_ptr<Ui::SlidingTabs>(inner, 3, st::windowBg));
+		const auto fullTab = tabs->tab(0);
+		const auto inTab = tabs->tab(1);
+		const auto outTab = tabs->tab(2);
 
-		rpl::single(0) | rpl::then(
-			slider->entity()->sectionActivated()
+		slider->entity()->sectionActivated(
 		) | rpl::on_next([=](int index) {
-			if (index == 0) {
-				fullWrap->toggle(true, anim::type::instant);
-				inWrap->toggle(false, anim::type::instant);
-				outWrap->toggle(false, anim::type::instant);
-			} else if (index == 1) {
-				inWrap->toggle(true, anim::type::instant);
-				fullWrap->toggle(false, anim::type::instant);
-				outWrap->toggle(false, anim::type::instant);
-			} else {
-				outWrap->toggle(true, anim::type::instant);
-				fullWrap->toggle(false, anim::type::instant);
-				inWrap->toggle(false, anim::type::instant);
-			}
+			tabs->showTab(tabBySection[index]);
 		}, inner->lifetime());
 
 		const auto window = controller()->parentController();
@@ -395,27 +377,33 @@ void Credits::setupHistory(not_null<Ui::VerticalLayout*> container) {
 		Info::Statistics::AddCreditsHistoryList(
 			window->uiShow(),
 			fullSlice,
-			fullWrap->entity(),
+			fullTab,
 			entryClicked,
 			self,
 			true,
-			true);
+			true,
+			false,
+			currency);
 		Info::Statistics::AddCreditsHistoryList(
 			window->uiShow(),
 			inSlice,
-			inWrap->entity(),
+			inTab,
 			entryClicked,
 			self,
 			true,
-			false);
+			false,
+			false,
+			currency);
 		Info::Statistics::AddCreditsHistoryList(
 			window->uiShow(),
 			outSlice,
-			outWrap->entity(),
+			outTab,
 			std::move(entryClicked),
 			self,
 			false,
-			true);
+			true,
+			false,
+			currency);
 
 		Ui::AddSkip(inner);
 		Ui::AddSkip(inner);
@@ -427,63 +415,30 @@ void Credits::setupHistory(not_null<Ui::VerticalLayout*> container) {
 	{
 		using Api = Api::CreditsHistory;
 		constexpr auto kFirstPageLimit = 20;
-		const auto c = (_creditsType == CreditsType::Ton);
-		const auto apiFull = apiLifetime->make_state<Api>(self, true, true, c);
-		const auto apiIn = apiLifetime->make_state<Api>(self, true, false, c);
-		const auto apiOut = apiLifetime->make_state<Api>(self, false, true, c);
+		const auto apiFull = apiLifetime->make_state<Api>(
+			self,
+			true,
+			true,
+			currency);
+		const auto apiIn = apiLifetime->make_state<Api>(
+			self,
+			true,
+			false,
+			currency);
+		const auto apiOut = apiLifetime->make_state<Api>(
+			self,
+			false,
+			true,
+			currency);
 		apiFull->request({}, [=](Data::CreditsStatusSlice fullSlice) {
 			apiIn->request({}, [=](Data::CreditsStatusSlice inSlice) {
 				apiOut->request({}, [=](Data::CreditsStatusSlice outSlice) {
-					::Api::PremiumPeerBot(
-						&controller()->session()
-					) | rpl::on_next([=](not_null<PeerData*> bot) {
-						fill(bot, fullSlice, inSlice, outSlice);
-						apiLifetime->destroy();
-					}, *apiLifetime);
+					fill(fullSlice, inSlice, outSlice);
+					InvokeQueued(container, [=] { apiLifetime->destroy(); });
 				}, kFirstPageLimit);
 			}, kFirstPageLimit);
 		}, kFirstPageLimit);
 	}
-}
-
-void Credits::setupSwipeBack() {
-	using namespace Ui::Controls;
-
-	auto swipeBackData = lifetime().make_state<SwipeBackResult>();
-
-	auto update = [=](SwipeContextData data) {
-		if (data.translation > 0) {
-			if (!swipeBackData->callback) {
-				(*swipeBackData) = SetupSwipeBack(
-					this,
-					[]() -> std::pair<QColor, QColor> {
-						return {
-							st::historyForwardChooseBg->c,
-							st::historyForwardChooseFg->c,
-						};
-					});
-			}
-			swipeBackData->callback(data);
-			return;
-		} else if (swipeBackData->lifetime) {
-			(*swipeBackData) = {};
-		}
-	};
-
-	auto init = [=](Ui::Controls::SwipeHandlerInitData data) {
-		return (data.direction == Qt::RightToLeft)
-			? DefaultSwipeBackHandlerFinishData([=] {
-				_showBack.fire({});
-			})
-			: SwipeHandlerFinishData();
-	};
-
-	SetupSwipeHandler({
-		.widget = this,
-		.scroll = v::null,
-		.update = std::move(update),
-		.init = std::move(init),
-	});
 }
 
 void Credits::setupContent() {
@@ -544,8 +499,13 @@ void Credits::setupContent() {
 						tr::marked)));
 		const auto show = controller()->uiShow();
 		if (isCurrency) {
-			const auto url = tr::lng_suggest_low_ton_fragment_url(tr::now);
-			button->setClickedCallback([=] { UrlClickHandler::Open(url); });
+			button->setClickedCallback([=] {
+				HiddenUrlClickHandler::OpenTranslated(
+					tr::lng_suggest_low_ton_fragment_url,
+					QVariant::fromValue(ClickHandlerContext{
+						.show = show,
+					}));
+			});
 		} else {
 			const auto paid = [parent = QPointer<QWidget>(_parent)] {
 				if (parent) {
@@ -576,7 +536,7 @@ void Credits::setupContent() {
 				isCurrency
 					? std::make_unique<Ui::CustomEmoji::Internal>(
 						u"currency_icon:%1"_q.arg(height),
-						Ui::Earn::IconCurrencyColored(
+						Ui::Earn::IconCurrencyTwoTone(
 							st::tonFieldIconSize,
 							st::currencyFg->c))
 					: Ui::MakeCreditsIconEmoji(height, 1),
@@ -703,6 +663,11 @@ base::weak_qptr<Ui::RpWidget> Credits::createPinnedToTop(
 				.use3dDiamond = isCurrency,
 				.gradientStops = Ui::Premium::CreditsIconGradientStops(),
 				.showFinished = _showFinished.events(),
+				.lottie = isCurrency ? u"gram"_q : QString(),
+				.lottieSize = (isCurrency
+					? st::creditsCurrencyCoverLottieSize
+					: QSize()),
+				.lottieTop = isCurrency ? st::creditsCurrencyCoverLottieTop : 0,
 			});
 	}();
 	controller()->boxShownValue(

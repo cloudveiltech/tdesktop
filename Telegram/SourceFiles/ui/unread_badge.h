@@ -45,6 +45,11 @@ struct BotVerifyDetails {
 		const BotVerifyDetails &) = default;
 };
 
+[[nodiscard]] std::unique_ptr<Text::CustomEmoji> CreateBotVerifiedEmoji(
+	DocumentId iconId,
+	Text::CustomEmojiFactory factory,
+	Fn<void()> repaint);
+
 class PeerBadge {
 public:
 	PeerBadge();
@@ -67,6 +72,13 @@ public:
 		bool paused = false;
 	};
 	int drawGetWidth(Painter &p, Descriptor &&descriptor);
+	[[nodiscard]] QRect emojiStatusRect() const;
+	void paintEmojiStatusFrame(QPainter &p, crl::time now, bool paused);
+	void paintEmojiStatusFrame(
+		QPainter &p,
+		crl::time now,
+		bool paused,
+		QPoint position);
 	void unload();
 
 	[[nodiscard]] bool ready(const BotVerifyDetails *details) const;

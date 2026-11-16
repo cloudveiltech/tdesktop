@@ -14,6 +14,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "data/data_session.h"
 #include "main/main_account.h"
 #include "main/main_session.h"
+//CloudVeil start
+#include "cloudveil/GlobalSecuritySettings.h"
+//CloudVeil end
+#include "test/test_l10n_seams.h"
 #include "ui/chat/chat_style.h"
 
 namespace Main {
@@ -117,6 +121,10 @@ float64 AppConfig::currencySellRate() const {
 	return get<float64>(u"ton_usd_rate"_q, 1);
 }
 
+bool AppConfig::starsSpendTopupInvoiceDisabled() const {
+	return get<bool>(u"stars_spend_topup_invoice_disabled"_q, false);
+}
+
 bool AppConfig::paidMessagesAvailable() const {
 	return get<bool>(u"stars_paid_messages_available"_q, false);
 }
@@ -135,14 +143,6 @@ int AppConfig::paidMessageChannelStarsDefault() const {
 
 int AppConfig::pinnedGiftsLimit() const {
 	return get<int>(u"stargifts_pinned_to_top_limit"_q, 6);
-}
-
-int AppConfig::giftCollectionsLimit() const {
-	return get<int>(u"stargifts_collections_limit"_q, 10);
-}
-
-int AppConfig::giftCollectionGiftsLimit() const {
-	return get<int>(u"stargifts_collection_gifts_limit"_q, 500);
 }
 
 bool AppConfig::callsDisabledForSession() const {
@@ -274,8 +274,17 @@ QString AppConfig::ageVerifyBotUsername() const {
 	return get<QString>(u"verify_age_bot_username"_q, QString());
 }
 
-int AppConfig::storiesAlbumsLimit() const {
-	return get<int>(u"stories_albums_limit"_q, 100);
+QString AppConfig::oldWalletBotUsername() const {
+	return get<QString>(u"old_wallet_bot_username"_q, u"wallet"_q);
+}
+
+bool AppConfig::walletAvailable() const {
+	//CloudVeil start: the TON wallet is gated with stars
+	if (GlobalSecuritySettings::getSettings().disableStars) {
+		return false;
+	}
+	//CloudVeil end
+	return get<bool>(u"wallet_available"_q, true);
 }
 
 int AppConfig::storiesAlbumLimit() const {
@@ -407,6 +416,9 @@ auto AppConfig::getValue(const QString &key, Extractor &&extractor) const {
 }
 
 bool AppConfig::getBool(const QString &key, bool fallback) const {
+	if (const auto value = Test::OverrideAppConfigBool(key)) {
+		return *value;
+	}
 	return getValue(key, [&](const MTPJSONValue &value) {
 		return value.match([&](const MTPDjsonBool &data) {
 			return mtpIsTrue(data.vvalue());
@@ -417,6 +429,9 @@ bool AppConfig::getBool(const QString &key, bool fallback) const {
 }
 
 double AppConfig::getDouble(const QString &key, double fallback) const {
+	if (const auto value = Test::OverrideAppConfigDouble(key)) {
+		return *value;
+	}
 	return getValue(key, [&](const MTPJSONValue &value) {
 		return value.match([&](const MTPDjsonNumber &data) {
 			return data.vvalue().v;
@@ -429,6 +444,9 @@ double AppConfig::getDouble(const QString &key, double fallback) const {
 QString AppConfig::getString(
 		const QString &key,
 		const QString &fallback) const {
+	if (const auto value = Test::OverrideAppConfigString(key)) {
+		return *value;
+	}
 	return getValue(key, [&](const MTPJSONValue &value) {
 		return value.match([&](const MTPDjsonString &data) {
 			return qs(data.vvalue());

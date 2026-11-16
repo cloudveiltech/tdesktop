@@ -10,6 +10,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "core/core_settings_proxy.h"
 #include "media/media_common.h"
 #include "dialogs/ui/dialogs_quick_action.h"
+#include "ui/widgets/chat_filters_tabs_mode.h"
 #include "window/themes/window_themes_embedded.h"
 #include "ui/chat/attach/attach_send_files_way.h"
 #include "base/flags.h"
@@ -60,6 +61,19 @@ struct WindowPosition {
 [[nodiscard]] WindowPosition AdjustToScale(
 	WindowPosition position,
 	const QString &name);
+
+struct WindowColumns {
+	float64 dialogsWithChatWidthRatio = 0.;
+	float64 dialogsNoChatWidthRatio = 0.;
+	int thirdColumnWidth = 0;
+	int thirdSectionExtendedBy = -1;
+	bool tabbedSelectorSectionEnabled = false;
+	bool thirdSectionInfoEnabled = true;
+
+	friend inline constexpr bool operator==(
+		WindowColumns,
+		WindowColumns) = default;
+};
 
 struct WindowTitleContent {
 	bool hideChatName : 1 = false;
@@ -142,7 +156,7 @@ public:
 	}
 
 	[[nodiscard]] QByteArray serialize() const;
-	void addFromSerialized(const QByteArray &serialized);
+	void addFromSerialized(const QByteArray &serialized, int writerVersion);
 
 	[[nodiscard]] bool adaptiveForWide() const {
 		return _adaptiveForWide.current();
@@ -520,6 +534,12 @@ public:
 	[[nodiscard]] rpl::producer<bool> cornerReplyValue() const {
 		return _cornerReply.value();
 	}
+	void setPullToNextChannel(bool value) {
+		_pullToNextChannel = value;
+	}
+	[[nodiscard]] bool pullToNextChannel() const {
+		return _pullToNextChannel.current();
+	}
 
 	void setSpellcheckerEnabled(bool value) {
 		_spellcheckerEnabled = value;
@@ -650,26 +670,11 @@ public:
 	void setMainMenuAccountsShown(bool value) {
 		_mainMenuAccountsShown = value;
 	}
-	[[nodiscard]] bool tabbedSelectorSectionEnabled() const {
-		return _tabbedSelectorSectionEnabled;
-	}
 	void setTabbedSelectorSectionEnabled(bool enabled);
-	[[nodiscard]] bool thirdSectionInfoEnabled() const {
-		return _thirdSectionInfoEnabled;
-	}
 	void setThirdSectionInfoEnabled(bool enabled);
-	[[nodiscard]] rpl::producer<bool> thirdSectionInfoEnabledValue() const;
-	[[nodiscard]] int thirdSectionExtendedBy() const {
-		return _thirdSectionExtendedBy;
-	}
 	void setThirdSectionExtendedBy(int savedValue) {
 		_thirdSectionExtendedBy = savedValue;
 	}
-	[[nodiscard]] bool tabbedReplacedWithInfo() const {
-		return _tabbedReplacedWithInfo;
-	}
-	void setTabbedReplacedWithInfo(bool enabled);
-	[[nodiscard]] rpl::producer<bool> tabbedReplacedWithInfoValue() const;
 	void setFloatPlayerColumn(Window::Column column) {
 		_floatPlayerColumn = column;
 	}
@@ -690,17 +695,10 @@ public:
 		_recordVideoMessages = value;
 	}
 
-	void updateDialogsWidthRatio(float64 ratio, bool nochat);
-	[[nodiscard]] float64 dialogsWidthRatio(bool nochat) const;
-
-	[[nodiscard]] float64 dialogsWithChatWidthRatio() const;
-	[[nodiscard]] rpl::producer<float64> dialogsWithChatWidthRatioChanges() const;
-	[[nodiscard]] float64 dialogsNoChatWidthRatio() const;
-	[[nodiscard]] rpl::producer<float64> dialogsNoChatWidthRatioChanges() const;
-
+	void updateDialogsWidthRatio(float64 ratio);
 	void setThirdColumnWidth(int width);
-	[[nodiscard]] int thirdColumnWidth() const;
-	[[nodiscard]] rpl::producer<int> thirdColumnWidthChanges() const;
+	[[nodiscard]] WindowColumns windowColumns() const;
+	void setWindowColumns(const WindowColumns &columns);
 	void setNotifyFromAll(bool value) {
 		_notifyFromAll = value;
 	}
@@ -831,12 +829,8 @@ public:
 	[[nodiscard]] rpl::producer<QString> customDeviceModelChanges() const {
 		return _customDeviceModel.changes();
 	}
-	[[nodiscard]] rpl::producer<QString> customDeviceModelValue() const {
-		return _customDeviceModel.value();
-	}
 	[[nodiscard]] QString deviceModel() const;
 	[[nodiscard]] rpl::producer<QString> deviceModelChanges() const;
-	[[nodiscard]] rpl::producer<QString> deviceModelValue() const;
 
 	void setPlayerRepeatMode(Media::RepeatMode mode) {
 		_playerRepeatMode = mode;
@@ -997,6 +991,11 @@ public:
 	[[nodiscard]] rpl::producer<bool> chatFiltersHorizontalChanges() const;
 	void setChatFiltersHorizontal(bool value);
 
+	[[nodiscard]] Ui::ChatsFiltersTabsMode chatFiltersTabsMode() const;
+	[[nodiscard]] auto chatFiltersTabsModeValue() const
+	-> rpl::producer<Ui::ChatsFiltersTabsMode>;
+	void setChatFiltersTabsMode(Ui::ChatsFiltersTabsMode value);
+
 	[[nodiscard]] Media::VideoQuality videoQuality() const;
 	void setVideoQuality(Media::VideoQuality quality);
 
@@ -1023,6 +1022,13 @@ public:
 	}
 	void setNotificationsVolume(ushort value) {
 		_notificationsVolume = value;
+	}
+
+	[[nodiscard]] int mediaGridZoomStep() const {
+		return _mediaGridZoomStep;
+	}
+	void setMediaGridZoomStep(int value) {
+		_mediaGridZoomStep = value;
 	}
 
 	template <typename Type, typename Other>
@@ -1116,6 +1122,7 @@ private:
 	bool _suggestAnimatedEmoji = true;
 	rpl::variable<bool> _cornerReply = true;
 	rpl::variable<bool> _cornerReaction = true;
+	rpl::variable<bool> _pullToNextChannel = true;
 	rpl::variable<bool> _spellcheckerEnabled = true;
 	PlaybackSpeed _videoPlaybackSpeed;
 	rpl::variable<PlaybackSpeed> _voicePlaybackSpeed;
@@ -1134,7 +1141,6 @@ private:
 	Window::Column _floatPlayerColumn = Window::Column(); // per-window
 	RectPart _floatPlayerCorner = RectPart(); // per-window
 	bool _thirdSectionInfoEnabled = true; // per-window
-	rpl::event_stream<bool> _thirdSectionInfoEnabledValue; // per-window
 	int _thirdSectionExtendedBy = -1; // per-window
 	rpl::variable<float64> _dialogsWithChatWidthRatio; // per-window
 	rpl::variable<float64> _dialogsNoChatWidthRatio; // per-window
@@ -1184,16 +1190,14 @@ private:
 	rpl::variable<int> _ivZoom = 0;
 	Media::VideoQuality _videoQuality;
 	rpl::variable<bool> _chatFiltersHorizontal = false;
+	rpl::variable<Ui::ChatsFiltersTabsMode> _chatFiltersTabsMode
+		= Ui::ChatsFiltersTabsMode::Default;
 	base::flat_map<QByteArray, QByteArray> _prefs;
-
-	bool _tabbedReplacedWithInfo = false; // per-window
-	rpl::event_stream<bool> _tabbedReplacedWithInfoValue; // per-window
 
 	rpl::event_stream<> _saveDelayed;
 	float64 _rememberedSongVolume = kDefaultVolume;
 	bool _rememberedSoundNotifyFromTray = false;
 	bool _rememberedFlashBounceNotifyFromTray = false;
-	bool _dialogsWidthSetToZeroWithoutChat = false;
 
 	bool _recordVideoMessages = false;
 
@@ -1201,6 +1205,8 @@ private:
 		= Dialogs::Ui::QuickDialogAction::Disabled;
 
 	ushort _notificationsVolume = 100;
+
+	int _mediaGridZoomStep = 0;
 
 	QByteArray _photoEditorBrush;
 

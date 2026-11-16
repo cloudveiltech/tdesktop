@@ -25,6 +25,8 @@ public:
 	void checkStickerSetByDocumentAsync(DocumentData* sticker);
 
 	void updateFromServer();
+	// Sends a sync even if nothing changed (for fresh one-off values).
+	void forceUpdateFromServer();
 
 	// The foreground account. Rules are per Telegram account: switching
 	// loads that account's cached rules and syncs it with the server.

@@ -432,5 +432,6 @@ private:
 	std::optional<CvmPendingOpen> _cvmPendingOpen;
 	uint64 _cvmPendingSerial = 0;
 	void cvmResolvePendingOpen(bool timedOut);
+	void cvmMaybeShowDeprecation();
 	//CloudVeil end
 };

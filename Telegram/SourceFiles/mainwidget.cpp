@@ -112,6 +112,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 //CloudVeil start
 #include "boxes/abstract_box.h" 
+
+//CloudVeil start
+#include "base/unixtime.h"
+#include "settings.h"
+//CloudVeil end
 //CloudVeil end
 
 namespace {
@@ -534,6 +539,45 @@ bool MainWidget::cvmCheckBeforeOpen(
 	return false;
 }
 
+// "Please update" alert from the server's deprecation info (as on Android:
+// at most once per `reminder` seconds; desktop shows it once per launch when
+// there is no reminder, since settings sync very often).
+void MainWidget::cvmMaybeShowDeprecation() {
+	const auto &deprecation = GlobalSecuritySettings::getSettings().deprecation;
+	if (!deprecation.deprecated || deprecation.message.isEmpty()) {
+		return;
+	}
+	static auto shownThisLaunch = base::flat_set<qint64>();
+	const auto userId = qint64(session().userId().bare);
+	QFile file(cWorkingDir() + u"tdata/cvm_deprecation_%1"_q.arg(userId));
+	auto lastShown = qint64(0);
+	if (file.open(QIODevice::ReadOnly)) {
+		lastShown = file.readAll().trimmed().toLongLong();
+		file.close();
+	}
+	const auto now = qint64(base::unixtime::now());
+	if (deprecation.reminder > 0) {
+		if (lastShown && now - lastShown < deprecation.reminder) {
+			return;
+		}
+	} else if (shownThisLaunch.contains(userId)) {
+		return;
+	}
+	shownThisLaunch.emplace(userId);
+	if (file.open(QIODevice::WriteOnly)) {
+		file.write(QByteArray::number(now));
+		file.close();
+	}
+	_controller->show(Ui::MakeConfirmBox({
+		.text = deprecation.message,
+		.confirmed = [=](Fn<void()> close) {
+			simpleUpdater->startUpdateChecking(AppVersion);
+			close();
+		},
+		.confirmText = tr::lng_cvm_update_app(),
+	}), Ui::LayerOption::KeepOther);
+}
+
 void MainWidget::cvmResolvePendingOpen(bool timedOut) {
 	if (!_cvmPendingOpen) {
 		return;
@@ -577,6 +621,7 @@ void MainWidget::onSettingsUpdate() {
 
 	if (isPrimary()) {
 		showOrganizationChangeRequired();
+		cvmMaybeShowDeprecation();
 	}
 }
 

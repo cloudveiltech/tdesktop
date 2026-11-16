@@ -100,6 +100,25 @@ void SettingsResponse::readFromJson(QJsonObject &jsonObject)
 	{
 		disableAiCompose = jsonObject["disable_ai_compose"].toBool();
 	}
+	if (jsonObject.contains("disable_music_status") && jsonObject["disable_music_status"].isBool())
+	{
+		disableMusicStatus = jsonObject["disable_music_status"].toBool();
+	}
+	if (jsonObject.contains("input_toggle_voice_video") && jsonObject["input_toggle_voice_video"].isBool())
+	{
+		inputToggleVoiceVideo = jsonObject["input_toggle_voice_video"].toBool();
+	}
+	if (jsonObject.contains("remove_account_url") && jsonObject["remove_account_url"].isString())
+	{
+		removeAccountUrl = jsonObject["remove_account_url"].toString();
+	}
+	if (jsonObject.contains("deprecation") && jsonObject["deprecation"].isObject())
+	{
+		const auto object = jsonObject["deprecation"].toObject();
+		deprecation.deprecated = object["deprecated"].toBool(false);
+		deprecation.message = object["message"].toString();
+		deprecation.reminder = object["reminder"].toInt(0);
+	}
 	if (jsonObject.contains("nonblockable_bots") && jsonObject["nonblockable_bots"].isArray())
 	{
 		nonblockableBots.clear();
@@ -175,6 +194,16 @@ void SettingsResponse::writeToJson(QJsonObject &json)
 	json["disable_stars"] = disableStars;
 	json["disable_mini_apps"] = disableMiniApps;
 	json["disable_ai_compose"] = disableAiCompose;
+	json["disable_music_status"] = disableMusicStatus;
+	json["input_toggle_voice_video"] = inputToggleVoiceVideo;
+	json["remove_account_url"] = removeAccountUrl;
+	{
+		QJsonObject object;
+		object["deprecated"] = deprecation.deprecated;
+		object["message"] = deprecation.message;
+		object["reminder"] = deprecation.reminder;
+		json["deprecation"] = object;
+	}
 	{
 		QJsonArray bots;
 		for (const auto id : nonblockableBots) {

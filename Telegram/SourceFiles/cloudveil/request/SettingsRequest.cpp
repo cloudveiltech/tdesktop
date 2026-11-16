@@ -19,6 +19,9 @@ void SettingsRequest::Row::writeToJson(QJsonObject &json, bool writeIsMegagroup,
     if (migratedFromTelegramId != 0) {
         json["migrated_from_telegram_id"] = QString::number(migratedFromTelegramId);
     }
+    json["is_creator_admin"] = isCreatorAdmin;
+    json["is_forum"] = isForum;
+    json["is_restricted"] = isRestricted;
 }
 
 bool SettingsRequest::Row::equalsTo(Row& r) {
@@ -27,6 +30,9 @@ bool SettingsRequest::Row::equalsTo(Row& r) {
         this->isMegagroup == r.isMegagroup &&
         this->isPublic == r.isPublic &&
         this->migratedFromTelegramId == r.migratedFromTelegramId &&
+        this->isCreatorAdmin == r.isCreatorAdmin &&
+        this->isForum == r.isForum &&
+        this->isRestricted == r.isRestricted &&
         this->userNames == r.userNames;
 }
 
@@ -41,6 +47,7 @@ void SettingsRequest::writeToJson(QJsonObject & json)
 	}
 	json["client_os_type"] = clientOsType;
 	json["client_session_id"] = clientSessionId;
+	json["client_locale"] = clientLocale;
 	json["client_version_code"] = clientVersionCode;
 	json["client_version_name"] = clientVersionName;
 
@@ -81,7 +88,8 @@ bool SettingsRequest::equalsTo(SettingsRequest& request)
 	if (this->userId != request.userId ||
 		this->userPhone != request.userPhone || 
 		this->userName != request.userName ||
-		this->userNames != request.userNames) {
+		this->userNames != request.userNames ||
+		this->clientLocale != request.clientLocale) {
 		return false;
 	}
 

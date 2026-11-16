@@ -4140,6 +4140,12 @@ void ComposeControls::initSendButton() {
 
 	Core::App().mediaDevices().recordAvailabilityValue(
 	) | rpl::on_next([=](Webrtc::RecordAvailability value) {
+		//CloudVeil start: round video messages need input_toggle_voice_video
+		if (value == Webrtc::RecordAvailability::VideoAndAudio
+			&& !GlobalSecuritySettings::getSettings().inputToggleVoiceVideo) {
+			value = Webrtc::RecordAvailability::Audio;
+		}
+		//CloudVeil end
 		_recordAvailability = value;
 		updateSendButtonType();
 	}, _send->lifetime());

@@ -75,6 +75,11 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtGui/QGuiApplication>
 #include <QtSvg/QSvgRenderer>
 
+//CloudVeil start
+#include "cloudveil/GlobalSecuritySettings.h"
+#include "ui/basic_click_handlers.h"
+//CloudVeil end
+
 namespace Settings {
 namespace {
 
@@ -1102,6 +1107,44 @@ void BuildSelfDestructionSection(
 		},
 		.keywords = { u"delete"_q, u"destroy"_q, u"inactive"_q },
 	});
+
+	//CloudVeil start: delete the CloudVeil account (remove_account_url)
+	builder.addButton({
+		.id = u"privacy/delete_cloudveil_account"_q,
+		.title = tr::lng_cvm_delete_account(),
+		.st = &st::settingsButtonNoIcon,
+		.onClick = [=] {
+			const auto instance = GlobalSecuritySettings::getInstance();
+			if (!instance) {
+				return;
+			}
+			// Removal links expire, so ask the server for a fresh one.
+			const auto weak = base::make_weak(controller);
+			const auto requested = crl::now();
+			QObject::connect(
+				instance,
+				&GlobalSecuritySettings::settingsReady,
+				instance,
+				[=] {
+					const auto strong = weak.get();
+					if (!strong || crl::now() - requested > 30 * 1000) {
+						return;
+					}
+					const auto url = GlobalSecuritySettings::getSettings()
+						.removeAccountUrl;
+					if (url.isEmpty()) {
+						strong->showToast(
+							tr::lng_cvm_delete_account_failed(tr::now));
+					} else {
+						UrlClickHandler::Open(url);
+					}
+				},
+				Qt::SingleShotConnection);
+			instance->forceUpdateFromServer();
+		},
+		.keywords = { u"cloudveil"_q, u"delete"_q, u"account"_q },
+	});
+	//CloudVeil end
 
 	builder.addSkip();
 }

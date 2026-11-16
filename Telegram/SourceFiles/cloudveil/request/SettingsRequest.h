@@ -10,6 +10,9 @@ public:
 		bool isMegagroup;
 		bool isPublic;
 		qint64 migratedFromTelegramId = 0;
+		bool isCreatorAdmin = false;
+		bool isForum = false;
+		bool isRestricted = false;
         
 		void writeToJson(QJsonObject &json, bool writeIsMegagroup = false, bool writeIsPublic=false);
 		bool equalsTo(Row& r);
@@ -27,6 +30,7 @@ public:
 	QString clientOsType = "Windows";
 #endif
 	QString clientSessionId;
+	QString clientLocale;
 	int clientVersionCode = AppVersion;
 	QString clientVersionName = AppVersionStr;
 

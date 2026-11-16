@@ -19,6 +19,10 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "main/main_session.h"
 #include "ui/ui_utility.h"
 
+//CloudVeil start
+#include "cloudveil/GlobalSecuritySettings.h"
+//CloudVeil end
+
 namespace Data {
 namespace {
 
@@ -45,6 +49,11 @@ void SavedMusic::clear() {
 }
 
 bool SavedMusic::Supported(PeerId peerId) {
+	//CloudVeil start: profile music gated on disable_music_status
+	if (GlobalSecuritySettings::getSettings().disableMusicStatus) {
+		return false;
+	}
+	//CloudVeil end
 	return peerId && peerIsUser(peerId);
 }
 
@@ -98,6 +107,11 @@ bool SavedMusic::has(not_null<DocumentData*> document) const {
 void SavedMusic::save(
 		not_null<DocumentData*> document,
 		Data::FileOrigin origin) {
+	//CloudVeil start
+	if (GlobalSecuritySettings::getSettings().disableMusicStatus) {
+		return;
+	}
+	//CloudVeil end
 	const auto peerId = _owner->session().userPeerId();
 	auto &entry = _entries[peerId];
 	if (entry.list.empty() && !entry.loaded) {
@@ -200,6 +214,11 @@ void SavedMusic::reorder(int oldPosition, int newPosition) {
 }
 
 void SavedMusic::apply(not_null<UserData*> user, const MTPDocument *last) {
+	//CloudVeil start: no profile music when disable_music_status
+	if (GlobalSecuritySettings::getSettings().disableMusicStatus) {
+		last = nullptr;
+	}
+	//CloudVeil end
 	const auto peerId = user->id;
 	auto &entry = _entries[peerId];
 	if (!last) {

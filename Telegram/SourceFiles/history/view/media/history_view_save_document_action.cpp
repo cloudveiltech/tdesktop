@@ -26,6 +26,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "ui/widgets/popup_menu.h"
 #include "window/window_peer_menu.h"
 #include "window/window_session_controller.h"
+//CloudVeil start
+#include "cloudveil/GlobalSecuritySettings.h"
+//CloudVeil end
 #include "styles/style_chat.h"
 #include "styles/style_chat_helpers.h"
 #include "styles/style_menu_icons.h"
@@ -65,7 +68,10 @@ void AddSaveDocumentAction(
 		return;
 	}
 	const auto fill = [&](not_null<Ui::PopupMenu*> menu) {
-		if (!inProfile) {
+		//CloudVeil start: no "save to profile" when music status is disabled
+		if (!inProfile
+			&& !GlobalSecuritySettings::getSettings().disableMusicStatus) {
+		//CloudVeil end
 			const auto saved = [=] {
 				savedMusic->save(document, contextId);
 				show->showToast({

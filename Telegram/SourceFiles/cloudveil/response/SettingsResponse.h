@@ -43,6 +43,15 @@ public:
 	bool disableStars = true;
 	bool disableMiniApps = true;
 	bool disableAiCompose = true;
+	bool disableMusicStatus = true; // Android DEFAULT_DISABLE_MUSIC_STATUS
+	// Round video messages; Android DEFAULT_LOCK_DISABLE_INLINE_VIDEO.
+	bool inputToggleVoiceVideo = false;
+	QString removeAccountUrl;
+	struct Deprecation {
+		bool deprecated = false;
+		QString message;
+		int reminder = 0; // seconds between alerts; <= 0: once per launch
+	} deprecation;
 	// Bots the user may never block (Android DEFAULT_NONBLOCKABLE_BOT_ID).
 	QList<qint64> nonblockableBots = { 689684671 };
 	Organization orgranization;

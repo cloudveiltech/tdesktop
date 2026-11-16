@@ -9146,6 +9146,9 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_dialog_forbidden_user" = "This user is blocked by our server policy. Please contact CloudVeil Support to request they be unblocked.";
 "lng_dialog_forbidden_bot" = "This bot is blocked by our server policy. Please contact CloudVeil Support to request it be unblocked.";
 "lng_dialog_forbidden_group" = "This group is blocked by our server policy. Please contact CloudVeil Support to request it be unblocked.";
+"lng_cvm_delete_account" = "Delete CloudVeil Account";
+"lng_cvm_delete_account_failed" = "Account deletion failed";
+"lng_cvm_update_app" = "Update app";
 "lng_cvm_checking_chat" = "Checking server policy…";
 "lng_cvm_check_failed" = "This chat hasn't been checked yet. Please try again in a moment.";
 "lng_dialog_forbidden_channel" = "This channel is blocked by our server policy. Please contact CloudVeil Support to request it be unblocked.";

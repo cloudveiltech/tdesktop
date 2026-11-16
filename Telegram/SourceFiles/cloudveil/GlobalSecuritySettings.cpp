@@ -19,6 +19,11 @@
 #include "core/application.h"
 #include "./DialogHelper.h"
 
+//CloudVeil start
+#include "lang/lang_keys.h"
+#include "data/stickers/data_stickers_set.h"
+//CloudVeil end
+
 #define MAX_REQUEST_INTERVAL_MS 10*60*1000
 
 SettingsResponse GlobalSecuritySettings::lastResponse;
@@ -73,6 +78,11 @@ void GlobalSecuritySettings::setActiveSession(
 		lastRequest = SettingsRequest();
 		notifySettingsReady();
 	}
+	updateFromServer();
+}
+
+void GlobalSecuritySettings::forceUpdateFromServer() {
+	lastRequest = SettingsRequest();
 	updateFromServer();
 }
 
@@ -172,6 +182,7 @@ void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 		sessionUids[request.userId] = getUserSessionId(request.userId);
 	}
 	request.clientSessionId = sessionUids[request.userId];
+	request.clientLocale = Lang::Id();
 
 	patchRequestIds(request);
 }
@@ -234,6 +245,18 @@ void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerDa
 	row.userNames = QStringList(userNames.begin(), userNames.end());
 
 	row.id = DialogHelper::getDialogId(peer);
+	// Same per-item flags as Android's CloudVeilSyncWorker.
+	row.isRestricted = peer->hasSensitiveContent()
+		|| !peer->computeUnavailableReason().isEmpty();
+	if (const auto chat = peer->asChat()) {
+		row.isCreatorAdmin = chat->amCreator();
+	} else if (const auto channel = peer->asChannel()) {
+		row.isCreatorAdmin = channel->amCreator();
+		row.isForum = channel->isForum();
+	} else if (const auto user = peer->asUser()) {
+		row.isCreatorAdmin = user->botInfo
+			&& user->botInfo->canEditInformation;
+	}
 	if (peer->isChat()) {
 		row.title = peer->asChat()->name();
 		row.isPublic = peer->isMegagroup() && peer->asChannel()->isPublic(); //copied from delete_messages_box.cpp
@@ -273,6 +296,7 @@ void GlobalSecuritySettings::addStickerToRequest(SettingsRequest &request, Data:
 	auto shortName = set->shortName;
 	row.userNames = QStringList{shortName};
 	row.title = set->title;
+	row.isCreatorAdmin = (set->flags & Data::StickersSetFlag::AmCreator);
 	request.stickers.append(row);
 }
 
@@ -284,6 +308,7 @@ void GlobalSecuritySettings::gotStickersSet(const MTPmessages_StickerSet &set) {
 	auto shortName = qs(additionalSticker->vshort_name());
 	row.userNames = QStringList{shortName};
 	row.title = qs(additionalSticker->vtitle());
+	row.isCreatorAdmin = additionalSticker->is_creator();
 	for (int i = 0; i < additionalStickers.size(); i++) {
 		if (additionalStickers[i].id == row.id) {
 			return;

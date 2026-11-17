@@ -22,6 +22,7 @@ void SettingsRequest::Row::writeToJson(QJsonObject &json, bool writeIsMegagroup,
     json["is_creator_admin"] = isCreatorAdmin;
     json["is_forum"] = isForum;
     json["is_restricted"] = isRestricted;
+    json["last_updated"] = lastUpdated;
 }
 
 bool SettingsRequest::Row::equalsTo(Row& r) {
@@ -40,11 +41,10 @@ void SettingsRequest::writeToJson(QJsonObject & json)
 {
 	json["user_id"] = (qint64)userId;
 	json["user_phone"] = userPhone;
-	json["user_name"] = userName;
-	if (!userNames.isEmpty()) {
-		auto arr = QJsonArray::fromStringList(userNames);
-		json["user_names"] = arr;
-	}
+	// All of the account's usernames (the editable one included), always
+	// sent, possibly empty, as Android does. The old single "user_name"
+	// field is no longer sent; the server prefers user_names.
+	json["user_names"] = QJsonArray::fromStringList(userNames);
 	json["client_os_type"] = clientOsType;
 	json["client_session_id"] = clientSessionId;
 	json["client_locale"] = clientLocale;
@@ -87,7 +87,6 @@ bool SettingsRequest::equalsTo(SettingsRequest& request)
 {
 	if (this->userId != request.userId ||
 		this->userPhone != request.userPhone || 
-		this->userName != request.userName ||
 		this->userNames != request.userNames ||
 		this->clientLocale != request.clientLocale) {
 		return false;

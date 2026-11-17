@@ -375,6 +375,11 @@ public:
 	[[nodiscard]] bool wasFullUpdated() const {
 		return (_lastFullUpdate != 0);
 	}
+	//CloudVeil start: when full info was last loaded (crl::now() clock)
+	[[nodiscard]] crl::time lastFullUpdate() const {
+		return _lastFullUpdate;
+	}
+	//CloudVeil end
 
 	[[nodiscard]] int nameVersion() const;
 	[[nodiscard]] const QString &name() const;

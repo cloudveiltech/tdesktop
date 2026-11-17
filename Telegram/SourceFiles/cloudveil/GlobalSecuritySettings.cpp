@@ -19,6 +19,8 @@
 #include "core/application.h"
 #include "./DialogHelper.h"
 
+#include "base/unixtime.h"
+#include "history/history_item.h"
 //CloudVeil start
 #include "lang/lang_keys.h"
 #include "data/stickers/data_stickers_set.h"
@@ -172,7 +174,6 @@ void GlobalSecuritySettings::buildRequest(SettingsRequest &request) {
 
 	auto user = session.user();
 	request.userId = user->id.value;
-	request.userName = user->username();
 	request.userPhone = user->phone();
 
 	std::vector<QString> userNames = user->usernames();
@@ -229,6 +230,36 @@ void GlobalSecuritySettings::checkStickerSetByDocumentAsync(DocumentData* sticke
 	}
 }
 
+// Same meaning as Android's CloudVeilSyncWorker.getLastUpdateFor*():
+// -1 when we're no longer in the chat (our info can't be trusted), otherwise
+// the later of the last message date and when full info was last loaded,
+// or 0 when neither is known. Drafts are deliberately not counted.
+static qint64 CvmLastUpdated(not_null<PeerData*> peer) {
+	if (const auto chat = peer->asChat()) {
+		if (!chat->amIn()) {
+			return SettingsRequest::Row::kLastUpdateUntrustworthy;
+		}
+	} else if (const auto channel = peer->asChannel()) {
+		if (!channel->amIn()) {
+			return SettingsRequest::Row::kLastUpdateUntrustworthy;
+		}
+	}
+	const auto now = qint64(base::unixtime::now());
+	auto lastMessage = qint64(0);
+	if (const auto history = peer->owner().historyLoaded(peer)) {
+		if (const auto item = history->lastMessage()) {
+			lastMessage = item->date();
+		}
+	}
+	auto fullLoaded = qint64(0);
+	if (const auto at = peer->lastFullUpdate()) {
+		const auto ago = std::max(crl::now() - at, crl::time(0)) / 1000;
+		fullLoaded = std::min(now - qint64(ago), now);
+	}
+	const auto merged = std::max(lastMessage, fullLoaded);
+	return (merged > 0) ? merged : SettingsRequest::Row::kLastUpdateUnknown;
+}
+
 void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerData *peer) {
 	// Monoforums are categorized through their parent channel.
 	peer = DialogHelper::policyPeer(peer);
@@ -246,6 +277,7 @@ void GlobalSecuritySettings::addDialogToRequest(SettingsRequest &request, PeerDa
 
 	row.id = DialogHelper::getDialogId(peer);
 	// Same per-item flags as Android's CloudVeilSyncWorker.
+	row.lastUpdated = CvmLastUpdated(peer);
 	row.isRestricted = peer->hasSensitiveContent()
 		|| !peer->computeUnavailableReason().isEmpty();
 	if (const auto chat = peer->asChat()) {

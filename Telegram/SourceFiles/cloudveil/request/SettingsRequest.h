@@ -13,6 +13,13 @@ public:
 		bool isCreatorAdmin = false;
 		bool isForum = false;
 		bool isRestricted = false;
+		// Unix seconds this client last had fresh info about the dialog
+		// (as Android): kLastUpdateUntrustworthy, kLastUpdateUnknown or a
+		// time. Not part of equalsTo(), so new messages alone don't force
+		// a sync; it goes out with the next real or periodic request.
+		qint64 lastUpdated = 0;
+		static constexpr qint64 kLastUpdateUntrustworthy = -1;
+		static constexpr qint64 kLastUpdateUnknown = 0;
         
 		void writeToJson(QJsonObject &json, bool writeIsMegagroup = false, bool writeIsPublic=false);
 		bool equalsTo(Row& r);
@@ -20,7 +27,6 @@ public:
 
 	qint64 userId;
 	QString userPhone;
-	QString userName;
 	QStringList userNames;
 #ifdef __APPLE__
 	QString clientOsType = "macOS";

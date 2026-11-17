@@ -546,6 +546,9 @@ void MainWidget::cvmMaybeShowDeprecation() {
 	const auto &deprecation = GlobalSecuritySettings::getSettings().deprecation;
 	if (!deprecation.deprecated || deprecation.message.isEmpty()) {
 		return;
+	} else if (_cvmDeprecationBox) {
+		// Still on screen; don't stack another one (as Android).
+		return;
 	}
 	static auto shownThisLaunch = base::flat_set<qint64>();
 	const auto userId = qint64(session().userId().bare);
@@ -568,10 +571,20 @@ void MainWidget::cvmMaybeShowDeprecation() {
 		file.write(QByteArray::number(now));
 		file.close();
 	}
-	_controller->show(Ui::MakeConfirmBox({
+	_cvmDeprecationBox = _controller->show(Ui::MakeConfirmBox({
 		.text = deprecation.message,
 		.confirmed = [=](Fn<void()> close) {
-			simpleUpdater->startUpdateChecking(AppVersion);
+			// The server redirects to the current release for this platform
+			// (as Android's alert opens the store page).
+#if defined Q_OS_MAC
+			const auto os = u"macos"_q;
+#elif defined Q_OS_WIN
+			const auto os = u"windows"_q;
+#else
+			const auto os = u"linux"_q;
+#endif
+			QDesktopServices::openUrl(QUrl(
+				u"https://messenger.cloudveil.org/messenger/download/"_q + os));
 			close();
 		},
 		.confirmText = tr::lng_cvm_update_app(),

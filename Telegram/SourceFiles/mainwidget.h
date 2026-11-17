@@ -8,6 +8,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #pragma once
 
 #include "base/weak_ptr.h"
+#include "base/weak_qptr.h" // CloudVeil
 #include "media/player/media_player_float.h"
 #include "mtproto/sender.h"
 
@@ -73,6 +74,7 @@ struct Content;
 } // namespace Export
 
 namespace Ui {
+class BoxContent; // CloudVeil
 class ChatTheme;
 class ResizeArea;
 class PlainShadow;
@@ -433,5 +435,6 @@ private:
 	uint64 _cvmPendingSerial = 0;
 	void cvmResolvePendingOpen(bool timedOut);
 	void cvmMaybeShowDeprecation();
+	base::weak_qptr<Ui::BoxContent> _cvmDeprecationBox;
 	//CloudVeil end
 };

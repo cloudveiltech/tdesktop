@@ -4,6 +4,7 @@
 # Ensure diffs have LF endings
 *.diff text eol=lf
 *.bat text eol=crlf
+*.cmd text eol=crlf
 
 # Keep the zxcvbn word lists byte-identical to upstream so their digests hold
 Telegram/Resources/zxcvbn/*.txt text eol=lf

@@ -1,3 +1,54 @@
+# CloudVeil Messenger (CVM) build for Windows
+
+This section describes how CloudVeil Messenger 7.4.x is built for Windows x64. The upstream Telegram instructions follow below for reference.
+
+## Requirements
+
+- **Visual Studio 2022** (17.14 or later) with the **MSVC v143 14.44** toolset, the Windows 10/11 SDK, and C++ desktop development. Visual Studio 2026 also works, as long as the 14.44 toolset is installed.
+- **Python 3** (3.10 or later), first on `PATH`.
+- **Git for Windows** with long paths enabled: `git config --global core.longpaths true`.
+- About **60 GB** of free disk space and at least **16 GB** of RAM.
+- To build the installer: **Inno Setup 6**.
+
+Optional speedups for long builds: add a Windows Defender exclusion for ***BuildPath***, pause Windows Search, and switch to the High performance power plan. Undo these afterwards.
+
+## Environment
+
+`Telegram\build\cvm\env-win.cmd` puts Python first on `PATH` and opens the VS 2022 x64 environment with `-vcvars_ver=14.44`. If your Python or Visual Studio is installed somewhere else, set `CVM_PYTHON` and `CVM_VCVARS` first.
+
+## Prepare libraries
+
+Pick ***BuildPath*** (for example `C:\TBuild`), then run:
+
+    cd /d C:\TBuild
+    git clone --recursive <CVM desktop repository URL> tdesktop
+    call tdesktop\Telegram\build\cvm\env-win.cmd
+    tdesktop\Telegram\build\prepare\win.bat silent
+
+The first run takes several hours and fills ***BuildPath*\Libraries\win64** (about 45 GB).
+
+## Configure
+
+The Telegram **api_id** and **api_hash** must stay private. Keep them out of scripts, shell history, and commits. The configure script reads both values from **one line** of standard input, separated by a space:
+
+    echo YOUR_API_ID YOUR_API_HASH| tdesktop\Telegram\build\cvm\configure-win.cmd
+
+The script runs `configure.bat x64` with `DESKTOP_APP_DISABLE_AUTOUPDATE=ON` and `DESKTOP_APP_DISABLE_CRASH_REPORTS=ON`. These match the macOS and Linux builds.
+
+## Build
+
+    tdesktop\Telegram\build\cvm\build-win.cmd
+
+The script builds the `Telegram` target in Release, with output at `out\Release\CloudVeilMessenger.exe`. No renaming is needed.
+
+It uses `/m:1 /p:CL_MPCount=4` because the compiler runs out of heap on a 16 GB machine with the default parallelism. On machines with more memory, raise these values or run `cmake --build out --config Release --target Telegram` directly.
+
+## Installer and signing
+
+See [cvm_create_win_installer.md](cvm_create_win_installer.md).
+
+---
+
 # Build instructions for Windows
 
 - [Prepare folder](#prepare-folder)

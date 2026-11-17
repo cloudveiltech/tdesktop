@@ -1,3 +1,60 @@
+## CloudVeil Messenger (CVM) build for Linux
+
+This section describes how CloudVeil Messenger 7.4.x is built for Linux x86_64. The upstream Telegram instructions follow below for reference.
+
+### Requirements
+
+- Docker, [poetry](https://python-poetry.org), git and git-lfs.
+- About **80 GB** of free disk space. Plan for **2 GB of RAM per parallel compile job**: default parallelism ran out of memory on a 62 GB machine.
+
+### Prepare the build image
+
+    git clone --recursive <CVM desktop repository URL> tdesktop
+    ./tdesktop/Telegram/build/prepare/linux.sh
+
+This builds the `tdesktop:centos_env` Docker image, with all libraries inside it.
+
+### Build
+
+The Telegram **api_id** and **api_hash** must stay private. Don't put them in scripts, shell history, or commits. One way is to read them into variables without echoing them:
+
+    read -rs API_ID; read -rs API_HASH
+    cd tdesktop
+    docker run --rm -u $(id -u) \
+        -v "$PWD:/usr/src/tdesktop" \
+        -e CMAKE_BUILD_PARALLEL_LEVEL=8 \
+        tdesktop:centos_env \
+        /usr/src/tdesktop/Telegram/build/docker/centos_env/build.sh \
+        -D TDESKTOP_API_ID="$API_ID" \
+        -D TDESKTOP_API_HASH="$API_HASH" \
+        -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON \
+        -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+
+Set `CMAKE_BUILD_PARALLEL_LEVEL` to about RAM ÷ 8 GB; link-time optimization needs a lot of memory. The result is `out/Release/cloudveil-messenger`.
+
+### Split off debug symbols
+
+The unstripped binary is over 3 GB. Keep the symbols for crash analysis and ship the stripped binary (about 250 MB):
+
+    cd out/Release
+    objcopy --only-keep-debug cloudveil-messenger cloudveil-messenger.debug
+    strip --strip-debug --strip-unneeded -o cloudveil-messenger.stripped cloudveil-messenger
+    objcopy --add-gnu-debuglink=cloudveil-messenger.debug cloudveil-messenger.stripped
+    chmod 755 cloudveil-messenger.stripped && mv -f cloudveil-messenger.stripped cloudveil-messenger
+
+### Testing over remote desktop (xrdp + XFCE)
+
+The app talks to `xdg-desktop-portal` at startup. Under xrdp sessions the portal often starts without the session environment, which leaves the app stuck with no window, and links don't open. To fix it:
+
+- `~/.local/share/xdg-desktop-portal/portals/gtk.portal`: copy `/usr/share/xdg-desktop-portal/portals/gtk.portal` and set `UseIn=XFCE;gnome`.
+- `~/.config/environment.d/60-cvm-portal.conf`: set `XDG_CURRENT_DESKTOP=XFCE`.
+- Add an XFCE autostart entry that runs `dbus-update-activation-environment --systemd DISPLAY XAUTHORITY XDG_CURRENT_DESKTOP`, then `systemctl --user try-restart xdg-desktop-portal xdg-desktop-portal-gtk`.
+- For audio over RDP on Debian 12, install `pipewire-module-xrdp` from bookworm-backports.
+
+Run with a separate profile: `./cloudveil-messenger -workdir ~/cvm-test-profile/`.
+
+---
+
 ## Build instructions for Linux using Docker
 
 ### Prepare folder

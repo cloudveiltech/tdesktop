@@ -15,14 +15,14 @@ Open `Telegram\build\setup.iss` and check the defines at the top:
 
 Windows SmartScreen warns about unsigned installers, so sign both the app and the installer. The installer script signs with a sign tool named `sha256` (`SignTool=sha256`).
 
-1. Install the Windows SDK's `signtool.exe` and the code-signing certificate (or its hardware token).
+1. Install the Windows SDK's `signtool.exe` (it comes with Visual Studio; the Developer Command Prompt puts it on `PATH`). Make sure the code-signing certificate is available: since 2023 it comes on a USB hardware token or through a cloud signing service. `/n` selects the certificate by its exact subject name.
 2. In the Inno Setup Compiler, open **Tools → Configure Sign Tools…**. Add a tool named `sha256` with this command:
 
-       "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe" sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /a $f
+       "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe" sign /tr http://timestamp.digicert.com /td sha256 /fd sha256 /n "CloudVeil Technology, Inc." $f
 
 3. Sign the app itself before building the installer:
 
-       signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /a out\Release\CloudVeilMessenger.exe
+       signtool sign /tr http://timestamp.digicert.com /td sha256 /fd sha256 /n "CloudVeil Technology, Inc." out\Release\CloudVeilMessenger.exe
 
 **Note:** the CloudVeil EV code-signing certificate used for the 5.14 installers expired on 2026-09-08. A renewed certificate is needed before a signed release. [CONFIRM certificate status]
 

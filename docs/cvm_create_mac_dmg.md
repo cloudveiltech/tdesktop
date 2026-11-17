@@ -10,7 +10,10 @@ macOS Gatekeeper blocks apps that aren't signed with a **Developer ID Applicatio
     lipo -archs "$APP/Contents/MacOS/CloudVeil Messenger"      # expect: x86_64 arm64
     vtool -show-build "$APP/Contents/MacOS/CloudVeil Messenger" | grep minos
 
-The DMG has always shipped the bundle as `CloudVeilMessenger.app` (no space), and the built bundle name has a space. Renaming it changes the path in `/Applications`, so existing users may end up with two copies. [CONFIRM which bundle name to ship.] If you rename the bundle, do it **before** signing.
+Ship the bundle as `CloudVeilMessenger.app` (no space), the name earlier DMGs used, so the new version replaces the old one in `/Applications`. The build produces `CloudVeil Messenger.app`, so copy it under the new name **before** signing:
+
+    cp -c -R "out/Release/CloudVeil Messenger.app" CloudVeilMessenger.app
+    APP=CloudVeilMessenger.app
 
 ## 2. Sign (Developer ID, hardened runtime)
 
@@ -18,7 +21,7 @@ List the signing identities available on this Mac:
 
     security find-identity -v -p codesigning
 
-Sign nested code first, then the app, using the entitlements in the repository:
+If the certificate is in a separate keychain (recommended), add `--keychain <path to keychain>` to each `codesign` command. Sign nested code first (the bundled Swift libraries in `Contents/Frameworks`), then the app, using the entitlements in the repository:
 
     IDENTITY="Developer ID Application: <Company name> (<TEAMID>)"
     find "$APP/Contents" \( -name "*.dylib" -o -name "*.framework" -o -perm -111 -type f \) \
@@ -29,21 +32,25 @@ Sign nested code first, then the app, using the entitlements in the repository:
         --sign "$IDENTITY" "$APP"
     codesign --verify --deep --strict --verbose=2 "$APP"
 
+Notarize and staple the app itself before you package it (as in step 4, using a zip: `ditto -c -k --keepParent "$APP" app.zip`). That way the app also passes Gatekeeper when it's copied out of the DMG without a network connection.
+
 ## 3. Create the DMG
 
     brew install create-dmg
-    mkdir -p CVM && cp -R "$APP" CVM/ && cp <background image> CVM/bg.png   # 800x600 recommended
+    mkdir -p stage && cp -c -R "$APP" stage/
+    # bg.png: the 902x381 CloudVeil Messenger background (logo + arrow), as used since 5.x
     create-dmg \
       --volname "CloudVeil Messenger" \
-      --background "CVM/bg.png" \
+      --background bg.png \
       --window-pos 200 120 \
-      --window-size 900 600 \
-      --icon-size 160 \
-      --icon "CloudVeil Messenger.app" 200 240 \
-      --hide-extension "CloudVeil Messenger.app" \
-      --app-drop-link 660 260 \
+      --window-size 902 409 \
+      --icon-size 128 \
+      --icon "CloudVeilMessenger.app" 200 265 \
+      --hide-extension "CloudVeilMessenger.app" \
+      --app-drop-link 700 265 \
+      --no-internet-enable \
       "cvm_macos_7004004.dmg" \
-      "CVM/"
+      stage/
     codesign --force --timestamp --sign "$IDENTITY" cvm_macos_7004004.dmg
 
 The number in the file name is the CVM version code: major × 1,000,000 + minor × 1,000 + patch, so 7.4.4 is `7004004`.

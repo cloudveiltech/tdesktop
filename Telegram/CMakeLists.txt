@@ -2898,6 +2898,10 @@ else()
     set(bundle_entitlements "Telegram.entitlements")
     if (LINUX AND DESKTOP_APP_USE_PACKAGED)
         set(output_name "cloudveil-messenger")
+    elseif (WIN32)
+        # CloudVeil: the installer (build/setup.iss) and existing installs
+        # use CloudVeilMessenger.exe.
+        set(output_name "CloudVeilMessenger")
     else()
         set(output_name "CloudVeil Messenger")
     endif()

@@ -129,8 +129,8 @@ if (WIN32)
             PRIVATE
             dbghelp
             winhttp
-            ${src_loc}/cloudveil/sentry/release/breakpad_client.lib
-            ${src_loc}/cloudveil/sentry/release/sentry.lib
+            ${src_loc}/cloudveil/sentry/release_win/breakpad_client.lib
+            ${src_loc}/cloudveil/sentry/release_win/sentry.lib
         )
         target_compile_definitions(Telegram PRIVATE DESKTOP_APP_USE_SENTRY=1)
 elseif (APPLE)

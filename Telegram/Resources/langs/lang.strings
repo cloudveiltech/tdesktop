@@ -207,7 +207,7 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_lastseen_or" = "or";
 "lng_lastseen_premium_title" = "Upgrade to Premium";
 "lng_lastseen_premium_about" = "Subscribing will let you see **{user}'s** Last Seen\nstatus without showing yours.";
-"lng_lastseen_premium_button" = "Subscribe to CloudVeil Messenger Premium";
+"lng_lastseen_premium_button" = "Subscribe to Telegram Premium";
 "lng_lastseen_shown_toast" = "Your last seen time is now visible.";
 
 "lng_readtime_show_title" = "Show Your Read Date";
@@ -216,14 +216,14 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_readtime_or" = "or";
 "lng_readtime_premium_title" = "Upgrade to Premium";
 "lng_readtime_premium_about" = "Subscription will let you see **{user}'s** read time\nwithout showing yours.";
-"lng_readtime_premium_button" = "Subscribe to CloudVeil Messenger Premium";
+"lng_readtime_premium_button" = "Subscribe to Telegram Premium";
 "lng_readtime_shown_toast" = "Your read times are now visible.";
 
 "lng_channels_limit_title" = "Too Many Communities";
 "lng_channels_limit1#one" = "You are a member of **{count}** group or channel.";
 "lng_channels_limit1#other" = "You are a member of **{count}** groups and channels.";
-"lng_channels_limit2#one" = "Please leave some before joining a new one - or upgrade to **CloudVeil Messenger Premium** to double the limit to **{count}** groups and channels.";
-"lng_channels_limit2#other" = "Please leave some before joining a new one - or upgrade to **CloudVeil Messenger Premium** to double the limit to **{count}** groups and channels.";
+"lng_channels_limit2#one" = "Please leave some before joining a new one - or upgrade to **Telegram Premium** to double the limit to **{count}** groups and channels.";
+"lng_channels_limit2#other" = "Please leave some before joining a new one - or upgrade to **Telegram Premium** to double the limit to **{count}** groups and channels.";
 "lng_channels_limit2_final" = "Please leave some before joining a new one.";
 "lng_channels_leave_title" = "Least active communities";
 "lng_channels_leave_status" = "{type}, inactive {time}";
@@ -234,8 +234,8 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_links_limit_title" = "Too Many Public Links";
 "lng_links_limit1#one" = "You have reserved **{count}** public link.";
 "lng_links_limit1#other" = "You have reserved **{count}** public links.";
-"lng_links_limit2#one" = "Try revoking the link from an older group or channel, or upgrade to **CloudVeil Messenger Premium** to double the limit to **{count}** public link.";
-"lng_links_limit2#other" = "Try revoking the link from an older group or channel, or upgrade to **CloudVeil Messenger Premium** to double the limit to **{count}** public links.";
+"lng_links_limit2#one" = "Try revoking the link from an older group or channel, or upgrade to **Telegram Premium** to double the limit to **{count}** public link.";
+"lng_links_limit2#other" = "Try revoking the link from an older group or channel, or upgrade to **Telegram Premium** to double the limit to **{count}** public links.";
 "lng_links_limit2_final" = "Try revoking the link from an older group or channel";
 "lng_links_revoke_title" = "Your public communities";
 
@@ -244,20 +244,20 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_filter_chats_limit1#other" = "Sorry, you can't add more than **{count}** chats to a folder.";
 "lng_filter_chats_exlude_limit1#one" = "Sorry, you can't exlude more than **{count}** chat from a folder.";
 "lng_filter_chats_exlude_limit1#other" = "Sorry, you can't exlude more than **{count}** chats from a folder.";
-"lng_filter_chats_limit2#one" = "You can increase this limit to **{count}** by upgrading to **CloudVeil Messenger Premium**.";
-"lng_filter_chats_limit2#other" = "You can increase this limit to **{count}** by upgrading to **CloudVeil Messenger Premium**.";
+"lng_filter_chats_limit2#one" = "You can increase this limit to **{count}** by upgrading to **Telegram Premium**.";
+"lng_filter_chats_limit2#other" = "You can increase this limit to **{count}** by upgrading to **Telegram Premium**.";
 
 "lng_filters_limit_title" = "Limit Reached";
 "lng_filters_limit1#one" = "You have reached the limit of **{count}** folder.";
 "lng_filters_limit1#other" = "You have reached the limit of **{count}** folders.";
-"lng_filters_limit2#one" = "You can double the limit to **{count}** folder by subscribing to **CloudVeil Messenger Premium**.";
-"lng_filters_limit2#other" = "You can double the limit to **{count}** folders by subscribing to **CloudVeil Messenger Premium**.";
+"lng_filters_limit2#one" = "You can double the limit to **{count}** folder by subscribing to **Telegram Premium**.";
+"lng_filters_limit2#other" = "You can double the limit to **{count}** folders by subscribing to **Telegram Premium**.";
 
 "lng_filter_pin_limit_title" = "Limit Reached";
 "lng_filter_pin_limit1#one" = "Sorry, you can't pin more than **{count}** chat to the top.";
 "lng_filter_pin_limit1#other" = "Sorry, you can't pin more than **{count}** chats to the top.";
-"lng_filter_pin_limit2#one" = "Unpin some of the currently pinned ones or subscribe to **CloudVeil Messenger Premium** to double the limit to **{count}** chat.";
-"lng_filter_pin_limit2#other" = "Unpin some of the currently pinned ones or subscribe to **CloudVeil Messenger Premium** to double the limit to **{count}** chats.";
+"lng_filter_pin_limit2#one" = "Unpin some of the currently pinned ones or subscribe to **Telegram Premium** to double the limit to **{count}** chat.";
+"lng_filter_pin_limit2#other" = "Unpin some of the currently pinned ones or subscribe to **Telegram Premium** to double the limit to **{count}** chats.";
 
 "lng_forum_pin_limit#one" = "Sorry, you can't pin more than **{count}** topic to the top.";
 "lng_forum_pin_limit#other" = "Sorry, you can't pin more than **{count}** topics to the top.";
@@ -277,8 +277,8 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_caption_limit_title" = "Limit Reached";
 "lng_caption_limit1#one" = "Sorry, you can't use more than **{count}** character in media captions.";
 "lng_caption_limit1#other" = "Sorry, you can't use more than **{count}** characters in media captions.";
-"lng_caption_limit2#one" = "Make the caption shorter or subscribe to **CloudVeil Messenger Premium** to double the limit to **{count}** character.";
-"lng_caption_limit2#other" = "Make the caption shorter or subscribe to **CloudVeil Messenger Premium** to double the limit to **{count}** characters.";
+"lng_caption_limit2#one" = "Make the caption shorter or subscribe to **Telegram Premium** to double the limit to **{count}** character.";
+"lng_caption_limit2#other" = "Make the caption shorter or subscribe to **Telegram Premium** to double the limit to **{count}** characters.";
 "lng_caption_limit_reached#one" = "You've reached the media caption limit. Please make the caption shorter by {count} character.";
 "lng_caption_limit_reached#other" = "You've reached the media caption limit. Please make the caption shorter by {count} characters.";
 "lng_caption_move_up" = "Move Caption Up";
@@ -288,25 +288,25 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_file_size_limit#one" = "{count} GB";
 "lng_file_size_limit#other" = "{count} GB";
 "lng_file_size_limit1" = "The document can't be sent, because it is larger than {size}.";
-"lng_file_size_limit2" = "You can double this limit to {size} per document by subscribing to **CloudVeil Messenger Premium**.";
+"lng_file_size_limit2" = "You can double this limit to {size} per document by subscribing to **Telegram Premium**.";
 
 "lng_filter_links_limit_title" = "Limit Reached";
 "lng_filter_links_limit1#one" = "Sorry, you can't create more than **{count}** invite link.";
 "lng_filter_links_limit1#other" = "Sorry, you can't create more than **{count}** invite links.";
-"lng_filter_links_limit2#one" = "You can increase the limit to **{count}** link by subscribing to **CloudVeil Messenger Premium**.";
-"lng_filter_links_limit2#other" = "You can increase the limit to **{count}** links by subscribing to **CloudVeil Messenger Premium**.";
+"lng_filter_links_limit2#one" = "You can increase the limit to **{count}** link by subscribing to **Telegram Premium**.";
+"lng_filter_links_limit2#other" = "You can increase the limit to **{count}** links by subscribing to **Telegram Premium**.";
 
 "lng_filter_shared_limit_title" = "Limit Reached";
 "lng_filter_shared_limit1#one" = "Sorry, you can't add more than **{count}** shareable folders.";
 "lng_filter_shared_limit1#other" = "Sorry, you can't add more than **{count}** shareable folders.";
-"lng_filter_shared_limit2#one" = "You can increase the limit to **{count}** folder by subscribing to **CloudVeil Messenger Premium**.";
-"lng_filter_shared_limit2#other" = "You can increase the limit to **{count}** folders by subscribing to **CloudVeil Messenger Premium**.";
+"lng_filter_shared_limit2#one" = "You can increase the limit to **{count}** folder by subscribing to **Telegram Premium**.";
+"lng_filter_shared_limit2#other" = "You can increase the limit to **{count}** folders by subscribing to **Telegram Premium**.";
 
 "lng_limits_increase" = "Increase Limit";
 
 "lng_sticker_premium_text" = "This set contains premium stickers like this one.";
 "lng_sticker_premium_view" = "View";
-"lng_animated_emoji_text" = "Subscribe to **CloudVeil Messenger Premium** to unlock this emoji.";
+"lng_animated_emoji_text" = "Subscribe to **Telegram Premium** to unlock this emoji.";
 "lng_animated_emoji_subscribe" = "Subscribe to {link} to unlock this emoji.";
 "lng_animated_emoji_subscribe_link" = "Telegram Premium";
 "lng_animated_emoji_saved" = "Try sending these emoji in **Saved Messages** for free to test.";
@@ -670,7 +670,7 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_effect_send" = "Send with Effect";
 "lng_effect_none" = "No effects found.";
 "lng_effect_premium" = "Subscribe to {link} to add this animated effect.";
-"lng_effect_premium_link" = "CloudVeil Messenger Premium";
+"lng_effect_premium_link" = "Telegram Premium";
 
 "lng_languages" = "Language";
 "lng_languages_none" = "No languages found.";
@@ -851,7 +851,7 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_birthday_privacy" = "Date of Birth";
 "lng_settings_saved_music_privacy" = "Saved Music";
 "lng_settings_privacy_premium" = "Only subscribers of {link} can restrict receiving voice messages.";
-"lng_settings_privacy_premium_link" = "CloudVeil Messenger Premium";
+"lng_settings_privacy_premium_link" = "Telegram Premium";
 "lng_settings_passcode_disable" = "Disable Passcode";
 "lng_settings_passcode_disable_sure" = "Are you sure you want to disable passcode?";
 "lng_settings_passcode_lock_app" = "Lock Telegram with passcode";
@@ -1262,7 +1262,7 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_cloud_password_differ" = "Passwords do not match";
 "lng_cloud_password_wrong" = "Wrong cloud password";
 "lng_cloud_password_is_same" = "Password was not changed";
-"lng_cloud_password_passport_losing" = "Warning! All data saved in your CloudVeil Messenger Passport will be lost!";
+"lng_cloud_password_passport_losing" = "Warning! All data saved in your Telegram Passport will be lost!";
 "lng_cloud_password_resend" = "Resend code";
 "lng_cloud_password_resent" = "Code was resent.";
 "lng_cloud_password_reset_no_email" = "Since you didn't provide a recovery email when setting up your password, your remaining options are either to remember your password or wait 7 days until your password is reset.";
@@ -1349,13 +1349,13 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_settings_rename_device_title" = "Rename current device";
 "lng_settings_manage_local_storage" = "Manage local storage";
 "lng_settings_ask_question" = "Ask a Question";
-"lng_settings_ask_sure" = "Please note that  CloudVeil Messenger Support is done by volunteers. We try to respond as quickly as possible, but it may take a while.\n\nPlease take a look at the  CloudVeil Messenger FAQ: it has important troubleshooting tips and answers to most questions.";
+"lng_settings_ask_sure" = "Please note that  CloudVeil Messenger Support is done by volunteers. We try to respond as quickly as possible, but it may take a while.\n\nPlease take a look at the  Telegram FAQ: it has important troubleshooting tips and answers to most questions.";
 "lng_settings_faq_button" = "Go to FAQ";
 "lng_settings_ask_ok" = "Ask a Volunteer";
-"lng_settings_faq" = " CloudVeil Messenger FAQ";
+"lng_settings_faq" = " Telegram FAQ";
 "lng_settings_faq_subtitle" = "FAQ";
 "lng_settings_faq_link" = "https://www.cloudveil.org/messenger";
-"lng_settings_features" = " CloudVeil Messenger Features";
+"lng_settings_features" = " Telegram Features";
 "lng_settings_credits" = "My Stars";
 "lng_settings_currency" = "Gram Earnings";
 "lng_settings_logout" = "Log out";
@@ -1458,7 +1458,7 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_archive_hint_button" = "Got it";
 
 "lng_settings_generic_subscribe" = "Subscribe to {link} to use this setting.";
-"lng_settings_generic_subscribe_link" = "CloudVeil Messenger Premium";
+"lng_settings_generic_subscribe_link" = "Telegram Premium";
 
 "lng_sessions_header" = "This device";
 "lng_sessions_other_header" = "Active Devices";
@@ -1509,7 +1509,7 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_edit_privacy_exceptions" = "Add exceptions";
 "lng_edit_privacy_user_types" = "User types";
 "lng_edit_privacy_users_and_groups" = "Users and groups";
-"lng_edit_privacy_premium_status" = "all CloudVeil Messenger Premium subscribers";
+"lng_edit_privacy_premium_status" = "all Telegram Premium subscribers";
 "lng_edit_privacy_miniapps_status" = "web mini apps that you use";
 
 "lng_edit_privacy_exceptions_count#one" = "{count} user";
@@ -1540,7 +1540,7 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_edit_privacy_lastseen_never_title" = "Never share with";
 "lng_edit_lastseen_hide_read_time" = "Hide read time";
 "lng_edit_lastseen_hide_read_time_about" = "Hide the time when you read messages from people who can't see your last seen. If you turn this on, their read time will also be hidden from you (unless you are a Premium user).\n\nThis setting does not affect group chats.";
-"lng_edit_lastseen_subscribe" = "Subscribe to CloudVeil Messenger Premium";
+"lng_edit_lastseen_subscribe" = "Subscribe to Telegram Premium";
 "lng_edit_lastseen_subscribe_about" = "If you subscribe to Premium, you will see other users' last seen and read time even if you hid yours from them (unless they specifically restricted it).";
 
 "lng_edit_privacy_groups_title" = "Groups & Channels";
@@ -1654,10 +1654,10 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_messages_privacy_everyone" = "Everybody";
 "lng_messages_privacy_restricted" = "My Contacts and Premium Users";
 "lng_messages_privacy_about" = "You can restrict messages from users who are not in your contacts and don't have Premium.";
-"lng_messages_privacy_premium_button" = "Subscribe to CloudVeil Messenger Premium";
-"lng_messages_privacy_premium_about" = "Subscribe now to change this setting and get access to other exclusive features of CloudVeil Messenger Premium.";
+"lng_messages_privacy_premium_button" = "Subscribe to Telegram Premium";
+"lng_messages_privacy_premium_about" = "Subscribe now to change this setting and get access to other exclusive features of Telegram Premium.";
 "lng_messages_privacy_premium" = "Only subscribers of {link} can select this option.";
-"lng_messages_privacy_premium_link" = "CloudVeil Messenger Premium";
+"lng_messages_privacy_premium_link" = "Telegram Premium";
 "lng_messages_privacy_charge" = "Charge for messages";
 "lng_messages_privacy_charge_about" = "Charge a fee for messages from people outside your contacts or those you haven't messaged first.";
 "lng_messages_privacy_price" = "Set your price per message";
@@ -2027,7 +2027,7 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_manage_peer_reactions_max_about" = "Limit the number of different reactions that can be added to a post, including already published ones.";
 
 "lng_manage_peer_reactions_paid" = "Enable Paid Reactions";
-"lng_manage_peer_reactions_paid_about" = "Switch this on to let your subscribers react to posts with CloudVeil Messenger Stars, which you will be able to withdraw as TON. {link}";
+"lng_manage_peer_reactions_paid_about" = "Switch this on to let your subscribers react to posts with Telegram Stars, which you will be able to withdraw as TON. {link}";
 "lng_manage_peer_reactions_paid_link" = "Learn more >";
 
 "lng_manage_peer_antispam" = "Aggressive Anti-Spam";
@@ -2800,8 +2800,8 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_action_story_mention_button" = "View Story";
 "lng_action_story_mention_me_unavailable" = "The story where you mentioned {user} is no longer available.";
 "lng_action_story_mention_unavailable" = "The story where {user} mentioned you is no longer available.";
-"lng_action_giveaway_started_group" = "{from} just started a giveaway of CloudVeil Messenger Premium subscriptions to its members.";
-"lng_action_giveaway_started" = "{from} just started a giveaway of CloudVeil Messenger Premium subscriptions for its followers.";
+"lng_action_giveaway_started_group" = "{from} just started a giveaway of Telegram Premium subscriptions to its members.";
+"lng_action_giveaway_started" = "{from} just started a giveaway of Telegram Premium subscriptions for its followers.";
 "lng_action_giveaway_credits_started_amount#one" = "{count} Star";
 "lng_action_giveaway_credits_started_amount#other" = "{count} Stars";
 "lng_action_giveaway_credits_started_group" = "{from} just started a giveaway of {amount} to its members.";
@@ -2917,7 +2917,7 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_similar_channels_more" = "More Channels";
 "lng_similar_channels_premium_all#one" = "Subscribe to {link} to unlock up to **{count}** similar channel.";
 "lng_similar_channels_premium_all#other" = "Subscribe to {link} to unlock up to **{count}** similar channels.";
-"lng_similar_channels_premium_all_link" = "CloudVeil Messenger Premium";
+"lng_similar_channels_premium_all_link" = "Telegram Premium";
 "lng_similar_channels_show_more" = "Show more channels";
 
 "lng_similar_bots_title" = "Similar bots";
@@ -3267,7 +3267,7 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 
 "lng_premium" = "Premium";
 "lng_premium_free" = "Free";
-"lng_premium_more_about" = "More About CloudVeil Messenger Premium";
+"lng_premium_more_about" = "More About Telegram Premium";
 "lng_premium_unlock_reactions" = "Unlock Premium Reactions";
 "lng_premium_unlock_stickers" = "Unlock Premium Stickers";
 "lng_premium_unlock_emoji" = "Unlock Animated Emoji";
@@ -3282,21 +3282,21 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 
 "lng_premium_emoji_status_title" = "{user} set this emoji from {link} as their current status.";
 "lng_premium_emoji_status_title_colored" = "{user} set this emoji as their current status.";
-"lng_premium_emoji_status_about" = "Emoji status is a premium feature. Other features included in **CloudVeil Messenger Premium**:";
+"lng_premium_emoji_status_about" = "Emoji status is a premium feature. Other features included in **Telegram Premium**:";
 "lng_premium_emoji_status_button" = "Unlock Emoji Status";
 
-"lng_premium_summary_user_title" = "{user} is a subscriber of CloudVeil Messenger Premium.";
-"lng_premium_summary_user_about" = "Owners of CloudVeil Messenger Premium accounts have exclusive access to multiple additional features.";
+"lng_premium_summary_user_title" = "{user} is a subscriber of Telegram Premium.";
+"lng_premium_summary_user_about" = "Owners of Telegram Premium accounts have exclusive access to multiple additional features.";
 
-"lng_premium_summary_title" = "CloudVeil Messenger Premium";
-"lng_premium_summary_top_about" = "Go **beyond the limits** and **unlock dozens of exclusive** features by subscribing to **CloudVeil Messenger Premium**.";
+"lng_premium_summary_title" = "Telegram Premium";
+"lng_premium_summary_top_about" = "Go **beyond the limits** and **unlock dozens of exclusive** features by subscribing to **Telegram Premium**.";
 "lng_premium_summary_title_subscribed" = "You are all set!";
-"lng_premium_summary_subtitle_gift#one" = "{user} has gifted you a {count}-month subscription to CloudVeil Messenger Premium.";
-"lng_premium_summary_subtitle_gift#other" = "{user} has gifted you a {count}-months subscription to CloudVeil Messenger Premium.";
+"lng_premium_summary_subtitle_gift#one" = "{user} has gifted you a {count}-month subscription to Telegram Premium.";
+"lng_premium_summary_subtitle_gift#other" = "{user} has gifted you a {count}-months subscription to Telegram Premium.";
 "lng_premium_summary_subtitle_gift_days#one" = "{user} has gifted you a {count}-day subscription to Telegram Premium.";
 "lng_premium_summary_subtitle_gift_days#other" = "{user} has gifted you a {count}-days subscription to Telegram Premium.";
-"lng_premium_summary_subtitle_gift_me#one" = "You gifted {user} a {count}-month subscription to CloudVeil Messenger Premium.";
-"lng_premium_summary_subtitle_gift_me#other" = "You gifted {user} a {count}-months subscription to CloudVeil Messenger Premium.";
+"lng_premium_summary_subtitle_gift_me#one" = "You gifted {user} a {count}-month subscription to Telegram Premium.";
+"lng_premium_summary_subtitle_gift_me#other" = "You gifted {user} a {count}-months subscription to Telegram Premium.";
 "lng_premium_summary_subtitle_gift_days_me#one" = "You gifted {user} a {count}-month subscription to Telegram Premium.";
 "lng_premium_summary_subtitle_gift_days_me#other" = "You gifted {user} a {count}-months subscription to Telegram Premium.";
 "lng_premium_summary_subtitle_wallpapers" = "Wallpapers for Both Sides";
@@ -3335,7 +3335,7 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_premium_summary_about_animated_userpics" = "Video avatars animated in chat lists and chats to allow for additional self-expression.";
 "lng_premium_summary_subtitle_translation" = "Real-Time Translation";
 "lng_premium_summary_about_translation" = "Real-time translation of channels and chats into other languages.";
-"lng_premium_summary_subtitle_business" = "CloudVeil Messenger Business";
+"lng_premium_summary_subtitle_business" = "Telegram Business";
 "lng_premium_summary_about_business" = "Upgrade your account with business features such as location, opening hours and quick replies.";
 "lng_premium_summary_subtitle_effects" = "Message Effects";
 "lng_premium_summary_about_effects" = "Add over 500 animated effects to private messages.";
@@ -3357,8 +3357,8 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 
 "lng_premium_summary_new_badge" = "NEW";
 
-"lng_premium_success" = "You've successfully subscribed to CloudVeil Messenger Premium!";
-"lng_premium_unavailable" = "This feature requires subscription to **CloudVeil Messenger Premium**.\n\nUnfortunately, **CloudVeil Messenger Premium** is not available in your region.";
+"lng_premium_success" = "You've successfully subscribed to Telegram Premium!";
+"lng_premium_unavailable" = "This feature requires subscription to **Telegram Premium**.\n\nUnfortunately, **Telegram Premium** is not available in your region.";
 
 // Upgraded Stories.
 "lng_premium_stories_subtitle_order" = "Priority Order";
@@ -3429,10 +3429,10 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 //
 
 "lng_premium_gift_per" = "{cost} / month";
-"lng_premium_gift_terms" = "You can review the list of features and more details about CloudVeil Messenger Premium {link}.";
+"lng_premium_gift_terms" = "You can review the list of features and more details about Telegram Premium {link}.";
 "lng_premium_gift_terms_link" = "here";
 
-"lng_business_title" = "CloudVeil Messenger Business";
+"lng_business_title" = "Telegram Business";
 "lng_business_about" = "Turn your account to a business page with these additional features.";
 "lng_business_unlocked" = "You have now unlocked these additional business features.";
 "lng_business_subtitle_location" = "Location";
@@ -3454,10 +3454,10 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_business_subtitle_sponsored" = "Ads in Channels";
 "lng_business_button_sponsored" = "Do Not Hide Ads";
 "lng_business_about_sponsored" = "As a Premium subscriber, you don’t see any ads on CloudVeil Messenger, but you can turn them on, for example, to view your own ads that you launched on the {link}";
-"lng_business_about_sponsored_link" = "CloudVeil Messenger Ad Platform {emoji}";
+"lng_business_about_sponsored_link" = "Telegram Ad Platform {emoji}";
 "lng_business_about_sponsored_url" = "https://ads.telegram.org";
 
-"lng_credits_summary_title" = "CloudVeil Messenger Stars";
+"lng_credits_summary_title" = "Telegram Stars";
 "lng_credits_summary_about" = "Buy Stars to unlock content and services in miniapps on CloudVeil Messenger.";
 "lng_credits_currency_summary_title" = "TON Balance";
 "lng_credits_currency_summary_about" = "Offer TON to submit post suggestions to channels on Telegram.";
@@ -3610,12 +3610,12 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_credits_small_balance_for_offer" = "Buy **Stars** to offer for this gift.";
 "lng_credits_small_balance_for_search" = "Buy **Stars** to search through public posts.";
 "lng_credits_small_balance_fallback" = "Buy **Stars** to unlock content and services on CloudVeil Messenger.";
-"lng_credits_purchase_blocked" = "Sorry, you can't purchase this item with CloudVeil Messenger Stars.";
+"lng_credits_purchase_blocked" = "Sorry, you can't purchase this item with Telegram Stars.";
 "lng_credits_topup_disabled" = "Sorry, you don't have enough Telegram Stars on your balance.";
 "lng_credits_enough" = "You have enough stars at the moment. {link}";
 "lng_credits_enough_link" = "Buy anyway";
 
-"lng_credits_gift_title" = "Gift CloudVeil Messenger Stars";
+"lng_credits_gift_title" = "Gift Telegram Stars";
 
 "lng_location_title" = "Location";
 "lng_location_about" = "Display the location of your business on your account.";
@@ -3734,7 +3734,7 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_chatbots_manage_stories" = "Manage Stories";
 
 "lng_chatbots_not_found" = "Chatbot not found.";
-"lng_chatbots_not_supported" = "This bot doesn't support CloudVeil Messenger Business yet.";
+"lng_chatbots_not_supported" = "This bot doesn't support Telegram Business yet.";
 "lng_chatbots_add" = "Add";
 "lng_chatbots_remove_bot" = "Remove Bot";
 "lng_chatbots_leave_without_added_title" = "No Bot Added";
@@ -3824,19 +3824,19 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_boost_group_lift_restrictions_many#one" = "Boost the group **{count} time** to remove messaging restrictions.";
 "lng_boost_group_lift_restrictions_many#other" = "Boost the group **{count} times** to remove messaging restrictions.";
 "lng_boost_error_gifted_title" = "Can't boost with gifted Premium!";
-"lng_boost_error_gifted_text" = "Because your **CloudVeil Messenger Premium** subscription was gifted to you, you can't use it to boost channels.";
-"lng_boost_error_gifted_text_group" = "Because your **CloudVeil Messenger Premium** subscription was gifted to you, you can't use it to boost groups.";
+"lng_boost_error_gifted_text" = "Because your **Telegram Premium** subscription was gifted to you, you can't use it to boost channels.";
+"lng_boost_error_gifted_text_group" = "Because your **Telegram Premium** subscription was gifted to you, you can't use it to boost groups.";
 "lng_boost_need_more" = "More boosts needed";
-"lng_boost_need_more_text#one" = "To boost {channel}, gift **CloudVeil Messenger Premium** to a friend and get **{count}** boost.";
-"lng_boost_need_more_text#other" = "To boost {channel}, gift **CloudVeil Messenger Premium** to a friend and get **{count}** boosts.";
-"lng_boost_need_more_again#one" = "To boost {channel} again, gift **CloudVeil Messenger Premium** to a friend and get **{count}** additional boost.";
-"lng_boost_need_more_again#other" = "To boost {channel} again, gift **CloudVeil Messenger Premium** to a friend and get **{count}** additional boosts.";
+"lng_boost_need_more_text#one" = "To boost {channel}, gift **Telegram Premium** to a friend and get **{count}** boost.";
+"lng_boost_need_more_text#other" = "To boost {channel}, gift **Telegram Premium** to a friend and get **{count}** boosts.";
+"lng_boost_need_more_again#one" = "To boost {channel} again, gift **Telegram Premium** to a friend and get **{count}** additional boost.";
+"lng_boost_need_more_again#other" = "To boost {channel} again, gift **Telegram Premium** to a friend and get **{count}** additional boosts.";
 "lng_boost_error_already_title" = "Already Boosted!";
 "lng_boost_error_already_text" = "You are already boosting this channel.";
 "lng_boost_error_already_text_group" = "You are already boosting this group.";
 "lng_boost_error_premium_title" = "Premium needed";
-"lng_boost_error_premium_text_group" = "Only **CloudVeil Messenger Premium** subscribers can boost groups. Do you want to subscribe to **CloudVeil Messenger Premium**?";
-"lng_boost_error_premium_text" = "Only **CloudVeil Messenger Premium** subscribers can boost channels. Do you want to subscribe to **CloudVeil Messenger Premium**?";
+"lng_boost_error_premium_text_group" = "Only **Telegram Premium** subscribers can boost groups. Do you want to subscribe to **Telegram Premium**?";
+"lng_boost_error_premium_text" = "Only **Telegram Premium** subscribers can boost channels. Do you want to subscribe to **Telegram Premium**?";
 "lng_boost_error_premium_yes" = "Yes";
 "lng_boost_error_flood_title" = "Can't boost too often!";
 "lng_boost_error_flood_text_group" = "You can change the group you boost only once a day. Next time you can boost is in {left}.";
@@ -3845,12 +3845,12 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_boost_now_replace" = "Replace";
 "lng_boost_reassign_title" = "Reassign boost";
 "lng_boost_reassign_text" = "To boost {channel}, reassign a previous boost or {gift}.";
-"lng_boost_reassign_gift#one" = "gift **CloudVeil Messenger Premium** to a friend to get **{count}** additional boost";
-"lng_boost_reassign_gift#other" = "gift **CloudVeil Messenger Premium** to a friend to get **{count}** additional boosts";
+"lng_boost_reassign_gift#one" = "gift **Telegram Premium** to a friend to get **{count}** additional boost";
+"lng_boost_reassign_gift#other" = "gift **Telegram Premium** to a friend to get **{count}** additional boosts";
 "lng_boost_reassign_button" = "Reassign";
 "lng_boost_available_in" = "available in {duration}";
-"lng_boost_available_in_toast#one" = "Wait until the boost is available or get **{count}** more boost by gifting a **CloudVeil Messenger Premium** subscription.";
-"lng_boost_available_in_toast#other" = "Wait until the boost is available or get **{count}** more boosts by gifting a **CloudVeil Messenger Premium** subscription.";
+"lng_boost_available_in_toast#one" = "Wait until the boost is available or get **{count}** more boost by gifting a **Telegram Premium** subscription.";
+"lng_boost_available_in_toast#other" = "Wait until the boost is available or get **{count}** more boosts by gifting a **Telegram Premium** subscription.";
 "lng_boost_reassign_done#one" = "{count} boost is reassigned from {channels}.";
 "lng_boost_reassign_done#other" = "{count} boosts are reassigned from {channels}.";
 "lng_boost_reassign_channels#one" = "{count} channel";
@@ -3895,10 +3895,10 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_boost_channel_ask" = "Ask your **Premium** subscribers to boost your channel with this link:";
 "lng_boost_channel_ask_button" = "Copy Link";
 //"lng_boost_channel_or" = "or";
-//"lng_boost_channel_gifting" = "Boost your channel by gifting your subscribers CloudVeil Messenger Premium. {link}";
+//"lng_boost_channel_gifting" = "Boost your channel by gifting your subscribers Telegram Premium. {link}";
 //"lng_boost_channel_gifting_link" = "Get boosts >";
 "lng_boost_group_ask" = "Ask your **Premium** members to boost your group with this link:";
-//"lng_boost_group_gifting" = "Boost your group by gifting your members CloudVeil Messenger Premium. {link}";
+//"lng_boost_group_gifting" = "Boost your group by gifting your members Telegram Premium. {link}";
 
 "lng_boost_channel_title_autotranslate" = "Autotranslation of Messages";
 "lng_boost_channel_needs_level_autotranslate#one" = "Your channel needs to reach **Level {count}** to enable autotranslation of messages.";
@@ -3974,10 +3974,10 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_giveaway_start_sure" = "Are you sure you want to start this prepaid giveaway now? This action cannot be undone.";
 "lng_giveaway_date_title" = "Date when giveaway ends";
 "lng_giveaway_date" = "Date and Time";
-"lng_giveaway_date_about#one" = "Choose when {count} subscriber of your channel will be randomly selected to receive CloudVeil Messenger Premium.";
-"lng_giveaway_date_about#other" = "Choose when {count} subscribers of your channel will be randomly selected to receive CloudVeil Messenger Premium.";
-"lng_giveaway_date_about_group#one" = "Choose when {count} members of your group will be randomly selected to receive CloudVeil Messenger Premium.";
-"lng_giveaway_date_about_group#other" = "Choose when {count} members of your group will be randomly selected to receive CloudVeil Messenger Premium.";
+"lng_giveaway_date_about#one" = "Choose when {count} subscriber of your channel will be randomly selected to receive Telegram Premium.";
+"lng_giveaway_date_about#other" = "Choose when {count} subscribers of your channel will be randomly selected to receive Telegram Premium.";
+"lng_giveaway_date_about_group#one" = "Choose when {count} members of your group will be randomly selected to receive Telegram Premium.";
+"lng_giveaway_date_about_group#other" = "Choose when {count} members of your group will be randomly selected to receive Telegram Premium.";
 "lng_giveaway_duration_title#one" = "Duration of Premium subscription";
 "lng_giveaway_duration_title#other" = "Duration of Premium subscriptions";
 "lng_giveaway_date_select" = "Select Date and Time";
@@ -3992,10 +3992,10 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_giveaway_additional_prizes" = "Additional prizes";
 "lng_giveaway_additional_about" = "Turn this on if you want to give the winners your own prizes in addition to Premium subscriptions.";
 "lng_giveaway_additional_prizes_ph" = "Enter your prize";
-"lng_giveaway_prizes_just_premium#one" = "All prizes: **{count}** CloudVeil Messenger Premium subscription {duration}.";
-"lng_giveaway_prizes_just_premium#other" = "All prizes: **{count}** CloudVeil Messenger Premium subscriptions {duration}.";
-"lng_giveaway_prizes_additional#one" = "All prizes: **{count}** {prize} with CloudVeil Messenger Premium subscription {duration}.";
-"lng_giveaway_prizes_additional#other" = "All prizes: **{count}** {prize} with CloudVeil Messenger Premium subscriptions {duration}.";
+"lng_giveaway_prizes_just_premium#one" = "All prizes: **{count}** Telegram Premium subscription {duration}.";
+"lng_giveaway_prizes_just_premium#other" = "All prizes: **{count}** Telegram Premium subscriptions {duration}.";
+"lng_giveaway_prizes_additional#one" = "All prizes: **{count}** {prize} with Telegram Premium subscription {duration}.";
+"lng_giveaway_prizes_additional#other" = "All prizes: **{count}** {prize} with Telegram Premium subscriptions {duration}.";
 "lng_giveaway_additional_credits_about" = "Turn this on if you want to give the winners your own prizes in addition to Stars.";
 "lng_giveaway_prizes_just_credits#one" = "All prizes: **{count}** Star.";
 "lng_giveaway_prizes_just_credits#other" = "All prizes: **{count}** Stars.";
@@ -4023,24 +4023,24 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 
 "lng_prize_title" = "Congratulations!";
 "lng_prize_about" = "You won a prize in a giveaway organized by {channel}.";
-"lng_prize_duration" = "Your prize is a **CloudVeil Messenger Premium** subscription {duration}.";
+"lng_prize_duration" = "Your prize is a **Telegram Premium** subscription {duration}.";
 "lng_prize_credits" = "Your prize is {amount}.";
 "lng_prize_credits_amount#one" = "{count} Star";
 "lng_prize_credits_amount#other" = "{count} Stars";
 "lng_prize_gift_about" = "You've received a gift from {channel}.";
-"lng_prize_gift_duration" = "Your gift is a **CloudVeil Messenger Premium** subscription {duration}.";
+"lng_prize_gift_duration" = "Your gift is a **Telegram Premium** subscription {duration}.";
 "lng_prize_open" = "Open Gift Link";
 "lng_prize_unclaimed_title" = "Unclaimed Prize";
 "lng_prize_unclaimed_about" = "You have an unclaimed prize from a giveaway by {channel}.";
-"lng_prize_unclaimed_duration" = "This prize is a **CloudVeil Messenger Premium** subscription {duration}.";
+"lng_prize_unclaimed_duration" = "This prize is a **Telegram Premium** subscription {duration}.";
 
 "lng_prizes_title#one" = "Giveaway Prize";
 "lng_prizes_title#other" = "Giveaway Prizes";
 "lng_prizes_additional#one" = "**{count}** {prize}";
 "lng_prizes_additional#other" = "**{count}** {prize}";
 "lng_prizes_additional_with" = "with";
-"lng_prizes_about#one" = "**{count}** CloudVeil Messenger Premium Subscription {duration}.";
-"lng_prizes_about#other" = "**{count}** CloudVeil Messenger Premium Subscriptions {duration}.";
+"lng_prizes_about#one" = "**{count}** Telegram Premium Subscription {duration}.";
+"lng_prizes_about#other" = "**{count}** Telegram Premium Subscriptions {duration}.";
 "lng_prizes_credits_about_single" = "**{amount}** will be distributed to the **1** winner.";
 "lng_prizes_credits_about#one" = "**{amount}** will be distributed among {count} winner.";
 "lng_prizes_credits_about#other" = "**{amount}** will be distributed among {count} winners.";
@@ -4068,10 +4068,10 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_prizes_end_title" = "Giveaway ended";
 "lng_prizes_how_text" = "This giveaway is sponsored by {admins}.";
 "lng_prizes_end_text" = "This giveaway was sponsored by {admins}.";
-"lng_prizes_admins#one" = "the admins of {channel}, who acquired **{count} CloudVeil Messenger Premium** subscription {duration} for its followers";
-"lng_prizes_admins#other" = "the admins of {channel}, who acquired **{count} CloudVeil Messenger Premium** subscriptions {duration} for its followers";
-"lng_prizes_admins_group#one" = "the admins of {channel}, who acquired **{count} CloudVeil Messenger Premium** subscription {duration} for its members";
-"lng_prizes_admins_group#other" = "the admins of {channel}, who acquired **{count} CloudVeil Messenger Premium** subscriptions {duration} for its members";
+"lng_prizes_admins#one" = "the admins of {channel}, who acquired **{count} Telegram Premium** subscription {duration} for its followers";
+"lng_prizes_admins#other" = "the admins of {channel}, who acquired **{count} Telegram Premium** subscriptions {duration} for its followers";
+"lng_prizes_admins_group#one" = "the admins of {channel}, who acquired **{count} Telegram Premium** subscription {duration} for its members";
+"lng_prizes_admins_group#other" = "the admins of {channel}, who acquired **{count} Telegram Premium** subscriptions {duration} for its members";
 "lng_prizes_credits_admins" = "the admins of {channel}, who aquired **{amount}** for its followers";
 "lng_prizes_credits_admins_group" = "the admins of {channel}, who aquired **{amount}** for its members";
 "lng_prizes_credits_admins_amount#one" = "{count} Star";
@@ -4133,12 +4133,12 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_prizes_results_some" = "Some winners couldn't be selected.";
 
 "lng_gift_link_title" = "Gift Link";
-"lng_gift_link_about" = "This link allows you to activate\na **CloudVeil Messenger Premium** subscription.";
+"lng_gift_link_about" = "This link allows you to activate\na **Telegram Premium** subscription.";
 "lng_gift_link_label_from" = "From";
 "lng_gift_link_label_to" = "To";
 "lng_gift_link_label_to_unclaimed" = "No recipient";
 "lng_gift_link_label_gift" = "Gift";
-"lng_gift_link_gift_premium" = "CloudVeil Messenger Premium {duration}";
+"lng_gift_link_gift_premium" = "Telegram Premium {duration}";
 "lng_gift_link_label_reason" = "Reason";
 "lng_gift_link_reason_giveaway" = "Giveaway";
 "lng_gift_link_reason_unclaimed" = "Incomplete Giveaway";
@@ -4150,14 +4150,14 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_gift_link_also_send" = "You can also {link} to a friend as a gift.";
 "lng_gift_link_also_send_link" = "send this link";
 "lng_gift_link_use" = "Use Link";
-"lng_gift_link_already_title" = "You already have CloudVeil Messenger Premium";
+"lng_gift_link_already_title" = "You already have Telegram Premium";
 "lng_gift_link_already_about" = "You can activate this link after {date} or {link} to a friend.";
 "lng_gift_link_already_link" = "send the link";
 "lng_gift_link_used_title" = "Used Gift Link";
-"lng_gift_link_used_about" = "This link was used to activate\na **CloudVeil Messenger Premium** subscription.";
+"lng_gift_link_used_about" = "This link was used to activate\na **Telegram Premium** subscription.";
 "lng_gift_link_used_footer" = "This link was used on {date}.";
 "lng_gift_link_expired" = "Gift code link expired";
-"lng_gift_link_pending_about" = "This link allows {user} to activate\na **CloudVeil Messenger Premium** subscription.";
+"lng_gift_link_pending_about" = "This link allows {user} to activate\na **Telegram Premium** subscription.";
 "lng_gift_link_pending_toast" = "Only the recipient can see the link.";
 "lng_gift_link_pending_footer" = "This link hasn't been activated yet.";
 
@@ -4175,7 +4175,7 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_gift_premium_text#other" = "Subscribe to **Telegram Premium** to send up to **{count}** of these gifts and unlock access to multiple additional features.";
 "lng_gift_premium_or_stars" = "Gift Premium or Stars";
 "lng_gift_premium_subtitle" = "Gift Premium";
-"lng_gift_premium_about" = "Give {name} access to exclusive features with CloudVeil Messenger Premium. {features}";
+"lng_gift_premium_about" = "Give {name} access to exclusive features with Telegram Premium. {features}";
 "lng_gift_premium_features" = "See Features >";
 "lng_gift_premium_label" = "Premium";
 "lng_gift_premium_by_stars" = "or {amount}";
@@ -4708,7 +4708,7 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_accounts_limit_title" = "Limit Reached";
 "lng_accounts_limit1#one" = "You have reached the limit of **{count}** connected account.";
 "lng_accounts_limit1#other" = "You have reached the limit of **{count}** connected accounts.";
-"lng_accounts_limit2" = "You can free one place by subscribing to **CloudVeil Messenger Premium** with one of these connected accounts:";
+"lng_accounts_limit2" = "You can free one place by subscribing to **Telegram Premium** with one of these connected accounts:";
 
 "lng_emoji_status_for_title" = "Set Status for...";
 "lng_emoji_status_for_submit" = "Set Status";
@@ -4888,7 +4888,7 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_new_contact_from_request_channel" = "{user} is an admin of {name}, a channel you requested to join.";
 "lng_new_contact_from_request_group" = "{user} is an admin of {name}, a group you requested to join.";
 "lng_new_contact_about_status" = "This account uses {emoji} as a custom status next to its\nname. Such emoji statuses are available to all\nsubscribers of {link}.";
-"lng_new_contact_about_status_link" = "CloudVeil Messenger Premium";
+"lng_new_contact_about_status_link" = "Telegram Premium";
 "lng_new_contact_not_contact" = "Not a contact";
 "lng_new_contact_phone_number" = "Phone number";
 "lng_new_contact_registration" = "Registration";
@@ -4973,7 +4973,7 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_send_as_title" = "Send message as...";
 "lng_send_as_anonymous_admin" = "Anonymous admin";
 "lng_send_as_premium_required" = "Subscribe to {link} to be able to comment on behalf of your channels in group chats.";
-"lng_send_as_premium_required_link" = "CloudVeil Messenger Premium";
+"lng_send_as_premium_required_link" = "Telegram Premium";
 "lng_record_cancel" = "Release outside this field to cancel";
 "lng_record_cancel_stories" = "Release outside to cancel";
 "lng_record_lock_cancel_sure" = "Do you want to stop recording and discard your voice message?";
@@ -5092,12 +5092,12 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_dialogs_suggestions_birthday_contacts_title#other" = "{count} contacts have **birthdays** today! 🎂";
 "lng_dialogs_suggestions_birthday_contacts_about" = "Send them a Gift.";
 "lng_dialogs_suggestions_birthday_contact_dismiss" = "You can send a Gift later in Settings";
-"lng_dialogs_suggestions_premium_annual_title" = "CloudVeil Messenger Premium with a {text} discount";
-"lng_dialogs_suggestions_premium_annual_about" = "Sign up for the annual payment plan for CloudVeil Messenger Premium now to get the discount.";
-"lng_dialogs_suggestions_premium_upgrade_title" = "CloudVeil Messenger Premium with a {text} discount";
-"lng_dialogs_suggestions_premium_upgrade_about" = "Upgrade to the annual payment plan for CloudVeil Messenger Premium now to get the discount.";
+"lng_dialogs_suggestions_premium_annual_title" = "Telegram Premium with a {text} discount";
+"lng_dialogs_suggestions_premium_annual_about" = "Sign up for the annual payment plan for Telegram Premium now to get the discount.";
+"lng_dialogs_suggestions_premium_upgrade_title" = "Telegram Premium with a {text} discount";
+"lng_dialogs_suggestions_premium_upgrade_about" = "Upgrade to the annual payment plan for Telegram Premium now to get the discount.";
 "lng_dialogs_suggestions_premium_restore_title" = "Get Premium back with up to {text} off";
-"lng_dialogs_suggestions_premium_restore_about" = "Your CloudVeil Messenger Premium has recently expired. Tap here to extend it.";
+"lng_dialogs_suggestions_premium_restore_about" = "Your Telegram Premium has recently expired. Tap here to extend it.";
 "lng_dialogs_suggestions_premium_grace_title" = "⚠️ Your Premium subscription is expiring!";
 "lng_dialogs_suggestions_premium_grace_about" = "Don’t lose access to exclusive features.";
 "lng_dialogs_suggestions_userpics_title" = "Add your photo! 📸";
@@ -5924,7 +5924,7 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_about_text1_api" = "CloudVeil Messenger API";
 "lng_about_text2" = "This software is licensed under {gpl_link} version 3.\nSource code is available on {github_link}.";
 "lng_about_text3" = "Visit the {faq_link} for more info.";
-"lng_about_text3_faq" = "CloudVeil Messenger FAQ";
+"lng_about_text3_faq" = "Telegram FAQ";
 "lng_about_done" = "Done";
 
 "lng_search_found_results#one" = "Found {count} message";
@@ -6903,7 +6903,7 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_send_non_premium_story" = "Replies restricted";
 "lng_send_non_premium_unlock" = "unlock";
 "lng_send_non_premium_message_toast" = "**{user}** only accepts messages from contacts and {link} subscribers.";
-"lng_send_non_premium_message_toast_link" = "CloudVeil Messenger Premium";
+"lng_send_non_premium_message_toast_link" = "Telegram Premium";
 
 "lng_send_charges_stars_channel" = "{channel} charges {amount} per message to its admin.";
 "lng_send_free_channel" = "Send a direct message to the administrator of {channel}.";
@@ -8048,15 +8048,15 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_sponsored_revenued_info3_description#one" = "You can turn off ads by subscribing to {link}, and Level {count} channels can remove them for their subscribers.";
 "lng_sponsored_revenued_info3_description#other" = "You can turn off ads by subscribing to {link}, and Level {count} channels can remove them for their subscribers.";
 "lng_sponsored_revenued_info3_bot_description" = "You can turn off ads in mini apps by subscribing to {link}.";
-"lng_sponsored_revenued_info3_search_description" = "You can turn off ads by subscribing to CloudVeil Messenger Premium. {link}";
+"lng_sponsored_revenued_info3_search_description" = "You can turn off ads by subscribing to Telegram Premium. {link}";
 "lng_sponsored_revenued_info3_search_link" = "Subscribe {arrow}";
 "lng_sponsored_revenued_footer_title" = "Can I Launch an Ad?";
-"lng_sponsored_revenued_footer_description" = "Anyone can create an ad to display in this channel — with minimal budgets. Check out the **CloudVeil Messenger Ad Platform** for details. {link}";
-"lng_sponsored_revenued_footer_bot_description" = "Anyone can create an ad to display in this bot — with minimal budgets. Check out the **CloudVeil Messenger Ad Platform** for details. {link}";
-"lng_sponsored_revenued_footer_search_description" = "Anyone can create an ad to display in search results for any query. Check out the **CloudVeil Messenger Ad Platform** for details. {link}";
+"lng_sponsored_revenued_footer_description" = "Anyone can create an ad to display in this channel — with minimal budgets. Check out the **Telegram Ad Platform** for details. {link}";
+"lng_sponsored_revenued_footer_bot_description" = "Anyone can create an ad to display in this bot — with minimal budgets. Check out the **Telegram Ad Platform** for details. {link}";
+"lng_sponsored_revenued_footer_search_description" = "Anyone can create an ad to display in search results for any query. Check out the **Telegram Ad Platform** for details. {link}";
 "lng_sponsored_top_bar_hide" = "remove";
 
-"lng_telegram_features_url" = "https://t.me/CloudVeil MessengerTips";
+"lng_telegram_features_url" = "https://t.me/TelegramTips";
 
 "lng_mini_apps_disclaimer_title" = "Warning";
 "lng_mini_apps_disclaimer_text" = "You are about to use a mini app operated by an independent party **not affiliated with CloudVeil Messenger**. You must agree to the Terms of Use for mini apps to continue.";
@@ -8262,7 +8262,7 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 
 "lng_stealth_mode_menu_item" = "Hide My View";
 "lng_stealth_mode_title" = "Stealth Mode";
-"lng_stealth_mode_unlock_about" = "Subscribe to CloudVeil Messenger Premium to watch stories without appearing in the list of viewers.";
+"lng_stealth_mode_unlock_about" = "Subscribe to Telegram Premium to watch stories without appearing in the list of viewers.";
 "lng_stealth_mode_about" = "Turn Stealth Mode on to watch stories without appearing in the list of viewers.";
 "lng_stealth_mode_past_title" = "Hide Recent Views";
 "lng_stealth_mode_past_about" = "Hide my views from the past 5 minutes.";
@@ -8381,8 +8381,8 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_boosts_link_subtext" = "Share this link with your subscribers to get more boosts.";
 "lng_boosts_link_subtext_group" = "Share this link with the members of your group to get more boosts.";
 "lng_boosts_get_boosts" = "Get Boosts via Gifts";
-"lng_boosts_get_boosts_subtext" = "Get more boosts for your channel by gifting CloudVeil Messenger Premium to your subscribers.";
-"lng_boosts_get_boosts_subtext_group" = "Get more boosts for your group by gifting CloudVeil Messenger Premium to the members.";
+"lng_boosts_get_boosts_subtext" = "Get more boosts for your channel by gifting Telegram Premium to your subscribers.";
+"lng_boosts_get_boosts_subtext_group" = "Get more boosts for your group by gifting Telegram Premium to the members.";
 "lng_boosts_list_unclaimed" = "Unclaimed";
 "lng_boosts_list_pending" = "To be distributed";
 "lng_boosts_list_pending_about" = "The recipient will be selected when the giveaway ends.";
@@ -8392,8 +8392,8 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_boosts_prepaid_giveaway_title" = "Prepaid giveaways";
 "lng_boosts_prepaid_giveaway_title_subtext" = "Select a giveaway you already paid for to set it up.";
 "lng_boosts_prepaid_giveaway_single" = "Prepaid giveaway";
-"lng_boosts_prepaid_giveaway_quantity#one" = "{count} CloudVeil Messenger Premium";
-"lng_boosts_prepaid_giveaway_quantity#other" = "{count} CloudVeil Messenger Premium";
+"lng_boosts_prepaid_giveaway_quantity#one" = "{count} Telegram Premium";
+"lng_boosts_prepaid_giveaway_quantity#other" = "{count} Telegram Premium";
 "lng_boosts_prepaid_giveaway_moths#one" = "{count}-month subscriptions";
 "lng_boosts_prepaid_giveaway_moths#other" = "{count}-month subscriptions";
 "lng_boosts_prepaid_giveaway_status#one" = "{count} subscription {duration}";
@@ -8494,13 +8494,13 @@ https://github.com/CloudVeil Messengerdesktop/tdesktop/blob/master/LEGAL
 "lng_limit_download_increase_times#one" = "**{count}** time";
 "lng_limit_download_increase_times#other" = "**{count}** times";
 "lng_limit_download_increase_speed" = "by **{percent}**";
-"lng_limit_download_subscribe_link" = "CloudVeil Messenger Premium";
+"lng_limit_download_subscribe_link" = "Telegram Premium";
 "lng_limit_upload_title" = "Upload speed limited";
 "lng_limit_upload_subscribe" = "Subscribe to {link} to increase upload speed {increase}.";
 "lng_limit_upload_increase_times#one" = "**{count}** time";
 "lng_limit_upload_increase_times#other" = "**{count}** times";
 "lng_limit_upload_increase_speed" = "by **{percent}**";
-"lng_limit_upload_subscribe_link" = "CloudVeil Messenger Premium";
+"lng_limit_upload_subscribe_link" = "Telegram Premium";
 
 "lng_recent_frequent" = "Frequent contacts";
 "lng_recent_frequent_all" = "Show all";

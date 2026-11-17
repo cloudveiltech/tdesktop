@@ -640,13 +640,9 @@ void BuildHelpSection(SectionBuilder &builder) {
 		});
 	}
 
-	builder.addButton({
-		.id = u"main/features"_q,
-		.title = tr::lng_settings_features(),
-		.icon = { &st::menuIconEmojiObjects },
-		.onClick = [=] { OpenFeatures(controller); },
-		.keywords = { u"tips"_q, u"tutorial"_q },
-	});
+	//CloudVeil start: no "Telegram Features" entry
+	//builder.addButton({ .id = u"main/features"_q, ... OpenFeatures ... });
+	//CloudVeil end
 
 	builder.addButton({
 		.id = u"main/ask-question"_q,

@@ -11,6 +11,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "base/const_string.h"
 #include "base/weak_ptr.h"
 
+#include <QtCore/QRegularExpression> // CloudVeil
+
 namespace Lang {
 
 inline constexpr auto kChoosingStickerReplacement = "oo"_cs;
@@ -92,8 +94,14 @@ public:
 
 
 		//CloudVeil start
+		// Rebrand "Telegram" as a word, but not inside links or usernames
+		// (t.me/TelegramTips, @Telegram) and not Telegram's own product
+		// names, which stay "Telegram ..." as on Android.
+		static const auto kTelegramWord = QRegularExpression(
+			u"(?<![\\w/@.])Telegram(?!\\w)"
+			"(?! (?:Premium|Business|Stars|Ad Platform|FAQ|Passport|Gifts|Features)\\b)"_q);
 		QString v = _values[key];
-		v.replace(QString("Telegram"), QString("CloudVeil Messenger"));
+		v.replace(kTelegramWord, u"CloudVeil Messenger"_q);
 		return v;
 		//CloudVeil end
 	}

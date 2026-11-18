@@ -15,6 +15,16 @@ Ship the bundle as `CloudVeilMessenger.app` (no space), the name earlier DMGs us
     cp -c -R "out/Release/CloudVeil Messenger.app" CloudVeilMessenger.app
     APP=CloudVeilMessenger.app
 
+## 1b. Save debug symbols, then strip
+
+The Release binary still carries its symbol table, which makes it about 1.9 GB. Upstream's release script strips it. Save the symbols to a `.dSYM` first, so crash reports can still be symbolized, then strip **before** signing:
+
+    dsymutil "out/Release/CloudVeil Messenger.app/Contents/MacOS/CloudVeil Messenger" -o CloudVeilMessenger-<version>.app.dSYM
+    strip "$APP/Contents/MacOS/CloudVeil Messenger"
+    dwarfdump --uuid "$APP/Contents/MacOS/CloudVeil Messenger" CloudVeilMessenger-<version>.app.dSYM   # UUIDs must match
+
+That shrinks the installed app from about 1.9 GB to about 605 MB, and the DMG from about 300 MB to about 200 MB. Keep the `.dSYM` with the release files, but don't ship it.
+
 ## 2. Sign (Developer ID, hardened runtime)
 
 List the signing identities available on this Mac:

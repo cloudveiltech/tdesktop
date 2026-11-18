@@ -36,8 +36,8 @@ DisableStartupPrompt=yes
 PrivilegesRequired=lowest
 VersionInfoVersion={#MyAppVersion}.0
 CloseApplications=force
-DisableDirPage=no
-DisableProgramGroupPage=no
+DisableDirPage=auto
+DisableProgramGroupPage=auto
 WizardStyle=modern
 SignTool=sha256
 

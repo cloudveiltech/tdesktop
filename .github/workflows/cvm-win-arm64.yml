@@ -72,25 +72,19 @@ jobs:
           git config --global user.email "ci@localhost"
           git config --global user.name "CI"
 
-      - name: Install VS 2026 Build Tools (ARM64).
-        shell: pwsh
-        run: |
-          $exe = Join-Path $env:RUNNER_TEMP 'vs_buildtools.exe'
-          Invoke-WebRequest -Uri https://aka.ms/vs/18/stable/vs_buildtools.exe -OutFile $exe
-          $p = Start-Process -FilePath $exe -Wait -PassThru -ArgumentList `
-            '--quiet','--wait','--norestart','--nocache', `
-            '--add','Microsoft.VisualStudio.Workload.VCTools', `
-            '--add','Microsoft.VisualStudio.Component.VC.Tools.ARM64', `
-            '--add','Microsoft.VisualStudio.Component.VC.ATL.ARM64'
-          Remove-Item $exe -Force -ErrorAction SilentlyContinue
-          if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
-
+      # Use the runner's preinstalled VS 2022 with the MSVC 14.44 toolset, as for
+      # x64. VS 2026's MSVC 19.52 rejects dav1d 1.5.4's compat stdatomic.h
+      # (C7780: '__has_include_next' is not defined).
       - name: Native Tools Command Prompt.
         # Pinned to a commit: third-party action.
         uses: Eden-CI/msvc-dev-cmd@1bd71f95d6f3d1b2b3395b335cc63bcdc90cf223
         with:
           arch: arm64
           sdk: ${{ env.SDK }}
+          toolset: '14.44'
+
+      - name: Show compiler.
+        run: cl 2>&1 | findstr /C:"Version"
 
       - name: NuGet sources.
         run: |

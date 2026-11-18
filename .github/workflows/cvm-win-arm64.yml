@@ -1,0 +1,174 @@
+name: CVM Windows ARM64.
+
+# CloudVeil Messenger native Windows ARM64 build (unsigned Release exe).
+# Starts manually (Actions tab -> Run workflow, once this file is on the default
+# branch) or by pushing to a branch named cvm-build/... (needs write access).
+# Never runs for pull requests, so the secrets are not exposed to forks.
+# Without the API secrets it only builds and caches the libraries.
+#
+# Repository secrets (set by a repository admin):
+#   CVM_API_ID, CVM_API_HASH  - Telegram API credentials
+#
+# The first run builds all libraries (several hours). They are cached as soon
+# as they finish, so a timeout in the app build doesn't lose them; re-run to
+# continue. Use "libraries_only" to warm the cache without building the app.
+
+on:
+  push:
+    branches:
+      - 'cvm-build/**'
+  workflow_dispatch:
+    inputs:
+      libraries_only:
+        description: "Only build and cache the libraries"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cvm-win-arm64-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows-arm64:
+    name: Windows ARM64
+    runs-on: windows-11-arm
+    timeout-minutes: 360
+
+    env:
+      PREPARE_PATH: "Telegram/build/prepare/prepare.py"
+      HAS_API_KEYS: ${{ secrets.CVM_API_ID != '' && secrets.CVM_API_HASH != '' }}
+      BUILD_APP: ${{ !inputs.libraries_only }}
+
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: Prepare directories.
+        run: |
+          mkdir %userprofile%\TBuild\Libraries
+          mklink /d %GITHUB_WORKSPACE%\TBuild %userprofile%\TBuild
+          echo TBUILD=%GITHUB_WORKSPACE%\TBuild>>%GITHUB_ENV%
+          echo LibrariesPath=%GITHUB_WORKSPACE%\TBuild\Libraries>>%GITHUB_ENV%
+
+      - name: Clone.
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          path: ${{ env.TBUILD }}\tdesktop
+
+      - name: First set up.
+        shell: bash
+        run: |
+          DOCPATH=$TBUILD/tdesktop/docs/building-win.md
+          SDK="$(grep "SDK version" $DOCPATH | head -1 | sed -r 's/.*\*\*(.*)\*\* SDK version.*/\1/')"
+          echo "SDK=$SDK" >> $GITHUB_ENV
+          echo "$(sha256sum $TBUILD/tdesktop/$PREPARE_PATH | awk '{ print $1 }')" >> CACHE_KEY.txt
+          echo "$SDK" >> CACHE_KEY.txt
+          echo "CACHE_KEY=$(sha256sum CACHE_KEY.txt | awk '{ print $1 }')" >> $GITHUB_ENV
+          git config --global user.email "ci@localhost"
+          git config --global user.name "CI"
+
+      - name: Install VS 2026 Build Tools (ARM64).
+        shell: pwsh
+        run: |
+          $exe = Join-Path $env:RUNNER_TEMP 'vs_buildtools.exe'
+          Invoke-WebRequest -Uri https://aka.ms/vs/18/stable/vs_buildtools.exe -OutFile $exe
+          $p = Start-Process -FilePath $exe -Wait -PassThru -ArgumentList `
+            '--quiet','--wait','--norestart','--nocache', `
+            '--add','Microsoft.VisualStudio.Workload.VCTools', `
+            '--add','Microsoft.VisualStudio.Component.VC.Tools.ARM64', `
+            '--add','Microsoft.VisualStudio.Component.VC.ATL.ARM64'
+          Remove-Item $exe -Force -ErrorAction SilentlyContinue
+          if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
+
+      - name: Native Tools Command Prompt.
+        # Pinned to a commit: third-party action.
+        uses: Eden-CI/msvc-dev-cmd@1bd71f95d6f3d1b2b3395b335cc63bcdc90cf223
+        with:
+          arch: arm64
+          sdk: ${{ env.SDK }}
+
+      - name: NuGet sources.
+        run: |
+          nuget sources Disable -Name "Microsoft Visual Studio Offline Packages"
+          nuget sources Add -Source https://api.nuget.org/v3/index.json & exit 0
+
+      - name: Restore ThirdParty.
+        id: third-party
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.TBUILD }}\ThirdParty
+          key: cvm-winarm-third-party-${{ env.CACHE_KEY }}
+          restore-keys: cvm-winarm-third-party-
+
+      - name: Restore Libraries.
+        id: libs
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.LibrariesPath }}
+          key: cvm-winarm-libs-${{ env.CACHE_KEY }}
+          restore-keys: cvm-winarm-libs-
+
+      - name: Libraries.
+        run: |
+          %TBUILD%\tdesktop\Telegram\build\prepare\win.bat silent
+
+      - name: Free up some disk space.
+        shell: bash
+        run: find $LibrariesPath '(' '(' ! '(' -name '*.lib' -o -name '*.a' -o -name '*.exe' -o -name '*.dll' -o -name '*.h' -o -name '*.hpp' -o -name '*.inc' -o -name '*.cmake' -o -name '*.pc' -o -path '*/include/*' -o -path '*/objects-*' -o -path '*/cache_keys/*' -o -path '*/patches/*' -o -path '*/nv-codec-headers/*' ')' -type f ')' -o -empty ')' -delete
+
+      - name: Save ThirdParty.
+        if: steps.third-party.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.TBUILD }}\ThirdParty
+          key: cvm-winarm-third-party-${{ env.CACHE_KEY }}-${{ github.run_id }}
+
+      - name: Save Libraries.
+        if: steps.libs.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.LibrariesPath }}
+          key: cvm-winarm-libs-${{ env.CACHE_KEY }}-${{ github.run_id }}
+
+      - name: Note missing API secrets.
+        if: env.HAS_API_KEYS != 'true'
+        run: echo ::warning::CVM_API_ID / CVM_API_HASH secrets are not set - libraries were built and cached, the app was skipped.
+
+      - name: Configure.
+        if: env.BUILD_APP == 'true' && env.HAS_API_KEYS == 'true'
+        env:
+          CVM_API_ID: ${{ secrets.CVM_API_ID }}
+          CVM_API_HASH: ${{ secrets.CVM_API_HASH }}
+        run: |
+          cd %TBUILD%\tdesktop\Telegram
+          call configure.bat arm ^
+            -D TDESKTOP_API_ID=%CVM_API_ID% ^
+            -D TDESKTOP_API_HASH=%CVM_API_HASH% ^
+            -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON ^
+            -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+
+      - name: Build.
+        if: env.BUILD_APP == 'true' && env.HAS_API_KEYS == 'true'
+        run: |
+          cd %TBUILD%\tdesktop\out
+          cmake --build . --config Release --target Telegram -- /m:1 /p:CL_MPCount=2 /v:minimal
+
+      - name: Collect artifact.
+        if: env.BUILD_APP == 'true' && env.HAS_API_KEYS == 'true'
+        run: |
+          mkdir artifact
+          copy %TBUILD%\tdesktop\out\Release\CloudVeilMessenger.exe artifact\
+          powershell -NoProfile -Command "Get-FileHash artifact\CloudVeilMessenger.exe | Format-List"
+
+      - name: Upload artifact.
+        if: env.BUILD_APP == 'true' && env.HAS_API_KEYS == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: CloudVeilMessenger-win-arm64-unsigned
+          path: artifact\
+          retention-days: 3

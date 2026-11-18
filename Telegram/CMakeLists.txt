@@ -123,7 +123,10 @@ PRIVATE
     desktop-app::external_xxhash
 )
 
-if (WIN32)
+if (WIN32 AND CMAKE_CXX_COMPILER_ARCHITECTURE_ID MATCHES "ARM64")
+    # CloudVeil: the prebuilt Windows Sentry libraries are x64-only, so
+    # Windows ARM64 builds ship without Sentry crash reporting for now.
+elseif (WIN32)
    # if (CMAKE_BUILD_TYPE MATCHES Release)
         target_link_libraries(Telegram
             PRIVATE

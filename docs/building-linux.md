@@ -42,6 +42,18 @@ The unstripped binary is over 3 GB. Keep the symbols for crash analysis and ship
     objcopy --add-gnu-debuglink=cloudveil-messenger.debug cloudveil-messenger.stripped
     chmod 755 cloudveil-messenger.stripped && mv -f cloudveil-messenger.stripped cloudveil-messenger
 
+### Package for download
+
+Ship a `.tar.xz`, laid out like Telegram's own `tsetup.tar.xz`. Unlike a bare binary or a `.zip`, it keeps the executable bit, and browsers download it as an archive. Set neutral ownership so no build-machine usernames end up in the archive:
+
+    mkdir -p pkg/CloudVeilMessenger
+    cp out/Release/cloudveil-messenger pkg/CloudVeilMessenger/
+    tar -C pkg --owner=0 --group=0 --numeric-owner --sort=name -cf - CloudVeilMessenger |
+        xz -9 -T0 > cloudveil_messenger_linux-<version>.tar.xz
+    sha256sum cloudveil_messenger_linux-<version>.tar.xz
+
+Users extract it and double-click `CloudVeilMessenger/cloudveil-messenger`. On first launch the app adds itself to the desktop menu.
+
 ### Testing over remote desktop (xrdp + XFCE)
 
 The app talks to `xdg-desktop-portal` at startup. Under xrdp sessions the portal often starts without the session environment, which leaves the app stuck with no window, and links don't open. To fix it:

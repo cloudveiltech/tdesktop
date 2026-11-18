@@ -41,6 +41,7 @@ Notarize and staple the app itself before you package it (as in step 4, using a 
     # bg.png: the 902x381 CloudVeil Messenger background (logo + arrow), as used since 5.x
     create-dmg \
       --volname "CloudVeil Messenger" \
+      --volicon "$APP/Contents/Resources/Icon.icns" \
       --background bg.png \
       --window-pos 200 120 \
       --window-size 902 409 \

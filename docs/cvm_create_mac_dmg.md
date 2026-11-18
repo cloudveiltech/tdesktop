@@ -81,3 +81,19 @@ Then submit the DMG and attach the approval ticket:
     spctl --assess --type open --context context:primary-signature -v cvm_macos_7004004.dmg
 
 If notarization fails, see what went wrong with `xcrun notarytool log <submission id> --keychain-profile cvm-notary`.
+
+## Apple Silicon-only DMG
+
+Two DMGs are published: `cvm_macos_<code>.dmg` for Apple Silicon only (about 105 MB, installs at about 295 MB), and `cvm_macos_<code>_universal.dmg` for Apple Silicon and Intel. To make the Apple Silicon app from the universal build, run these commands **before** signing:
+
+    B="$APP/Contents/MacOS/CloudVeil Messenger"
+    lipo -thin arm64 "$B" -output "$B.arm64" && mv -f "$B.arm64" "$B"
+    strip "$B"
+    # The bundled Swift libraries are Intel-only back-deployment copies; macOS 11+ on
+    # Apple Silicon has them built in, EXCEPT libswift_Concurrency (built in from 12.0).
+    mkdir -p keep && lipo -thin arm64 "$APP/Contents/Frameworks/libswift_Concurrency.dylib" -output keep/libswift_Concurrency.dylib
+    rm -rf "$APP/Contents/Frameworks" && mkdir "$APP/Contents/Frameworks"
+    mv keep/libswift_Concurrency.dylib "$APP/Contents/Frameworks/" && rmdir keep
+    plutil -replace LSMinimumSystemVersion -string 11.0 "$APP/Contents/Info.plist"
+
+Then sign, notarize, staple, and build the DMG exactly as above.

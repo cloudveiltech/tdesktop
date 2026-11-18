@@ -3,8 +3,14 @@
 #include "cloudveil/response/UpdateResponse.h"
 #include <QtCore/QJsonDocument>
 #include <QtCore/QProcess>
+#include <QtCore/QDirIterator>
+#include <QtCore/QTemporaryDir>
+
+#include <cstdio>
 
 #include "ui/boxes/confirm_box.h"
+#include "logs.h"
+#include "settings.h"
 //one day
 #define UPDATE_PERIOD_MS 86400000 
 
@@ -58,10 +64,89 @@ void SimpleUpdater::downloadUpdate() {
 	manager.get(request);
 }
 
-bool SimpleUpdater::startUpdateProcess() {
-	QString filePath = downloadedFile.fileName();
-	return QProcess::startDetached(filePath, QStringList());
+bool SimpleUpdater::fail(const QString &error) {
+	lastError = error;
+	LOG(("CloudVeil Update Error: %1").arg(error));
+	return false;
 }
+
+bool SimpleUpdater::startUpdateProcess() {
+	lastError = QString();
+	const auto filePath = downloadedFile.fileName();
+#if defined Q_OS_WIN
+	// The download is the Inno Setup installer; it closes this app itself.
+	if (!QProcess::startDetached(filePath, QStringList())) {
+		return fail("Could not start the update installer.");
+	}
+	return true;
+#elif defined Q_OS_MAC
+	// The download is a disk image. A .dmg can't be executed, so open it in
+	// Finder, which shows the drag-to-Applications window. The app quits so
+	// the bundle can be replaced.
+	if (!QProcess::startDetached(u"/usr/bin/open"_q, { filePath })) {
+		return fail("Could not open the downloaded disk image.");
+	}
+	return true;
+#else
+	return installLinuxUpdate(filePath);
+#endif
+}
+
+#if !defined Q_OS_WIN && !defined Q_OS_MAC
+// The download is a .tar.xz holding CloudVeilMessenger/cloudveil-messenger.
+// Unpack it and replace the running binary in place (rename is atomic and
+// safe while the old binary is running); the caller then restarts the app.
+bool SimpleUpdater::installLinuxUpdate(const QString &archivePath) {
+	QTemporaryDir unpackDir(QDir::tempPath() + u"/cvm_update_XXXXXX"_q);
+	if (!unpackDir.isValid()) {
+		return fail("Could not create a temporary folder for the update.");
+	}
+	QProcess tar;
+	tar.start(u"tar"_q, { u"-xJf"_q, archivePath, u"-C"_q, unpackDir.path() });
+	if (!tar.waitForFinished(120000)
+		|| tar.exitStatus() != QProcess::NormalExit
+		|| tar.exitCode() != 0) {
+		return fail("Could not unpack the update ("
+			+ QString::fromLocal8Bit(tar.readAllStandardError()).trimmed()
+			+ ").");
+	}
+	auto found = QDirIterator(
+		unpackDir.path(),
+		{ u"cloudveil-messenger"_q },
+		QDir::Files,
+		QDirIterator::Subdirectories);
+	if (!found.hasNext()) {
+		return fail("The update package does not contain the app.");
+	}
+	const auto newBinary = found.next();
+	{
+		auto f = QFile(newBinary);
+		if (!f.open(QIODevice::ReadOnly) || f.read(4) != "\x7F" "ELF") {
+			return fail("The update package is not a Linux app.");
+		}
+	}
+
+	const auto target = cExeDir() + cExeName();
+	const auto staged = target + u".new"_q;
+	QFile::remove(staged);
+	if (!QFile::copy(newBinary, staged)) {
+		return fail("Could not write to the folder " + cExeDir()
+			+ ". Please download the new version from cloudveil.org.");
+	}
+	QFile::setPermissions(staged, QFile::permissions(staged)
+		| QFileDevice::ReadOwner | QFileDevice::WriteOwner
+		| QFileDevice::ExeOwner | QFileDevice::ReadGroup
+		| QFileDevice::ExeGroup | QFileDevice::ReadOther
+		| QFileDevice::ExeOther);
+	if (std::rename(
+			QFile::encodeName(staged).constData(),
+			QFile::encodeName(target).constData()) != 0) {
+		QFile::remove(staged);
+		return fail("Could not replace " + target + ".");
+	}
+	return true;
+}
+#endif
 
 void SimpleUpdater::doServerRequest() {
 	qint64 now = QDateTime::currentMSecsSinceEpoch();

@@ -656,7 +656,17 @@ void MainWidget::simpleUpdateDownloaded(QString message) {
 						.text = tr::lng_update_ready(),
 						.confirmed = [=] {
 							Ui::hideLayer();
-							if (simpleUpdater->startUpdateProcess()) {
+							if (!simpleUpdater->startUpdateProcess()) {
+								Ui::show(
+									Ui::MakeInformBox(
+										simpleUpdater->errorMessage()),
+									Ui::LayerOption::KeepOther);
+							} else if (SimpleUpdater::kRestartsInPlace) {
+								// The binary was replaced in place; the
+								// launcher starts it again after quitting.
+								cSetRestarting(true);
+								Core::Quit();
+							} else {
 								QCoreApplication::instance()->quit();
 							}
 						},

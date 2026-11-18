@@ -8,16 +8,31 @@
 //one day
 #define UPDATE_PERIOD_MS 86400000 
 
+// The update stream is chosen by the architecture this binary was BUILT
+// for (compile time), not the machine's: an x64 Windows build running
+// under emulation on an ARM PC keeps asking for x64. On macOS each slice
+// of the universal app is compiled separately, so Apple silicon users of
+// the universal build move to the arm64-only stream on their next update.
+#define REQUEST_URL_BASE "https://messenger.cloudveil.org/api/v1/messenger/updates/"
+
 #ifdef Q_OS_MAC
-	#define REQUEST_URL "https://messenger.cloudveil.org/api/v1/messenger/updates/macos?current_version=%1"
+	#ifdef Q_PROCESSOR_ARM_64
+		#define REQUEST_URL REQUEST_URL_BASE "macos/arm64?current_version=%1"
+	#else
+		#define REQUEST_URL REQUEST_URL_BASE "macos/universal?current_version=%1"
+	#endif
 #endif
 
 #ifdef Q_OS_WIN
-	#define REQUEST_URL "https://messenger.cloudveil.org/api/v1/messenger/updates/windows?current_version=%1"
+	#ifdef Q_PROCESSOR_ARM_64
+		#define REQUEST_URL REQUEST_URL_BASE "windows/arm64?current_version=%1"
+	#else
+		#define REQUEST_URL REQUEST_URL_BASE "windows/x64?current_version=%1"
+	#endif
 #endif
 
 #ifdef Q_OS_LINUX
-	#define REQUEST_URL "https://messenger.cloudveil.org/api/v1/messenger/updates/linux?current_version=%1"
+	#define REQUEST_URL REQUEST_URL_BASE "linux?current_version=%1"
 #endif
 
 SimpleUpdater::SimpleUpdater(QObject *parent) : QObject(parent), manager(this)

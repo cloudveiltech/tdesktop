@@ -234,7 +234,9 @@ bool GenerateDesktopFile(
 	DEBUG_LOG(("App Info: placing .desktop file to %1").arg(targetPath));
 	if (!QDir(targetPath).exists()) QDir().mkpath(targetPath);
 
-	const auto sourceFile = u":/misc/org.telegram.desktop.desktop"_q;
+	//CloudVeil start: telegram.qrc bundles our template under this name
+	const auto sourceFile = u":/misc/org.cloudveil.messenger.desktop"_q;
+	//CloudVeil end
 	const auto targetFile = targetPath
 		+ QGuiApplication::desktopFileName()
 		+ u".desktop"_q;
@@ -481,13 +483,16 @@ void InstallLauncher() {
 	static const auto DisabledByEnv = !qEnvironmentVariableIsEmpty(
 		"DESKTOPINTEGRATION");
 
-	// don't update desktop file for alpha version or if updater is disabled
+	// don't update desktop file for alpha version or inside a sandbox
+	//CloudVeil start: UpdaterDisabled() is always true in CVM (Telegram's
+	// updater is off), but the .tar.xz build still needs its launcher, icon
+	// and D-Bus service installed, or GNOME shows no app icon.
 	if (cAlphaVersion()
-			|| Core::UpdaterDisabled()
 			|| KSandbox::isInside()
 			|| DisabledByEnv) {
 		return;
 	}
+	//CloudVeil end
 
 	const auto applicationsPath = QStandardPaths::writableLocation(
 		QStandardPaths::ApplicationsLocation) + '/';
@@ -708,7 +713,12 @@ bool SkipTaskbarSupported() {
 }
 
 QString ExecutablePathForShortcuts() {
-	if (Core::UpdaterDisabled()) {
+	//CloudVeil start: upstream uses the bare binary name when its updater is
+	// disabled (distro packages put it on PATH). CVM always disables that
+	// updater and ships a .tar.xz the user can unpack anywhere, so use the
+	// absolute path unless running inside a sandbox (Flatpak/Snap).
+	if (Core::UpdaterDisabled() && KSandbox::isInside()) {
+	//CloudVeil end
 		const auto &arguments = Core::Launcher::Instance().arguments();
 		if (!arguments.isEmpty()) {
 			const auto result = QFileInfo(arguments.first()).fileName();

@@ -34,6 +34,21 @@ Install [Inno Setup 6](https://jrsoftware.org/isdl.php), then either open `Teleg
 
 The installer is written to `out\Release\cloudveil_messenger_setup-x64.<version>.exe`.
 
+### Windows on ARM (arm64) installer
+
+The arm64 app comes from the GitHub Actions workflow `cvm-win-arm64.yml` (artifact `CloudVeilMessenger-win-arm64-unsigned`). That artifact is the app itself, not an installer. Sign it, put it alone in a folder named `CloudVeilMessenger.exe`, then build the installer on any Windows PC (Inno Setup can package an arm64 app from an x64 machine):
+
+    "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyBuildTarget=winarm /DReleasePath=C:\path\to\arm64-folder Telegram\build\setup.iss
+
+The installer is written to that folder as `cloudveil_messenger_setup-arm64.<version>.exe`. It only runs on arm64 Windows. Unlike x64, it doesn't ship `d3dcompiler_47.dll`; upstream Telegram leaves it out for arm64 too, and Windows includes it.
+
+Other `/D` options:
+
+- `/DMyAppVersion=<version>`: override the version in the script, for example to package an older app for testing.
+- `/DUnsigned`: build a test installer without a configured `sha256` sign tool. Don't ship it.
+
+Both installers use the same `MyAppId`, so installing one over the other upgrades in place and keeps the user's data.
+
 ## 4. Verify
 
     signtool verify /pa /v <installer>.exe

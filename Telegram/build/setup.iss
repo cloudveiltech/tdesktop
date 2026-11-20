@@ -6,10 +6,20 @@
 #define MyAppId "7BF3C861-C022-41EC-8C16-87EBECBDCE4B"
 #define CurrentYear GetDateTimeString('yyyy','','')
 
-#define MyBuildTarget "win64"
-#define MyAppVersion "7.4.6"
-#define MyAppVersionFull "7.4.6"
-#define ReleasePath "..\..\out\Release"
+; CloudVeil: MyBuildTarget, MyAppVersion, ReleasePath and Unsigned can be set on the
+; command line, e.g. ISCC /DMyBuildTarget=winarm /DReleasePath=<dir> setup.iss
+#ifndef MyBuildTarget
+  #define MyBuildTarget "win64"
+#endif
+#ifndef MyAppVersion
+  #define MyAppVersion "7.4.6"
+#endif
+#ifndef MyAppVersionFull
+  #define MyAppVersionFull MyAppVersion
+#endif
+#ifndef ReleasePath
+  #define ReleasePath "..\..\out\Release"
+#endif
 
 [Setup]
 ; NOTE: The value of AppId uniquely identifies this application.
@@ -39,7 +49,10 @@ CloseApplications=force
 DisableDirPage=auto
 DisableProgramGroupPage=auto
 WizardStyle=modern
+; CloudVeil: pass /DUnsigned for a test installer without a signing tool.
+#ifndef Unsigned
 SignTool=sha256
+#endif
 
 #ifndef MyOutputBaseFilename
   #if MyBuildTarget == "winarm"
@@ -54,6 +67,7 @@ OutputBaseFilename={#MyOutputBaseFilename}
 
 #if MyBuildTarget == "winarm"
   ArchitecturesAllowed="arm64"
+  ArchitecturesInstallIn64BitMode="arm64"
   #define ArchModulesFolder "arm64"
   AppVerName={#MyAppName} {#MyAppVersion} arm64
 #elif MyBuildTarget == "win64"

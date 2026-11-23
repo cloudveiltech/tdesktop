@@ -43,6 +43,33 @@ The script builds the `Telegram` target in Release, with output at `out\Release\
 
 It uses `/m:1 /p:CL_MPCount=4` because the compiler runs out of heap on a 16 GB machine with the default parallelism. On machines with more memory, raise these values or run `cmake --build out --config Release --target Telegram` directly.
 
+## Windows on ARM (arm64)
+
+The arm64 app can be built on GitHub (`.github/workflows/cvm-win-arm64.yml`) or natively on an arm64 Windows 11 machine, such as a UTM virtual machine on an Apple Silicon Mac. A local build took about 45 minutes for the libraries and 80 minutes for the app with 8 cores and 16 GB of memory; GitHub takes several hours without its cache.
+
+Requirements, matching the GitHub runner:
+
+- **Visual Studio 2026 Build Tools** with the arm64 and x64 C++ tools, the **MSVC 14.44** toolset (`Microsoft.VisualStudio.Component.VC.14.44.17.14.ARM64` and `.x86.x64`), the Windows 11 SDK 10.0.26100, and **ATL for both arm64 and x64** (`Microsoft.VisualStudio.Component.VC.ATL.ARM64` and `Microsoft.VisualStudio.Component.VC.ATL`). Upstream's arm64 scripts build some projects with the VS 2026 `v145` toolset, so VS 2022 alone is not enough; breakpad's `dump_syms` is an x64 tool and needs the x64 ATL.
+- **Python 3** (arm64) and **Git for Windows** (arm64), with long paths enabled.
+- A git identity (`git config --global user.name` / `user.email`); the dav1d step makes a local commit.
+- About 100 GB of free disk space and 16 GB of memory.
+
+Open the environment with
+
+    call "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" arm64 -vcvars_ver=14.44
+
+(with Python and Git first on `PATH`), then run the same steps as above with `arm` in place of `x64`:
+
+    tdesktop\Telegram\build\prepare\win.bat silent
+    cd tdesktop\Telegram
+    configure.bat arm -D TDESKTOP_API_ID=... -D TDESKTOP_API_HASH=... -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
+    cd ..\out
+    cmake --build . --config Release --target Telegram -- /m:2 /p:CL_MPCount=4
+
+Feed the API keys from a password manager or standard input rather than typing them, and keep them out of scripts and logs. While `configure.bat` runs they are visible in its process command line, so don't list process command lines on the build machine during configure.
+
+The app is `out\Release\CloudVeilMessenger.exe`. For the arm64 installer, see [cvm_create_win_installer.md](cvm_create_win_installer.md).
+
 ## Installer and signing
 
 See [cvm_create_win_installer.md](cvm_create_win_installer.md).

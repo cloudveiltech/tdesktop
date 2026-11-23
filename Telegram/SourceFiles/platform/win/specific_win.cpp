@@ -710,7 +710,9 @@ void NewVersionLaunched(int oldVersion) {
 }
 
 QImage DefaultApplicationIcon() {
-	return Window::Logo();
+	// CloudVeil: the taskbar expects icons that fill their box; Logo() keeps
+	// the transparent margin used by macOS and Linux docks.
+	return Window::LogoNoMargin();
 }
 
 QString LocalizedCurrencyName(

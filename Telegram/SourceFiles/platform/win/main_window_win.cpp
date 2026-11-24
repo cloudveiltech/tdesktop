@@ -627,14 +627,17 @@ void MainWindow::updateTaskbarAndIconCounters() {
 	const auto integration = &Platform::WindowsIntegration::Instance();
 	const auto taskbarList = integration->taskbarList();
 	const auto bigCounter = taskbarList ? 0 : counter;
+	// CloudVeil: use the edge-to-edge logo for the taskbar icon too. The
+	// cloud logo_256.png keeps a transparent margin for macOS and Linux
+	// docks, which made it look smaller than other taskbar icons.
 	iconBig.addPixmap(Tray::IconWithCounter(
 		Tray::CounterLayerArgs(32, bigCounter, muted),
-		false,
+		true,
 		false,
 		supportMode));
 	iconBig.addPixmap(Tray::IconWithCounter(
 		Tray::CounterLayerArgs(64, bigCounter, muted),
-		false,
+		true,
 		false,
 		supportMode));
 
